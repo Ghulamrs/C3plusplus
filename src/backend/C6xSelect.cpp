@@ -746,7 +746,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         for (std::uint32_t k = 0; k < i.count; k++) ssaLoad(f, f.operand(i, k), abi_.intRegs[k]);
         if (i.count > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         openArea(8);
-        call(c.symbol);
+        call(c6x::symbolOperand(c.symbol));
         closeArea();
         if (i.result.valid() && rt != nullptr && !rt->isVoid()) { narrowInt(rt); ssaStore(f, i.result, "A4"); }
         return;

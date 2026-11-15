@@ -63,6 +63,7 @@ void registersIn(const std::string &op, std::vector<std::string> &out) {
         std::size_t j = i + 1;
         while (j < op.size() && std::isdigit(static_cast<unsigned char>(op[j]))) j++;
         if (j == i + 1 || (j < op.size() && isNameChar(op[j]))) continue;
+        if (op.compare(j, 2, "+0") == 0 && (j + 2 == op.size() || !isNameChar(op[j + 2]))) { i = j + 1; continue; }   // symbolOperand's
         out.push_back(op.substr(i, j - i));
         i = j - 1;
     }

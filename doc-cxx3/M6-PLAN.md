@@ -2178,3 +2178,85 @@ entry changed; src/ lines before and after: the same.
     (837 failed); a shim to Python312 now comes first. Owed: tms0/tms1 Windows halves and asm0 again, alone.
 - **Owed**: the walked ratchet has no recorded value (WAVEGATE_WALKED); emit has no golden on the boxes; two
   drivers in one Windows tree collide - one driver a tree.
+## The M6c review's mends
+
+### R106: M6's judge in the tree - `tools/c6x-cycles` and `tests/tms6747-cycles.txt`, 2026-11-15, lane r6b
+
+From main 458f8974. The review's R106: "cycles equal or better, case by case" was a hand comparison between files
+in the Linux box's home (`~/cyc-m6ae.txt`, `~/cyc-w19g.txt`). No src/ line changed (src/ lines before and after: the same).
+- **The tool.** `tools/c6x-cycles` runs `tests/tms6747.sh`'s shards (CYCLES=1; SHARDS=3; LEVELS="-O2 -O0"), keeps each
+  level's counts in `tests/out-c6x-cycles/cycles<level>.txt` and compares them case by case with
+  `tests/tms6747-cycles.txt`: one line for every case that is not equal (`better`, `worse`, `WORSE`, `new`, `MISSING`,
+  `STALE`), then the counts and both totals. It fails on a case worse and neither owed nor accepted, on one above its
+  cap, on a baseline case that gave no count, on an `owed`/`accepted` line no longer needed, and on a shard that
+  failed. `--record` writes the baseline (a column not run keeps what it held); `--check <cycles.txt> [level]`
+  compares a collected file and runs nothing; `--baseline <file>` takes another baseline, a collected file included.
+- **The baseline's form.** A row a case, a column a level; `measured <column> <commit> <date>`; and
+  `owed|accepted <case> <column> <cap> <reason>` - the column holds the count the case stands above, the cap is how
+  far. **Q1 (the user, 2026-11-15): wave 18's seven are accepted as a library cost** - their -O2 column is round
+  22's count, their cap wave 19's, the cause "the inliner's unit budget declines rotateLeft in rebalance".
+- **Q4 (the user): sim6747 in every wave gate.** SIM=1 runs tms6747.sh's sim6747 leg and judges sim6747's own count
+  (`sim6747 -c` on the linked TI program) as the columns `<level>-sim`; SIM=0 says "NOT RUN" aloud. The hook in
+  tests/tms6747.sh: with CYCLES=1 the sim leg passes `-c`, cuts the count into `<case>.simcycles` and collects
+  `cycles-sim.txt`.
+  The hook is behind its own switch (SIMCYCLES=1, set by the tool), so the sim leg every other caller runs is the
+  line it was. **Owed: the hook has not run once and no `-sim` column is recorded** - the Linux lock was held past
+  the lane's hour, and the user's split of 2026-11-15 sends SIM=1 to the Windows box, where SIM6747 is not built yet
+  (boxkit/windows-split-2026-11-15.md says how). First step there: one case with CYCLES=1 SIM=1 SIMCYCLES=1 to see
+  that `sim6747 -c --run` prints the CYCLES line, then `SIM=1 tools/c6x-cycles --record`.
+- **Checked against the box's files** (Linux, `--check`, nothing run): wave 19's `~/cyc-w19g.txt` against round
+  22's `~/cyc-m6ae.txt` as the baseline: 815 cases, 811 common, **804 equal, 7 worse, 0 better**, 4 new, 192,009,106
+  -> 192,021,032, exit 1 with the seven named. **The plan's "802 equal" (wave 19's entry, and this lane's brief) is
+  a slip**: 802 was 811 less the nine before sh-2; with seven above it is 804, and 804 + 7 = 811. Against wave
+  18's `~/cyc-w18g.txt`: 805 equal, 10 better, 0 worse (192,802,451 -> 192,036,975).
+- **The baseline, recorded by the tool itself** (`COMMIT=458f8974 tools/c6x-cycles --record` on the Linux box, vm6747,
+  SIM=0, in ~/r6b: wave 19's tree and cxx3.exe, its src, include, lib, tests, tools and Makefile hash-equal to
+  458f8974's blobs): 818 passed, 0 failed at each level; **815 cases; -O2 192,036,975 cycles** (wave 19's total
+  exactly), **-O0 397,274,101**. With the seven's column set to round 22's count the -O2 column sums to 192,025,049.
+  The tool on its own collected files: -O2 808 equal, 0 better, 7 worse (7 accepted), 0 new, 0 missing, exit 0;
+  -O0 815 equal, exit 0; on wave 19's file the same line. A case raised by hand (+5) and an accepted case one cycle
+  past its cap: both `WORSE`, exit 1. Round 22's own file: 811 equal, 4 missing, 7 stale, exit 1.
+- **Left**: the `-sim` columns (above); `tools/wave-gate`'s `cycles` step is lane r6a's to call
+  (`tools/c6x-cycles`, or `SIM=1 tools/c6x-cycles` once the columns exist); the baseline was taken on Linux and
+  each `measured` line says so - a Windows run compares against it (the two vm6747 builds agreed cycle for cycle
+  at the qualification).
+- **Static gates** (the Windows box, work\r6b, affinity 3FF, the lane's tree): tools/exclusions --check 129 sites, 0
+  uncited, 0 stale; comment-lines 0 groups over the cap; ide/generate.py --check up to date. tools/memory-gate does
+  not start on Windows (`signal.SIGPIPE`, tools/memory-gate:30 - a defect for the split); no src/ file changed, so
+  its count is wave 19's.
+
+## The M6c review's mends - lane r6i (R114, R118), 2026-11-15
+
+From r6e f56adfed, branch r6i, with r6b merged for `tools/c6x-cycles`. src/: +31 -9 in five files.
+
+- **R114: a symbol spelled like a register is written `A4+0` wherever an operand or a data word names it.** cl6x
+  writes `||A4||` (measured, 7.4.4: every `A`/`B` with digits, `SP`, `DP`, `FP`, `PC` and the control registers, in
+  either case). The project's ASM6x has no such quoting - `.global ||A4||` is "names symbols", a label `||A4||:` is
+  "|| needs an instruction just before it", an operand "a value expected, not '||'" - and it is not this lane's to
+  change. What ASM6x 1.5, VM6747 and LNK6x all take (probed, work\r6i-q): the bare name at `.global`, at the label,
+  in `.ref`, inside `$EXTAB_SCOPE(...)`, `$EXIDX_FUNC(...)` and `DW_AT_low_pc(...)` (they refuse `A3+0` there), and
+  `name+0` in an instruction's operand and a `.word` - an expression, so no reader takes it for a register, and the
+  relocation is the same symbol with addend 0. One function says which names (`c6x::symbolOperand`, C6xMir.cpp, beside
+  `regNumber`); `Tms6747::movSym`, both `call` sites (the walker's used to pass a function named `B1` as the register),
+  the two `.word` writers and the selector's call go through it; `registersIn` (the scheduler's and `onOperands`'
+  reader) skips a register name followed by `+0`, so liveness and renaming do not see one and the table reads the
+  instruction; `tiExternals` gives such a name its `.ref`. **Owed to ASM6x: `||name||`**, then this spelling can be
+  cl6x's.
+- **The case** `tests/cases/c6x-register-named-symbols` (objects A4, A31, a4, B31, a static B0, a pointer to function
+  A0; functions B3, A10, and A3 with a `try`), its .expected clang's (the Windows box's, 19.1.5).
+- **R118: `entryOf` answers "an instruction not read" (`is` 2)** for a tab line whose predicate has no `]` and for
+  one whose first word is neither a capital, a directive's dot nor a comment - the scheduler declines such a function
+  by name as it does a line it cannot spell, where it used to keep the line and leave it out of liveness.
+- **Gate.** The case at -O0, -O1, -O2 on vm6747 and sim6747 (asm6x, lnk6x), the walker at -O2 and `-g`: passes on
+  Linux; tests/ti-link.sh (TI's lnk6x 7.4.4, Linux) 833 linked, 0 failed, at -O0 and at -O2. tests/tms6747.sh SIM=1 (vm6747 and
+  sim6747): shards 1-3/6 on Linux 413 passed 0 failed at each of -O0, -O1, -O2 and under the walker at -O2, and SIM=0
+  -O2 the same; shards 4-6/6 on Windows 407 passed 0 failed at each of -O0, -O1, -O2, under the walker at -O2 and
+  at SIM=0 -O2, and the same shards on Linux as well, 407 / 0 at every leg. identical.sh ARCHS=tms6747 against r6e's
+  build (Windows): 2622 compared, 6 differ, all named - the new case at three levels (r6e's build writes it wrong)
+  and array-list-default-args at three (its global `sp` is now `sp+0`, 20 lines at -O0; its cycles are equal).
+  tools/c6x-cycles --check over the six -O2 shards: 817 cases, 807 equal, 0 better, 8 worse - 7 accepted, and
+  pipelined-data-exit 1414163 -> 1414571, which is r6e's own count (work\r6e-g-cycles-O2.txt), not this lane's; 2 new.
+  tools/c6x-declines --check: baseline 0 holds. Self-compile of the four changed C6x files at -O0 and -O2: 8 / 0.
+  run.sh on Linux at -O0 and -O2: 1223 passed, 0 failed; the case on x86_64-windows in both spellings at -O0 and -O2
+  agrees with clang. cl /W4 /WX and g++ -Werror clean; exclusions 129 sites 0 uncited 0 stale; comment cap 0 over;
+  memory gate holds; ide/generate.py up to date.
