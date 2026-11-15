@@ -162,7 +162,9 @@ public:
                 ConstexprAhead, BySubstitution, Doors };
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
-    // M8.1, under CXX1_TEMPLATE_SUBST: function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
+    // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
+    bool substitute_ = false, substituteDebug_ = false;
+    // Function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
     bool substituteFunction(std::size_t i, std::string *why);
     // A specialization made by substitution: its symbol to the sibling whose body it shares, and the types that change.
     struct Substituted { std::string pattern; std::vector<const Type *> from, to; };

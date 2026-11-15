@@ -51,6 +51,8 @@ public:
 
     // What the grammar recorded, for -dump=syntax.
     const syntax::Tree &syntaxTree() const { return syntaxTree_; }
+    // M8.1-early's switch (-templates=subst), and -g, which refuses it.
+    void substituteTemplates(bool on, bool debug) { tmpl_.substitute_ = on; tmpl_.substituteDebug_ = debug; }
     Program parse();
 
 private:

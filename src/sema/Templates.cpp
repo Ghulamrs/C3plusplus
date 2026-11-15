@@ -343,7 +343,7 @@ static bool substitutableTokens(const std::vector<Token> &tokens, std::size_t at
             return *why = "a binary operator", false;
         }
         if (param) { if (opens) continue; return *why = "a parameter named where no declaration starts", false; }
-        if (tokens[t].kind != TokenKind::Ident) return *why = "a token outside the subset: '" + x + "'", false;
+        if (tokens[t].kind != TokenKind::Ident) return *why = "a token outside the subset: " + (x.empty() ? std::string("a literal") : "'" + x + "'"), false;
         if (x == self && depth == 0 && selfSeen++ == 0) continue;
         // A declarator's name: back over `*`, `&` and `const` to the parameter the declaration starts with.
         std::size_t b = t;
@@ -361,14 +361,17 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
     if (sp.explicitly) return *why = "an explicit specialization", false;
     // The C6000's walker still reads a function's Ast body, and a substituted function has none to give it.
     if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
+    if (substituteDebug_) return *why = "-g, which wants a block table the sibling's body does not give", false;
     for (std::size_t q = 0; q < sp.params.size(); q++) {
         if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate) return *why = "a parameter that is not a type", false;
         const Type *b = q < sp.binding.size() ? sp.binding[q] : nullptr;
         if (b == nullptr || !b->isArithmetic() || b->isEnumeration() || b->unqualified() != b) return *why = "an argument that is not an arithmetic type", false;
+        if (b->isBool()) return *why = "a bool argument: a conversion to bool is a compare", false;
     }
     if (!substitutableTokens(p_.tokens_, sp.start, sp.params, sp.name, why)) return false;
     // A sibling replay made, whose arguments are distinct and laid out as these are: its body is the pattern.
     std::vector<Function> &functions = p_.current_->functions;
+    bool converts = false;
     for (std::size_t k = 0; k < specializations_.size(); k++) {
         const Specialization &o = specializations_[k];
         if (k == i || o.isClass || !o.emitted || o.explicitly || o.start != sp.start || o.name != sp.name || substituted_.count(o.symbol)) continue;
@@ -378,6 +381,11 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
             fits = b != nullptr && b->isArithmetic() && !b->isEnumeration() && b->unqualified() == b && b->isFloating() == sp.binding[q]->isFloating() &&
                    b->size(p_.target_) == sp.binding[q]->size(p_.target_) && b->align(p_.target_) == sp.binding[q]->align(p_.target_);
             for (std::size_t r = 0; fits && r < q; r++) fits = o.binding[r] != b;
+        }
+        // Two parameters' types may meet in a conversion, whose kind (sign or zero extension, x87) the sibling's tree keeps.
+        for (std::size_t q = 0; fits && sp.binding.size() > 1 && q < o.binding.size(); q++) {
+            const Type *a = o.binding[q], *b = sp.binding[q];
+            if (a->isSigned(p_.target_) != b->isSigned(p_.target_) || (a->isFloating() && a->kind() != b->kind())) converts = true, fits = false;
         }
         std::size_t at = functions.size();
         for (std::size_t f = 0; fits && f < functions.size(); f++) if (functions[f].symbol() == o.symbol) at = f;
@@ -402,6 +410,7 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
         substituted_[sp.symbol] = s;
         return true;
     }
+    if (converts) return *why = "a conversion between two parameters' types, whose kind would be the sibling's", false;
     return *why = "no replayed specialization of the same layout to substitute into", false;
 }
 
@@ -482,7 +491,7 @@ void Templates::instantiatePending() {
             }
             again = true;
             // M8.1: a function specialization inside the subset shares a replayed sibling's body, its types substituted.
-            if (!specializations_[i].isClass && std::getenv("CXX1_TEMPLATE_SUBST") != nullptr) {
+            if (!specializations_[i].isClass && substitute_) {
                 std::string why;
                 if (substituteFunction(i, &why)) { count(BySubstitution); continue; }
                 refusedSubst_[why]++;
