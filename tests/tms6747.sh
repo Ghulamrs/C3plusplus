@@ -110,7 +110,14 @@ one() {
             sed 's/^/      /' "$OUT/$base.ti.log" | head -3
             verdict=fail
         else
-            { ( ulimit -t 20 2>/dev/null; "$SIM6747" --run "$OUT/$base.ti.out" ) > "$OUT/$base.sim.out" 2>&1 < /dev/null; } 2>/dev/null || true
+            # SIMCYCLES=1 (tools/c6x-cycles with SIM=1): sim6747's own count (-c), cut out as vm6747's is, in <case>.simcycles.
+            if [ -n "${SIMCYCLES:-}" ]; then
+                { ( ulimit -t 20 2>/dev/null; "$SIM6747" -c --run "$OUT/$base.ti.out" ) > "$OUT/$base.sim.raw" 2>&1 < /dev/null; } 2>/dev/null || true
+                grep -o 'CYCLES count=[0-9]* packets=[0-9]* natives=[0-9]*' "$OUT/$base.sim.raw" | sed 's/^CYCLES //' > "$OUT/$base.simcycles"
+                perl -0pe 's/CYCLES count=\d+ packets=\d+ natives=\d+\n//' "$OUT/$base.sim.raw" > "$OUT/$base.sim.out"
+            else
+                { ( ulimit -t 20 2>/dev/null; "$SIM6747" --run "$OUT/$base.ti.out" ) > "$OUT/$base.sim.out" 2>&1 < /dev/null; } 2>/dev/null || true
+            fi
             if ! diff -q "tests/cases/$base.expected" "$OUT/$base.sim.out" >/dev/null; then
                 echo "FAIL $base (sim6747):"
                 diff "tests/cases/$base.expected" "$OUT/$base.sim.out" | sed 's/^/      /' | head -8
@@ -167,5 +174,6 @@ echo "tms6747.sh: $vmskip not run on vm6747 (tests/tms6747-vm.txt)$([ "$SIM" = 1
 if [ -n "$CYCLES" ]; then
     for base in $(cases); do [ -s "$OUT/$base.cycles" ] && echo "$base $(cat "$OUT/$base.cycles")"; done > "$OUT/cycles.txt"
     awk '{ sub("count=", "", $2); s += $2 } END { printf "tms6747.sh: %d cycles (cycle.CPU) over %d cases, in %s\n", s, NR, FILENAME }' "$OUT/cycles.txt"
+    [ -n "${SIMCYCLES:-}" ] && for base in $(cases); do [ -s "$OUT/$base.simcycles" ] && echo "$base $(cat "$OUT/$base.simcycles")"; done > "$OUT/cycles-sim.txt"
 fi
 [ "$fail" -eq 0 ]
