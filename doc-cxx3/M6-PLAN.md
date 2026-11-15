@@ -2574,3 +2574,14 @@ the Windows pool), g2 (wselfc and wfixed* run alone; the `wintools` family; cycl
   step lost its verdict to a shared variable - both g2's; with them mended wtms2 passed 413/0, wselfc 103/103 alone,
   cycles PASS (807 equal, 8 owed or accepted, 5 new, 0 worse). Landed at g2 201767ca, which changes only the gate
   script: the recommended option, taken under the user's standing instruction (2026-11-15).
+
+### Wave 22's slower cases, accepted - the user, 2026-11-15
+
+**The user's decision**, given directly in the coordinator's session ("Yes, write them"), for the merge of M6a.2 W1 and W2
+(lane mg22): at -O2 the 30 W2 cases, at -O0 the 117 W2 cases (W2 first measured at -O0 on the merge), and the 14 bodies
+with a landing pad and a variadic call (11 at -O2, 3 at -O0; selected only once both rounds merged, cause not yet
+diagnosed) are accepted as owed; member-default-init's and array-loop-throw's W1 caps raised; 18 W1 lines now below
+their columns taken out. Owed: W2's causes D (an inliner round for newly selected callers) and E/F/G (the selector's
+next tidy round); the 14 merge bodies to the round "frame slots shared by scope", diagnosed there. Totals: -O2
+192,025,550 -> 191,867,154 (404 better), -O0 397,272,350 -> 385,994,327 (439 better). tests/wave-expected.txt holds
+mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 outputs and p7's case on three hosts).
