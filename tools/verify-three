@@ -12,7 +12,7 @@
 #   tools/verify-three c6747        TI's own C6747 toolchains alone: tools/c6747-three
 #   tools/verify-three ride         RIDE's tests/test --require-tools on the Windows box
 #   tools/verify-three tms6747      TI's lnk6x over every case, on the Linux box (or CXX1_TI_BOX's Windows box)
-#   tools/verify-three wave <name> [...]   the wave gate: tools/wave-gate with the same arguments (its BOXTAB is the split)
+#   tools/verify-three wave <name> -w <base> [...]   the wave gate: tools/wave-gate, the same arguments; -w names main at the wave's start
 #
 # **No C6000 work runs on the Mac.** The C6000's suites, builds and simulators are the boxes': the Linux leg runs
 # tests/tms6747.sh and tests/asm6x.sh with the TI tools built there from source (tools/ti6x-build.sh, in ~/ti6x),

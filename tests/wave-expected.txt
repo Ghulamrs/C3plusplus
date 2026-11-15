@@ -1,0 +1,5 @@
+# tests/wave-expected.txt - what this wave means to change, read by tools/wave-gate (N2 of the M6c mend check).
+# One row a difference: <case> <target> <level> <reason>. <case> is tests/cases/<case>.cpp, <target> one of tms6747,
+# x86_64-linux, x86_64-windows (both spellings), arm64-darwin; <level> 0, 1 or 2. identical, identlnx, identwin,
+# identa64 and emit pass only when the outputs that differ from the wave's base (-w) are exactly these rows; cycles
+# lets a WORSE row through only for a case named here at tms6747 2. A wave empties this file when it lands.
