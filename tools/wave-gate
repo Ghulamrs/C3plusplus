@@ -26,7 +26,7 @@
 # -O1 is R107's leg. cycles: tools/c6x-cycles --check over tms2's joined cycles.txt. identical: tools/identical.sh
 # ARCHS=tms6747 against the box's main build (WAVEGATE_REF); emit: tests/emit.sh's changed count; census:
 # tools/ssa-census -arch tms6747 -O2, its walked count held to WAVEGATE_WALKED when set. release: by hand.
-# declines: tools/c6x-declines --check, the count only down (R108, Q5). asm<L>: tests/asm6x.sh at -O<L>, -O1 included. selfc: stage 0 compiles every
+# subst: tests/subst.sh, -templates=subst against off (R109). declines: tools/c6x-declines --check, the count only down (R108, Q5). asm<L>: tests/asm6x.sh at -O<L>, -O1 included. selfc: stage 0 compiles every
 # src/*.cpp. run1/winpass1: the x86 cases at -O1. cdb wants the LINK a winpass builds (winout-tools).
 # **sim: tests/tms6747.sh -O2 with SIM=1** (asm6x, lnk6x, TI's runtime, sim6747), the six shards, in every wave gate -
 # the user's decision on the M6c review's Q4, 2026-11-15: the Linux time is accepted.
@@ -41,7 +41,7 @@
 # runs, and is reported, only under `-a mfixed`.
 set -u
 # step=box, in the report's order. linux | windows | mac | split (shards 1-3 Linux, 4-6 Windows) | idle (either)
-BOXTAB="build=linux static=linux gdb=linux run1=linux maketest=linux selfc=linux fixed0=linux fixed2=linux
+BOXTAB="build=linux static=linux gdb=linux run1=linux maketest=linux subst=linux selfc=linux fixed0=linux fixed2=linux
  wbuild=windows winpass0=windows winpass1=windows winpass2=windows cdb=windows wselfc=windows names=windows
  overload=windows winstruct=windows release=windows wfixed0=windows wfixed2=windows
  tms0=split tms1=split tms2=split wtms0=split wtms1=split wtms2=split sim=split
@@ -115,6 +115,8 @@ if [ "${1:-}" = --box ]; then
         maketest) job 1500 env JOBS=4 make test > "$LOG-maketest.log" 2>&1; rc=$?
             d=$(grep -a '^[a-z0-9.-]*\.sh: .*[0-9] \(passed\|changed\|failed\)' "$LOG-maketest.log" | sed 's/ (.*//; s/, [0-9]* \(skipped\|were\|printed\).*//' | tr '\n' ';' | cut -c1-400)
             [ $rc -eq 0 ] && verdict maketest PASS "rc 0; $d" || verdict maketest FAIL "rc $rc$(capnote $rc); $d $LOG-maketest.log" ;;
+        subst) if [ -f tests/subst.sh ]; then suite subst '^subst.sh: ' env JOBS=4 sh tests/subst.sh     # R109, lane r6f: -templates=subst on against off
+            else verdict subst "NOT RUN" "tests/subst.sh is not in this tree (R109, lane r6f)"; fi ;;
         run1) suite run1 '^run.sh: ' env CXX1="./cxx3.exe -O1" sh tests/run.sh ;;
         tms0*) tms "$s" "" 0 "" "$R" ;;   tms1*) tms "$s" -O1 0 "" "$R" ;;   tms2*) tms "$s" -O2 0 "" "$R" ;;
         wtms0*) tms "$s" "" 0 CXX1_C6X_WALKER=1 "$R" ;;   wtms1*) tms "$s" -O1 0 CXX1_C6X_WALKER=1 "$R" ;;   wtms2*) tms "$s" -O2 0 CXX1_C6X_WALKER=1 "$R" ;;
