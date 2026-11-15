@@ -159,3 +159,63 @@ the `-check=templates` census, and what was found and not mended, registered in 
 answer. Nothing above this line is edited; a correction is recorded below with its date.)*
 
 **M8.0** - not started. The five open questions above are answered here when M8.7 and M8.8 land.
+
+**M8.0, the measure, 2026-11-15** (lane m8a, branch `m8-a` from main `3b8a80fb`; M8 started early on one small piece,
+ahead of this plan's order - the REF, the golden and `-check=templates` of the M8.0 row above are still owed, and the
+line "not started" stands corrected by this entry). The counter is `Templates::count` at each door, printed once per
+unit by `CXX1_TEMPLATE_CENSUS=1` as `template-census: ...` on stderr (nothing otherwise). Measured on the Windows box
+with the cl-built compiler, `-S` at -O0, one line a unit, summed (`boxkit/m8a-win4.sh census`, `self`):
+
+| corpus | function bodies | class bodies | members of a class template | member templates | dependent bases | SFINAE trials (failed) | alias ids | constexpr ahead |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `tests/cases`, 1224 cases, x86_64-windows (868 reach the census; the rest are refused or hold no parse to its end) | 787 | 2026 | 3958 | 184 | 56 | 1505 (21) | 24 | 32 |
+| `tests/cases`, x86_64-linux (887 reach it) | 787 | 2026 | 3958 | 184 | 56 | 1505 (21) | 24 | 32 |
+| the self-host, cxx3's 103 sources as `tools/self-host` compiles them, x86_64-windows (100 compile; `C6xPack`, `C6xPipe`, `C6xSelect` are refused by main's own build too - "no function called 'c6x::crossings' takes these 2 argument(s)") | 4833 | 63680 | 51984 | 1399 | 188 | 35105 (329) | 0 | 564 |
+
+A function body is one `topLevel` replay of a function specialization; a class body one replay of a class head and
+body; a member one held or out-of-line member body replayed on use; a dependent base a class body whose head names a
+parameter after its `:`; a trial one `Parser::Trial` around a candidate's instantiation (the two in `Templates.cpp`).
+What the numbers say: **M8 is the class doors** - in the compiler's own source 95% of replays are class bodies and
+their members (115,664 of 121,896 bodies), 35,105 trials stand behind 6,232 function and member-template bodies, and
+the function door this lane opened is 4% of it. `tests/run.sh`'s other suites read the same `tests/cases`; `tests/open`
+and the C90 corpus were not measured.
+
+**M8.1-early, the first substitution, 2026-11-15** (the same lane; not this plan's M8.1 - the syntax read at the
+declaration is still owed, and this step stands in for a piece of M8.2). Under `CXX1_TEMPLATE_SUBST=1` a function
+specialization is not replayed where `Templates::substituteFunction` takes it: its `Function` is made from a
+**replayed sibling's** - the same template, already read - with every type passed through `Templates::substituted`
+(the sibling's arguments to its own, under any pointer, reference, const or function declarator), and the Typer types
+the sibling's syntax root for it and retypes the nodes and records (`Typer::typeBody`, `TypedTree::retype`); the
+lowering sees a typed body like any other. The pattern is a sibling and not a body read once at the declaration, so the
+first specialization of each layout still replays - that is what M8.1's syntax read replaces. **The subset**, read off
+the template's own tokens so that every type in the body is a parameter's: type parameters only (no pack, non-type or
+template parameter), every argument an unqualified arithmetic type, the sibling's arguments pairwise distinct and of
+the same size, alignment and floating-ness, and a declaration and body made of the parameters, `const`, `void`,
+declarators, names the template itself declares, `=`, unary `*` and `&` and `return` - no literal, call, cast, binary
+operator or other name, so no lookup, dependent or not. Everything else **falls back to replay by name**, counted
+(`template-replayed (N): <reason>`); the C6000 is refused whole, its walker still reading the Ast body a substituted
+function does not have. The census row (`by-substitution` against `function`, the start of the ratchet):
+
+| corpus | by substitution | by replay | the largest reasons for replay |
+| --- | --- | --- | --- |
+| `tests/cases` | 5 (all in the probe, `template-subst.cpp`) | 782 | 330 an argument that is not arithmetic, 155 a parameter that is not a type, 51 `typename`, 44 `inline`, 40 `int`, 36 `auto`, 22 no sibling of the layout |
+| the self-host | 0 | 4833 | 4112 an argument that is not arithmetic, 642 `inline`, 20 a lookup, 19 `if`, 19 `bool`, 19 `&&` |
+
+Gates, on the boxes named (Mac: none): **switch off**, the tree at `f2dcccdf` against main `3b8a80fb`'s cl build
+(`work\w16g`) on the Windows box, every case's `-S` text and diagnostics at -O0 and -O2 for x86_64-windows `-masm=masm`,
+`-masm=gnu` and x86_64-linux, 1224 cases, 7,344 comparisons - **7,338 the same, 6 differ**, all six the `#error` caret of two refused cases (`posix-headers` on the Windows spellings, `windows-h-layout` on Linux) standing one column apart under a tree path one letter shorter, the known path diagnostic; **switch on against off**, the same grid - **7,344 the same, 0 differ** (the first pass flagged 378 cases through CRLF in their diagnostics alone; `boxkit/m8a-win3.sh again` re-ran them normalised); the self-host's 100 sources on
+against off, 99 the same and `Driver.cpp` differing by its unpinned `__DATE__`/`__TIME__` alone (not re-run pinned). The
+probe `tests/cases/template-subst.cpp` (its `.expected` clang 19.1.5's on the Windows box): on = off in all six, and
+the linked program prints clang's output on and off at -O0 and -O2, on Windows at `5c880a04` and on Linux (g++ build,
+`-Werror` clean). cl /W4 /WX clean at `5c880a04`; exclusions 129 sites 0 uncited 0 stale (18 citations re-pointed),
+comment cap 0, memory gate held (Typing's raw pointers 89), ast-residue not above its baseline, `ide/generate.py
+--check` up to date - on the Windows box at `5c880a04`. On the Linux box at `5c880a04`: g++ `-Werror` build clean, the
+probe's program prints the same five lines on and off, its `-S` text is identical on against off at -O0 and -O2
+natively, and the same five static gates pass (clang is not on that box's path: the `.expected` is the Windows clang's).
+**Not done, by name**: `run.sh` under the switch was not run (the Linux lock was the wave gate's; on = off in every
+emitted file is what stands for it) while `typed.sh` under it on the Linux box at `5c880a04` reads 861 passed, 0 failed,
+1 did not compile for this host; `-check=typed` and `-dump=typed` type a substituted body with its sibling's types (they call
+`typeFunction`, not `typeBody`); a substituted function carries no block table for `-g` and an empty Ast body; the
+identity grid was run at `f2dcccdf`, two commits before the last (a functor moved between headers, the empty body made
+by `oneStatement`, the C6000 refused) - only the probe, cl and the static gates were run again at `5c880a04`.
+src/ lines: 94,414 before, 94,615 after.

@@ -447,6 +447,7 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
             self.instantiationDisplay_.clear();
             const bool wasInline = p_.replayingInline_;
             const std::size_t resume = p_.at_;
+            self.tmpl_.count(Templates::ConstexprAhead);
             self.replayInlineBodies(std::vector<Parser::PendingBody>(1, body));
             self.at_ = resume;
             self.replayingInline_ = wasInline;
