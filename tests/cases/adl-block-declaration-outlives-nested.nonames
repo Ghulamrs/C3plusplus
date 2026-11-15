@@ -1,0 +1,1 @@
+x86_64-windows  the closure in main, which clang-msvc spells `<lambda_0>` with a deduced return written `@` where cxx1 writes `$_0` and the type - the numbering and spelling lambda.nonames already records; the other 6 names agree, and x86_64-linux and arm64-darwin agree on all 7.
