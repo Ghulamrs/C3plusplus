@@ -1442,4 +1442,16 @@ files (lane m6ad's):
   Open: `namespace-unnamed-nested-leaks` - an unnamed namespace inside `n` answers a lookup at file scope (the
   directive is kept in one file-wide list), so `::f` defined after `n`'s unnamed `f` is taken for it.
 - src/ 94,414 -> 94,450 lines (include/ +32 -23).
-- **Gate at d88e36cf:** GATEROWS
+- A fourth refusal met on the way: `C()(a, b)` in the first `less` is a functional-cast temporary of a template
+  class, which cxx3 refuses ("not supported yet"), so `OptTable.cpp` (a `std::map<std::string, ...>`) fell; the
+  comparator is a named object (20f14d2e) and `map-set-comparator` takes a `std::string` key.
+- **Gate at 20f14d2e:** self-host stage 0 at -O0 **103 of 103** sources on Windows (cxx3-msvc) and on Linux
+  (`tools/self-host`, 197 s; stage 1 built); cl /W4 /WX clean. Windows winpass -O0 **831 same / 0 differ, masm 830
+  / 0** (828 / 827 + the three cases). Linux run.sh 1220 / 0; typed 863 / 0; ssa 893 / 0; syntax 3 / 0; coff 1,698
+  objects, 0 differ; c90 447 / 0; overload, names and win-structure skipped (no clang++ on the box). emit.sh (on
+  Windows, against main 3b8a80fb's golden): **36 of 3,399 changed, 12 added** - the 12 are the three cases on four
+  targets; the 36 are nine cases that include `<map>` or `<set>` (deque-both-ends, include-map-set,
+  library-self-compile-pieces-2, map-move-only-mapped, map-set-node-stability, member-template-body-unchosen,
+  range-for-vector, return-self-referential, static-local-braced-list) on four targets: each instantiation's name
+  carries the comparator now. Static: exclusions 129 sites 0 uncited 0 stale (three citations re-pointed),
+  comments 0 over, memory gate, ast-residue, ide/generate.py --check rc 0; open.sh 31 differ (one new entry).
