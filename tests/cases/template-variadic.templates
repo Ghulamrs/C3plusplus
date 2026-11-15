@@ -1,0 +1,4 @@
+-check=templates: bodies=12 held=5 same=3 text=0 shape=4
+-check=templates shape: tests/cases/template-variadic.cpp:27:37
+-check=templates shape: tests/cases/template-variadic.cpp:31:28
+-check=templates shape: tests/cases/template-variadic.cpp:38:37

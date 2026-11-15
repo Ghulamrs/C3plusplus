@@ -221,6 +221,8 @@ void Driver::usage(char *file) {
         "       -check=typed types the syntax tree in Sema and reports the census and\n"
         "         the nodes typed null, on stdout; it fails where the census or a\n"
         "         copied record differs\n"
+        "       -check=templates holds the syntax of each template body a replay reads\n"
+        "         against the first read of the same body, and reports the count on stdout\n"
         "       -templates=subst makes a function template's specialization from a\n"
         "         replayed sibling's body where M8.1-early's subset admits it (off by\n"
         "         default; CXX1_TEMPLATE_SUBST=1 the same; refused under -g)\n"
@@ -1140,6 +1142,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             }
         } else if (std::strcmp(argv[i], "-check=typed") == 0 || std::strcmp(argv[i], "--check=typed") == 0) {
             checkTyped_ = true;
+        } else if (std::strcmp(argv[i], "-check=templates") == 0 || std::strcmp(argv[i], "--check=templates") == 0) {
+            checkTemplates_ = true;
         } else if (std::strcmp(argv[i], "-templates=subst") == 0) {
             templateSubst_ = true;
         } else if (std::strncmp(argv[i], "-front=", 7) == 0 || std::strncmp(argv[i], "--front=", 8) == 0) {
@@ -1579,8 +1583,13 @@ bool Driver::compile(const Job &job) {
 
     Parser parser(src, std::move(tokens), types, target, backend_->abi(), job.dialect);
     parser.substituteTemplates(templateSubst_ || std::getenv("CXX1_TEMPLATE_SUBST") != nullptr, debug_);
+    if (checkTemplates_) parser.checkTemplates();
     Program program = parser.parse();
     auto t3 = Clock::now();
+    if (checkTemplates_) {
+        const std::string report = parser.templatesReport();
+        std::fwrite(report.data(), 1, report.size(), stdout);
+    }
     if (dumpSyntax_) {
         std::string dumped;
         parser.syntaxTree().dump(dumped, src);

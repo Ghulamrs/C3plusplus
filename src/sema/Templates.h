@@ -7,8 +7,11 @@
 #include "../Ast.h"
 #include "../Lexer.h"
 #include "../Type.h"
+#include "../syntax/SyntaxId.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -162,6 +165,10 @@ public:
                 ConstexprAhead, BySubstitution, Doors };
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
+    // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read of the same body.
+    bool checkBodies_ = false;
+    void holdBodies(std::size_t mark);
+    std::string bodiesReport() const;
     // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
     bool substitute_ = false, substituteDebug_ = false;
     // Function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
@@ -173,6 +180,11 @@ public:
 
 private:
     long census_[Doors] = {};
+    // A template body's syntax by its declarator's place, the nodes already held, and the tally: first, same, text, shape.
+    std::map<std::uint32_t, syntax::NodeId> bodyOnce_;
+    std::vector<char> bodySeen_;
+    long bodyTally_[4] = {};
+    std::set<std::uint32_t> bodyShapes_;
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.

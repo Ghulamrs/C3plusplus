@@ -5,14 +5,16 @@
 #   3. the probes: template-subst substitutes, template-subst-refused substitutes none of its refused shapes;
 #   4. on = off: -S text and diagnostics of every case that reaches the function door, for x86_64-linux, x86_64-windows
 #      (masm, or gnu for a .nomasm case) and arm64-darwin at -O0 and -O2 - the C6000 is refused whole, so not compared.
+#   5. bodies (M8.1, kept past M8.2): -check=templates over every case - each template body a replay reads, held against
+#      the first read of the same body, summed; a case with a .templates beside it prints that record.
 # It fails on any failed case, a probe that does not count as recorded, or one file that differs.
-#   tests/subst.sh [run|typed|census|same]...   (all four by default)
+#   tests/subst.sh [run|typed|census|same|bodies]...   (all five by default)
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 OUT=tests/out-subst
 export CXX1 OUT
-steps="${*:-run typed census same}"
+steps="${*:-run typed census same bodies}"
 bad=0
 mkdir -p "$OUT"
 for step in $steps; do case "$step" in
@@ -62,7 +64,16 @@ same)
     echo "subst.sh same: $(wc -l < "$OUT/reached") cases reach the function door; $n compared on against off, $((n - d)) the same, $d differ"
     grep -l differ "$OUT"/*.verdict 2>/dev/null | sed 's,.*/,    differ ,; s,\.verdict$,,' | head -20
     [ "$d" -eq 0 ] || bad=$((bad + 1)) ;;
-*) echo "subst.sh: no step '$step' (run, typed, census, same)"; exit 2 ;;
+bodies)
+    ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |
+        xargs -P "$JOBS" -n 1 sh -c '( ulimit -t 20; $CXX1 -nologo -check=templates -S "$0" -o /dev/null > "$OUT/$(basename "$0" .cpp).bodies" 2> /dev/null )'
+    cat "$OUT"/*.bodies | grep '^-check=templates: bodies=' | tr ' ' '\n' | grep = | tr '=' ' ' |
+        awk -v units="$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')" '{s[$1]+=$2} END {printf "subst.sh bodies: %d replayed over %d units: %d first reads, %d the same as the first, %d differ in text alone, %d differ in shape\n", s["bodies"], units, s["held"], s["same"], s["text"], s["shape"]}'
+    echo "    $(cat "$OUT"/*.bodies | grep -c '^-check=templates shape: ') bodies whose replays differ in shape, in $(grep -l '^-check=templates shape: ' "$OUT"/*.bodies | wc -l | tr -d ' ') units"
+    for rec in tests/cases/*.templates; do base=$(basename "$rec" .templates)
+        cmp -s "$OUT/$base.bodies" "$rec" || { echo "FAIL $base: -check=templates is not the record"; diff "$OUT/$base.bodies" "$rec" | head -10; bad=$((bad + 1)); }
+    done ;;
+*) echo "subst.sh: no step '$step' (run, typed, census, same, bodies)"; exit 2 ;;
 esac; done
 echo "subst.sh: $bad failed"
 [ "$bad" -eq 0 ]

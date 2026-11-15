@@ -424,6 +424,39 @@ std::string Templates::censusLine() const {
     return out;
 }
 
+void Templates::holdBodies(std::size_t mark) {
+    if (!checkBodies_) return;
+    const syntax::Tree &st = p_.syntaxTree_;
+    if (bodySeen_.size() < st.size() + 1) bodySeen_.resize(st.size() + 1, 0);
+    for (std::size_t i = mark + 1; i <= st.size(); i++) {
+        const syntax::NodeId id(static_cast<std::uint32_t>(i));
+        const syntax::Node &n = st.node(id);
+        if (n.kind != syntax::Kind::Function || n.dead || bodySeen_[i] != 0) continue;
+        // A declaration has no block; a function try block's body is its `try`.
+        bool body = false;
+        for (std::uint32_t c = 0; c < n.count; c++) {
+            const syntax::Kind k = st.node(st.child(id, c)).kind;
+            body = body || k == syntax::Kind::Block || k == syntax::Kind::Try;
+        }
+        if (!body) continue;
+        bodySeen_[i] = 1;
+        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(n.loc);
+        if (held == bodyOnce_.end()) { bodyOnce_[n.loc] = id; bodyTally_[0]++; continue; }
+        const int d = st.differs(held->second, id);
+        bodyTally_[1 + d]++;
+        if (d == 2) bodyShapes_.insert(n.loc);
+    }
+}
+
+std::string Templates::bodiesReport() const {
+    std::string out = "-check=templates: bodies=" + std::to_string(bodyTally_[0] + bodyTally_[1] + bodyTally_[2] + bodyTally_[3]) +
+                      " held=" + std::to_string(bodyTally_[0]) + " same=" + std::to_string(bodyTally_[1]) +
+                      " text=" + std::to_string(bodyTally_[2]) + " shape=" + std::to_string(bodyTally_[3]) + "\n";
+    for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
+        out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
+    return out;
+}
+
 void Templates::instantiatePending() {
     for (bool again = true; again; ) {
         again = false;
@@ -525,6 +558,7 @@ void Templates::instantiatePending() {
             // Its bodies read names in the namespace it was declared in, wherever it is used from.
             const std::vector<std::string> wasStack = p_.namespaceStack_;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+            const std::size_t bodiesFrom = p_.syntaxTree_.size();
             if (sp.isClass) {
                 count(MemberBody, now.size() + outsideNow.size());
                 // Its member functions, held here; inlineOwner_ gives the scope.
@@ -541,6 +575,7 @@ void Templates::instantiatePending() {
                 p_.at_ = sp.start;
                 p_.topLevel(*p_.current_);
             }
+            holdBodies(bodiesFrom);
             p_.namespaceStack_ = wasStack;
             p_.replayingInline_ = wasReplayingInline;
             p_.at_ = resume;
@@ -1717,7 +1752,9 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     p_.memberTemplateDeclOnly_ = declOnly;
     if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
     count(MemberTemplate);
+    const std::size_t bodiesFrom = p_.syntaxTree_.size();
     p_.replayInlineBodies(one);
+    holdBodies(bodiesFrom);
     bound.unbindNow();
 
     // The function this replay declared under the key - the first one past `before`.

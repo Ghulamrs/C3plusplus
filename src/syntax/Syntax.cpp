@@ -149,6 +149,18 @@ void Tree::revive(NodeId id) {
     for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) revive(children_[nodes_[id.v].first + i]);
 }
 
+int Tree::differs(NodeId a, NodeId b) const {
+    const Node &x = nodes_[a.v];
+    const Node &y = nodes_[b.v];
+    if (x.kind != y.kind || x.count != y.count) return 2;
+    int worst = x.text != y.text ? 1 : 0;
+    for (std::uint32_t i = 0; i < x.count && worst < 2; i++) {
+        const int d = differs(children_[x.first + i], children_[y.first + i]);
+        if (d > worst) worst = d;
+    }
+    return worst;
+}
+
 std::vector<NodeId> Tree::roots() const {
     std::vector<NodeId> out;
     for (std::size_t i = 1; i < nodes_.size(); i++)
