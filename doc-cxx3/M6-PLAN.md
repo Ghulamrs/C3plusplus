@@ -1592,3 +1592,48 @@ files (lane m6ad's):
   sh1's). Behind it, measured: with the unnamed namespace's three readers renamed in a copy (boxkit/m6ae-probe.sh,
   not committed), this round's C6xPack.cpp and round 21's both compile, 0 errors - the round adds no refusal.
 - **Owed:** D6.3-D6.5, in round 19's order. D6.3 was not started: the round's hour went to D6.2 and its gate.
+
+### M6c, round 23 (D6.3: the pipeliner reads and writes entries only), 2026-11-15, lane m6af
+
+- **Landed, identical output: D6.3** (10a6af7f, and df189144 - an index nothing read any longer, which g++ refused
+  and cl passed). `Loop::body` and `pre` (a `Line` beside every entry where one of the body or the preheader was not
+  `modelled`), `fromLines`, `preTyped`, `spelledLine`, `Src::line` with its `made` and `have`, `insOf(Line)`, the
+  pipeliner's own `lineOf` and `verbatim`, and `Turn::typed` are deleted. `Loop` holds `bodyM` and `preM` whatever
+  the entries are; a turn is always the body's entry renamed and placed (`Code::placed` takes the entry; its
+  `streamOf` of a kept line is gone); `Code::legal` asks C6xPack's `legalForm(MInst &)`; the kernel's two extra
+  nodes are made from entries. `Line` is named nowhere in C6xPipe.cpp (11 times at round 22).
+- **An entry that is not `modelled`** (an operand held as text naming a register) is read where it stands: its
+  operand by the spelling it is held as (`Src::reg`, `number`, `pair`, `regAt`, `side`, `regsIn`, `byteAddress`,
+  `insOf`, `pairIn`), renamed in that spelling (`renameReg`, one for `Loop::rename` and `spelled`), and its table
+  facts through C6xPack's readers, now declared in C6xMir.h: `rwOf`, `crossingsOf`, `unitsOf`, `labelOf` (the folds'
+  `label`, shared) and `steppedOf`. Their `!modelled` halves are the only `Line` the pipeliner still reaches, and
+  they are D6.4's to delete.
+- **Assumed, and what would show it wrong**: as rounds 21 and 22 - a kept line or a placed entry is no instruction
+  to `Src` (no mnemonic, operand, predicate, read or write), where `parse` might have read a kept line as one;
+  an unplaced body entry carries no `||` and no named unit (a turn of one went through `spelledLine`); and a
+  body with a `!modelled` entry now places renamed entries, where it placed kept lines read back by `streamOf`.
+  No case's text has any of the three: the census's 0 `!modelled` reads and the identity below.
+- **What still reads `Line`**: the table's `Line` readers, C6xPack's `lineOf`/`viewOf`, `legalForm(Line &)`,
+  `renameable(Line)`, `rebuilt`, `make` and the `!modelled` halves - `rwOf`, `crossingsOf`, `unitsOf`, `steppedOf`,
+  `labelLike`, `memSide`, `removeDead`, `liveFacts`, `LoopText::rw`, `makeNode` (D6.4); `parse`, `streamOf` and
+  `c6xSchedule`'s read of the walker's text (D6.5). `Line` is named 9 times in C6xPack.cpp, 22 in C6xSched.cpp.
+- src/ +132 -265 lines (C6xPipe.cpp 2,528 -> 2,383, C6xPack.cpp 1,426 -> 1,429, C6xMir.h 130 -> 139).
+- **Gate** (df189144). The base moved under the round (wave 18's 12 cases differ from round 22's and main
+  85fe99fe's texts at every level, -O0 too), so the base itself, b6edce1a, was built on both boxes and is the
+  reference. Windows, cl /W4 /WX clean (work\m6af1 against work\m6af0), tests/cases at -O0, -O1, -O2 by md5:
+  **2,613 texts same, 1,068 refused alike, 0 differ**, plain and under `CXX1_C6X_WALKER=1`; census -O2 0 to any
+  text pass, 7,012 selected, kernels 219 / 9,122; exclusions 129 sites 0 uncited 0 stale, comments 0 over, memory
+  gate rc 0, generate up to date. Linux (~/m6af against ~/m6af0), g++ -Werror clean (10a6af7f was refused for one
+  unused variable): `identical.sh ARCHS=tms6747` -O0 and -O2 **1,744 compared, 0 differ**; -O0 -g 872 compared,
+  0 differ once the tree path in `.dwpsn` is normalised. Against main 85fe99fe's compiler (~/w7ref): 26 differ
+  (13 cases: static-reference-to-temporary and wave 18's 12), -g 10 after normalising; against round 22's texts
+  18 and 9 differ, wave 18's cases alone. tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **818 passed, 0
+  failed, 192,802,451 cycles** (wave 18's four new cases over round 22's 814 and 192,009,106; every text is the
+  base's); g-same 871 same, 0 differ, 0 broken; asm6x.sh 837 objects, 0 failed at -O0 and -O2; census 0;
+  exclusions 0/0, comments 0 over, memory gate, ast-residue, generate rc 0. Walker legs at -O2: shards 1/3 and
+  2/3 273 and 274 passed, 0 failed. **Not finished at the hour**: walker -O2 shard 3/3 and the three -O0 shards,
+  queued on the one lock behind the coordinator's wave 18 gate (~/m6af-gate3.out holds them). Not run (the
+  coordinator's): winpass, make test, ssa.sh.
+- **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
+  C6xSched.cpp, C6xSelect.cpp and C6xMir.cpp each compile, 0 errors.
+- **Owed:** D6.4 and D6.5, in round 19's order; D6.4 not started.
