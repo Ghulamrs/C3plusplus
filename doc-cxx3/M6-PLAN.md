@@ -2260,3 +2260,55 @@ From r6e f56adfed, branch r6i, with r6b merged for `tools/c6x-cycles`. src/: +31
   run.sh on Linux at -O0 and -O2: 1223 passed, 0 failed; the case on x86_64-windows in both spellings at -O0 and -O2
   agrees with clang. cl /W4 /WX and g++ -Werror clean; exclusions 129 sites 0 uncited 0 stale; comment cap 0 over;
   memory gate holds; ide/generate.py up to date.
+
+## M6a.2, round W2: variadic calls and variadic definitions selected - lane w2, 2026-11-15
+
+From wave20 79b00a6e, branch m6a2-w2. src/: +33 -8 in three files (C6xSelect.cpp 788 -> 806, Tms6747.cpp 2481 -> 2486,
+Tms6747.h 309 -> 311).
+
+- **The ABI, from cl6x 7.4.4's `-S`** (`-mv6740 --abi=eabi`; the source is `boxkit/w2va.c`'s shape - printf, `take(1, 2,
+  x, p, h, c)`, `only(c, x)`, `sum(int n, ...)`, `pick(const char *, short, ...)`): the named arguments before the last
+  go in the registers as ever; **the last named argument is stored at `*+SP(4)` in its own size** (`STW`, `STH` for a
+  short, `STB` for a char) **and every argument after it a word each from `*+SP(8)`**; the callee's `va_start` is the
+  address past the last named one rounded up to a word (`ADD 8, FP` after its `STW FP, *SP--(8)`), `va_arg` an
+  `ADD 4` and `LDW *-A(4)`. This is what the walker's `visit(Call)` and `vaStart_` already write.
+- **The selector** (`C6xSelect.cpp`): `ssaOutside` no longer refuses a variadic function or a call of one; a call
+  writes the last named argument and the rest as words above the reserved word (`openArea` with its stack arguments,
+  `STW v, *+B15(4 + 4k)`), then the named ones before it into the registers; `VaStart` and `VaArg` are the walker's
+  own text, split out as `Tms6747::vaStartAt` and `vaArgAt` (one implementation, the list's address in A4);
+  `VaEnd` writes nothing. A variadic function's frame link, its stack parameter and `vaStart_` were the prologue's
+  already (`emitParams`, `needFrame`).
+- **What stays walked, by name.** A call whose callee is a member (`hasThis`), has no named parameter, or has more
+  than ten keeps the reason "variadic call": **one function in tests/cases, `main` of `template-sfinae-fallback` at
+  -O2** (`f(...)`, no named parameter - cl6x's placement of that shape was not measured). A variadic call with a
+  double or a 64-bit argument is walked for W4's reasons (floating value, 64-bit value), a variadic function with a
+  handler for W1's (landing pads); neither is counted here any more.
+- **The census** (`CENSUS_SOURCES=0 tools/ssa-census -arch tms6747`, Linux, g++ build): **-O2 4,207 -> 3,383 walked
+  (7,874 of 11,257 selected, 704 of 1,233 cases), -O0 4,053 -> 3,341 (7,916 selected)**; "variadic" 16 -> 0, "variadic
+  call" 860 -> 1 at -O2 and 735 -> 0 at -O0. `tools/c6x-walked.baseline` lowered in its own commit (9f6b1c1b).
+- **The case** `tests/cases/c6x-variadic-selected` (clang's `.expected`, the Windows box's clang over cxx3's library):
+  four variadic definitions (a loop of `va_arg`, pointer and unsigned extras, `va_copy`, five named and nine extras)
+  and their callers with printf of TI's `rts6740` - a selected caller against a cl6x-built variadic callee. 6 of 6
+  functions selected at -O0 and -O2; passes at -O0, -O1, -O2 on vm6747 and sim6747 and under the walker.
+- **Cycles (`tools/c6x-cycles --check`, -O2, six shards on Linux, vm6747): NOT clean - the user's question.** 821
+  cases, 458 equal, **293 better, 64 worse of which 7 accepted, so 57 worse and unaccepted**, 6 new; the sum 192,025,049
+  -> 192,015,699. The 57 are named in `boxkit/w2-worse.txt`: array-loop-member-copy +13,809 (of 3,969,492),
+  fill-stores +8,132 (of 1,049,849), template-subst +501, divide-by-constant-signs +405, reference-collapsing +101,
+  const-overload +61, member-pointer-condition +52, forwarding-pack +43, va-arg-shapes +38, and 48 of +34 or less.
+  One cause is read (switch-condition-declaration, +5): `%2 = bitcast(addr @str)` made before an earlier call and
+  read by printf crosses that call, so `ssaAssign` gives it a saved register (A10, saved and restored) where the
+  walker remakes the address at the call. **A mend tried and withdrawn**: counting such a bitcast as remade made 129
+  cases worse (array-loop-member-copy +385,015) - a loop then rebuilds the address every turn. The larger cases'
+  causes are not read. `return-self-referential`'s accepted line is stale (no longer worse). Nothing was accepted
+  or recorded by this lane.
+- **Gate (a coding lane's; the wave gates it fully).** Linux (g++, ~/w2, the committed sources): tests/tms6747.sh
+  shards 1-3/6 at SIM=1 -O0, -O1, -O2, under the walker at -O2 and at SIM=0 -O0, -O1, -O2: 409 passed, 0 failed at
+  every leg; shards 4-6/6 there as well, every leg 415 passed, 0 failed. asm6x.sh at -O1 and -O2: 843 objects, 0
+  failed. Windows (cl /W4 /WX clean, work\w2, built at cfbf1b2f - the same sources): shards 4-6/6 at SIM=1 -O2, -O0,
+  -O1: 415 passed, 0 failed each; the walker at -O2 4/6 and 5/6 0 failed, **its 6/6 and SIM=0 -O2 4-6/6 still
+  running when the hour ended** (work\w2-gateB.log). identical.sh ARCHS=tms6747 against the base's cl build:
+  2,634 compared, 1,421 differ over 603 cases, each named in `boxkit/w2-ident.log` (a case that calls printf has a
+  newly selected function; not read one by one). tools/c6x-declines --check: baseline 0 holds. Self-compile of the
+  two changed C6x files at -O0 and -O2: 4 / 0. exclusions 0 uncited 0 stale; comment cap 0 over; memory gate
+  holds; ide/generate.py up to date. **Not done**: cl6x 8.2.2's `-S` (7.4.4 alone was asked), a cl6x-built caller
+  against a selected callee, SIM=0 at -O0/-O1 on Windows, run.sh, and the cycle question above.
