@@ -2355,3 +2355,16 @@ Lane g2 (Opus), branch g2 from g1 `027251b9`. Only tools/wave-gate changed; no s
   alone, PASS 103 of 103 (22:55:45-23:03:17)** - no overlap, no "Device or resource busy". With wave 21's other
   verdicts the gate is 44 passed, 0 failed, 4 not run (the fixed points, not owed, checked). Static gates: no src/,
   docs/EXCLUSIONS.md or ide/ change, so tools/exclusions, make comments and tools/memory-gate are w21g's (PASS).
+
+### Wave 21 landed - the gate under the user's QA rule, 2026-11-15 (the coordinator)
+
+g1 (the mend check's N1-N5: tests/wave-expected.txt and the wave's own base build, the walked ratchet on the census's
+status, identity for x86_64-linux/-windows/arm64 back, emit's golden from the base, release a real step, the fixed
+point's owed-check), r6n (names, overload and win-structure pass on Windows with REQUIRE_ORACLE=1), r6x (two Linux slots,
+the Windows pool), g2 (wselfc and wfixed* run alone; the `wintools` family; cycles' lost verdict).
+- **Gate: tools/wave-gate w21g -w 82bd61a9 at 027251b9**, then the two failed steps rerun by the gate itself (`-k`) with
+  g2's script: **44 passed, 0 failed, 4 not run** (the fixed points, not owed by the script's check). The first run's one
+  FAIL (wtms2 at Windows 4-6/6, "Device or resource busy") was wselfc relinking the compiler beside it, and its cycles
+  step lost its verdict to a shared variable - both g2's; with them mended wtms2 passed 413/0, wselfc 103/103 alone,
+  cycles PASS (807 equal, 8 owed or accepted, 5 new, 0 worse). Landed at g2 201767ca, which changes only the gate
+  script: the recommended option, taken under the user's standing instruction (2026-11-15).
