@@ -1630,8 +1630,8 @@ files (lane m6ad's):
   18 and 9 differ, wave 18's cases alone. tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **818 passed, 0
   failed, 192,802,451 cycles** (wave 18's four new cases over round 22's 814 and 192,009,106; every text is the
   base's); g-same 871 same, 0 differ, 0 broken; asm6x.sh 837 objects, 0 failed at -O0 and -O2; census 0;
-  exclusions 0/0, comments 0 over, memory gate, ast-residue, generate rc 0. Walker legs at -O2: shards 1/3 and
-  2/3 273 and 274 passed, 0 failed. **Not finished at the hour**: walker -O2 shard 3/3 and the three -O0 shards,
+  exclusions 0/0, comments 0 over, memory gate, ast-residue, generate rc 0. Walker legs at -O2 **818 passed, 0
+  failed**. **Not finished at the hour**: the walker legs' three -O0 shards,
   queued on the one lock behind the coordinator's wave 18 gate (~/m6af-gate3.out holds them). Not run (the
   coordinator's): winpass, make test, ssa.sh.
 - **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
