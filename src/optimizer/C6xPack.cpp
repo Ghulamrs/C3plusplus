@@ -1277,75 +1277,37 @@ void tidyStream(MStream &s, bool labels) {
     if (labels) dropUnnamedLabels(s);
 }
 
-namespace {
-
-// An edited line as an entry: read where `streamOf` cannot hold it (`c6x-loop-unread` names it).
-MInst entry(const Line &l) {
-    MStream one;
-    if (streamOf(std::vector<Line>(1, l), one)) return one[0];
-    if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-loop-unread: %s\n", l.raw.c_str());
-    read(l.raw + "\n", one);
-    return one[0];
-}
-// The edit on the operands: `from`'s mnemonic, predicate and operands assigned where the line's differ (a fresh entry
-// where `from` is none); its spelling the line's, else the line read.
-MInst edited(const Line &l, const MInst *from) {
-    MInst x;
-    if (from != nullptr && from->kind == MInst::Instruction && !from->packed && !from->par && from->unit == 0) x = *from;
-    bool ok = l.instr && !l.verbatim && l.ops.size() <= 4;
-    if (ok && x.m.str() != l.mnem) x.m = opt::StrId(l.mnem);
-    const bool predNot = !l.pred.empty() && l.pred[0] == '!';
-    x.pred = l.pred.empty() ? kNoReg : static_cast<std::uint8_t>(regNumber(l.pred.substr(predNot ? 1 : 0)));
-    x.predNot = predNot;
-    for (std::size_t o = 0; ok && o < 4; o++)
-        if (o >= l.ops.size()) x.op[o] = MOperand();
-        else if (o >= x.operands || x.op[o].str() != l.ops[o]) x.op[o] = MOperand(l.ops[o]);
-    x.operands = static_cast<std::uint8_t>(ok ? l.ops.size() : 0);
-    if (!ok || x.str() != l.raw + "\n") return entry(l);
-    return x;
-}
-
-}   // namespace
-
-LoopText::LoopText(MStream &stream) : s(stream), gone(stream.size(), false) { for (std::size_t k = 0; k < s.size(); k++) v.push_back(viewOf(s[k])); }
+LoopText::LoopText(MStream &stream) : s(stream), gone(stream.size(), false) {}
 bool LoopText::label(std::size_t k, std::string &name) const { return !gone[k] && !s[k].packed && labelLike(s[k], name); }
 void LoopText::rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
     if (modelled(s[k])) readsAndWrites(s[k], reads, writes); else readsAndWrites(lineOf(s[k]), reads, writes);
 }
-void LoopText::blank(std::size_t k) { v[k] = parse(""); gone[k] = pending = stale = true; }
-void LoopText::set(std::size_t k, const MInst &x) { s[k] = x; v[k] = viewOf(x); stale = true; }
-void LoopText::set(std::size_t k, const Line &l) { set(k, edited(l, &s[k])); v[k] = l; }
+void LoopText::blank(std::size_t k) { gone[k] = pending = stale = true; }
+void LoopText::set(std::size_t k, const MInst &x) { s[k] = x; stale = true; }
 
 // One loop's rewrite applied before the next loop is looked at, so liveness asked is of the stream as it stands: the
-// entries `pre` (or lines, made entries) before entry h, the blanked dropped; where the back edge at i went.
-std::size_t LoopText::apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) {
-    MStream made;
-    for (std::size_t p = 0; p < pre.size(); p++) made.push_back(edited(pre[p], nullptr));
-    return apply(h, made, i);
-}
+// entries `pre` before entry h, the blanked dropped - and an entry that spells nothing; where the back edge at i went.
 std::size_t LoopText::apply(std::size_t h, const MStream &pre, std::size_t i) {
     MStream to;
-    std::vector<Line> lines;
     std::size_t at = i;
     for (std::size_t k = 0; k < s.size(); k++) {
-        if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(pre[p]); lines.push_back(viewOf(pre[p])); }
-        if (!gone[k] && (v[k].instr || !v[k].raw.empty())) { to.push_back(s[k]); lines.push_back(v[k]); }
+        if (k == h) to.insert(to.end(), pre.begin(), pre.end());
+        if (!gone[k] && (s[k].kind == MInst::Instruction || s[k].str().size() > 1)) to.push_back(s[k]);
         if (k == i) at = to.size() - 1;
     }
     s.swap(to);
-    v.swap(lines);
     gone.assign(s.size(), false);
     pending = false;
     stale = true;
     return at;
 }
 
-// The stream's liveness; the lines' while a blank is pending, since the blanked entry still stands in the stream.
+// The stream's liveness; while a blank is pending the blanked entry, which still stands in the stream, is read as nothing.
 void LoopText::current() {
     if (!stale) return;
     if (pending) {
         std::vector<LiveFacts> facts;
-        for (std::size_t k = 0; k < v.size(); k++) facts.push_back(liveFacts(v[k]));
+        for (std::size_t k = 0; k < s.size(); k++) facts.push_back(gone[k] ? LiveFacts() : liveFacts(s[k]));
         liveness(facts, in, out);
     } else liveness(s, in, out);
     stale = false;

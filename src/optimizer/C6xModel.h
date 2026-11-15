@@ -114,11 +114,10 @@ std::string pairOf(const std::string &lo, const std::string &hi);
 std::string partner(const std::string &r);
 bool legalForm(Line &r);
 
-// What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit, a stream's (C6xPack.cpp): `v`
-// its entries as lines, a line blanked or set on the entry too, a preheader inserted, the blanks dropped, liveness asked.
+// What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit, a stream's (C6xPack.cpp):
+// an entry blanked or set, a preheader inserted, the blanks dropped, liveness asked.
 struct LoopText {
     MStream &s;
-    std::vector<Line> v;
     std::vector<bool> gone;
     std::vector<std::uint64_t> in, out;
     bool stale = true, pending = false;
@@ -131,9 +130,7 @@ struct LoopText {
     void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const;
     void blank(std::size_t k);
     void set(std::size_t k, const MInst &x);
-    void set(std::size_t k, const Line &l);
     std::size_t apply(std::size_t h, const MStream &pre, std::size_t i);             // the back edge's new place
-    std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);
     void compact() { apply(s.size(), MStream(), 0); }
     std::uint64_t liveIn(std::size_t k) { current(); return in[k]; }
     std::uint64_t liveOut(std::size_t k) { current(); return out[k]; }
