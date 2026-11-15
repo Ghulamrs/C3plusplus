@@ -1604,4 +1604,4 @@ substitution for the simplest function template, behind CXX1_TEMPLATE_SUBST).
   above round 22 by +11,926** (map-set-node-stability +10,050 and six of a few hundred) - the inliner's unit budget
   declines one `rotateLeft` in `rebalance`; two mends tried made it worse and were reverted. Also owed: cxx3's
   refusal of `C()(a,b)` inside OptTable.cpp (no standalone case yet), and tests/open/namespace-unnamed-nested-leaks.
-  New baseline: 192,802,451 cycles over all 815 (818 passed).
+  New baseline: the 811 common cases at 192,021,032 plus the four new ones (818 passed; 192,802,451 is wave 18 before sh-2).
