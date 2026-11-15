@@ -8,6 +8,5 @@
 
 #include <string>
 
-// The packets made on the function's stream - `before`, a selected body's entries where there is one, `after`;
-// `spelled` false: a line it does not spell, the text returned to be refused.
+// The packets of `before`, a selected body's entries, `after`; `spelled` false: a line not spelled, the text returned.
 std::string c6xSchedule(const std::string &before, const c6x::MStream *selected, const std::string &after, int level, bool &spelled);
