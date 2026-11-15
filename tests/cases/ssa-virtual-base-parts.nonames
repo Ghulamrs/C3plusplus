@@ -1,0 +1,1 @@
+x86_64-windows  the RTTI objects (??_R0 to ??_R4, and the vftable's locator slot) of a polymorphic class, which clang emits wherever the class is constructed and cxx1 where it is defined - empty-bases-adjacent.nonames; and the Microsoft RTTI for a class with a virtual base, ??_R1A@73FA@V@@8 by clang - virtual-base-vbtable.nonames (r6d, 2026-11-15).

@@ -64,9 +64,10 @@ if [ "${1:-}" = --reasons ]; then
     exit 0
 fi
 
+# No oracle is no verdict: NOT RUN and status 3, never a pass (R103); the Windows box is this suite's home (Q9).
 if ! command -v clang++ > /dev/null 2>&1; then
-    echo "names.sh: skipped - no clang++ to ask"
-    exit 0
+    echo "names.sh: NOT RUN - no clang++ to ask"
+    exit 3
 fi
 
 # Every case at once, JOBS of them (the machine's processors by default), each through

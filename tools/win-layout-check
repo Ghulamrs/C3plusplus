@@ -27,7 +27,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import coffobj  # noqa: E402
 
-signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+if hasattr(signal, "SIGPIPE"): signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 KINDS = re.compile(r"^(\?\?_7|\?\?_8|\?\?_R[0-4]|_CT\?\?|_CTA|_TI)")
 

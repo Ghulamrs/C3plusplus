@@ -1,0 +1,1 @@
+x86_64-windows  a closure named `$_N` by cxx1 where clang writes `UlvE_` (Itanium) or `<lambda_N>` with `@` for its deduced return (Microsoft) - the numbering and spelling lambda.nonames records (classed by r6d, 2026-11-15).

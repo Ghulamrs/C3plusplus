@@ -1,0 +1,30 @@
+Real name differences beside clang 19.1.5, names.sh on the Windows box at 458f8974 (r6d, 2026-11-15, R103).
+open.sh reads only programs; this is the names suite's register: case, target, cxx1's name (<), clang's (>).
+A row leaves when names.sh passes the case or a .nonames gives it a recorded reason.
+
+1. A closure met while an enclosing lambda's return is deduced is emitted under its trial name `$deduced_N`
+   (src/parser/ParserExprLambda.cpp:384); clang has the closure once, as `UlvE_` / `<lambda_N>`.
+   lambda-captured-this-ssa   all three   < _ZZN3Box6nestedEvENK10$deduced_0clEv
+   ssa-lambda-outer-capture   all three   < _ZZ4mainENK10$deduced_0clEv (and _1, _2)
+2. A lifetime-extended temporary of a namespace-scope reference: cxx1 `?$SN@@3HB`, clang `?$RT1@r@@3AEBHEB`
+   (Microsoft) and `_ZGR2ir_` (Itanium).
+   static-reference-scalar-temporary          x86_64-windows  < ?$S1@@3HB          > ?$RT1@r@@3AEBHEB
+   static-reference-member-scalar-temporary   x86_64-windows  < ?$S1@@3HB          > ?$RT1@cr@S@@2AEBHEB
+   static-reference-to-temporary              x86_64-windows  < ?$S1@@3UA@@A ...   > ?$RT1@gr@@3AEBUA@@EB ...
+                                              arm64-darwin                         > __ZGR2ir_
+3. win-structure's unwind check: dispUnwindHelp 0 in a function whose try body cannot throw (8 faults):
+   nested-parse-state -O2 ?tryHoldsALambda@@YAHXZ; ssa-ms-try -O0/-O2 ?nothingThrows@@YAHH@Z;
+   ssa-try-catch -O0 ?quiet@@YAHH@Z - both spellings; tools/win-unwind-check: "not an 8-byte slot inside the frame".
+
+Emission, not names (counted, not registered as defects): unused inline special members cxx1 defines
+(C1/D1 on ELF, C2: ssa-handler-exits, ssa-virtual-base-parts, ssa-ctor-delegate, ssa-class-prvalue; 46 rows);
+runtime calls each compiler chooses (__cxa_free_exception, _Unwind_Resume, _Init_thread_abort, __chkstk,
+atexit: 14 rows); an unused internal constant (default-argument-lowered); a file-local exit helper
+(array-loop-static lfWatch).
+Recorded since (.nonames rows by r6d): Microsoft RTTI emitted where the class is defined
+(ssa-member-pointer-call, ssa-virtual-base-parts, complete-object-builder, vptr-cdtor-lowered); and clang reading
+MSVC's <initializer_list> (ssa-class-values), the box's headers.
+Clang 19 against cl: a ThrowInfo of a pointer to const is `_TI2CPEAD` by cl and cxx1, `_TIC2PEAD` by clang
+(ssa-ms-throw, ssa-ms-try: now .nonames rows).
+Clang 19, not cxx1: `TnT_`/`TpTn` for a non-type parameter of dependent type (nontype-pack*,
+ssa-pack-small-shapes, template-arg-unsigned-name: 6 cases) - what clang 19 writes and the Mac's clang is to confirm.

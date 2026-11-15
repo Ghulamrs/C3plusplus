@@ -63,7 +63,7 @@ oracle, and the sentence has to be read.
 *reachability* depends on where it sits. `template <>` at
 `src/parser/ParserTemplate.cpp:40` is refused where a template parameter list
 is expected, while `template <> struct Box<int> { ... };` compiles; the
-functional-cast temporary at `src/sema/Overload.cpp:610` is refused
+functional-cast temporary at `src/sema/Overload.cpp:616` is refused
 during overload ranking, while `take(P(4))` and `P q = P(3);` compile. Both were
 checked with a program before this sentence was written, and the same habit is
 the reason `pending[]` once had eight keywords in it that were implemented.
@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2307` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:266` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3146`, `src/parser/ParserTopLevel.cpp:836` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3147`, `src/parser/ParserTopLevel.cpp:836` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:764` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -497,7 +497,7 @@ between the two lists.**
   the C6000 has no thread storage to put one in (measured 2026-10-20).
   `src/parser/ParserType.cpp:2008`, `tests/cases/thread-local.notarget`
 - **`alignas` past the stack's 8 on a local, on tms6747** - the C6000 backend
-  builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:825`,
+  builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:826`,
   `tests/cases/alignas-local.notarget`
 - **an over-aligned local in a function with a `try` or a local with a
   destructor, on x86_64-windows** - a funclet reaches the frame through the

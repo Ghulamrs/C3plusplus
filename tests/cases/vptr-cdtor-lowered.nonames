@@ -1,0 +1,1 @@
+x86_64-windows  the base-class descriptor clang writes ??_R17?0A@EA@Plain@@8 where cxx1 emits the class's RTTI where it is defined (??_R4Plain@@6B@) - delegating-constructor.nonames and empty-bases-adjacent.nonames record both (r6d, 2026-11-15).

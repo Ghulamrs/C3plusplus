@@ -1,5 +1,5 @@
 @echo off
-rem  tests/names.sh and tests/overload.sh on the Windows box.
+rem  tests/names.sh, tests/overload.sh and tests/win-structure.sh on the Windows box, their home (Q9).
 rem
 rem  Usage:  names-overload.cmd <root> [compiler]
 rem          <root>      the tree, e.g. C:\Users\GRA\work\rtsdiv\ws-a
@@ -43,12 +43,26 @@ set UROOT=/%UROOT:\=/%
 set UCXX1=%CXX1::=%
 set UCXX1=/%UCXX1:\=/%
 
-set LLVM=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin
-if not exist "%LLVM%\clang++.exe" (echo names-overload.cmd: no clang++.exe in "%LLVM%" - install Visual Studio's "C++ Clang tools" component & exit /b 2)
+rem  The LLVM of whichever Visual Studio 2022 is installed: the Windows box has the Build Tools (R103).
+set LLVM=
+for %%E in ("C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" "C:\Program Files\Microsoft Visual Studio\2022\BuildTools" "C:\Program Files\Microsoft Visual Studio\2022\Community" "C:\Program Files\Microsoft Visual Studio\2022\Professional" "C:\Program Files\Microsoft Visual Studio\2022\Enterprise") do (
+    if not defined LLVM if exist "%%~E\VC\Tools\Llvm\x64\bin\clang++.exe" set "LLVM=%%~E\VC\Tools\Llvm\x64\bin"
+)
+if not defined LLVM (echo names-overload.cmd: NOT RUN - no clang++.exe under any Visual Studio 2022 - install the "C++ Clang tools" component & exit /b 3)
+set ULLVM=%LLVM::=%
+set ULLVM=/%ULLVM:\=/%
+rem  A python that runs: Git's bash finds the Store's python3 stub first, which runs nothing.
+set PYTHON=
+for %%P in ("C:\Program Files\Python312\python.exe" "C:\Program Files\Python313\python.exe" "C:\Program Files\Python311\python.exe") do (
+    if not defined PYTHON if exist %%P set "PYTHON=%%~P"
+)
+if not defined PYTHON (echo names-overload.cmd: NOT RUN - no python for win-structure's checks & exit /b 3)
+set UPYTHON=%PYTHON::=%
+set UPYTHON=/%UPYTHON:\=/%
 
 set STATUS=0
-"C:\Program Files\Git\bin\bash.exe" -c "export PATH='/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin':$PATH; export CXX1='%UCXX1%' CLANG=clang++; cd '%UROOT%' && tests/names.sh" < NUL
-if errorlevel 1 set STATUS=1
-"C:\Program Files\Git\bin\bash.exe" -c "export PATH='/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin':$PATH; export CXX1='%UCXX1%' CLANG=clang++; cd '%UROOT%' && tests/overload.sh" < NUL
-if errorlevel 1 set STATUS=1
+for %%S in (names overload win-structure) do (
+    "C:\Program Files\Git\bin\bash.exe" -c "export PATH='%ULLVM%':$PATH; export CXX1='%UCXX1%' CLANG=clang++ PYTHON='%UPYTHON%'; cd '%UROOT%' && tests/%%S.sh" < NUL
+    if errorlevel 1 set STATUS=1
+)
 endlocal & exit /b %STATUS%

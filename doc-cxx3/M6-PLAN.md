@@ -1927,3 +1927,38 @@ legs to Windows; Linux keeps the self-host.
   are new. **win-structure.sh: names 504 agreeing, 96 differing, 225 under a .nonames**; its layout and unwind
   checks cannot run on this box - `python3` in Git's bash is the Store stub, and with a shim the tools stop on
   `signal.SIGPIPE`, which Windows' Python lacks - so its "557 differ" is the tools failing, not a measurement.
+### Lane r6d: R103 (names, overload, win-structure on Windows) and R110 (ADL), 2026-11-15, from 458f8974
+
+- **What made the three suites run on Windows** (their home, the user's Q9): `tools/windows/names-overload.cmd`
+  finds clang++ under whichever VS 2022 is installed (the box has the Build Tools; the script named Community's
+  LLVM) and a real python (Git's bash finds the Store's `python3` stub first), and now runs win-structure too;
+  win-structure takes `$PYTHON`, falling back to `python`; the four python tools guard `signal.SIGPIPE`, which
+  Windows' python lacks; `ulimit -t` is quiet in Git's bash. A missing oracle is **NOT RUN, status 3** in all
+  three - never rc 0; `make test` lets 3 through only without `REQUIRE_ORACLE=1`, which a gate sets.
+- **R110 mended.** `Lookup::lookupKeys` takes every argument's type ([basic.lookup.argdep]/2; the two-operand form
+  delegates to it), and no argument-dependent lookup is added where a block-scope function declaration of the
+  name is live (/3; `Parser::blockFunctions_`, popped by `leaveScope`). Cases `adl-every-argument` (clang 1 2)
+  and `adl-after-block-declaration` (clang 2; cxx3 answered 1 before), in tests/cases and tests/overload.
+- **names.sh on Windows**: 712 passed / 161 failed at 458f8974 + the ADL mend; **731 / 143** at r6d. The 143 by
+  case: box headers (clang refused: no Linux/Darwin headers, MSVC's STL at -std=c++11, a clang crash for
+  arm64-darwin) 78; C1/D1 and other inline special members on ELF (clang's constructor aliases; emission, not a
+  name) 44; runtime calls each compiler picks (`__cxa_free_exception`, `_Unwind_Resume`, `_Init_thread_abort`)
+  5; clang 19's `TnT_`/`TpTn` 6; an unused internal constant or exit helper emitted 2; the exe busy under my own
+  winpass 3 (all three passed in the first run). **Real, 5 cases, in tests/open/names-register.txt**: closures
+  met during a lambda's return deduction emitted as `$deduced_N` (2), and a lifetime-extended temporary's name
+  (`?$S1@@3HB` where clang writes `?$RT1@r@@3AEBHEB`, Itanium `_ZGR2ir_`; 3). Moved out of "other" this round:
+  30 .nonames rows citing reasons already recorded (static locals, closures, the unnamed namespace, RTTI emitted
+  where the class is defined, cl's `_TI2CPEAD` - measured with cl 19.44, clang writes `_TIC2PEAD`); and
+  tools/mangled-names drops file-local `__cxx1_vec_*` / `__cxx_global_array_dtor` and memset/memcpy/bzero
+  (48 rows differed by these alone).
+- **win-structure** at r6d (python working; it was 557 of 747 layouts "differing" under the Store stub): layout
+  749 compared, **0 differ**, 12 under a recorded names difference; names 528 agree / 53 differ / 246 .nonames - the
+  53 are MSVC's inline UCRT stdio alone 42, and the 11 the names classes above hold; unwind 0 faults but **8
+  `dispUnwindHelp 0`** in three functions whose try cannot throw (nested-parse-state -O2, ssa-ms-try -O0/-O2,
+  ssa-try-catch -O0, both spellings) - registered in tests/open/names-register.txt, not mended.
+- **overload.sh** 45 agreed / 1 differed (base-rvalue-reference: clang cannot read MSVC's <utility> at -std=c++11).
+- **Gates at r6d**: run.sh on Linux (g++ -Werror build, the new box) 1223 passed / 0 failed; Windows self-compile
+  103 of 103 by stage 0; exclusions 0 uncited / 0 stale (three citations re-pointed), comment cap 0 over, memory
+  gate and ast-residue not above their baselines, ide/generate.py --check clean; cl /W4 /WX build clean.
+  winpass -O0 started at one lane beside the suites and had not finished at the hour - owed to the wave gate.
+  src/: +25 -7 lines (Lookup, Overload, Parser.h/.cpp, ParserClass).

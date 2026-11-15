@@ -24,6 +24,11 @@ CXX1="${CXX1:-./cxx3.exe}"
 case "$CXX1" in /*) ;; *) CXX1="$(pwd)/$CXX1" ;; esac
 OUT=tests/out-winstructure
 CLANG=${CLANG:-clang++}
+# Git's bash on Windows has python3 as the Store's stub, which runs nothing: the checks take a python that answers.
+PYTHON=${PYTHON:-python3}
+"$PYTHON" -c 1 > /dev/null 2>&1 || PYTHON=python
+"$PYTHON" -c 1 > /dev/null 2>&1 || { echo "win-structure.sh: NOT RUN - no python to run the layout and unwind checks"; exit 3; }
+export PYTHON
 TARGET=x86_64-pc-windows-msvc
 
 if [ "${1:-}" = --one ]; then
@@ -36,10 +41,10 @@ if [ "${1:-}" = --one ]; then
     nomasm=; [ -f "tests/cases/${base%.part}.nomasm" ] && nomasm=yes
     for L in 0 2; do
         if [ -z "$nomasm" ]; then
-            ( ulimit -t 60; "$CXX1" -nologo -arch x86_64-windows -masm=masm -O$L -c "$src" -o "$OUT/$base.O$L.masm.obj" \
+            ( ulimit -t 60 2>/dev/null; "$CXX1" -nologo -arch x86_64-windows -masm=masm -O$L -c "$src" -o "$OUT/$base.O$L.masm.obj" \
                 < /dev/null > /dev/null 2>&1 ) || echo "refused: -masm=masm -O$L" >> "$log"
         fi
-        if ( ulimit -t 60; "$CXX1" -nologo -arch x86_64-windows -masm=gnu -O$L -S "$src" -o "$OUT/$base.O$L.gnu.s" \
+        if ( ulimit -t 60 2>/dev/null; "$CXX1" -nologo -arch x86_64-windows -masm=gnu -O$L -S "$src" -o "$OUT/$base.O$L.gnu.s" \
                 < /dev/null > /dev/null 2>&1 ); then
             "$CLANG" -target $TARGET -c "$OUT/$base.O$L.gnu.s" -o "$OUT/$base.O$L.gnu.obj" > "$OUT/$base.O$L.gnu.err" 2>&1 \
                 || echo "clang refused the GNU spelling at -O$L: $(head -1 "$OUT/$base.O$L.gnu.err")" >> "$log"
@@ -48,12 +53,12 @@ if [ "${1:-}" = --one ]; then
         fi
     done
     # clang's object of the same source, the reference the layout check reads; its refusal is not a fault here.
-    ( ulimit -t 60; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
+    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
         < /dev/null > /dev/null 2>&1 ) || echo "clang refused the source" >> "$log"
     if [ -f "$OUT/$base.O0.masm.obj" ] && [ -f "$OUT/$base.ref.obj" ]; then
-        python3 tools/win-layout-check "$OUT/$base.O0.masm.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
+        "$PYTHON" tools/win-layout-check "$OUT/$base.O0.masm.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
     elif [ -f "$OUT/$base.O0.gnu.obj" ] && [ -f "$OUT/$base.ref.obj" ]; then
-        python3 tools/win-layout-check "$OUT/$base.O0.gnu.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
+        "$PYTHON" tools/win-layout-check "$OUT/$base.O0.gnu.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
     fi
     TARGETS=x86_64-windows tools/mangled-names "$src" > "$OUT/$base.names" 2>&1 || echo "names: differ" >> "$log"
     exit 0
@@ -71,8 +76,8 @@ cases() {
     done
 }
 if ! command -v "$CLANG" > /dev/null 2>&1; then
-    echo "win-structure.sh: skipped - no $CLANG to assemble the GNU spelling and compile the reference"
-    exit 0
+    echo "win-structure.sh: NOT RUN - no $CLANG to assemble the GNU spelling and compile the reference"
+    exit 3
 fi
 cases "$@" | xargs -P "$JOBS" -n 1 sh "$0" --one
 
@@ -90,7 +95,7 @@ echo "win-structure.sh: $skipped cases skipped for the target, $refused refusals
 # The unwind check, over every object of both spellings and levels at once.
 ls "$OUT"/*.masm.obj "$OUT"/*.gnu.obj > "$OUT/objects" 2>/dev/null
 if [ -s "$OUT/objects" ]; then
-    xargs python3 tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1 || status=1
+    xargs "$PYTHON" tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1 || status=1
     grep -v '^win-unwind-check:' "$OUT/unwind.report"
     grep '^win-unwind-check:' "$OUT/unwind.report" | sed 's/^win-unwind-check:/win-structure.sh: unwind:/'
 fi

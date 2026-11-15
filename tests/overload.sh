@@ -23,16 +23,16 @@
 # the parameters used - so a warning about an unused one cannot hide a bug -
 # without letting the value affect which number comes out.
 #
-# clang is needed, so this skips where there is none, exactly as names.sh does.
-# The Linux box has no clang and reports the skip rather than a pass.
+# clang is needed: where there is none this says NOT RUN and exits 3, as names.sh does.
 set -u
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
 CLANG=${CLANG:-clang++}
 
+# No oracle is no verdict: NOT RUN and status 3, never a pass (R103); the Windows box is this suite's home (Q9).
 if ! command -v "$CLANG" > /dev/null 2>&1; then
-    echo "overload.sh: skipped - no $CLANG to ask"
-    exit 0
+    echo "overload.sh: NOT RUN - no $CLANG to ask"
+    exit 3
 fi
 
 OUT=tests/out-overload
@@ -51,7 +51,7 @@ one() {
 
     ) &
     (
-        if ( ulimit -t 10; $CXX1 "$src" -o "$OUT/$base.cxx1" < /dev/null ) \
+        if ( ulimit -t 10 2>/dev/null; $CXX1 "$src" -o "$OUT/$base.cxx1" < /dev/null ) \
                2> "$OUT/$base.cxx1.err"; then
             echo accept > "$OUT/$base.cxx1.verdict"
             "$OUT/$base.cxx1" > "$OUT/$base.cxx1.out" 2>&1 || true

@@ -88,6 +88,7 @@ public:
     std::vector<std::string> lookupKeys(const std::string &name,
                                         const Type *left,
                                         const Type *right) const;
+    std::vector<std::string> lookupKeys(const std::string &name, const std::vector<const Type *> &args) const;
 
     // **The four tables the parser fills and this module answers about**: functions, objects, type names and enumerators.
     std::vector<Signature> functions_;
