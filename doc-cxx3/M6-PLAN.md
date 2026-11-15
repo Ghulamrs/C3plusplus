@@ -1818,10 +1818,11 @@ legs to Windows; Linux keeps the self-host.
   refuses at -O2 ("EXT's source and destination are on one side", EXTU for the third) - vm6747 never assembled
   them; and `long-double-literal-exact-digits`, whose five numbers differ from .expected in the last digits on
   sim6747 (TI's runtime prints them) and not on vm6747. `tests/ti-link.sh` -O2 on Linux (TI's lnk6x 7.4.4):
-  **828 linked, 3 failed** - the same three asm6x refusals - 34 not for this target. `release-check-box.py` on
+  **828 linked, 3 failed** - the same three asm6x refusals - 34 not for this target; at -O0 on Windows (the same
+  lnk6x 7.4.4) **831 linked, 0 failed**. `release-check-box.py` on
   Windows: **PASS, 34 programs x O1 O2 Os, 166 s**, sim ok and emu ok on every one.
-- **R104, the fixed point.** Windows, MASM spelling, -O2: **103 of 103 the same object from stages 0, 1 and 2**;
-  stage 3 built (2 = 3 was compiling at the hour). Linux -O0: stage 0 103/103 in 199 s, stage 1 103/103 (one job
+- **R104, the fixed point.** Windows, MASM spelling, -O2: **103 of 103 the same object from stages 0, 1 and 2,
+  and 103 of 103 from stages 2 and 3** (36 minutes, stage 0's cl build included). Linux -O0: stage 0 103/103 in 199 s, stage 1 103/103 (one job
   cut at its 25 minutes at 91, resumed with SELFHOST_RESUME=1, 527 s more), stage 2 built; stage 2's compile was
   running at the hour. The -O0 stages compile slowly because each is a -O0 build of cxx3: a whole -O0 stage passes
   25 minutes on 2 cores, so the job is split. Linux -O2 and Windows -O0 were queued behind them. Windows -O0's first
