@@ -74,6 +74,8 @@ public:
     void visit(const StrLit &) override;
     void visit(const VaStart &) override;
     void visit(const VaArg &) override;
+    void vaStartAt();                         // A4 = &ap, for the walker and the selector
+    void vaArgAt(const Type *t);
     void visit(const MemberAccess &) override;
     void visit(const Switch &) override;
     void visit(const While &) override;
@@ -275,7 +277,7 @@ private:
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;      // ssaHome_: 0, or one past the home's index
     std::vector<ir::BlockId> ssaOrder_;                            // the order the blocks are written in
-    std::vector<char> ssaFused_;                                   // a compare written by its block's branch
+    std::vector<char> ssaFused_;                                   // 1: a compare written by its branch; 2: a cast remade at its calls
     std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
     int ssaSelected_ = 0, ssaWalked_ = 0;
     const ir::Function *ssaChoose(const Function &fn);
