@@ -2300,6 +2300,9 @@ a file the gate reads; nothing explained by hand.** QC: register-named symbols s
   that did not differ both fail. `cycles`: a WORSE row passes only for a case named there at `tms6747 2`; owed and
   accepted rows stay in tests/tms6747-cycles.txt, which the gate reads. `baselines` (a report step): the judges' files
   at the Mac's HEAD must be the gated commit's, or the report fails.
+  `cycles` held by hand on Linux (its box side, w20g's joined -O2 cycles.txt, 820 cases): as measured **PASS** (807
+  equal, 8 accepted, 5 new, 0 WORSE - template-subst's re-record holds); access-through-base raised 132 -> 5132
+  **FAIL** "WORSE and NOT NAMED: access-through-base tms6747 2"; the same with that row named **PASS**.
 - **N3** `identlnx`, `identwin` (both spellings), `identa64` - the same judge over the other targets; `ssa1`, `ssa2`
   (tests/ssa.sh at SSA_LEVEL 1, 2); `run2` (run.sh -O2 on Linux).
 - **N4** the fixed point is owed when `-m <milestone>` is given, or base..commit adds or deletes a src/ file or takes
@@ -2311,3 +2314,13 @@ a file the gate reads; nothing explained by hand.** QC: register-named symbols s
 - **N5** `emit`: the base records the -O2 golden in the run, the gated tree is compared to it, changed files judged
   by the same expected file; no golden is a FAIL. `release`: tools/c6747/release-check-box.py on the Windows box at
   /affinity 3FF under the 25-minute cap, PASS only on its "PASS in" line - no standing excuse.
+- **The gate, `tools/wave-gate g1b -w 82bd61a9` at `906a313f`** (17 minutes): **17 passed, 0 failed, 30 not run, 0
+  without a reason.** PASS: build (and the base), static, run2 1226/0, ssa1 and ssa2 899/0, identical 2631 / identlnx
+  2631 / identwin 5262 / identa64 2631 compared, 0 differ, 0 named; emit 0 of 842 changed against the base's golden;
+  census outside=0, -O2 4224, -O0 4070 at their baselines; wbuild; **names 877/0 (20 OPEN rows owed), overload 46/0,
+  winstruct layout 844/0** - r6n's rows make all three green; release PASS 368 s; baselines. NOT RUN: the four fixed
+  points (not owed, checked); cycles, the tms/wtms/sim shards, winpass, cdb, the selfc pair, asm, declines, gdb, run1,
+  maketest, subst - steps g1 did not change, not re-run in the hour, owed by the next wave gate; the Mac's four.
+- **The deliberate failure**: the same `identical` step (the box side of the script, in g1b's tree) with wave 19's
+  build (`~/w19g`) as the base and nothing named: **FAIL - 21 differ, 0 named, NOT NAMED: adl-after-block-declaration
+  tms6747 0, ...** (the cases and C6000 mends wave 20 made).
