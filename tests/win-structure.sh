@@ -53,7 +53,7 @@ if [ "${1:-}" = --one ]; then
         fi
     done
     # clang's object of the same source, the reference the layout check reads; its refusal is not a fault here.
-    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
+    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w $HEADERS -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
         < /dev/null > /dev/null 2>&1 ) || echo "clang refused the source" >> "$log"
     if [ -f "$OUT/$base.O0.masm.obj" ] && [ -f "$OUT/$base.ref.obj" ]; then
         "$PYTHON" tools/win-layout-check "$OUT/$base.O0.masm.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
@@ -79,6 +79,8 @@ if ! command -v "$CLANG" > /dev/null 2>&1; then
     echo "win-structure.sh: NOT RUN - no $CLANG to assemble the GNU spelling and compile the reference"
     exit 3
 fi
+# clang's reference object reads the headers cxx1 reads, as tools/mangled-names gives them (r6n).
+HEADERS=$(tools/mangled-names --headers "$PWD/$OUT/shim"); export HEADERS
 cases "$@" | xargs -P "$JOBS" -n 1 sh "$0" --one
 
 status=0
