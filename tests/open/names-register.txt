@@ -12,17 +12,18 @@ A row leaves when names.sh passes the case or a .nonames gives it a recorded rea
    static-reference-member-scalar-temporary   x86_64-windows  < ?$S1@@3HB          > ?$RT1@cr@S@@2AEBHEB
    static-reference-to-temporary              x86_64-windows  < ?$S1@@3UA@@A ...   > ?$RT1@gr@@3AEBUA@@EB ...
                                               arm64-darwin                         > __ZGR2ir_
-3. Microsoft RTTI hierarchy records (??_R1, ??_R2, ??_R3, ??_R0) clang emits for a class with a vftable that
-   cxx1 does not, or emits under ??_R4 of another class.
-   ssa-member-pointer-call, ssa-virtual-base-parts, complete-object-builder, vptr-cdtor-lowered   x86_64-windows
-4. A copy of `std::initializer_list<int>`'s constructor clang defines and cxx1 does not.
-   ssa-class-values   x86_64-windows   > ??0?$initializer_list@H@std@@QEAA@XZ
+3. win-structure's unwind check: dispUnwindHelp 0 in a function whose try body cannot throw (8 faults):
+   nested-parse-state -O2 ?tryHoldsALambda@@YAHXZ; ssa-ms-try -O0/-O2 ?nothingThrows@@YAHH@Z;
+   ssa-try-catch -O0 ?quiet@@YAHH@Z - both spellings. clang gives the slot an 8-byte home inside the frame.
 
 Emission, not names (counted, not registered as defects): unused inline special members cxx1 defines
 (C1/D1 on ELF, C2: ssa-handler-exits, ssa-virtual-base-parts, ssa-ctor-delegate, ssa-class-prvalue; 46 rows);
 runtime calls each compiler chooses (__cxa_free_exception, _Unwind_Resume, _Init_thread_abort, __chkstk,
 atexit: 14 rows); an unused internal constant (default-argument-lowered); a file-local exit helper
 (array-loop-static lfWatch).
+Recorded since (.nonames rows by r6d): Microsoft RTTI emitted where the class is defined
+(ssa-member-pointer-call, ssa-virtual-base-parts, complete-object-builder, vptr-cdtor-lowered); and clang reading
+MSVC's <initializer_list> (ssa-class-values), the box's headers.
 Clang 19 against cl: a ThrowInfo of a pointer to const is `_TI2CPEAD` by cl and cxx1, `_TIC2PEAD` by clang
 (ssa-ms-throw, ssa-ms-try: now .nonames rows).
 Clang 19, not cxx1: `TnT_`/`TpTn` for a non-type parameter of dependent type (nontype-pack*,
