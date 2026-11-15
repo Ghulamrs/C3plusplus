@@ -1803,3 +1803,50 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+## The M6c review's mends
+
+### R106: M6's judge in the tree - `tools/c6x-cycles` and `tests/tms6747-cycles.txt`, 2026-11-15, lane r6b
+
+From main 458f8974. The review's R106: "cycles equal or better, case by case" was a hand comparison between files
+in the Linux box's home (`~/cyc-m6ae.txt`, `~/cyc-w19g.txt`). No src/ line changed (src/ lines before and after: the same).
+- **The tool.** `tools/c6x-cycles` runs `tests/tms6747.sh`'s shards (CYCLES=1; SHARDS=3; LEVELS="-O2 -O0"), keeps each
+  level's counts in `tests/out-c6x-cycles/cycles<level>.txt` and compares them case by case with
+  `tests/tms6747-cycles.txt`: one line for every case that is not equal (`better`, `worse`, `WORSE`, `new`, `MISSING`,
+  `STALE`), then the counts and both totals. It fails on a case worse and neither owed nor accepted, on one above its
+  cap, on a baseline case that gave no count, on an `owed`/`accepted` line no longer needed, and on a shard that
+  failed. `--record` writes the baseline (a column not run keeps what it held); `--check <cycles.txt> [level]`
+  compares a collected file and runs nothing; `--baseline <file>` takes another baseline, a collected file included.
+- **The baseline's form.** A row a case, a column a level; `measured <column> <commit> <date>`; and
+  `owed|accepted <case> <column> <cap> <reason>` - the column holds the count the case stands above, the cap is how
+  far. **Q1 (the user, 2026-11-15): wave 18's seven are accepted as a library cost** - their -O2 column is round
+  22's count, their cap wave 19's, the cause "the inliner's unit budget declines rotateLeft in rebalance".
+- **Q4 (the user): sim6747 in every wave gate.** SIM=1 runs tms6747.sh's sim6747 leg and judges sim6747's own count
+  (`sim6747 -c` on the linked TI program) as the columns `<level>-sim`; SIM=0 says "NOT RUN" aloud. The hook in
+  tests/tms6747.sh: with CYCLES=1 the sim leg passes `-c`, cuts the count into `<case>.simcycles` and collects
+  `cycles-sim.txt`.
+  The hook is behind its own switch (SIMCYCLES=1, set by the tool), so the sim leg every other caller runs is the
+  line it was. **Owed: the hook has not run once and no `-sim` column is recorded** - the Linux lock was held past
+  the lane's hour, and the user's split of 2026-11-15 sends SIM=1 to the Windows box, where SIM6747 is not built yet
+  (boxkit/windows-split-2026-11-15.md says how). First step there: one case with CYCLES=1 SIM=1 SIMCYCLES=1 to see
+  that `sim6747 -c --run` prints the CYCLES line, then `SIM=1 tools/c6x-cycles --record`.
+- **Checked against the box's files** (Linux, `--check`, nothing run): wave 19's `~/cyc-w19g.txt` against round
+  22's `~/cyc-m6ae.txt` as the baseline: 815 cases, 811 common, **804 equal, 7 worse, 0 better**, 4 new, 192,009,106
+  -> 192,021,032, exit 1 with the seven named. **The plan's "802 equal" (wave 19's entry, and this lane's brief) is
+  a slip**: 802 was 811 less the nine before sh-2; with seven above it is 804, and 804 + 7 = 811. Against wave
+  18's `~/cyc-w18g.txt`: 805 equal, 10 better, 0 worse (192,802,451 -> 192,036,975).
+- **The baseline, recorded by the tool itself** (`COMMIT=458f8974 tools/c6x-cycles --record` on the Linux box, vm6747,
+  SIM=0, in ~/r6b: wave 19's tree and cxx3.exe, its src, include, lib, tests, tools and Makefile hash-equal to
+  458f8974's blobs): 818 passed, 0 failed at each level; **815 cases; -O2 192,036,975 cycles** (wave 19's total
+  exactly), **-O0 397,274,101**. With the seven's column set to round 22's count the -O2 column sums to 192,025,049.
+  The tool on its own collected files: -O2 808 equal, 0 better, 7 worse (7 accepted), 0 new, 0 missing, exit 0;
+  -O0 815 equal, exit 0; on wave 19's file the same line. A case raised by hand (+5) and an accepted case one cycle
+  past its cap: both `WORSE`, exit 1. Round 22's own file: 811 equal, 4 missing, 7 stale, exit 1.
+- **Left**: the `-sim` columns (above); `tools/wave-gate`'s `cycles` step is lane r6a's to call
+  (`tools/c6x-cycles`, or `SIM=1 tools/c6x-cycles` once the columns exist); the baseline was taken on Linux and
+  each `measured` line says so - a Windows run compares against it (the two vm6747 builds agreed cycle for cycle
+  at the qualification).
+- **Static gates** (the Windows box, work\r6b, affinity 3FF, the lane's tree): tools/exclusions --check 129 sites, 0
+  uncited, 0 stale; comment-lines 0 groups over the cap; ide/generate.py --check up to date. tools/memory-gate does
+  not start on Windows (`signal.SIGPIPE`, tools/memory-gate:30 - a defect for the split); no src/ file changed, so
+  its count is wave 19's.

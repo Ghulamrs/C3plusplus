@@ -7,8 +7,8 @@
 #   tools/c6x-cycles --check <file> [level]   compare a collected cycles.txt (level -O2 unless said); runs nothing
 #   --baseline <file>                         another baseline: this tool's, or a collected cycles.txt
 #
-# LEVELS="-O2 -O0", SHARDS=3, SIM=0 (SIM=1 asks for tms6747.sh's sim6747 leg too); CXX1, VM, JOBS and the
-# rest are tms6747.sh's. What was collected stays in tests/out-c6x-cycles/cycles<level>.txt.
+# LEVELS="-O2 -O0", SHARDS=3. SIM=1 runs tms6747.sh's sim6747 leg too and judges its counts, the columns
+# <level>-sim; SIM=0 (the default) says they were not run. CXX1, VM, JOBS and the rest are tms6747.sh's. What was collected stays in tests/out-c6x-cycles/cycles<level>.txt.
 # VERBOSE=1 names the equal cases too. Exit 1: a case worse and not owed, or above its owed cap; a case
 # of the baseline missing; an owed line no longer needed; a shard that failed. Exit 2: usage.
 set -u
@@ -35,9 +35,9 @@ compare() {
     FILENAME == B {
         if ($0 ~ /^#/ || NF == 0) next
         if ($1 == "levels") { for (i = 2; i <= NF; i++) if ($i == level) col = i; tool = 1; next }
-        if ($1 == "measured") { at = $2; next }
-        if ($1 == "owed") {
-            if ($3 == level) { cap[$2] = $4 + 0; r = $0; sub(/^owed +[^ ]+ +[^ ]+ +[^ ]+ */, "", r); why[$2] = r }
+        if ($1 == "measured") { if ($2 == level) at = $3; next }
+        if ($1 == "owed" || $1 == "accepted") {
+            if ($3 == level) { cap[$2] = $4 + 0; kind[$2] = $1; r = $0; sub(/^[a-z]+ +[^ ]+ +[^ ]+ +[^ ]+ */, "", r); why[$2] = r }
             next
         }
         if ($2 ~ /^count=/) { v = $2; sub("count=", "", v); base[$1] = v + 0; col = 2; next }
@@ -55,21 +55,21 @@ compare() {
             else if (d < 0) { better++; printf "  better  %s %d -> %d (%d)\n", c, base[c], cur[c], d }
             else if ((c in cap) && cur[c] <= cap[c]) {
                 worse++; owed++
-                printf "  worse   %s %d -> %d (+%d) owed, cap %d: %s\n", c, base[c], cur[c], d, cap[c], why[c]
+                printf "  worse   %s %d -> %d (+%d) %s, cap %d: %s\n", c, base[c], cur[c], d, kind[c], cap[c], why[c]
             } else if (c in cap) {
                 worse++; bad++
-                printf "  WORSE   %s %d -> %d (+%d) above its owed cap %d\n", c, base[c], cur[c], d, cap[c]
+                printf "  WORSE   %s %d -> %d (+%d) above its cap %d\n", c, base[c], cur[c], d, cap[c]
             } else { worse++; bad++; printf "  WORSE   %s %d -> %d (+%d)\n", c, base[c], cur[c], d }
         }
         for (c in base) if (!(c in cur)) { missing++; printf "  MISSING %s (baseline %d)\n", c, base[c] }
         for (c in cap) if ((c in cur) && (c in base) && cur[c] <= base[c]) {
-            stale++; printf "  STALE   owed %s %s: no longer worse - take its line out of %s\n", c, level, B
+            stale++; printf "  STALE   %s %s: no longer worse - take its line out of %s\n", c, level, B
         }
-        printf "c6x-cycles %s: %d cases, %d in the baseline%s: %d equal, %d better, %d worse (%d owed), %d new, %d missing; %d -> %d cycles\n",
+        printf "c6x-cycles %s: %d cases, %d in the baseline%s: %d equal, %d better, %d worse (%d owed or accepted), %d new, %d missing; %d -> %d cycles\n",
             level, n, common, (at != "" ? " (" at ")" : ""), equal, better, worse, owed, fresh, missing, was, now
         if (better + fresh > 0 && tool) printf "c6x-cycles %s: better or new cases are not in the baseline until --record\n", level
         if (bad + missing + stale > 0) {
-            printf "c6x-cycles %s: FAILED - %d worse and not owed, %d missing, %d stale owed\n", level, bad, missing, stale
+            printf "c6x-cycles %s: FAILED - %d worse and neither owed nor accepted, %d missing, %d stale\n", level, bad, missing, stale
             exit 1
         }
     }' "$BASE" "$2"
@@ -85,61 +85,70 @@ fi
 if [ "$(uname -s)" = Darwin ]; then echo "c6x-cycles: the C6000 runs on the Windows and Linux boxes, not on the Mac"; exit 2; fi
 [ "$mode" = record ] || [ -f "$BASE" ] || { echo "c6x-cycles: no baseline at $BASE (--record writes one)"; exit 2; }
 mkdir -p "$KEEP"
-rc=0
+rc=0; cols=
 for l in $LEVELS; do
     flags=$l; [ "$l" = -O0 ] && flags=
-    : > "$KEEP/cycles$l.txt"
+    : > "$KEEP/cycles$l.txt"; cols="$cols $l"
+    [ "${SIM:-0}" = 1 ] && { : > "$KEEP/cycles$l-sim.txt"; cols="$cols $l-sim"; }
     h=1
     while [ "$h" -le "$SHARDS" ]; do
-        if ! SHARD=$h/$SHARDS CXX1_FLAGS="$flags" CYCLES=1 SIM="${SIM:-0}" sh tests/tms6747.sh > "$KEEP/shard$l-$h.log" 2>&1; then
+        sc=; [ "${SIM:-0}" = 1 ] && sc=1
+        if ! SHARD=$h/$SHARDS CXX1_FLAGS="$flags" CYCLES=1 SIM="${SIM:-0}" SIMCYCLES=$sc sh tests/tms6747.sh > "$KEEP/shard$l-$h.log" 2>&1; then
             echo "c6x-cycles $l: shard $h/$SHARDS failed"; grep -a '^FAIL\|^tms6747.sh: no ' "$KEEP/shard$l-$h.log" | head -8; rc=1
         fi
         grep -a '^tms6747.sh: [0-9]* passed' "$KEEP/shard$l-$h.log" | sed "s|^tms6747.sh:|c6x-cycles $l: shard $h/$SHARDS|"
         [ -f tests/out-tms6747/cycles.txt ] && cat tests/out-tms6747/cycles.txt >> "$KEEP/cycles$l.txt"
+        [ "${SIM:-0}" = 1 ] && [ -f tests/out-tms6747/cycles-sim.txt ] && cat tests/out-tms6747/cycles-sim.txt >> "$KEEP/cycles$l-sim.txt"
         h=$((h + 1))
     done
-    [ -s "$KEEP/cycles$l.txt" ] || { echo "c6x-cycles $l: no case gave a count"; rc=1; }
 done
+for c in $cols; do [ -s "$KEEP/cycles$c.txt" ] || { echo "c6x-cycles $c: no case gave a count"; rc=1; }; done
+[ "${SIM:-0}" = 1 ] || echo "c6x-cycles: SIM=0 - sim6747's columns (<level>-sim) NOT RUN; SIM=1 runs them"
 
 if [ "$mode" = record ]; then
     [ "$rc" -eq 0 ] || { echo "c6x-cycles: nothing recorded - a shard failed"; exit 1; }
     commit="${COMMIT:-$(git rev-parse --short=8 HEAD 2>/dev/null)}"
     [ -n "$commit" ] || { echo "c6x-cycles: no .git here - say COMMIT=<hash> for the baseline's 'measured' line"; exit 2; }
-    files=; for l in $LEVELS; do files="$files $KEEP/cycles$l.txt"; done
+    files=; for c in $cols; do files="$files $KEEP/cycles$c.txt"; done
     [ -f "$BASE" ] || : > "$BASE"
-    {
-        echo "# tests/tms6747-cycles.txt - M6's judge: each tms6747 case's cycles (vm6747 -c, cycle.CPU), a column a level."
-        echo "# Written by tools/c6x-cycles --record and compared by tools/c6x-cycles; '-' is a level not measured."
-        echo "# owed <case> <level> <cap> <reason>: the case may stand above its column, up to the cap, for that reason."
-        echo "measured $commit SIM=0 $(date -u +%Y-%m-%d)"
-        echo "levels $LEVELS"
-        # An owed case keeps the count it owes while it is above it; its line goes when it is not.
-        awk -v B="$BASE" -v levels="$LEVELS" '
-        BEGIN { nl = split(levels, lv, " ") }
-        FILENAME == B {
-            if ($1 == "levels") { for (i = 2; i <= NF; i++) oc[$i] = i; next }
-            if ($1 == "owed") { ow[$2 SUBSEP $3] = $0; next }
-            if ($0 ~ /^#/ || NF == 0 || $1 == "measured") next
-            for (l in oc) old[$1 SUBSEP l] = $(oc[l]); next
+    # A column not measured in this run keeps what it held; an owed or accepted case keeps the count it
+    # stands above while it is above it, and its line goes when it is not.
+    awk -v B="$BASE" -v cols="$cols" -v commit="$commit" -v day="$(date -u +%Y-%m-%d) on ${BOX:-$(uname -s)}" '
+    BEGIN { nm = split(cols, mv, " "); for (i = 1; i <= nm; i++) { meas[mv[i]] = 1; lv[++nl] = mv[i] } }
+    FILENAME == B {
+        if ($1 == "levels") { for (i = 2; i <= NF; i++) { oc[$i] = i; if (!($i in meas)) lv[++nl] = $i } next }
+        if ($1 == "owed" || $1 == "accepted") { ow[$2 SUBSEP $3] = $0; next }
+        if ($1 == "measured") { if (!($2 in meas)) was[$2] = $0; next }
+        if ($0 ~ /^#/ || NF == 0) next
+        for (l in oc) { old[$1 SUBSEP l] = $(oc[l]); if (!(l in meas) && $(oc[l]) != "-") { c[$1 SUBSEP l] = $(oc[l]); seen[$1] = 1 } }
+        next
+    }
+    FNR == 1 { li++ }
+    { v = $2; sub("count=", "", v); c[$1 SUBSEP mv[li]] = v + 0; seen[$1] = 1 }
+    END {
+        print "# tests/tms6747-cycles.txt - M6 judge: each tms6747 case in cycles (cycle.CPU), a column a level;"
+        print "# <level> is vm6747 -c on the assembly, <level>-sim is sim6747 -c on the linked TI program. - is not measured."
+        print "# Written by tools/c6x-cycles --record, compared by tools/c6x-cycles. measured <column> <commit> <date> on <box>."
+        print "# owed|accepted <case> <column> <cap> <reason>: the case may stand above its column, up to the cap."
+        for (i = 1; i <= nl; i++) print "measured " lv[i] " " ((lv[i] in meas) ? commit " " day : substr(was[lv[i]], length("measured " lv[i] " ") + 1))
+        line = "levels"; for (i = 1; i <= nl; i++) line = line " " lv[i]; print line
+        fflush(); out = "LC_ALL=C sort | sed \"s/^[12] //\""
+        for (k in ow) {
+            split(k, p, SUBSEP)
+            if (!(p[2] in meas)) print "2 " ow[k] | out
+            else if ((k in c) && (k in old) && old[k] != "-" && c[k] > old[k] + 0) { c[k] = old[k]; print "2 " ow[k] | out }
+            else print "c6x-cycles: line dropped, no longer above: " p[1] " " p[2] > "/dev/stderr"
         }
-        FNR == 1 { li++ }
-        { v = $2; sub("count=", "", v); c[$1 SUBSEP lv[li]] = v + 0; seen[$1] = 1 }
-        END {
-            for (k in ow) {
-                split(k, p, SUBSEP)
-                if ((k in c) && (k in old) && old[k] != "-" && c[k] > old[k] + 0) { c[k] = old[k]; print "2 " ow[k] }
-                else print "c6x-cycles: owed line dropped, no longer above: " p[1] " " p[2] > "/dev/stderr"
-            }
-            for (s in seen) {
-                line = "1 " s
-                for (i = 1; i <= nl; i++) line = line " " (((s SUBSEP lv[i]) in c) ? c[s SUBSEP lv[i]] : "-")
-                print line
-            }
-        }' "$BASE" $files | LC_ALL=C sort | sed 's/^[12] //'
-    } > "$BASE.new" && mv "$BASE.new" "$BASE"
-    echo "c6x-cycles: recorded $(grep -vc '^#\|^measured\|^levels\|^owed' "$BASE") cases at $commit in $BASE, $(grep -c '^owed' "$BASE") owed"
+        for (s in seen) {
+            line = "1 " s
+            for (i = 1; i <= nl; i++) line = line " " (((s SUBSEP lv[i]) in c) ? c[s SUBSEP lv[i]] : "-")
+            print line | out
+        }
+        close(out)
+    }' "$BASE" $files > "$BASE.new" && mv "$BASE.new" "$BASE"
+    echo "c6x-cycles: recorded $(grep -vc '^#\|^measured\|^levels\|^owed\|^accepted' "$BASE") cases at $commit in $BASE, $(grep -c '^owed\|^accepted' "$BASE") owed or accepted"
     exit 0
 fi
 
-for l in $LEVELS; do compare "$l" "$KEEP/cycles$l.txt" || rc=1; done
+for c in $cols; do compare "$c" "$KEEP/cycles$c.txt" || rc=1; done
 exit $rc
