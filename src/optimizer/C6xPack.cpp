@@ -342,11 +342,17 @@ bool flipPredicates(MStream &s, LiveSpan &live) {
     return changed;
 }
 
-namespace {
-
+// The table's readers on any entry, and its label and stepped register: a `!modelled` one's by its spelling.
 void rwOf(const MInst &x, std::vector<std::string> &reads, std::vector<std::string> &writes) {
     if (modelled(x)) readsAndWrites(x, reads, writes); else readsAndWrites(lineOf(x), reads, writes);
 }
+int crossingsOf(const MInst &i) { return modelled(i) ? crossings(i) : crossings(lineOf(i)); }
+unsigned unitsOf(const MInst &i) { return modelled(i) ? unitsFor(i) : unitsFor(lineOf(i)); }
+bool labelOf(const MInst &i, std::string &name) { return i.packed ? placedName(i, name) : labelLike(i, name); }
+int steppedOf(const MInst &i, long &by) { return regNumber(modelled(i) ? steppedRegister(i, by) : steppedRegister(lineOf(i), by)); }
+
+namespace {
+
 // C6xSched's `renameable` on an entry: no branch, access or ADDK (it reads its destination), no pair and no address.
 bool mayRename(const MInst &x) {
     const std::string m = x.m.str();
@@ -354,9 +360,6 @@ bool mayRename(const MInst &x) {
     for (int o = 0; o < x.operands; o++) { const std::string t = x.op[o].str(); if (t.find(':') != std::string::npos || t[0] == '*') return false; }
     return true;
 }
-
-int crossingsOf(const MInst &i) { return modelled(i) ? crossings(i) : crossings(lineOf(i)); }
-unsigned unitsOf(const MInst &i) { return modelled(i) ? unitsFor(i) : unitsFor(lineOf(i)); }
 
 // `renamed` on an operand: a register, an address's base or index, named `to` where it names `from`.
 void renameOperand(MOperand &x, int from, int to) {
@@ -452,7 +455,7 @@ struct Folding {
     std::string last(std::size_t k) const { return op(k, n(k) - 1); }
     bool plain(std::size_t k) const { return !instr(k) || s[k].pred == kNoReg; }      // no predicate
     bool blockEnd(std::size_t k) const { return !instr(k) || isBranch(s[k].m.str()); }
-    bool label(std::size_t k, std::string &name) const { return s[k].packed ? placedName(s[k], name) : labelLike(s[k], name); }
+    bool label(std::size_t k, std::string &name) const { return labelOf(s[k], name); }
     bool passThrough(std::size_t k, const std::set<std::string> &named) const { std::string name; return label(k, name) && passThroughName(name, named); }
     void erase(std::size_t i) { eraseAt(s, live, i); stale = true; }
     void set(std::size_t i, const MInst &e) { s[i] = e; live.in[i] = live.out[i] = ~0ull; stale = true; }

@@ -72,7 +72,7 @@ bool objectOf(const Form &f, Term &o) {
 struct Access { bool known = false; Form addr; };
 
 // **What the address walk reads of an instruction** (M6c round 11): its parts, its registers and its access - the base,
-// the offset or index and the step - by number: from the entry's operands on the stream, from a line's text off it.
+// the offset or index and the step - by number, from the entry's operands.
 struct Ins {
     std::string mnem, name[2];              // the first two operands as spelled, where one is a symbol
     int reg[2] = { kNoReg, kNoReg };        // and as a register, where it is one
@@ -99,18 +99,19 @@ void accessOf(const std::string &m, Ins &x) {
     } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) x.base = regNumber(m.substr(1));
 }
 
-Ins insOf(const Line &l) {
-    Ins x;
-    x.mnem = l.mnem; x.pred = !l.pred.empty(); x.ops = l.ops.size();
-    for (std::size_t k = 0; k < 2 && k < l.ops.size(); k++) { x.name[k] = l.ops[k]; x.reg[k] = regNumber(l.ops[k]); x.cst[k] = isNumber(l.ops[k]); x.num[k] = std::atol(l.ops[k].c_str()); }
-    std::vector<std::string> reads, writes;
-    readsAndWrites(l, reads, writes);
-    for (std::size_t k = 0; k < reads.size(); k++) x.reads.push_back(regNumber(reads[k]));
-    for (std::size_t k = 0; k < writes.size(); k++) x.writes.push_back(regNumber(writes[k]));
-    x.stepReg = regNumber(steppedRegister(l, x.by));
-    x.access = isLoad(l.mnem) || isStore(l.mnem);
-    if (x.access) accessOf(isStore(l.mnem) ? l.ops[1] : l.ops[0], x);
-    return x;
+// An entry's reads and writes by number and as masks: `rwOf`'s names where it is not `modelled`.
+void regsOf(const MInst &e, std::vector<int> &reads, std::vector<int> &writes) {
+    if (modelled(e)) { readsAndWrites(e, reads, writes); return; }
+    std::vector<std::string> r, w;
+    rwOf(e, r, w);
+    for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
+    for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
+}
+void masksOf(const MInst &e, std::uint64_t &reads, std::uint64_t &writes) {
+    if (modelled(e)) { readsAndWrites(e, reads, writes); return; }
+    std::vector<std::string> r, w;
+    rwOf(e, r, w);
+    reads |= maskOf(r); writes |= maskOf(w);
 }
 
 Ins insOf(const MInst &e) {
@@ -121,18 +122,11 @@ Ins insOf(const MInst &e) {
         x.num[k] = static_cast<long>(e.op[k].value);
         if (e.op[k].kind == MOperand::Register) x.reg[k] = e.op[k].reg;
         if (!x.cst[k]) x.name[k] = e.op[k].str();
+        // An operand held as text: a register or a number where its spelling is one.
+        if (e.op[k].kind == MOperand::Symbol) { x.reg[k] = regNumber(x.name[k]); x.cst[k] = isNumber(x.name[k]); x.num[k] = std::atol(x.name[k].c_str()); }
     }
-    readsAndWrites(e, x.reads, x.writes);
-    // The first stepped access names the step: by its `(n)` bytes, one where none is written, none where it has an index.
-    for (int k = 0; k < e.operands; k++) {
-        const MOperand &o = e.op[k];
-        if (o.kind != MOperand::Memory || o.mode < MOperand::PreInc) continue;
-        if (o.index != kNoReg) break;
-        x.stepReg = o.reg;
-        x.by = o.hasOffset && !o.scaled ? static_cast<long>(o.value) : 1;
-        if (o.mode == MOperand::PreDec || o.mode == MOperand::PostDec) x.by = -x.by;
-        break;
-    }
+    regsOf(e, x.reads, x.writes);
+    x.stepReg = steppedOf(e, x.by);
     x.access = isLoad(x.mnem) || isStore(x.mnem);
     if (!x.access) return x;
     const MOperand &o = e.op[isStore(x.mnem) ? 1 : 0];
@@ -239,75 +233,55 @@ bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
 }
 
 // **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
-// reads and writes, units - from the stream's typed operands where it has them (`modelled`), else from the line.
+// reads and writes, units - from its operands; where it is not `modelled`, an operand by the spelling it is held as.
 struct Src {
     const MStream *s;
     const std::vector<std::uint64_t> *live;     // the stream's live-in, entry by entry
-    mutable std::vector<Line> made;
-    mutable std::vector<char> have;
     Src(const MStream *stream, const std::vector<std::uint64_t> *in) : s(stream), live(in) {}
     std::size_t size() const { return s->size(); }
-    // **An entry read as a line** (M6c round 14): made where a reader still wants text, once.
-    const Line &line(std::size_t i) const {
-        if (made.empty()) { made.resize(s->size()); have.assign(s->size(), 0); }
-        if (!have[i]) { made[i] = viewOf((*s)[i]); have[i] = 1; }
-        return made[i];
-    }
     // Entry i as it stands on the stream.
     MInst entry(std::size_t i) const { return (*s)[i]; }
     std::uint64_t liveIn(std::size_t i) const { return (*live)[i]; }
     std::uint64_t liveAt(std::size_t i) const { return (*live)[i]; }
     bool typed(std::size_t i) const { return modelled((*s)[i]); }
     bool instr(std::size_t i) const { return (*s)[i].kind == MInst::Instruction && !(*s)[i].packed; }
-    bool label(std::size_t i) const {
-        if ((*s)[i].kind == MInst::Label) return true;
-        return ((*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i));
+    bool label(std::size_t i) const { std::string n; return (*s)[i].kind == MInst::Label || labelOf((*s)[i], n); }
+    std::string name(std::size_t i) const {
+        std::string n;
+        if ((*s)[i].kind == MInst::Label) return (*s)[i].m.str();
+        labelOf((*s)[i], n);
+        return n;
     }
-    std::string name(std::size_t i) const { return (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i)); }
-    std::string mnem(std::size_t i) const { return instr(i) ? (*s)[i].m.str() : line(i).mnem; }
+    // A placed entry and a kept line are no instruction: no mnemonic, operand or predicate, nothing read or written.
+    std::string mnem(std::size_t i) const { return instr(i) ? (*s)[i].m.str() : std::string(); }
     std::string pred(std::size_t i) const {
-        if (!typed(i)) return line(i).pred;
         const MInst &e = (*s)[i];
-        return e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred);
+        return !instr(i) || e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred);
     }
-    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : line(i).ops.size(); }
-    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : line(i).ops[k]; }
-    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(line(i).ops[k]) != 0; }
+    std::size_t ops(std::size_t i) const { return instr(i) ? (*s)[i].operands : 0; }
+    std::string op(std::size_t i, std::size_t k) const { return (*s)[i].op[k].str(); }
+    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(op(i, k)) != 0; }
     bool number(std::size_t i, std::size_t k, long &n) const {
         if (typed(i)) { n = static_cast<long>((*s)[i].op[k].value); return (*s)[i].op[k].kind == MOperand::Immediate; }
-        n = std::atol(line(i).ops[k].c_str());
-        return isNumber(line(i).ops[k]);
+        n = std::atol(op(i, k).c_str());
+        return isNumber(op(i, k));
     }
-    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : line(i).ops[k].find(':') != std::string::npos; }
-    void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
-        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(line(i), reads, writes);
-    }
-    // The same by number: the entry's own registers where it is typed, the line's names numbered where not.
-    void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const {
-        if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
-        std::vector<std::string> r, w;
-        readsAndWrites(line(i), r, w);
-        for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
-        for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
-    }
-    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(line(i)); }
-    // The same as masks, and a register operand or the predicate as a number: the entry's own where it is typed.
-    void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const {
-        if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
-        std::vector<std::string> r, w;
-        readsAndWrites(line(i), r, w);
-        reads |= maskOf(r); writes |= maskOf(w);
-    }
-    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(line(i).ops[k]); }
-    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(line(i).pred.substr(line(i).pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
+    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : op(i, k).find(':') != std::string::npos; }
+    void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(i)) rwOf((*s)[i], reads, writes); }
+    // The same by number and as masks, and a register operand or the predicate as a number.
+    void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const { if (instr(i)) regsOf((*s)[i], reads, writes); }
+    unsigned units(std::size_t i) const { return instr(i) ? unitsOf((*s)[i]) : 0; }
+    void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const { if (instr(i)) masksOf((*s)[i], reads, writes); }
+    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(op(i, k)); }
+    int predReg(std::size_t i) const { return instr(i) ? (*s)[i].pred : kNoReg; }
     char side(std::size_t i, std::size_t k) const {
-        if (!typed(i)) return sideOf(line(i).ops[k]);
+        if (!typed(i)) return sideOf(op(i, k));
         const MOperand &o = (*s)[i].op[k];
         if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
         return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
     }
-    bool predicated(std::size_t i) const { return typed(i) ? (*s)[i].pred != kNoReg : !line(i).pred.empty(); }
-    bool predNot(std::size_t i) const { return typed(i) ? (*s)[i].predNot : line(i).pred.compare(0, 1, "!") == 0; }
+    bool predicated(std::size_t i) const { return instr(i) && (*s)[i].pred != kNoReg; }
+    bool predNot(std::size_t i) const { return instr(i) && (*s)[i].predNot; }
     void regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const;
     bool byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const;
     // The operands that name `x`: the label a branch reaches, counted over the function's instructions.
@@ -320,7 +294,7 @@ struct Src {
 
 // ----- the loop as recognised -----
 
-// An operand from a register's number, a pair's two, or a constant; an entry of its parts; and the line an entry spells.
+// An operand from a register's number, a pair's two, or a constant; an entry of its parts; and what an entry spells.
 MOperand R(int r) { MOperand o; o.kind = MOperand::Register; o.reg = static_cast<std::uint8_t>(r); return o; }
 MOperand RR(int hi, int lo) { MOperand o = R(lo); o.kind = MOperand::Pair; o.hi = static_cast<std::uint8_t>(hi); return o; }
 MOperand K(long long v) { return MOperand(v); }
@@ -337,10 +311,23 @@ MInst entry(const std::string &mnem, const MOperand &a, const MOperand &b = MOpe
     e.pred = static_cast<std::uint8_t>(pred); e.predNot = no;
     return e;
 }
-Line lineOf(const MInst &e) {
-    std::vector<std::string> ops;
-    for (int k = 0; k < e.operands; k++) ops.push_back(e.op[k].str());
-    return rebuilt(e.m.str(), ops, e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred));
+std::string spellingOf(const MInst &e) {
+    std::string raw = e.str();
+    raw.erase(raw.size() - 1);
+    return raw;
+}
+// An operand that is an address, typed or held as text.
+bool isAddress(const MOperand &x) { return x.kind == MOperand::Memory || (x.kind == MOperand::Symbol && x.str()[0] == '*'); }
+// `from` named `to` in an operand: a register, a pair's half, an address's base or index; in text, as `renamed` spells it.
+void renameReg(MOperand &x, int from, int to) {
+    if (x.kind == MOperand::Symbol) {
+        const std::string was = x.str(), now = renamed(was, regName(from), regName(to));
+        if (now != was) x = MOperand(now);
+    }
+    if (x.kind != MOperand::Register && x.kind != MOperand::Pair && x.kind != MOperand::Memory) return;
+    if (x.reg == from) x.reg = static_cast<std::uint8_t>(to);
+    if (x.kind == MOperand::Pair && x.hi == from) x.hi = static_cast<std::uint8_t>(to);
+    if (x.kind == MOperand::Memory && x.index == from) x.index = static_cast<std::uint8_t>(to);
 }
 
 struct Edge { int from, to, delay, dist; const char *why; };
@@ -352,13 +339,9 @@ struct Loop {
     long boundK = 0;
     std::size_t cmp = 0;
     std::vector<std::size_t> bodyAt;    // the body's instruction lines, the compare and the branch left out
-    std::vector<Line> body, pre;          // the body, and the block that falls into the head
-    std::vector<MInst> preM;              // `pre` as entries, where every one is `modelled`
-    bool preTyped = true;
-    // The body as the stream's entries (M6c round 5), kept equal to `body` through every edit; empty off the stream or
-    // where an entry is not `modelled`. What the body hands on - reads, writes, pairs, nodes - is read from it there.
+    std::vector<MInst> preM;              // the block that falls into the head
+    // The body as the stream's entries (M6c round 5): what it hands on - reads, writes, pairs, nodes - is read from them.
     std::vector<MInst> bodyM;
-    bool fromLines = false;
     std::vector<std::size_t> taken;       // where each entry of bodyM stands on the stream
     std::vector<Node> nodes;
     std::vector<Edge> edges;
@@ -374,101 +357,53 @@ struct Loop {
     int ivR = kNoReg, boundR = kNoReg, PR = kNoReg, CR = kNoReg;
     std::uint64_t usedM = 0, writtenM = 0, predicatedM = 0, rmwFirstM = 0, pinnedM = 0;
     void count(std::uint64_t reads, std::uint64_t writes, bool plain) { usedM |= reads | writes; writtenM |= writes; if (!plain) predicatedM |= writes; }
-    void masks(std::size_t o, std::uint64_t &reads, std::uint64_t &writes) const {
-        if (!bodyM.empty()) { readsAndWrites(bodyM[o], reads, writes); return; }
-        std::vector<std::string> r, w;
-        readsAndWrites(body[o], r, w);
-        reads |= maskOf(r); writes |= maskOf(w);
-    }
+    void masks(std::size_t o, std::uint64_t &reads, std::uint64_t &writes) const { masksOf(bodyM[o], reads, writes); }
     static std::uint64_t bit(int r) { return bitR(r); }
-    // **The body read without its lines** (M6c round 14): on the stream the entries alone; a line is beside one only
-    // where an entry or the preheader is not modelled. Text off the stream, as it was.
-    std::size_t size() const { return bodyM.empty() ? body.size() : bodyM.size(); }
-    std::string mnem(std::size_t o) const { return bodyM.empty() ? body[o].mnem : bodyM[o].m.str(); }
-    std::size_t ops(std::size_t o) const { return bodyM.empty() ? body[o].ops.size() : bodyM[o].operands; }
-    std::string op(std::size_t o, std::size_t k) const { return bodyM.empty() ? body[o].ops[k] : bodyM[o].op[k].str(); }
-    std::string raw(std::size_t o) const { return body.empty() ? lineOf(bodyM[o]).raw : body[o].raw; }
+    // **The body read without its lines** (M6c rounds 14 and 23): the entries alone.
+    std::size_t size() const { return bodyM.size(); }
+    std::string mnem(std::size_t o) const { return bodyM[o].m.str(); }
+    std::size_t ops(std::size_t o) const { return bodyM[o].operands; }
+    std::string op(std::size_t o, std::size_t k) const { return bodyM[o].op[k].str(); }
+    std::string raw(std::size_t o) const { return spellingOf(bodyM[o]); }
     // What a pass may not rename or fold away: the counter, a register bound, the predicate, and with `count` the count.
     std::uint64_t fixedM(bool count) const { return bit(ivR) | bit(boundR) | bit(PR) | (count ? bit(CR) : 0); }
-    bool plainAt(std::size_t o) const { return bodyM.empty() ? body[o].pred.empty() : bodyM[o].pred == kNoReg; }
-    void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
-        if (!bodyM.empty()) readsAndWrites(bodyM[o], reads, writes); else readsAndWrites(body[o], reads, writes);
-    }
+    bool plainAt(std::size_t o) const { return bodyM[o].pred == kNoReg; }
+    void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const { rwOf(bodyM[o], reads, writes); }
     // The same by number, in the order `rw` lists them.
-    void regs(std::size_t o, std::vector<int> &reads, std::vector<int> &writes) const {
-        if (!bodyM.empty()) { readsAndWrites(bodyM[o], reads, writes); return; }
-        std::vector<std::string> r, w;
-        rw(o, r, w);
-        for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
-        for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
-    }
+    void regs(std::size_t o, std::vector<int> &reads, std::vector<int> &writes) const { regsOf(bodyM[o], reads, writes); }
     // Operand k of body line o as a pair `hi:lo` of two registers.
     bool pairIn(std::size_t o, std::size_t k, int &hi, int &lo) const {
-        if (!bodyM.empty()) {
-            const MOperand &x = bodyM[o].op[k];
-            if (x.kind != MOperand::Pair) return false;
-            hi = x.hi; lo = x.reg;
-            return true;
-        }
+        const MOperand &x = bodyM[o].op[k];
+        if (x.kind == MOperand::Pair) { hi = x.hi; lo = x.reg; return true; }
         std::vector<std::string> regs;
-        registersIn(body[o].ops[k], regs);
-        if (body[o].ops[k].find(':') == std::string::npos || regs.size() != 2) return false;
+        if (x.kind == MOperand::Symbol) registersIn(x.str(), regs);
+        if (x.str().find(':') == std::string::npos || regs.size() != 2) return false;
         hi = regNumber(regs[0]); lo = regNumber(regs[1]);
         return true;
     }
     // `steppedRegister` of body line o by number: the base its first stepped access writes, kNoReg where it has an index.
-    int steppedR(std::size_t o) const {
-        long by;
-        if (bodyM.empty()) return regNumber(steppedRegister(body[o], by));
-        for (int k = 0; k < bodyM[o].operands; k++) {
-            const MOperand &x = bodyM[o].op[k];
-            if (x.kind == MOperand::Memory && x.mode >= MOperand::PreInc) return x.index == kNoReg ? x.reg : kNoReg;
-        }
-        return kNoReg;
-    }
-    // The address forms of the body's accesses: read from the entries on the stream, from the lines off it.
+    int steppedR(std::size_t o) const { long by; return steppedOf(bodyM[o], by); }
+    // The address forms of the body's accesses, read from the entries.
     std::vector<Access> addresses() const {
         std::vector<Ins> b, p;
-        const bool typed = !bodyM.empty() && preTyped;
-        for (std::size_t o = 0; o < size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
-        for (std::size_t o = 0; o < (typed ? preM.size() : pre.size()); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
-        const std::vector<Access> got = addressForms(b, p, ivR, writtenM);
-        return got;
+        for (std::size_t o = 0; o < size(); o++) b.push_back(insOf(bodyM[o]));
+        for (std::size_t o = 0; o < preM.size(); o++) p.push_back(insOf(preM[o]));
+        return addressForms(b, p, ivR, writtenM);
     }
-    void erase(std::size_t o) {
-        if (!body.empty()) body.erase(body.begin() + static_cast<long>(o));
-        if (!bodyM.empty()) bodyM.erase(bodyM.begin() + static_cast<long>(o));
-    }
+    void erase(std::size_t o) { bodyM.erase(bodyM.begin() + static_cast<long>(o)); }
     // `renameWebs`'s edit on entry o: `from` named `to` in its sources (a write: its destination, and MVKH's and ADDK's
     // always), as `renamed` spells it - a register, a pair's half, an address's base or index - and a read in its predicate.
     void rename(std::size_t o, int f, int t, bool isWrite) {
-        if (bodyM.empty()) return;
         MInst &e = bodyM[o];
         const std::string m = e.m.str();
-        const bool hasDest = e.operands && !isStore(m) && m != "B" && e.op[e.operands - 1].kind != MOperand::Memory;
+        const bool hasDest = e.operands && !isStore(m) && m != "B" && !isAddress(e.op[e.operands - 1]);
         for (int k = 0; k < e.operands; k++) {
             const bool dest = hasDest && k + 1 == e.operands;
-            if (dest != isWrite && !(dest && (m == "MVKH" || m == "ADDK"))) continue;
-            MOperand &x = e.op[k];
-            if (x.kind != MOperand::Register && x.kind != MOperand::Pair && x.kind != MOperand::Memory) continue;
-            if (x.reg == f) x.reg = static_cast<std::uint8_t>(t);
-            if (x.kind == MOperand::Pair && x.hi == f) x.hi = static_cast<std::uint8_t>(t);
-            if (x.kind == MOperand::Memory && x.index == f) x.index = static_cast<std::uint8_t>(t);
+            if (dest == isWrite || (dest && (m == "MVKH" || m == "ADDK"))) renameReg(e.op[k], f, t);
         }
         if (!isWrite && e.pred == f) e.pred = static_cast<std::uint8_t>(t);
     }
-    void take(const Src &src, std::size_t i) {
-        const bool beside = !preTyped;
-        if (!fromLines && !src.typed(i)) {              // one entry not modelled: the whole body from its lines
-            fromLines = true;
-            for (std::size_t k = 0; k < taken.size(); k++) if (!beside) body.push_back(src.line(taken[k]));
-            bodyM.clear();
-        }
-        if (fromLines) { body.push_back(src.line(i)); return; }
-        bodyM.push_back((*src.s)[i]);
-        taken.push_back(i);
-        if (beside) body.push_back(src.line(i));
-    }
+    void take(const Src &src, std::size_t i) { bodyM.push_back((*src.s)[i]); taken.push_back(i); }
 };
 
 const int kCondR[] = { 0, 1, 2, 32, 33, 34 };
@@ -744,10 +679,8 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     L.head = h; L.back = back; L.exitName = src.name(back + 1);
     std::size_t first = h;
     for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k)); first = k) {
-        if (src.typed(k)) L.preM.insert(L.preM.begin(), (*src.s)[k]); else L.preTyped = false;
+        L.preM.insert(L.preM.begin(), (*src.s)[k]);
     }
-    // The preheader's lines: off the stream, and where an entry of it is not modelled.
-    if (!L.preTyped) for (std::size_t k = first; k < h; k++) L.pre.push_back(src.line(k));
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
@@ -905,8 +838,8 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, std::uint64_t renameMask, 
     std::set<std::string> lab;
     lab.insert(L.label + "$pipe");
     // The kernel's branch, on the count where there is one and on the loop's own test where the counter is stepped.
-    extra.push_back(makeNode(lineOf(entry("B", MOperand(L.label + "$pipe"), MOperand(), MOperand(), L.stepped ? L.PR : L.CR, L.stepped && L.negated)), lab));
-    if (!L.stepped) extra.push_back(makeNode(lineOf(entry("ADD", K(-1), R(L.CR), R(L.CR))), std::set<std::string>()));
+    extra.push_back(makeNode(entry("B", MOperand(L.label + "$pipe"), MOperand(), MOperand(), L.stepped ? L.PR : L.CR, L.stepped && L.negated), lab));
+    if (!L.stepped) extra.push_back(makeNode(entry("ADD", K(-1), R(L.CR), R(L.CR)), std::set<std::string>()));
     const int sb = ((6 % II) == 0 ? 0 : II - 6 % II);
     for (std::size_t k = 0; k < extra.size(); k++) { if (!fits(mrt[static_cast<std::size_t>(sb)], extra[k])) return false; add(mrt[static_cast<std::size_t>(sb)], extra[k]); }
     for (std::size_t o = 0; o < n; o++) {
@@ -969,44 +902,17 @@ typedef std::map<int, std::size_t, ByName> UnitOf;        // a register's unit, 
 int pow2At(int x) { int p = 1; while (p < x) p *= 2; return p; }
 long modq(long a, int q) { return ((a % q) + q) % q; }
 
+// One instruction of a kernel's packet: its spelling and the entry itself.
+struct Turn { std::string raw; MInst e; };
+
 // Body instruction o as turn j writes it: each register of a unit renamed to that turn's copy - a source to the copy
-// it reads, the destination to the one it writes - on the entry where the body is the stream's, else on its line.
-std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf,
-                        const std::vector<int> &firstWrite, std::size_t o, long j) {
-    const Line made = L.body.empty() ? lineOf(L.bodyM[o]) : Line();
-    const Line &l = L.body.empty() ? made : L.body[o];
-    std::vector<std::string> ops = l.ops;
-    std::string pred = l.pred;
-    bool hasDest = !ops.empty() && !isStore(l.mnem) && l.mnem != "B" && ops.back()[0] != '*';
-    std::size_t k0 = 0;
-    for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
-        const Unit &u = units[it->second];
-        if (u.q < 2) continue;
-        const std::string r = regName(it->first);
-        std::size_t half = 0;
-        while (u.regs[half] != it->first) half++;
-        const long readJ = j + (firstWrite[k0] >= static_cast<int>(o) ? -1 : 0);
-        const std::string rd = regName(u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))]), wr = regName(u.copies[half][static_cast<std::size_t>(modq(j, u.q))]);
-        for (std::size_t k = 0; k < ops.size(); k++) {
-            bool dest = hasDest && k + 1 == ops.size();
-            if (dest && (l.mnem == "MVKH" || l.mnem == "ADDK")) { ops[k] = renamed(ops[k], r, wr); continue; }
-            ops[k] = renamed(ops[k], r, dest ? wr : rd);
-        }
-        if (!pred.empty()) pred = renamed(pred, r, rd);
-    }
-    return rebuilt(l.mnem, ops, pred).raw;
-}
-
-// One instruction of a kernel's packet: its spelling, and on the stream the entry itself (typed).
-struct Turn { std::string raw; MInst e; bool typed = false; };
-
+// it reads, the destination to the one it writes.
 Turn spelled(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf,
              const std::vector<int> &firstWrite, std::size_t o, long j) {
     Turn turn;
-    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) { turn.raw = spelledLine(L, units, unitOf, firstWrite, o, j); return turn; }
     MInst x = L.bodyM[o];
     const std::string m = x.m.str();
-    const bool hasDest = x.operands && !isStore(m) && m != "B" && x.op[x.operands - 1].kind != MOperand::Memory;
+    const bool hasDest = x.operands && !isStore(m) && m != "B" && !isAddress(x.op[x.operands - 1]);
     std::size_t k0 = 0;
     for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
         const Unit &u = units[it->second];
@@ -1015,24 +921,13 @@ Turn spelled(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf
         while (u.regs[half] != it->first) half++;
         const long readJ = j + (firstWrite[k0] >= static_cast<int>(o) ? -1 : 0);
         const int r = it->first, rd = u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))], wr = u.copies[half][static_cast<std::size_t>(modq(j, u.q))];
-        for (int k = 0; k < x.operands; k++) {
-            MOperand &y = x.op[k];
-            const std::uint8_t to = static_cast<std::uint8_t>(hasDest && k + 1 == x.operands ? wr : rd);
-            if (y.kind != MOperand::Register && y.kind != MOperand::Pair && y.kind != MOperand::Memory) continue;
-            if (y.reg == r) y.reg = to;
-            if (y.kind == MOperand::Pair && y.hi == r) y.hi = to;
-            if (y.kind == MOperand::Memory && y.index == r) y.index = to;
-        }
+        for (int k = 0; k < x.operands; k++) renameReg(x.op[k], r, hasDest && k + 1 == x.operands ? wr : rd);
         if (x.pred == r) x.pred = static_cast<std::uint8_t>(rd);
     }
-    turn.raw = x.str();
-    turn.raw.erase(turn.raw.size() - 1);
+    turn.raw = spellingOf(x);
     turn.e = x;
-    turn.typed = true;
     return turn;
 }
-
-Line verbatim(const std::string &raw) { Line l; l.raw = raw; l.verbatim = true; return l; }
 
 // **What the emitters write** (M6c round 11): entries - an instruction built from its parts, a turn the body's
 // renamed entry, placed as it is put. `ok` false: one the stream cannot hold.
@@ -1050,41 +945,28 @@ struct Code {
     // `legalForm` and the instruction: commuted where both sources cross, false with the reason where it has no form.
     bool legal(std::string &why, const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand()) {
         MInst e = entry(mnem, a, b, c);
-        if (!ok || !modelled(e)) {
-            Line l = lineOf(e);
-            if (!legalForm(l)) { why = "the stepped guard has no legal form for" + l.raw; return false; }
-            ok = false;
-            return true;
-        }
-        const bool commutes = mnem == "ADD" || mnem == "AND" || mnem == "OR" || mnem == "XOR" || mnem == "MPYDP" || mnem == "ADDDP" || mnem == "MPYSP" ||
-                              mnem == "ADDSP" || mnem == "MPY32" || mnem == "CMPEQ";
-        if (crossings(e) > 1 && commutes && e.operands == 3 && e.op[0].kind != MOperand::Immediate && e.op[1].kind != MOperand::Immediate) std::swap(e.op[0], e.op[1]);
-        const bool has = crossings(e) <= 1 && (unitsFor(e) != 0 || isLoad(mnem) || isStore(mnem));
-        std::string raw = e.str();
-        raw.erase(raw.size() - 1);
-        if (!has) { why = "the stepped guard has no legal form for" + raw; return false; }
-        m.push_back(e);
+        if (!legalForm(e)) { why = "the stepped guard has no legal form for" + spellingOf(e); return false; }
+        if (!modelled(e)) ok = false;
+        if (ok) m.push_back(e);
         return true;
     }
-    // A placed line - a turn, idle cycles, the kernel's label: the entry given, else the line read as placed.
-    void placed(const std::string &raw, bool par, const MInst *e) {
+    // A placed entry - a turn, idle cycles, the kernel's label.
+    void placed(bool par, const MInst &e) {
         if (!ok) return;
-        if (!e) { ok = streamOf(std::vector<Line>(1, verbatim((par ? "||" : "") + raw)), m); return; }
-        m.push_back(*e);
+        m.push_back(e);
         m.back().par = par;
         m.back().packed = true;
     }
-    void nop(int n) { const MInst e("NOP", n); placed("\tNOP\t" + std::to_string(n), false, &e); }
-    void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
+    void nop(int n) { placed(false, MInst("NOP", n)); }
+    void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(false, e); }
     // Line k of the function as it stands: the stream's own entry.
     void same(std::size_t k) { if (ok) m.push_back((*from)[k]); }
 };
 
 Turn turnOf(const MInst &e) {
     Turn t;
-    t.raw = lineOf(e).raw;
+    t.raw = spellingOf(e);
     t.e = e;
-    t.typed = true;
     return t;
 }
 
@@ -1093,7 +975,7 @@ void emitCycles(Code &out, const std::vector<std::vector<Turn> > &cycles) {
     for (std::size_t c = 0; c < cycles.size(); c++) {
         if (cycles[c].empty()) { nops++; continue; }
         while (nops > 0) { out.nop(std::min(nops, 9)); nops -= std::min(nops, 9); }
-        for (std::size_t k = 0; k < cycles[c].size(); k++) out.placed(cycles[c][k].raw, k != 0, cycles[c][k].typed ? &cycles[c][k].e : nullptr);
+        for (std::size_t k = 0; k < cycles[c].size(); k++) out.placed(k != 0, cycles[c][k].e);
     }
     while (nops > 0) { out.nop(std::min(nops, 9)); nops -= std::min(nops, 9); }
 }
@@ -1165,25 +1047,10 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
         }
     }
     for (std::size_t o = 0; o < L.size(); o++) {
-        const bool text = !L.body.empty();                  // a line beside the entry: renamed as the entry is
-        const std::string m = L.mnem(o);
-        std::vector<std::string> ops;
-        std::string pred;
-        if (text) { ops = L.body[o].ops; pred = L.body[o].pred; }
-        bool hasDest = !ops.empty() && !isStore(m) && m != "B" && ops.back()[0] != '*';
         for (std::size_t k = 0; k < opWebs[o].size(); k++) {
             const Web &w = webs[static_cast<std::size_t>(opWebs[o][k].first)];
-            if (w.name == w.reg) continue;
-            const bool isWrite = opWebs[o][k].second == 1;
-            const std::string was = regName(w.reg), now = regName(w.name);     // the line's spelling, kept beside the entry
-            for (std::size_t p = 0; p < ops.size(); p++) {
-                bool dest = hasDest && p + 1 == ops.size();
-                if (dest == isWrite || (dest && (m == "MVKH" || m == "ADDK"))) ops[p] = renamed(ops[p], was, now);
-            }
-            if (text && !isWrite) pred = renamed(pred, was, now);
-            L.rename(o, w.reg, w.name, isWrite);
+            if (w.name != w.reg) L.rename(o, w.reg, w.name, opWebs[o][k].second == 1);
         }
-        if (text) L.body[o] = rebuilt(m, ops, pred);
     }
     L.usedM = L.writtenM = L.predicatedM = 0;
     for (std::size_t o = 0; o < L.size(); o++) {
@@ -1369,24 +1236,15 @@ bool pipeline(Loop &L, Code &out, std::string &why) {
     }
     for (std::size_t k = 0; k < L.testBody.size(); k++) {
         const std::size_t at = L.testBody[k];
-        std::vector<std::string> ops;
-        if (!L.body.empty()) ops = L.body[at].ops;
         for (std::size_t o = 0; o + 1 < L.ops(at); o++)
-            for (std::size_t w = 0; w < L.boundsR.size(); w++) if (regNumber(L.op(at, o)) == L.boundsR[w]) {
-                if (!L.body.empty()) { ops[o] = regName(moved[w]); L.body[at].ops[o] = ops[o]; }
-                if (!L.bodyM.empty()) L.bodyM[at].op[o] = R(moved[w]);
-            }
-        if (!L.body.empty()) L.body[at] = rebuilt(L.mnem(at), ops, L.body[at].pred);
+            for (std::size_t w = 0; w < L.boundsR.size(); w++) if (regNumber(L.op(at, o)) == L.boundsR[w]) L.bodyM[at].op[o] = R(moved[w]);
     }
     foldBodyCopies(L);
     if (tracing() > 4) for (std::size_t o = 0; o < L.size(); o++) std::fprintf(stderr, "  as written%s\n", L.raw(o).c_str());
     renameWebs(L, pool);
     std::set<std::string> labels;
     labels.insert(L.label + "$pipe");
-    for (std::size_t o = 0; o < L.size(); o++) {
-        if (L.bodyM.empty()) { L.nodes.push_back(makeNode(L.body[o], labels)); continue; }
-        L.nodes.push_back(makeNode(L.bodyM[o], labels));
-    }
+    for (std::size_t o = 0; o < L.size(); o++) L.nodes.push_back(makeNode(L.bodyM[o], labels));
     // The rename units, and which of them may take a name per iteration.
     std::vector<Unit> units;
     UnitOf unitOf;
@@ -1644,7 +1502,7 @@ bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
     if (!typed(i)) {
         std::vector<std::string> names;
-        registersIn(line(i).ops[k], names);
+        registersIn(op(i, k), names);
         for (std::size_t g = 0; g < names.size(); g++) out.push_back(regNumber(names[g]));
         return;
     }
@@ -1658,7 +1516,7 @@ void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
 bool Src::byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const {
     if (!typed(i)) {
         std::string name;
-        const bool is = c6x::byteAddress(line(i).ops[k], name, off, post);
+        const bool is = c6x::byteAddress(op(i, k), name, off, post);
         base = regNumber(name);
         return is;
     }
@@ -1938,7 +1796,7 @@ bool giveRegisters(WinCode &c, std::vector<int> pool[2], MStream &code, std::str
         const bool commutes = m == "ADD" || m == "AND" || m == "OR" || m == "XOR" || m == "MPYDP" || m == "ADDDP" || m == "MPYSP" ||
                               m == "ADDSP" || m == "MPY32" || m == "CMPEQ";
         if (!isLoad(m) && crossings(e) > 1 && commutes && e.operands == 3 && e.op[0].kind != MOperand::Immediate && e.op[1].kind != MOperand::Immediate) std::swap(e.op[0], e.op[1]);
-        if (!isLoad(m) && !(crossings(e) <= 1 && (unitsFor(e) != 0 || isStore(m)))) { why = "no legal form for" + lineOf(e).raw; return false; }
+        if (!isLoad(m) && !(crossings(e) <= 1 && (unitsFor(e) != 0 || isStore(m)))) { why = "no legal form for" + spellingOf(e); return false; }
         code.push_back(e);
     }
     return true;
