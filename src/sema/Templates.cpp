@@ -426,25 +426,25 @@ std::string Templates::censusLine() const {
 
 void Templates::holdBodies(std::size_t mark) {
     if (!checkBodies_) return;
-    const syntax::Tree &st = p_.syntaxTree_;
-    if (bodySeen_.size() < st.size() + 1) bodySeen_.resize(st.size() + 1, 0);
-    for (std::size_t i = mark + 1; i <= st.size(); i++) {
+    const std::size_t made = p_.syntaxTree_.size();
+    if (bodySeen_.size() < made + 1) bodySeen_.resize(made + 1, 0);
+    for (std::size_t i = mark + 1; i <= made; i++) {
         const syntax::NodeId id(static_cast<std::uint32_t>(i));
-        const syntax::Node &n = st.node(id);
-        if (n.kind != syntax::Kind::Function || n.dead || bodySeen_[i] != 0) continue;
+        const std::uint32_t parts = p_.syntaxTree_.node(id).count, at = p_.syntaxTree_.node(id).loc;
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function || p_.syntaxTree_.node(id).dead || bodySeen_[i] != 0) continue;
         // A declaration has no block; a function try block's body is its `try`.
         bool body = false;
-        for (std::uint32_t c = 0; c < n.count; c++) {
-            const syntax::Kind k = st.node(st.child(id, c)).kind;
+        for (std::uint32_t c = 0; c < parts; c++) {
+            const syntax::Kind k = p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind;
             body = body || k == syntax::Kind::Block || k == syntax::Kind::Try;
         }
         if (!body) continue;
         bodySeen_[i] = 1;
-        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(n.loc);
-        if (held == bodyOnce_.end()) { bodyOnce_[n.loc] = id; bodyTally_[0]++; continue; }
-        const int d = st.differs(held->second, id);
+        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(at);
+        if (held == bodyOnce_.end()) { bodyOnce_[at] = id; bodyTally_[0]++; continue; }
+        const int d = p_.syntaxTree_.differs(held->second, id);
         bodyTally_[1 + d]++;
-        if (d == 2) bodyShapes_.insert(n.loc);
+        if (d == 2) bodyShapes_.insert(at);
     }
 }
 

@@ -260,3 +260,44 @@ read once at the declaration replaces `Templates::substituteFunction`'s sibling,
 sibling's root and `TypedTree::retype` in the same commit, and the census's `by-substitution` row is then M8.2's.
 Until then its gaps (run.sh under the switch, `-check=typed` and `-g` of a substituted body) are rows of M6-PLAN's
 "Owed at M6c's close".
+
+**M8.1, its commits planned and the first landed, 2026-11-15** (lane m8b, branch `m8-b` from g1 `027251b9` with p7
+`219a667c` merged, `ff3e7e1f`; one lane-hour). The row asks for one read at the declaration; what a lane-hour holds is
+the measure that read is judged by. **The plan, each commit of identical output** (the first four run no new path
+without `-check=templates`):
+
+| commit | what | state |
+| --- | --- | --- |
+| 1 | **The count.** `syntax::Tree::differs` holds two subtrees against each other - 0 the same, 1 a text differs under the same kinds, 2 a kind or a child count; `Templates::holdBodies` at the function, class-member and member-template doors keeps the first `function` node read for a body (keyed by its declarator's place) and holds every later replay of that body against it; `-check=templates` prints `bodies= held= same= text= shape=` and each body whose replays differ in shape; `tests/subst.sh bodies` sums it over `tests/cases` and compares a case's `.templates` record | **landed, `c1504cb9`** |
+| 2 | **The signature at the declaration.** `templatedName`'s pattern read (the parameters bound to themselves, `patternOnly_`) notes the `function` node and its parameters' `var` nodes and keeps them on `TemplateDecl`; a `pattern` mark on `syntax::Node` beside `dead`, so `-dump=syntax` shows the node once and `roots()`, the Typer's census and `adopt` pass it by; the count gains `signature=` (replays whose parameter list agrees) | planned |
+| 3 | **A function template's body at the declaration**, under the flag: `skipTemplatedDefinition` replaced there by the function production in pattern mode - a declaration of dependent type makes a `var` and no slot, an expression over a dependent operand goes to `ParserDependent`'s reader (which notes syntax as it builds its `DepExpr`), a non-dependent one to the ordinary productions - into a function state of its own that reaches none of the tables a definition writes (`lookup_.functions_` and `functionIndex_`, `program.functions`, the defined-symbol and discardable-inline sets, static locals, the string pool, `specializations_`); a body the pattern read cannot take is **unread by name**, counted as replay's reasons are; the count holds each replay against the declaration's tree instead of the first replay's | planned |
+| 4 | **The class doors**, where 95% of the self-host's replays are: a class template's held member bodies, out-of-line members (`OutOfLine::start`), partial specializations (`Partial::bodyAt`), member templates and an alias's type-id, each read as commit 3 reads a function | planned |
+| 5 | **On by default**: the read runs with no flag once `unread` is 0 over `tests/cases` and the self-host and `identical.sh` reads 0; a dependent name marked on its `name` node, `typename`/`template` kept as payload; `-dump=syntax` shows each body once. The stop for Fable's reading | planned |
+
+**What commit 1 measures, and what it does not.** The tree kept is the **first replay's**, not one read at the
+declaration - no dependent read of a body exists yet, and the pattern read of a signature writes the function tables
+(commit 3 names them). So the count answers the question a single tree stands on: *do the replays of one body build
+the same tree?* `same` and `text` are bodies one tree can stand for (`text` is the payload substitution rewrites: a
+`var` node spells its type); `shape` is a body whose parse depends on the binding, which a tree read once cannot hold
+as it is. Measured on the Windows box, cl build of `c1504cb9`, `-S` at -O0 (`boxkit/m8b-win.sh bodies self`):
+
+| corpus | bodies replayed | first reads | same as the first | text alone | shape | bodies behind the shapes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/cases`, 876 units reach the count | 5,123 | 3,385 | 682 | 1,004 | 52 (3.0% of the 1,738 compared) | 32 places in 19 cases |
+| the self-host, 103 of 103 sources compile under the flag | 60,612 | 11,912 | 16,410 | 31,933 | 357 (0.7% of the 48,700 compared) | 8 bodies |
+
+**The shapes, read** - four families, and M8.2-M8.4 owe each a node that holds it: **a pack** (`f(args...)`,
+`sizeof...`, `A &&...a`: the expansion is copied per member - M8.4's row already turns it into one node), every
+`tests/cases` place bar the library's and `make_owned`, `__fn_model::call`, `make_shared`, `emplace_back`;
+**`T()` and `value_type(k, V())`** - value-initialisation is a constructor call for a class and a zero for a scalar
+(`map::operator[]`, `unordered_map::operator[]`: 41 of the self-host's 73 lines); **a direct-initialised local**
+`vector<T> keep(first, last)` (`vector::insert`, 19); **a mem-initialiser** `first(p.first)` (`pair`'s converting
+constructor, 1). Not counted: the constexpr-ahead door (`Constexpr.cpp`, 32 and 564 bodies in M8.0's census), a
+class's head and member declarations (no `function` node with a block), and an alias's type-id.
+
+**Gates** at `c1504cb9`: GATEROWS
+src/ lines: 94,348 before, 94,424 after.
+
+**Asked of the user (Q8)**: M8.1's row is five commits, and commits 3 and 4 are each more than a lane-hour (the
+dependent read of a body is the pattern read grown from signatures to statements). In order, one lane after another
+on `ParserTemplate.cpp` - the recommended option, taken unless told otherwise - or 3 and 4 as two lanes at once?
