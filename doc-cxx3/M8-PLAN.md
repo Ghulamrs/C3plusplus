@@ -219,3 +219,11 @@ emitted file is what stands for it) while `typed.sh` under it on the Linux box a
 identity grid was run at `f2dcccdf`, two commits before the last (a functor moved between headers, the empty body made
 by `oneStatement`, the C6000 refused) - only the probe, cl and the static gates were run again at `5c880a04`.
 src/ lines: 94,414 before, 94,615 after.
+
+**The early substitution, decided by the user, 2026-11-15** (the M6c review's Q6, written by lane r6g). The user:
+**keep M8's early sibling substitution as a stand-in, off by default** (`CXX1_TEMPLATE_SUBST` unset; no gate turns it
+on except the probe's own on-against-off rows), and **delete it when M8.2 lands** - M8.2's substitution from the body
+read once at the declaration replaces `Templates::substituteFunction`'s sibling, `Typer::typeBody`'s retyping of a
+sibling's root and `TypedTree::retype` in the same commit, and the census's `by-substitution` row is then M8.2's.
+Until then its gaps (run.sh under the switch, `-check=typed` and `-g` of a substituted body) are rows of M6-PLAN's
+"Owed at M6c's close".

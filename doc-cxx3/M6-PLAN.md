@@ -15,18 +15,51 @@ and "Where it stands" appended to as steps land.
 
 ## Steps
 
-| step | delivers | judged by |
-| --- | --- | --- |
-| M6a | `backend/C6xSelect.cpp`: selection of `ir::Function` into the walker's text - 32-bit integers and pointers, arithmetic, compares, branches and block arguments, loads, stores, allocas, direct calls in registers, returns - the post-passes untouched; a per-function fallback named by reason (`CXX1_SSA_WHY`); `CXX1_C6X_WALKER` the walker all; a census row | tests/tms6747.sh and tests/asm6x.sh at -O0 and -O2 as before; sim6747 cycles of the selected cases against the walker's (equal or better, or named); `identical.sh ARCHS=tms6747` names each changed file |
-| M6a.2 | the rest of the subset: 64-bit and floating values, class values and stack arguments, indirect and variadic calls, `-g`, then pads and the TI unwinder's tables from `ir::Function::landingPads`; census 0 walked | as M6a |
-| M6b | selection emits MIR with schedule-aware allocation (values in registers, not words), still through the old post-passes | cycles equal or better case by case; tms6747.sh |
-| M6c | the packetiser and pipeliner on MIR; `C6xSched`/`C6xPipe` text passes deleted once cycles are equal or better | the cycle table against M6a's; tms6747.sh, asm6x.sh |
-| M6d | with no walker left on `Ast.h` (M5.3 and M6a.2), its nodes and the parser's building half deleted (design 12.2) | `tools/ast-residue` to 0; every suite |
+| step | delivers | judged by | status (2026-11-15) |
+| --- | --- | --- | --- |
+| M6a | `backend/C6xSelect.cpp`: selection of `ir::Function` into the walker's text - 32-bit integers and pointers, arithmetic, compares, branches and block arguments, loads, stores, allocas, direct calls in registers, returns - the post-passes untouched; a per-function fallback named by reason (`CXX1_SSA_WHY`); `CXX1_C6X_WALKER` the walker all; a census row | tests/tms6747.sh and tests/asm6x.sh at -O0 and -O2 as before; sim6747 cycles of the selected cases against the walker's (equal or better, or named); `identical.sh ARCHS=tms6747` names each changed file | landed, rounds 1-6 (2026-11-13/14); its subset is what M6a.2 widens |
+| M6a.2 | the rest of the subset: 64-bit and floating values, class values and stack arguments, indirect and variadic calls, `-g`, then pads and the TI unwinder's tables from `ir::Function::landingPads`; census 0 walked | as M6a | **open** - 4,207 functions walked at -O2 at `458f8974` (`tools/c6x-walked.baseline`); planned in "M6a.2's rounds" below; **before M6d** (the user, 2026-11-15, Q2) |
+| M6b | selection emits MIR with schedule-aware allocation (values in registers, not words), still through the old post-passes | cycles equal or better case by case; tms6747.sh | **closed as built** (the user, 2026-11-15, Q8): homes picked in `ssaAssign`; the allocator's rounds are M6b.2, after M6d |
+| M6c | the packetiser and pipeliner on MIR; `C6xSched`/`C6xPipe` text passes deleted once cycles are equal or better | the cycle table against M6a's; tms6747.sh, asm6x.sh | **closed**, wave 19 (`458f8974`); wave 18's seven `<map>`/`<set>` cases (+11,926 cycles) accepted as a library cost (the user, 2026-11-15, Q1) |
+| M6d | with no walker left on `Ast.h` (M5.3 and M6a.2), its nodes and the parser's building half deleted (design 12.2) | `tools/ast-residue` to 0; every suite | waits on M6a.2 (M5.3 done); the walker and its legs stay until it (the user, 2026-11-15, Q2) |
+| M6b.2 | the allocator M6b's design names (written 2026-11-13, below): the file pick counting 1X/2X per turn, `.M` pressure, the allocator's result a rewrite of `MOperand::reg` | cycles equal or better case by case; tms6747.sh | **owed, after M6d** (the user, 2026-11-15, Q8) |
 
 **Lanes code, the coordinator gates** (`boxkit/brief-m3b5-par4.txt`). Every C6000 run is on the Linux box (TI's
-tools in `~/ti6x`), never on the Mac.
+tools in `~/ti6x`), never on the Mac. *Superseded, the user, 2026-11-15: everything that does not execute
+x86_64-linux code runs on the Windows box (`boxkit/windows-split-2026-11-15.md`) - the C6000's suites, simulators and
+TI tools among it.*
 
 ## Where it stands
+
+### Owed at M6c's close, 2026-11-15 (lane r6g, the M6c review's R116)
+
+Every item an entry since `434bdf8a` (M4's owed rows to wave 19) left owed and no later entry closed, with the step that
+takes it and when. A row leaves this table only by an entry below that names it; a new owed item is added here by the
+entry that finds it. The user's decisions of 2026-11-15 that the rows cite are in "The user's decisions on the M6c
+review" at the end of this note.
+
+| owed | from | owner | when |
+| --- | --- | --- | --- |
+| M6a.2: 4,207 functions walked at -O2 (4,053 at -O0) in tests/cases, by reason in "M6a.2's rounds" | M6-PLAN rounds 16, 25; R101 | M6a.2, its rounds W1-W6 | after the review's mend wave, **before M6d** (Q2) |
+| the six tms6747 `.notarget` lines of the walker's wrong answers (`handler-guards-nested`, `handler-local-past-inner-try`, `inline-static-exit-helpers`, `noexcept-set-terminate`, `ssa-own-landing-pads`, `static-reference-to-temporary`; the review's seventh, `noexcept-terminates-callee`, has an x86_64-windows line only) and the nine `tests/open/walker-*` entries | rounds 17-18, waves 13-14 | M6a.2 W1 (pads), each removed by the round that selects its function | M6a.2; the last by M6d |
+| the walker's class temporaries of a static reference and a `thread_local`'s scalar (`tests/open/walker-static-reference-temporary`) | round 18, wave 14 | M6a.2 W1 | with W1; else deleted with the walker at M6d |
+| operand-spelling readers inside the passes: `registersIn` over `MOperand::str()` (11 sites), `renamed` (4), six `kind == Symbol` halves; with them `readSerial` and `read` | rounds 24, 25; wave 19; R114 | M6d (the walker's text is their only reader); the symbol spelled like a register is the review's lane E | M6d |
+| the inliner's unit budget: one `rotateLeft` in `rebalance` declined, seven `<map>`/`<set>` cases +11,926 cycles (accepted as a library cost, Q1) | lane sh2, wave 18 | an inliner round (`SsaInline`: a callee measured as promote leaves it), judged over every common case | after M6a.2, before M6 closes |
+| `C()(a, b)` refused ("'C(...)' makes a temporary of type 'struct less<...>'", `Overload.cpp:610`), reproduced only in `OptTable.cpp` and a 36-line cut (`boxkit/sh2-r/u1.cpp`); the compiler's source worked round it (20f14d2e) | lane sh2, wave 18 | the review's lane D (`Overload.cpp`): the cut as a `tests/open` entry with clang's answer, then the mend | the mend wave; the open entry at once |
+| `tests/open/namespace-unnamed-nested-leaks`: an unnamed namespace inside `n` answers a lookup at file scope | lane sh1, wave 17 | a lookup round (`src/sema/Lookup.*`, the review's lane D's files) | the mend wave if D reaches it; at the latest M8.5 (two-phase lookup) |
+| the scheduler's refusal of a function it cannot spell, made a counted decline (Q5) | round 17 (D4); R108 | the review's lane E | the mend wave |
+| the bench kernels' cycles under the selector (asked by M6a rounds 3-5, never recorded) | M6a rounds 3-5 | M6's cycle judge (`tools/c6x-cycles`, the review's lane B), then every M6a.2 round | the mend wave's gate |
+| sim6747 in every wave gate, so the three `set_terminate` cases run on a C6000 leg (Q4); SIM6747 is not built on the Windows box yet | wave 4; R102; the Windows split | the wave gate (`tools/wave-gate`, lane A); SIM6747's Windows build (`boxkit/windows-split-2026-11-15.md`) | the mend wave's gate, and every wave gate after |
+| names.sh, overload.sh, win-structure.sh in every wave gate, on the Windows box (Q9) | R103 | the wave gate (lane A); the suites' skip (lane D) | the mend wave's gate, and every wave gate after |
+| target 4's self-host at a milestone close, on the Mac (Q4b); the fixed point not held since M5's close | R104 | M6's close; then every milestone's close | at M6's close |
+| emit.sh's golden on Linux | M5's close, wave 4 | the wave gate | the mend wave's gate |
+| a typedef's name in the debug information (`Count n` shows `unsigned int`); a file-static global shown `::ratio` where clang shows `ratio` | lldb, wave 16 | a `-g` round (`Dwarf.cpp`; the type system keeps no typedef) | after M6d |
+| the allocator M6b's design names (1X/2X per turn, `.M` pressure, the `MOperand::reg` rewrite) | M6b rounds 1-3; R113 | M6b.2 (Q8) | **after M6d** |
+| the Ast.h residue: five raises accepted, only down from here; any raise needs the user's word (Q7) | R111 | every round; `tools/ast-residue` | standing |
+| cl 19.51 has not compiled `src/encoder/` (the box's latest is VS 2022's 14.44) | M4.6 | M4's row, re-opened when a newer cl is on the Windows box | when cl 19.51 is installed (the user's) |
+| M8.0's REF, its golden and `-check=templates` | m8a, 2026-11-15 | M8.0 | when M8 starts in its plan's order |
+| the early substitution's gaps: run.sh under `CXX1_TEMPLATE_SUBST`, `-check=typed` and `-g` of a substituted body (Q6: kept as a stand-in, off by default) | m8a, wave 18; R109 | the review's lane F (its gate); deleted by M8.2 | lane F in the mend wave; the stand-in at M8.2 |
+| 479 refusal reasons of valid C++11, 20 reached by a test (lowering-why, 1237 files) | R1 rounds 6-9 (M5); R112 | R1's rounds; the review's lane H records them | each R1 round |
 
 ### M6a, round 1 (WIP), 2026-11-13, lane m6a
 
@@ -1803,3 +1836,84 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+## The user's decisions on the M6c review, 2026-11-15
+
+The review (Fable 5.2, `fable-m6c-review.md`, read at `458f8974`) asked nine questions; these are **the user's answers,
+2026-11-15**, relayed by the coordinator and written here by lane r6g. None is a lane's or the coordinator's choice.
+
+- **Q1 (the user, 2026-11-15):** wave 18's seven `<map>`/`<set>` cases (+11,926 cycles) are **accepted as a library
+  cost**; M6c stays closed; the inliner's budget (the `rotateLeft` in `rebalance`) is owed (the owed table).
+- **Q2 (the user, 2026-11-15):** **confirmed** - the walker (`CXX1_C6X_WALKER=1` and its legs) stays until M6d, and
+  **M6a.2 (R101) comes before M6d**.
+- **Q3 (the user, 2026-11-15):** release-check **keeps its 16 KB stack** (`tools/c6747/release-check.cmd`; the heap
+  stays 2 KB).
+- **Q4 (the user, 2026-11-15):** **sim6747 runs in every wave gate** (`SIM=1`, sharded); the time it takes is accepted.
+  (Since the same day's Windows split it runs on the Windows box, once SIM6747 is built there.)
+- **Q4b (the user, 2026-11-15):** target 4's self-host **may run on the Mac at every milestone close**: one job, through
+  `boxkit/mac-run.sh`, under the caps; never in a wave. Written also in `M5-PLAN.md`'s "The Mac runs".
+- **Q5 (the user, 2026-11-15):** a function the scheduler cannot spell is no longer a compile error: **emit the
+  unscheduled text and count the decline** (R108); the decline count is a **ratchet that only goes down**.
+- **Q6 (the user, 2026-11-15):** M8's early sibling substitution is **kept as a stand-in, off by default**, and deleted
+  when M8.2 lands. Written in `M8-PLAN.md`.
+- **Q7 (the user, 2026-11-15):** the five raises of the Ast.h residue's baseline are **accepted as recorded**; from now
+  on it **only goes down**, and **any raise needs the user's word**.
+- **Q8 (the user, 2026-11-15):** **M6b is accepted as built** (homes picked in `ssaAssign`, no allocator rewriting the
+  stream); the allocator's rounds - 1X/2X per turn, `.M` pressure, the rewrite of `MOperand::reg` - are **planned as
+  owed, after M6d** (the steps table's M6b.2).
+- **Q9 (the user, 2026-11-15):** **the Windows box is the standing home of names.sh, overload.sh and
+  win-structure.sh in every wave gate**; nothing is installed on the Linux box.
+- **The order (the user, 2026-11-15):** all the review's mends (Fable reworks; at most two Fable lanes, three lanes) ->
+  one gate (`tools/wave-gate`) -> land -> a short mend check -> **M6a.2** -> **M6d**.
+
+## M6a.2's rounds (planned 2026-11-15 by lane r6g from `458f8974`; the review's R101)
+
+**The measure** (`CENSUS_SOURCES=0 CENSUS_FLAGS=-O2 tools/ssa-census -arch tms6747`, Windows box, 458f8974's cl
+build, tests/cases' 1,227 files): **at -O2 the selector takes 6,992 of 11,199 functions; 4,207 are walked, in 866 of
+the 1,227 cases**; at -O0 7,146 of 11,199 selected, 4,053 walked in the same 866 cases (m6-x 32d47563 read 4,149 and 3,996 over 868 files). By the selector's reason (`CXX1_SSA_WHY`, -O2):
+
+| reason | -O2 | -O0 | round |
+| --- | --- | --- | --- |
+| landing pads | 1,329 | 1,329 | W1 |
+| exception specification | 31 | 31 | W1 |
+| variadic call | 860 | 735 | W2 |
+| variadic (the callee) | 16 | 16 | W2 |
+| class result | 418 | 418 | W3 |
+| class or 64-bit parameter | 398 | 398 | W3 (class), W4 (64-bit) |
+| class result of a call | 65 | 62 | W3 |
+| class argument | 36 | 35 | W3 |
+| aggregate value | 2 | 28 | W3 |
+| floating value | 246 | 267 | W4 |
+| floating or 64-bit result | 178 | 178 | W4 |
+| 64-bit value | 126 | 125 | W4 |
+| `smulh` | 20 | 0 | W4 |
+| `memcpy` | 215 | 203 | W5 |
+| `memset` | 103 | 92 | W5 |
+| indirect call | 140 | 112 | W6 |
+| outside the SSA lowering | 24 | 24 | W6 (R1's) |
+| **walked** | **4,207** | **4,053** | |
+
+**The ratchet.** `tools/c6x-walked.baseline` holds the walked count at -O0 and -O2 (458f8974's); `tools/ssa-census
+-arch tms6747` prints the count against it after its own rows and fails when it rises; when it falls, it says so
+and the round lowers the baseline in the same commit. `CENSUS_SOURCES=0` counts tests/cases alone (about two minutes
+a level on the Windows box at three jobs; the full census adds cxx3's own sources at tms6747, past 25 minutes).
+M6a.2 is done when both lines read 0 - M6d's licence. Run once against the new file (Windows, work\r6g, -O2): "walked 4207 functions in 866
+of 1227 cases; baseline 4207".
+
+**The rounds**, largest reason first, the pads their own round (each about one lane; a round that cannot finish its
+reason takes the largest shape of it and names the rest):
+
+| round | takes | the shape | its own judge, beside the common one |
+| --- | --- | --- | --- |
+| W1 | landing pads, exception specifications | the selector writes pads from `ir::Function::landingPads`, the call-site rows and TI's unwinder tables (`.c6xabi.exidx`/`.extab`, as the walker's `-O0` text writes them) for a selected function; a function with a handler is selected | TI's linker and runtime unwind it (`tests/ti-link.sh`, release-check); the six tms6747 `.notarget` lines of the owed table removed as their functions are selected; `tests/open.sh` names the `walker-*` entries that agree, and they move to tests/cases |
+| W2 | variadic calls | arguments past the named ones on the stack as TI's C6000 EABI places them; `va_*` in a selected variadic function | cl6x's `-S` of the same calls (the ABI's oracle); a selected caller linked with a cl6x-built callee |
+| W3 | class values | a class result through the hidden pointer (A3), a class argument by its copy's address, a class result of a call, aggregate values | the same cl6x oracle; the lifetime ledger 0 in each case it selects |
+| W4 | 64-bit and floating values | register pairs (A5:A4 and the rest), `long long` and `double` arithmetic and compares, the C674x's floating instructions, TI's runtime helpers where cl6x calls one, `smulh` | cl6x's `-S`; sim6747 results equal the walker's in every case that prints a double |
+| W5 | `memcpy`, `memset` | the copy and the fill as calls into TI's runtime, or inline where cl6x inlines them | cycles per case not worse than the walker's copy loop |
+| W6 | indirect calls; what remains | a call through a register (B3 as the return); the 24 bodies outside the SSA lowering go with R1's rounds, which own the lowering's reasons | the census: 0 walked at -O0 and -O2 |
+
+**The common judge, every round** (the steps table's "as M6a", made exact): tests/tms6747.sh at -O0, -O1 and -O2 with
+`SIM=1` (Q4), sharded, 0 failed; asm6x.sh 0 failed; `identical.sh ARCHS=tms6747` names each changed file, and every
+change is a function the round newly selects; cycles case by case (`tools/c6x-cycles`) equal or better, or named;
+the walker legs (`CXX1_C6X_WALKER=1`) 0 failed while the walker stands; the census below its baseline, the baseline
+lowered in the round's commit.

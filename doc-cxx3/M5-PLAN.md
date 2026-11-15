@@ -12,6 +12,10 @@ on target 4 - **one Mac job at a time**, through `boxkit/mac-run.sh <cap> <comma
 under 25 minutes, and a stop below 8 GB free). No compile past 9 minutes, no run past 3, no job past 25.
 Everything else - x86 gates, the C6000, cl - stays on the boxes.
 
+**At every milestone close (the user, 2026-11-15, the M6c review's Q4b):** target 4's self-host **may run on the Mac at
+every milestone close** - one job, through `boxkit/mac-run.sh`, under the caps above; **not in waves**. This widens
+"for M5 only" for that one job and nothing else.
+
 ## What exists at the start (measured, not assumed)
 
 - **arm64-darwin** is exception 1: `backend/Arm64Darwin.cpp` (1,331 lines) over `backend/Walker.cpp` (374) reads
