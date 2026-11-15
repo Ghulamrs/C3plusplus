@@ -931,19 +931,12 @@ bool Typer::fromTemplate(const std::string &symbol) const {
     return false;
 }
 
-namespace {
-struct Retype {
-    const Templates *tmpl; const Templates::Substituted *s;
-    const Type *operator()(const Type *t) const { return tmpl->substituted(*s, t); }
-};
-}
-
 TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
     const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
     if (s == p_.tmpl_.substituted_.end()) return typeFunction(fn);
     const std::size_t node = tree_.size(), record = tree_.resolutionCount();
     const TypedId t = typeFunction(fn);
-    const Retype retype = { &p_.tmpl_, &s->second };
+    const SubstitutedTypes retype = { &p_.tmpl_, &s->second };
     tree_.retype(node, record, p_.types_, retype);
     return t;
 }

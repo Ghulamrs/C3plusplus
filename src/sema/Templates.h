@@ -179,4 +179,10 @@ private:
     std::map<std::string, std::vector<Owed> > owedBodies_;   // by the declaration's "<owner>::<name>@<declaredAt>"
 };
 
+// A substitution as a function of a type, which TypedTree::retype is handed.
+struct SubstitutedTypes {
+    const Templates *tmpl; const Templates::Substituted *s;
+    const Type *operator()(const Type *t) const { return tmpl->substituted(*s, t); }
+};
+
 }   // namespace sema
