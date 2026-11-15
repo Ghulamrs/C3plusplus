@@ -935,6 +935,9 @@ private:
     std::vector<std::size_t> scopeStarts_;
     // Each live block-scope function declaration and the scope depth it was made at: [basic.lookup.argdep]/3.
     std::vector<std::pair<std::string, std::size_t> > blockFunctions_;
+    // The enclosing block's, seen from a lambda or local class body: depth 0, never closed there (N7).
+    void carryBlockFunctions(const std::vector<std::pair<std::string, std::size_t> > &outer);
+    void closeBlockFunctions();
     std::vector<int> blocks_;
     std::vector<int> blockStack_;
     std::vector<std::size_t> blockAt_;     // where each block of blocks_ opens (its `{` or `for`), 0 unknown: -g under SSA
@@ -1218,6 +1221,7 @@ private:
         std::vector<Local> locals;
         std::vector<::Local> fnVars;
         std::vector<std::size_t> scopeStarts;
+        std::vector<std::pair<std::string, std::size_t> > blockFunctions;
         std::vector<int> blocks, blockStack;
         std::vector<std::size_t> blockAt;
         std::vector<LabelDef> labels, gotos;
