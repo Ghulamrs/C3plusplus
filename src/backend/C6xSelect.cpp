@@ -37,7 +37,7 @@ const char *const kHome[] = { "A10", "A11", "A12", "A13", "B10", "B11", "B12", "
 const unsigned kKept = 0xffu, kScratch = 0xffffff00u, kScratchA = 0xffff00u, kBside = 0xff0000f0u;
 
 bool callsOut(ir::Op op) {     // a call, or the EABI's divide helper
-    return op == ir::Op::Call || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem;
+    return op == ir::Op::Call || op == ir::Op::Invoke || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem;
 }
 
 // A constant of lo..hi, as movImm would write it.
@@ -65,8 +65,7 @@ const ir::Function *Tms6747::ssaChoose(const Function &fn) {
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
 std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
     if (fn.isVariadic() || f.variadic) return "variadic";
-    if (fn.hasLandingPads() || f.landingPads) return "landing pads";
-    if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return "exception specification";
+    if (!fn.exceptionSpec().empty()) return "exception specification";     // throw(T...): the lowering's filter has no row here
     if (fn.sretSlot() != 0 || f.sret.valid() || fn.returns()->isStructOrUnion()) return "class result";
     if (fn.returns()->isFloating() || (!fn.returns()->isVoid() && accessSize(fn.returns()) > 4)) return "floating or 64-bit result";
     if (fn.params().size() != f.params.size()) return "parameters differ";
@@ -81,7 +80,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     }
     for (ir::BlockId b : f.blocks) {
         const ir::Block &blk = f.block(b);
-        if (blk.pad || blk.funclet != 0) return "landing pads";
+        // A pad is the Itanium one: the exception and the selector its two parameters, its first instruction the row's facts.
+        if (blk.funclet != 0 || (blk.pad && (blk.params.size() != 2 || blk.insts.empty()))) return "landing pads";
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
@@ -95,12 +95,14 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::LShr: case ir::Op::AShr: case ir::Op::Neg: case ir::Op::Not:
             case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
             case ir::Op::Br: case ir::Op::CondBr: case ir::Op::Switch: case ir::Op::Ret: case ir::Op::Unreachable:
+            case ir::Op::CatchPad: case ir::Op::CleanupPad:
                 break;
             case ir::Op::ICmp:
                 if (i.cc > ir::Cmp::Uge) return "a floating comparison";
                 break;
-            case ir::Op::Call: {
+            case ir::Op::Call: case ir::Op::Invoke: {
                 const ir::CallInfo &c = f.calls[i.call];
+                if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "landing pads";
                 if (c.symbol.empty()) return "indirect call";
                 if (c.variadic) return "variadic call";
                 if (c.sret || c.resultAlloca >= 0) return "class result of a call";
@@ -319,7 +321,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             at += 2;
             if (i.result.valid()) { start[i.result.v] = at; home[i.result.v] = static_cast<int>(id); }
             if (callsOut(i.op)) calls.push_back(at);
-            if (i.op == ir::Op::Call && i.count > 6) wideCall = true;
+            if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && i.count > 6) wideCall = true;
         }
         last[id] = at;
         at += 2;
@@ -383,12 +385,16 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             if (out[id * words + v / 64] & bit) end[v] = std::max(end[v], last[id] + 1);
         }
     }
+    // A value live into a pad may hold a saved register (every call reads those, TI's unwinder restores them); one remade is made there.
+    std::vector<char> unwound(nv, 0);
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++)
+        for (std::size_t v = 1; v < nv && f.block(ssaOrder_[b]).pad; v++) unwound[v] |= (in[ssaOrder_[b].v * words + v / 64] >> (v % 64)) & 1;
     std::vector<std::size_t> order;
     for (std::size_t v = 1; v < nv; v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v]) continue;
         // A remade value a loop reads keeps a register where one is free, and no weight: any other value takes it back.
         hot[v] = hot[v] && hoists(f, ir::ValueId(static_cast<std::uint32_t>(v)));
-        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && !hot[v]) continue;
+        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && (!hot[v] || unwound[v])) continue;
         if (hot[v]) weight[v] = 0;
         end[v] = std::max(end[v], start[v] + 1);
         order.push_back(v);
@@ -511,7 +517,10 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     const std::string head = out_.str();        // the stream holds the body alone; what stood before it goes back first
     out_.str(std::string());
     ssaMir_.clear();
-    ssaOrder_ = optimize_ != 0 ? ssaBlockOrder(f) : f.blocks;       // a loop's blocks together, its latch last
+    ssaRegionAt_ = 0;
+    // A loop's blocks together, its latch last; at -O0 only a wrapped body's (pads, noexcept), which else jumps to its body and back.
+    const bool wrapped = fn.isNoexcept() || fn.hasLandingPads() || f.landingPads;
+    ssaOrder_ = optimize_ != 0 || wrapped ? ssaBlockOrder(f) : f.blocks;
     ssaAssign(fn, f);
     frame_ = layoutSsa(fn, f);
     // Each parameter into its home by emitParams (regOf_), or from the slot emitParams wrote it to into its value's word.
@@ -534,8 +543,18 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     std::size_t lastPos = 0;
     for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
         const ir::Block &blk = f.block(ssaOrder_[b]);
+        // A pad: TI's runtime lands with the exception in A4 and the trampoline's selector in B4, the block's two parameters,
+        // and B15 the throwing call's (landingPad); a branch from another pad arrives past it, at the block's own label.
+        if (blk.pad) {
+            defineLabel(ssaLandLabel(ssaOrder_[b]));
+            ssaStore(f, blk.params[0], "A4");
+            ssaStore(f, blk.params[1], "B4");
+            ssaEmit(c6x::MInst("MV", "A15", "B15"));
+            spAdjust(-(saveBytes_ + frame_ + (optimize_ > 0 ? 8 : 0)));
+        }
         defineLabel(ssaBlockLabel(ssaOrder_[b]));
-        const ir::BlockId next = b + 1 < ssaOrder_.size() ? ssaOrder_[b + 1] : ir::BlockId();
+        const bool into = b + 1 < ssaOrder_.size() && !f.block(ssaOrder_[b + 1]).pad;      // nothing falls into a landing
+        const ir::BlockId next = into ? ssaOrder_[b + 1] : ir::BlockId();
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
@@ -634,6 +653,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
         return;
     case ir::Op::Null: case ir::Op::Alloca: case ir::Op::Undef: case ir::Op::Unreachable:
+    case ir::Op::CatchPad: case ir::Op::CleanupPad:     // the row facts the invokes read
         return;
     case ir::Op::Load: {
         std::string mem;
@@ -741,14 +761,43 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         finish();
         return;
     }
-    case ir::Op::Call: {
+    case ir::Op::Call: case ir::Op::Invoke: {
+        // An invoke is one call-site row, in address order and disjoint, with its pad's chain (M3-IR 3.13), as arm64 writes it.
         const ir::CallInfo &c = f.calls[i.call];
+        const int row = i.op == ir::Op::Invoke ? nextLabel() : 0;
+        if (i.op == ir::Op::Invoke) defineLabel(label("ssatry", row));
         for (std::uint32_t k = 0; k < i.count; k++) ssaLoad(f, f.operand(i, k), abi_.intRegs[k]);
         if (i.count > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         openArea(8);
         call(c6x::symbolOperand(c.symbol));
         closeArea();
+        if (i.op == ir::Op::Invoke) {
+            defineLabel(label("ssatryend", row));
+            const ir::Block &land = f.block(i.succ[1].block);
+            const ir::Inst &pad = f.inst(land.insts[0]);
+            std::vector<int> indices;
+            for (std::size_t k = 0; k < pad.cases.size(); k++) indices.push_back(static_cast<int>(pad.cases[k]));
+            // A pad that only ends the program is cl6x's terminate scope, as the walker writes it: the runtime ends it, no landing.
+            bool ends = false;
+            for (std::size_t k = 0; k < land.insts.size(); k++)
+                ends = ends || (f.inst(land.insts[k]).op == ir::Op::Call && f.calls[f.inst(land.insts[k]).call].symbol == "_ZSt9terminatev");
+            CallSite site;
+            site.begin = label("ssatry", row);
+            site.end = label("ssatryend", row);
+            site.pad = ssaLandLabel(i.succ[1].block);
+            site.types = pad.syms;
+            site.indices = indices;
+            site.cleanup = (pad.bits & 1) != 0;
+            site.handsOver = (pad.bits & 2) != 0;
+            site.terminate = ends;
+            site.at = ++ssaRegionAt_;
+            addCallSite(site);
+        }
         if (i.result.valid() && rt != nullptr && !rt->isVoid()) { narrowInt(rt); ssaStore(f, i.result, "A4"); }
+        if (i.op == ir::Op::Invoke) {
+            edge(i.succ[0], true);
+            if (i.succ[0].block.v != next.v) writeLater();
+        }
         return;
     }
     case ir::Op::Ret:

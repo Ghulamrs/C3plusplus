@@ -299,6 +299,9 @@ private:
     // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
     c6x::MStream ssaMir_;
     std::string ssaHead_;       // what stood in out_ before a selected body
+    int ssaRegionAt_ = 0;       // an invoke's row, counted in address order
+    bool ssaRows_ = false;      // the rows are a selected body's: one per invoke, each whole, so none is joined to another
+    std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
     void ssaAbsorb();
     void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
     void ssaBranchIf(bool zero, const std::string &l);

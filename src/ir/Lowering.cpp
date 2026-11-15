@@ -7120,7 +7120,9 @@ void Lowering::resumeFrom(const Pad &p, std::size_t enclosing) {
         br(padBlock(pads_[enclosing - 1]), args);
         return;
     }
-    runtimeCall("_Unwind_Resume", tid(*types_.voidType()), std::vector<ValueId>(1, p.ptr));
+    // TI's runtime keeps the exception itself: `__cxa_end_cleanup()` (Target::resumeTakesException, measured from cl6x).
+    if (target_.resumeTakesException()) runtimeCall("_Unwind_Resume", tid(*types_.voidType()), std::vector<ValueId>(1, p.ptr));
+    else runtimeCall("__cxa_end_cleanup", tid(*types_.voidType()), std::vector<ValueId>());
     add(Op::Unreachable, TypeId(), std::vector<ValueId>());
 }
 
