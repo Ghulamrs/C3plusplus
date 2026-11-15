@@ -522,6 +522,12 @@ std::size_t Overload::leastArguments(const Signature &f) const {
 }
 
 
+static std::vector<const Type *> argumentTypes(const std::vector<ExprPtr> &args) {
+    std::vector<const Type *> types;
+    for (std::size_t i = 0; i < args.size(); i++) types.push_back(args[i]->type());
+    return types;
+}
+
 Signature Overload::resolveOverload(const std::string &written,
                                           const std::vector<ExprPtr> &args,
                                           std::size_t pos,
@@ -537,9 +543,7 @@ Signature Overload::resolveOverload(const std::string &written,
     // `N::twice` when `s` is an `N::S`. Only where nothing else answered, so a
     // name that is in scope is never quietly outranked by a far one.
     if (object == nullptr && p_.lookup_.overloadsOf(name) == nullptr && !args.empty()) {
-        const std::vector<std::string> keys =
-            p_.lookup_.lookupKeys(written, args[0]->type(),
-                       args.size() > 1 ? args[1]->type() : nullptr);
+        const std::vector<std::string> keys = p_.lookup_.lookupKeys(written, argumentTypes(args));
         if (!keys.empty()) name = keys.back();
     }
     // **A constructor template is a candidate too**: every one under this key that
@@ -585,7 +589,7 @@ Signature Overload::resolveOverload(const std::string &written,
         }
         if (written.find("::") == std::string::npos && !args.empty()) {
             const std::vector<std::string> adl =
-                p_.lookup_.lookupKeys(written, args[0]->type(), args.size() > 1 ? args[1]->type() : nullptr);
+                p_.lookup_.lookupKeys(written, argumentTypes(args));
             for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);
         }
         for (std::size_t i = 0; i < keys.size(); i++)

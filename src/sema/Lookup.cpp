@@ -530,6 +530,14 @@ const Type *Lookup::findMemberOwner(const Type *cls,
 std::vector<std::string> Lookup::lookupKeys(const std::string &name,
                                             const Type *left,
                                             const Type *right) const {
+    std::vector<const Type *> operands;
+    operands.push_back(left);
+    operands.push_back(right);
+    return lookupKeys(name, operands);
+}
+
+// [basic.lookup.argdep]/2 asks every argument's namespaces, not the first two (R110).
+std::vector<std::string> Lookup::lookupKeys(const std::string &name, const std::vector<const Type *> &operands) const {
     std::vector<std::string> keys;
     auto add = [&](const std::string &k) {
         if (!hasFunctionNamed(k)) return;
@@ -540,8 +548,7 @@ std::vector<std::string> Lookup::lookupKeys(const std::string &name,
     add(name);
     add(qualifyForLookup(name, &Lookup::hasFunctionNamed));
 
-    const Type *operands[2] = { left, right };
-    for (std::size_t i = 0; i < 2; i++) {
+    for (std::size_t i = 0; i < operands.size(); i++) {
         const Type *t = operands[i];
         while (t != nullptr && (t->isPointer() || t->isReference()))
             t = t->pointee();

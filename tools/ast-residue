@@ -27,7 +27,7 @@ import re
 import signal
 import sys
 
-signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `| head` ends the listing quietly
+if hasattr(signal, "SIGPIPE"): signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `| head` ends the listing quietly
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC = os.path.join(ROOT, "src")

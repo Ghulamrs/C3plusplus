@@ -146,18 +146,20 @@ $(OBJDIR)/%.o: src/%.cpp
 # target: every refusal the source raises is cited in docs/EXCLUSIONS.md (the
 # document drifted to 116 uncited while this only reported a count - review of
 # 2026-10-08), and no comment group in src/ runs past the three-line cap.
+# names, overload and win-structure say NOT RUN (status 3) with no clang; REQUIRE_ORACLE=1 makes that a failure
+# (R103). Their home is the Windows box (the user's Q9).
 test: $(TARGET)
 	@python3 ide/generate.py --check >/dev/null || { echo "make test: ide/ projects are stale - run python3 ide/generate.py"; exit 1; }
 	@CXX1=$(TARGET) ./tests/run.sh
 	@CXX1=$(TARGET) ./tests/emit.sh
-	@CXX1=$(TARGET) ./tests/names.sh
-	@CXX1=$(TARGET) ./tests/overload.sh
+	@CXX1=$(TARGET) ./tests/names.sh || { [ $$? = 3 ] && [ -z "$(REQUIRE_ORACLE)" ]; }
+	@CXX1=$(TARGET) ./tests/overload.sh || { [ $$? = 3 ] && [ -z "$(REQUIRE_ORACLE)" ]; }
 	@CXX1=$(TARGET) ./tests/syntax.sh
 	@CXX1=$(TARGET) ./tests/typed.sh
 	@CXX1=$(TARGET) ./tests/ssa.sh
 	@CXX1=$(TARGET) ./tests/coff.sh
 	@CXX1=$(TARGET) ./tests/c90.sh
-	@CXX1=$(TARGET) ./tests/win-structure.sh
+	@CXX1=$(TARGET) ./tests/win-structure.sh || { [ $$? = 3 ] && [ -z "$(REQUIRE_ORACLE)" ]; }
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
