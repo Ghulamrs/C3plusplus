@@ -20,7 +20,7 @@
 # run SHARD=k/6, k=1-3 on Linux and k=4-6 on Windows at once, and join into one verdict (counts summed, cycles.txt
 # concatenated); `idle` steps (the -S comparisons) go to whichever leg asks first after its own, and say so.
 # `-B step=box` (or WAVEGATE_BOXES) overrides a row for one run. `-t` ships that commit's tree, not HEAD's;
-# `-p` prints each box's list and runs nothing.
+# `-p` prints each box's list and runs nothing. WAVEGATE_HALVES=1 with `-b <box>` (and -k) runs that box's half alone.
 # A verdict is FAIL when its box's disk is above 70% (the user's limit) as it is written.
 # tms<L>/wtms<L>: tests/tms6747.sh at -O<L> on the selector / the walker (CXX1_C6X_WALKER=1), six shards, SIM=0;
 # -O1 is R107's leg. cycles: tools/c6x-cycles --check over tms2's joined cycles.txt. identical: tools/identical.sh
@@ -189,7 +189,7 @@ has() { case " $BOXES " in *" $1 "*) return 0;; esac; return 1; }
 # a box's list: its build, then its half of every split step (both halves at once on the two boxes), then its own
 legsteps() { b=$1; r=SPLIT_$(echo $b | tr a-z A-Z); eval "r=\${$r:-}"; l=
     for s in $STEPS; do x=$(boxof $s); [ -z "$(why $s)" ] || continue
-        if [ "$x" = split ] && [ -n "$r" ] && has linux && has windows; then p="$s@$r"
+        if [ "$x" = split ] && [ -n "$r" ] && { [ -n "${WAVEGATE_HALVES:-}" ] || { has linux && has windows; }; }; then p="$s@$r"   # HALVES: one box's half alone
         elif [ "$x" = split ] && [ -n "$r" ]; then p="$s@1-$NSHARD"           # one box asked: it takes all six
         elif [ "$x" = "$b" ] && [ $s != cycles ]; then p=$s; else continue; fi     # cycles: after the join (own())
         done_ "$p" || l="$l $p"; done
@@ -214,8 +214,13 @@ cycles_join() {   # $1 the box that runs the check: both boxes' tms2 cycles.txt,
     has linux && lssh "cat ~/$N-cycles.txt 2>/dev/null" >> "$OUT/cycles-joined.txt"
     has windows && ssh -o BatchMode=yes "$WINDOWS" "type $WORK\\$N-cycles.txt 2>nul" | tr -d '\r' >> "$OUT/cycles-joined.txt"
     sort -o "$OUT/cycles-joined.txt" "$OUT/cycles-joined.txt"
+    # the judge and its baseline go with it: R106's, from this script's tree, when the gated commit predates them
     if [ $1 = linux ]; then scp -q -i "$KEY" -o BatchMode=yes "$OUT/cycles-joined.txt" "$LINUX:$N-cycles-joined.txt"
-    else scp -q -o BatchMode=yes "$OUT/cycles-joined.txt" "$WINDOWS:$WF/$N-cycles-joined.txt"; fi; }
+        [ -f "$WT/tools/c6x-cycles" ] || scp -q -i "$KEY" -o BatchMode=yes "$ROOT/tools/c6x-cycles" "$ROOT/tests/tms6747-cycles.txt" "$LINUX:$N/tools/"
+        [ -f "$WT/tools/c6x-cycles" ] || lssh "mv ~/$N/tools/tms6747-cycles.txt ~/$N/tests/"
+    else scp -q -o BatchMode=yes "$OUT/cycles-joined.txt" "$WINDOWS:$WF/$N-cycles-joined.txt"
+        [ -f "$WT/tools/c6x-cycles" ] || { scp -q -o BatchMode=yes "$ROOT/tools/c6x-cycles" "$WINDOWS:$WF/$N/tools/c6x-cycles"
+            scp -q -o BatchMode=yes "$ROOT/tests/tms6747-cycles.txt" "$WINDOWS:$WF/$N/tests/tms6747-cycles.txt"; }; fi; }
 
 own() { [ "$(boxof cycles)" = $1 ] && [ -z "$(why cycles)" ] && ! done_ cycles && cycles_join $1 && echo cycles; }   # cycles on a box by -B
 linux_chain() {   # the steps as one detached chain on the box, polled once a minute
@@ -239,7 +244,8 @@ linux_leg() {
 
 windows_step() { s=$1; L="$OUT/$s.log"; W="$ROOT/tools/windows"
     case $s in
-    wbuild) sh "$W/winbuild.sh" "$WT" "$N" > "$L" 2>&1 && wverdict wbuild PASS "cxx3-msvc.exe built by cl /W4 /WX" || { verdict wbuild FAIL "$(tail -1 "$L" | cut -c1-160); $L" windows; return 1; } ;;
+    wbuild) sh "$W/winbuild.sh" "$WT" "$N" > "$L" 2>&1 && scp -q -o BatchMode=yes "$ROOT/tools/wave-gate" "$WINDOWS:$WF/$N/tools/wave-gate" &&   # a commit before r6a has none
+            wverdict wbuild PASS "cxx3-msvc.exe built by cl /W4 /WX" || { verdict wbuild FAIL "$(tail -1 "$L" | cut -c1-160); $L" windows; return 1; } ;;
     winpass[012]) f=-O${s#winpass}
         NOBUILD=1 WINLANES=${WINLANES:-10} sh "$W/winpass.sh" "$WT" "$N" "$f" > "$L" 2>&1
         d=$(grep -a 'same, [0-9]* differ' "$L" | sed 's/^.*\\winout/winout/' | tr '\n' ';' | cut -c1-300)
