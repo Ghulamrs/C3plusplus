@@ -1830,7 +1830,14 @@ walker's text is read once into entries until M6d (round 25's entry names what i
   where the class is defined, cl's `_TI2CPEAD` - measured with cl 19.44, clang writes `_TIC2PEAD`); and
   tools/mangled-names drops file-local `__cxx1_vec_*` / `__cxx_global_array_dtor` and memset/memcpy/bzero
   (48 rows differed by these alone).
-- **win-structure** (python working): layout 748 compared, 3 differ before the RTTI rows were recorded,
-  9 under a recorded names difference (was 557 of 747 under the Store stub); unwind 0 faults except
-  8 `dispUnwindHelp 0` in three cases' functions whose try cannot throw - registered.
+- **win-structure** at r6d (python working; it was 557 of 747 layouts "differing" under the Store stub): layout
+  749 compared, **0 differ**, 12 under a recorded names difference; names 528 agree / 53 differ / 246 .nonames - the
+  53 are MSVC's inline UCRT stdio alone 42, and the 11 the names classes above hold; unwind 0 faults but **8
+  `dispUnwindHelp 0`** in three functions whose try cannot throw (nested-parse-state -O2, ssa-ms-try -O0/-O2,
+  ssa-try-catch -O0, both spellings) - registered in tests/open/names-register.txt, not mended.
 - **overload.sh** 45 agreed / 1 differed (base-rvalue-reference: clang cannot read MSVC's <utility> at -std=c++11).
+- **Gates at r6d**: run.sh on Linux (g++ -Werror build, the new box) 1223 passed / 0 failed; Windows self-compile
+  103 of 103 by stage 0; exclusions 0 uncited / 0 stale (three citations re-pointed), comment cap 0 over, memory
+  gate and ast-residue not above their baselines, ide/generate.py --check clean; cl /W4 /WX build clean.
+  winpass -O0 started at one lane beside the suites and had not finished at the hour - owed to the wave gate.
+  src/: +25 -7 lines (Lookup, Overload, Parser.h/.cpp, ParserClass).
