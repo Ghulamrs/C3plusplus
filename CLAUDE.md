@@ -19,8 +19,9 @@ never `'??'`, in a diagnostic - trigraphs are live.
 
 **The executable is `cxx3.exe`** (`cxx3-msvc.exe` for stage 0 on Windows); messages still say `cpp11:`,
 variables `CPP11_*`, the seal is `cxx1-N.dat`. **Self-hosting is the goal**: the design is
-`doc-cxx3/Compiler_Design_Final.md` (milestones M0-M8); the milestone in hand and its rounds are
-`doc-cxx3/M3-PLAN.md` - its table near the top and its dated entries at the end are the project's status.
+`doc-cxx3/Compiler_Design_Final.md` (milestones M0-M8); the milestone in hand is M6 and its rounds are
+`doc-cxx3/M6-PLAN.md` - its table near the top and its dated entries at the end are the project's status
+(`M5-PLAN.md` closed, `M8-PLAN.md` begun; each `Mn-PLAN.md` holds its own milestone).
 
 ## Reading this tree
 
@@ -69,10 +70,11 @@ HEAD..origin/main` before the first edit.
   must be 0; `built`/`gone` counts are elision-dependent and not facts.
 - **`tests/open/`** is the register of known wrong answers with clang's answer; `tests/open.sh` names any
   that start agreeing so they move into `tests/cases`.
-- `make test` runs the suites plus three gates that fail it: `tools/exclusions --check docs/EXCLUSIONS.md`
-  (0 uncited, 0 stale - a refusal that moves a line moves its citation), `make comments` (the cap below) and
-  `tools/memory-gate` (raw `new` and raw-pointer declarators in src/ir, src/syntax, src/sema/Typing*,
-  src/optimizer/Mir* may only go down).
+- `make test` runs the suites plus four gates that fail it: `tools/exclusions --check docs/EXCLUSIONS.md`
+  (0 uncited, 0 stale - a refusal that moves a line moves its citation; the outside() and arm64 refusal sites
+  only go down), `make comments` (the cap below), `tools/memory-gate` (raw `new` and raw-pointer declarators in
+  src/ir, src/syntax, src/sema/Typing*, src/optimizer/Mir* may only go down) and `tools/ast-residue` (only down;
+  **a raise is the user's word**, a baseline line the coordinator marks `user-approved <date>` - Q7, 2026-11-15).
 
 ## Understandable means checkable
 
@@ -103,8 +105,11 @@ being no function at all; the parser numbering selectors as `Regions::lsdaTable`
 
 ## The boxes
 
-- **The Mac edits and ships only** - no build, test or check runs there; the boxes carry the load.
-- **Linux**: `ec2-user@52.202.164.123`, g++, 2 cores; every job under `flock ~/.boxleg.lock` and `timeout
+- **The Mac edits and ships only** - no build, test or check runs there, except arm64-darwin's binaries, lldb
+  and a target-4 self-host at a milestone's close, one job at a time through `mac-run.sh` (Q4b).
+- **What runs where** is the user's box split (history: "The box split: what runs where"); names, overload and
+  win-structure run on Windows in every wave gate (Q9).
+- **Linux**: `ec2-user@52.202.164.123`, g++, 4 vCPU (`make -j4`, `JOBS=4`); every job under `flock ~/.boxleg.lock` and `timeout
   1500`; TI's tools in `~/ti6x`, CCS 5.5 in `~/ti/ccsv5`, the TI runtime in `~/c6747-lib`.
 - **Windows**: `ssh windows` (`xrotrxt@192.168.100.84`), shared with another session - **at most 10
   processors and 24 GB**, every job pinned with `start /affinity 3FF`, never kill a process by name;
@@ -116,7 +121,7 @@ being no function at all; the parser numbering selectors as `Regions::lsdaTable`
 
 ```
 make                 build cxx3.exe with clang++ (Mac) or g++ (Linux)
-make test            the suites and the three gates
+make test            the suites and the four gates
 tests/emit.sh --record     record the golden before a change
 tools/verify-three [linux|windows|c6747]
 ```
@@ -411,3 +416,10 @@ them too; read a section with `sed -n '<line>,<line+N>p'` or by searching its ti
 - M7: C90 through the parser and `SemaC`, 2026-10-26 (line 15232)
 - The design's basis numbered: cppparse 1.0 and compilerpp 1.0, 2026-11-12 (line 15271)
 - M3b.8: the optimizer documents brought to what is true, 2026-11-13 (line 15278)
+- R8 closed on x86: a volatile file is compiled at the level asked, 2026-11-13 (line 15306)
+- The new Windows box qualified for tms6747 with CCS 5.5 and CCS 7.4, 2026-11-14 (line 15321)
+- The self-host regression of the M6c waves, and the three roots behind it, 2026-11-15 (line 15342)
+- The box split: what runs where, 2026-11-15 (line 15371)
+- A debugger in the gates on three targets, 2026-11-14 (line 15388)
+- A static reference's temporary has static storage of its own, 2026-11-13 (line 15407)
+- The Ast residue's five raises, accepted, and the mark a raise needs now, 2026-11-15 (line 15422)

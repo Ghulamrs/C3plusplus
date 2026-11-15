@@ -3,8 +3,9 @@
 
     tools/ast-residue             every site, file:line and what it is
     tools/ast-residue --count     the counts, one per kind
-    tools/ast-residue --check     fail if any count is above tools/ast-residue.baseline
-    tools/ast-residue --record    write today's counts as the baseline
+    tools/ast-residue --check     fail if any count is above tools/ast-residue.baseline, or the baseline is above
+                                  tools/ast-residue.start on a line without the user's mark; print the delta from the start
+    tools/ast-residue --record    write today's counts as the baseline; refused for any count above the baseline
     tools/ast-residue --readers   every file under src/ that includes Ast.h, with its count of node-kind names
 
 M3b.7 deleted x86's walk of `Ast.h` and kept the rest (design 12.2): the parser's building half, `Classes`'
@@ -18,6 +19,11 @@ moves with a later row; until then the residue may only go down, as the memory g
     readers            files under src/ that include Ast.h
     visits             a generator's visit of a node kind, declared or defined (`visit(const Unary &`), under src/backend
     ast-lines          the lines of src/Ast.h itself
+
+The start file holds the milestone's start, written by the coordinator when a milestone opens and never edited inside
+one. A baseline line above it must carry the user's mark, `user-approved YYYY-MM-DD` after the count (for example
+`ExprPtr 2017 user-approved 2026-11-20 Q12`); only the coordinator writes the mark, and only on the user's word in
+chat (Q7 of the M6c review, 2026-11-15). --record never raises a count, so a raise is always a hand-written line.
 
 The node kinds are read from src/Ast.h (every class deriving from Node, Expr or Stmt), never listed here.
 Comments, string and character literals are skipped.
@@ -33,6 +39,8 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC = os.path.join(ROOT, "src")
 AST = os.path.join(SRC, "Ast.h")
 BASELINE = os.path.join(ROOT, "tools", "ast-residue.baseline")
+START = os.path.join(ROOT, "tools", "ast-residue.start")
+MARK = re.compile(r"\buser-approved \d{4}-\d{2}-\d{2}\b")
 SCOPED = ("src/parser", "src/sema")
 KINDS = ("ExprPtr", "StmtPtr", "node-casts", "node-refs", "visits", "readers", "ast-lines")
 INCLUDE = re.compile(r'^\s*#\s*include\s*"(?:\.\./)*Ast\.h"', re.M)
@@ -122,6 +130,22 @@ def sites():
     return found, readers
 
 
+def counts(path):
+    """kind -> (count, the rest of its line); `#` lines are the file's record and are skipped."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            parts = line.split(None, 2)
+            if len(parts) >= 2 and not parts[0].startswith("#"):
+                out[parts[0]] = (int(parts[1]), parts[2].strip() if len(parts) > 2 else "")
+    return out
+
+
+def unmarked_raises(was, start):
+    """The baseline's kinds above the milestone's start on a line without the user's mark."""
+    return [k for k in KINDS if k in was and k in start and was[k][0] > start[k][0] and not MARK.search(was[k][1])]
+
+
 def main(argv):
     found, readers = sites()
     now = dict((k, 0) for k in KINDS)
@@ -145,24 +169,39 @@ def main(argv):
         print(" ".join("%s %d" % (k, now[k]) for k in KINDS))
         return 0
     if argv[1] == "--record":
+        was = counts(BASELINE)
+        up = [k for k in KINDS if k in was and now[k] > was[k][0]]
+        for k in up:
+            print("ast-residue: --record refused: %s %d is above the baseline's %d - a raise is the user's word, written"
+                  " by the coordinator as a marked line (see the header)" % (k, now[k], was[k][0]))
+        if up:
+            return 1
+        start = counts(START)
         with open(BASELINE, "w") as f:
             for k in KINDS:
-                f.write("%s %d\n" % (k, now[k]))
+                keep = k in was and k in start and now[k] > start[k][0] and MARK.search(was[k][1])
+                f.write("%s %d%s\n" % (k, now[k], " " + was[k][1] if keep else ""))
         print("ast-residue: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
         return 0
     if argv[1] == "--check":
-        with open(BASELINE) as f:
-            was = dict((k, int(v)) for k, v in (l.split() for l in f if l.strip()))
+        was, start = counts(BASELINE), counts(START)
         for k in KINDS:
             if k not in was:
                 print("ast-residue: %s is not in tools/ast-residue.baseline - a kind with no baseline fails" % k)
-        risen = [k for k in KINDS if now[k] > was.get(k, -1)]
+        risen = [k for k in KINDS if now[k] > was.get(k, (-1, ""))[0]]
         for k in (k for k in risen if k in was):
-            print("ast-residue: %s rose from %d to %d - design 12.2 lets the residue only go down" % (k, was[k], now[k]))
-        fallen = [k for k in KINDS if k in was and now[k] < was[k]]
+            print("ast-residue: %s rose from %d to %d - design 12.2 lets the residue only go down" % (k, was[k][0], now[k]))
+        raised = unmarked_raises(was, start)
+        for k in raised:
+            print("ast-residue: the baseline's %s %d is above the start's %d with no user-approved mark - refused"
+                  % (k, was[k][0], start[k][0]))
+        print("ast-residue: against the start (tools/ast-residue.start): " +
+              " ".join("%s %d (%+d)" % (k, now[k], now[k] - start[k][0]) if k in start else "%s %d (no start)" % (k, now[k])
+                       for k in KINDS))
+        fallen = [k for k in KINDS if k in was and now[k] < was[k][0]]
         if fallen and not risen:
             print("ast-residue: lower than the baseline (" + ", ".join(fallen) + "); run --record to keep it")
-        return 1 if risen else 0
+        return 1 if risen or raised else 0
     sys.stderr.write(__doc__)
     return 2
 

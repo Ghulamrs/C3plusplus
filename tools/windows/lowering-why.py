@@ -1,8 +1,8 @@
-# tools/windows/lowering-why.py <tree> <out>: every tests/cases and tests/open case compiled -S with CXX1_SSA_WHY set (4 at a time, under
+# tools/windows/lowering-why.py <tree> <out> [exe]: every tests/cases and tests/open case compiled -S with CXX1_SSA_WHY set (4 at a time, under
 # the caller's affinity); writes "<case>\t<reason>" for each "outside" line, and "<case>\tERR <first line>" for a refusal.
 import os, sys, subprocess, concurrent.futures as cf
 tree, out = sys.argv[1], sys.argv[2]
-exe = os.path.join(tree, 'cxx3-msvc.exe')
+exe = sys.argv[3] if len(sys.argv) > 3 else os.path.join(tree, 'cxx3-msvc.exe')   # cxx3.exe on Linux
 env = dict(os.environ, CXX1_SSA_WHY='1')
 jobs = []
 for d in ('tests/cases', 'tests/open'):

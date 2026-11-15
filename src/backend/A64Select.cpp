@@ -127,7 +127,9 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
 const ir::Function &Arm64Darwin::ssaChoose(const Function &fn) {
     const ir::FuncId id = ssa_ != nullptr ? ssa_->find(fn.symbol()) : ir::FuncId();
     const std::string why = id.valid() ? ssaOutside(fn, ssa_->functions[id.v]) : std::string("no SSA body");
+    ssaOffered_++;
     if (why.empty()) { ssaSelected_++; return ssa_->functions[id.v]; }
+    ssaCensus();
     unsupported(("'" + fn.displayName() + "', " + why + ",").c_str());
 }
 

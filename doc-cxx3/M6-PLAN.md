@@ -1803,3 +1803,25 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+### The M6c review's lane H (R111, R112, R113, R115, R120), 2026-11-15, lane r6h
+- **R111 + Q7** (the user's): the five Ast-residue raises of `434bdf8a..458f8974` are accepted as recorded, listed in
+  the new `tools/ast-residue.start` (M6's start, written by the coordinator, never inside a milestone). `--check`
+  prints each count's delta from it and refuses a baseline line above it without the mark
+  `user-approved YYYY-MM-DD <why>`; `--record` refuses any count above the baseline. Only the coordinator writes the
+  mark, on the user's word.
+- **R112**: `tools/exclusions --check` prints the refusals of valid C++11 against their baselines - outside() sites
+  (only down), arm64-darwin's own `unsupported()` sites (new key `arm64`, `--arm64` lists them) - and how many owed
+  reasons a case reaches, from `tools/exclusions.reached` (lowering-why.py now takes the executable, so Linux measures
+  it). At this lane: 554 outside() sites (baseline 554), 477 reasons, **20 reached by a case, 457 not**; arm64's own
+  4 (baseline 4). The reasons themselves stay owed to a standing lane after M6d, as the review says.
+- **R113**: answered by Q8 (M6b accepted as built; the allocator rounds 1X/2X, `.M` pressure and the rewrite of
+  `MOperand::reg` owed after M6d - lane r6g's row). Named here as the exception it is: `c6x::MInst` is a second MIR
+  beside the optimizer's `Mir*` (design section 4, "one optimizer") until those rounds or M6d fold it.
+- **R115**: CLAUDE.md's status pointer names M6-PLAN; its gates line names the residue rule (Q7), its boxes the split
+  and Q4b/Q9; five dated sections written into docs/CLAUDE-history.md and the index brought to them.
+- **R120**: arm64's census row counts the functions offered (`ssaOffered_`) and is printed before a refusal, so it
+  can show one not selected (the format `ssa-census` reads is kept).
+- **Gate (Linux, the lane's tree)**: make rc 0; exclusions, comments (0 over), memory gate, ast-residue all rc 0,
+  ast-residue +0 on every kind against the start; an unmarked test raise (baseline ExprPtr 2017) refused rc 1, the
+  same line marked accepted, `--record` over a lower baseline refused rc 1; run.sh 1221 / 0; self-compile 103 / 103.

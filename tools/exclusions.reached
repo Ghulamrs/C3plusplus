@@ -1,0 +1,481 @@
+# measured at 458f8974+r6h on Linux: tools/windows/lowering-why.py <tree> why.txt <tree>/cxx3.exe, then tools/windows/lowering-why-match.py docs/EXCLUSIONS.md why.txt (2026-11-15)
+owed reasons 477; reached 20; not reached 457; outside lines 26
+not reached	'<...>' of a pointer
+not reached	'<...>' of a pointer to a data member
+not reached	'<...>' of what is not a scalar
+not reached	'<...>' of what is not an integer
+not reached	'~' of what is not an integer
+not reached	<...>a '<...>' expression
+not reached	<...>a '<...>' of '<...>'
+not reached	<...>a '<...>' statement
+not reached	<...>a '<...>' the typer and the lowering type apart: '<...>' against '<...>'
+not reached	<...>a '<...>' the typer did not type
+not reached	<...>a class local initialised by a '<...>' that is not an object
+not reached	<...>a constructor of a class with bases, a vptr or members to builda destructor of a class with bases, a vptr or members to destroy
+not reached	<...>a handler whose caught object the syntax tree does not holda handler of <...> parts
+reached 1 tests/open/class-value-in-braced-aggregate.cpp	<...>a reference parameter bound to a '<...>' that is not an object
+not reached	<...>an address of a '<...>'
+not reached	<...>built by no constructor the parser recorded
+not reached	<...>built with default arguments the parser recorded none of
+not reached	<...>from another class
+not reached	<...>of a base whose own copy the parser recorded none of
+not reached	<...>of a class whose destructor the parser recorded none for
+reached 1 tests/cases/lowering-implicit-copy-bitfield.cpp	<...>of a class with a bit-field or reference member
+not reached	<...>of a class with a virtual base
+not reached	<...>of a class with a virtual base on the Microsoft ABI
+not reached	<...>of a class with an array member of no length
+not reached	<...>of a member whose own copy the parser recorded none of
+not reached	<...>of a thread_local array
+not reached	<...>returning another type
+not reached	<...>the parser recorded no loop or array for
+not reached	<...>whose base is destroyed on unwinding by no destructor the parser recorded
+not reached	<...>whose base's copy takes other parameters
+not reached	<...>whose base's destructor is of another shape
+not reached	<...>whose constructor takes parameters
+reached 1 tests/open/vector-default-temporary.cpp	<...>whose default argument makes a temporary with a destructor
+not reached	<...>whose loop takes other parameters
+not reached	<...>whose member is destroyed on unwinding by no destructor the parser recorded
+not reached	<...>whose member's copy takes other parameters
+not reached	<...>with a vptr the parser recorded no store for
+not reached	<...>with no `this`
+not reached	<...>with parameters it does not take
+not reached	`this` where there is none
+not reached	a '!' of what is not a scalar
+not reached	a '*' of what is not an object pointer
+not reached	a '->' of what is not a pointer to a struct
+not reached	a '->' on a class value that is not an object
+not reached	a '->*' of what is not a pointer to a class
+not reached	a '.*' of what is not a pointer to a data member
+not reached	a '.*' of what is not an object
+not reached	a 'delete' of <...> parts
+not reached	a 'delete' of another type
+not reached	a 'new' of <...> parts
+not reached	a 'new' of a class copied from another type
+not reached	a 'new' of a class copied from what is not an object
+not reached	a 'new' of a class with constructors
+not reached	a 'new' of an initializer_list
+not reached	a 'new' whose constructor's arguments outlive it
+not reached	a base built with default arguments
+not reached	a base handed a VTT where this function has none
+not reached	a base's constructor of another class
+not reached	a base's default constructor of parameters
+not reached	a base's destructor of another class
+not reached	a base's operator= on a const object
+not reached	a base's operator= where there is no `this`
+not reached	a binary of <...> parts
+not reached	a body that is not a block
+not reached	a braced list as an argument
+not reached	a braced list as an argument of '<...>'
+not reached	a braced list assigned to a '<...>'
+not reached	a braced list assigned to a bit-field or a const
+not reached	a braced list assigned to what is not an object
+not reached	a braced list binding a reference member to another type
+not reached	a braced list binding a reference member to what is not an object
+not reached	a braced list bound to a reference to '<...>'
+not reached	a braced list reaching a '<...>'
+reached 1 tests/cases/lowering-braced-bitfield-reference.cpp	a braced list reaching a member the lowering does not place
+not reached	a braced list reaching an array of '<...>'
+not reached	a braced list with values past its aggregate
+not reached	a built flag's setting not where it was made
+not reached	a built flag's zeroing not where it was made
+not reached	a by-value argument built in place from what is not a call
+not reached	a by-value argument copied by a constructor of another shape
+not reached	a by-value argument's call that did not come back into its copy
+not reached	a call built in place of what is not this function's result
+not reached	a call of more arguments than its parameters
+not reached	a call of nothing
+not reached	a call of what is not a function pointer
+reached 1 tests/cases/lowering-return-nullptr-t.cpp	a call returning '<...>'
+not reached	a call with a default the parser recorded no syntax for
+not reached	a call that is no lvalue
+not reached	a call through a member pointer
+not reached	a call through what is not a pointer to a member function
+not reached	a call's class result that is no object
+not reached	a case of <...> parts
+not reached	a cast of what is not a scalar
+not reached	a cast that takes a const away
+not reached	a cast to '<...>'
+not reached	a cast to a reference
+not reached	a cast to a reference of what is not an object
+not reached	a cast to a reference to another type
+not reached	a catch copied by a constructor of another shape
+not reached	a catch of '<...>'
+not reached	a catch of a type whose descriptor the parser did not finish
+not reached	a catch of a type with no type_info
+not reached	a catch with no type_info to name
+not reached	a caught object not typed
+not reached	a class argument from a braced list the lowering does not build
+not reached	a class argument from a call's result of another shape
+reached 1 tests/open/braced-class-in-braced-aggregate.cpp	a class argument that is not an object
+not reached	a class assigned from another type
+not reached	a class assigned from what is not an object
+not reached	a class assigned to a const or another object
+not reached	a class assigned to what is not an object
+not reached	a class copied on return from another type
+not reached	a class copied on return from what is not an object
+not reached	a class local initialised by <...> values
+not reached	a class local initialised by a call's result of another type
+not reached	a class local initialised by a conditional of another type
+not reached	a class local initialised by a lambda of another type
+reached 1 tests/cases/lowering-local-from-derived-temporary.cpp	a class local initialised from a temporary of another type
+reached 1 tests/cases/lowering-local-from-conversion-function.cpp	a class local initialised from another type
+not reached	a class local's initialiser of no form
+not reached	a class object called by its name
+not reached	a class returned from another type
+not reached	a class returned from what is not an object
+reached 1 tests/cases/lowering-return-beside-destroyed-local.cpp	a class returned while a local with a destructor is alive
+not reached	a class temporary
+not reached	a class temporary a constructor builds
+not reached	a class temporary from a braced list
+not reached	a class temporary from another type
+not reached	a class temporary from what is not an object
+not reached	a class temporary with a destructor in an operand that may not be evaluated
+not reached	a class temporary with a destructor outside a full expression the lowering ends
+not reached	a class temporary's constructor of another class
+not reached	a class value read where a value is wanted
+not reached	a class value that is not an object
+not reached	a class with a copy of its own returned with no record of how
+not reached	a class with a copy of its own returned with no result pointer
+not reached	a class with a destructor returned from a local no scope destroys
+not reached	a class with a destructor returned from a temporary no constructor built
+reached 1 tests/cases/lowering-return-derived-temporary-destructor.cpp	a class with a destructor returned from another type
+not reached	a class with a destructor returned from what is neither a local, a temporary nor an object
+reached 2 tests/cases/lowering-return-destructor-in-handler.cpp	a class with a destructor returned inside a handler
+not reached	a comma of <...> parts
+not reached	a compiler-written <...>
+not reached	a compiler-written <...> forwarding a '<...>'
+not reached	a compiler-written <...> of a class with a member the lowering does not build
+not reached	a compiler-written <...> of a class with a virtual base on the Microsoft ABI
+not reached	a compiler-written <...> with no `this`
+not reached	a compiler-written <...> with parameters of its own
+not reached	a compiler-written function's call with default arguments
+not reached	a compiler-written function's record of another class
+not reached	a complete constructor building a virtual base from a mem-initialiser's arguments
+not reached	a complete constructor of another shape
+not reached	a complete constructor whose parameters the written constructor's do not match
+not reached	a complete destructor of another shape
+not reached	a compound assignment to an enumeration
+not reached	a condition declaring more than one name
+not reached	a condition declaring what is not a scalar
+not reached	a condition that is not a scalar
+not reached	a condition's variable the lowering did not declare
+not reached	a conditional of '<...>' and '<...>'
+not reached	a conditional of <...> parts
+not reached	a conditional of lvalues of type '<...>'
+not reached	a conditional of two lvalues apart in type
+not reached	a conditional of two objects apart in type
+not reached	a conditional of what is not a scalar
+not reached	a conditional that is no lvalue
+not reached	a conditional whose arm throws
+not reached	a conditional's arm not typed
+reached 1 tests/cases/lowering-return-derived-local.cpp	a constructed class returned from another type
+not reached	a constructed class returned from what is neither a local nor a temporary
+not reached	a constructor called with arguments its parameters do not match
+not reached	a constructor of another class
+not reached	a constructor part that is not a mem-initialiser
+not reached	a conversion function of what is not an object
+not reached	a conversion function returning '<...>'
+not reached	a conversion of '<...>' to '<...>'
+not reached	a conversion of a number to a pointer
+not reached	a conversion of a pointer to a class to one that is not its base
+not reached	a conversion of a pointer to a data member to one of a class not derived from its own
+not reached	a conversion of a pointer to a number
+not reached	a conversion through a virtual base
+not reached	a converted local that did not come back into its slot
+not reached	a converted value built by a constructor of another shape
+not reached	a converted value of a class the lowering does not build
+not reached	a deleting destructor with no flag on the Microsoft ABI
+not reached	a destructor called by name
+not reached	a destructor called through what is not a pointer
+not reached	a destructor named through another class
+not reached	a destructor of a class with a virtual base, handed a VTT
+not reached	a destructor of another shape
+not reached	a difference of two pointers apart in type
+not reached	a do of <...> parts
+not reached	a dynamic_cast of what is not a pointer
+not reached	a dynamic_cast to a reference of what is not an object
+not reached	a folded static member of no integer type
+not reached	a folded static member, which has no storage
+not reached	a function try block or an exception specification
+not reached	a function with no body
+not reached	a global not typed
+not reached	a goto in a function with a named return value
+not reached	a goto into a scope it is not in
+not reached	a handler reading a call's value across its unwind edge on the Microsoft ABI
+not reached	a handler reading a value of the body that is no scalar on the Microsoft ABI
+not reached	a jump out of Microsoft handlers the lowering did not open
+not reached	a jump out of handlers the lowering did not open
+not reached	a label of <...> parts
+not reached	a lambda capturing a `this` that is not the member function's
+not reached	a lambda capturing a capture with no closure to read it from
+not reached	a lambda capturing what is not a local of the body
+not reached	a lambda capturing what is not a scalar or a class it holds
+not reached	a lambda's capture of another type
+not reached	a literal not typed
+not reached	a local a constructor builds
+not reached	a local built with default arguments
+not reached	a local of a class with a virtual base built by no constructor
+not reached	a local of a constructed class built by no constructor
+not reached	a local of type '<...>'
+not reached	a local with a destructor inside a handler
+not reached	a local with alignas beside one the parser gave no serial
+not reached	a local's constructor of another class
+not reached	a local's default constructor of parameters
+not reached	a local's initializer_list of another parameter
+not reached	a local's initializer_list of braced elements
+not reached	a mem-initialiser of <...> values for '<...>'
+not reached	a mem-initialiser of the class itself or of no base
+not reached	a member '<...>' that is not a data member
+not reached	a member '<...>' the lowering does not reach
+not reached	a member built from another type
+not reached	a member built with default arguments
+not reached	a member call
+not reached	a member call that drops const
+not reached	a member call through '*' of what is not a pointer to a class
+not reached	a member call through '<...>'
+not reached	a member call where there is no `this`
+not reached	a member call whose object is not a class
+not reached	a member call whose object is not a pointer
+not reached	a member copied from another type
+not reached	a member copied from what is not an object
+not reached	a member function's pointer applied and not called
+not reached	a member named '<...>'
+not reached	a member named where there is no `this`
+not reached	a member of '<...>'
+not reached	a member of <...> parts
+not reached	a member of a virtual base the class does not lay out
+not reached	a member of type '<...>'
+not reached	a member operator of what is not an object
+not reached	a member operator that drops const
+not reached	a member reached through another object's `this`
+not reached	a member's constructor of another class
+not reached	a member's default constructor of parameters
+not reached	a member's default initialiser
+not reached	a member's initializer_list of another parameter
+not reached	a name whose local the lowering did not declare
+not reached	a named return value built by no constructor
+not reached	a named return value built by no constructor the parser recorded
+not reached	a named return value built in place by a call of another type
+reached 1 tests/cases/lowering-named-return-defaulted.cpp	a named return value built with defaults, zeroed or from a braced list
+reached 1 tests/cases/lowering-named-return-in-handler.cpp	a named return value inside a handler
+not reached	a named return value of another type
+not reached	a named return value whose destructor the parser recorded none for
+not reached	a named return value's constructor of another class
+not reached	a named return value's default constructor of parameters
+not reached	a noexcept body that left a pad open
+not reached	a noexcept wrap beside another
+not reached	a nothrow array 'new' with a cookie
+not reached	a null, comparison or conversion of a pointer to a data member in cl's virtual model
+not reached	a nullptr converted to '<...>'
+not reached	a parameter not typed
+not reached	a parameter of type '<...>'
+not reached	a parameter that is not a var
+not reached	a parenthesis of <...> parts
+not reached	a placement 'new' of another allocation function
+not reached	a pointer compared with a number
+not reached	a pointer to a data member compared with another type
+not reached	a pointer to a data member of no class
+not reached	a pointer to a member function converted from one not of a base
+not reached	a pointer to a member function that is not an object
+not reached	a pointer to a member function with no code word or adjustment
+not reached	a postfix '<...>'
+not reached	a postfix of <...> parts
+not reached	a qualified member the lowering does not reach
+not reached	a range-based for of other parts
+not reached	a range-based for over an array of '<...>'
+not reached	a range-based for over what is not an array
+not reached	a range-based for over what is not an object
+not reached	a range-based for whose begin and end differ in type
+not reached	a range-based for whose begin or end is not a direct call
+not reached	a range-based for whose braced range builds more than its elements
+not reached	a range-based for whose iterator's '*' gives no reference or scalar
+not reached	a range-based for whose range's full expression builds more than its range
+not reached	a range-based for's begin or end of another shape
+not reached	a range-based for's begin or end taking another type
+not reached	a range-based for's iterator call of another shape
+not reached	a range-based for's iterator call on another class
+not reached	a range-based for's iterator call that is not a direct call
+not reached	a range-based for's reference of another type
+not reached	a range-based for's variable of type '<...>'
+not reached	a read of an object of type '<...>'
+not reached	a read through a pointer to '<...>'
+not reached	a reference bound to another type
+reached 1 tests/cases/lowering-reference-member-derived.cpp	a reference member bound to another type
+not reached	a reference member bound to what is not an object
+not reached	a reference member to '<...>'
+not reached	a reference of <...> parts
+not reached	a reference parameter bound to a call's result of another type
+not reached	a reference parameter bound to a temporary of another type
+not reached	a reference parameter bound to another type
+not reached	a reference parameter to '<...>'
+not reached	a reference returned to another type
+not reached	a reference that can write bound to a const
+not reached	a reference that can write returned from a const
+not reached	a reference to '<...>'
+not reached	a reference to a function bound to what is not that function
+not reached	a return built in place by a call of another type
+not reached	a return built in place by what is not a call
+not reached	a return of <...> parts
+reached 1 tests/cases/lowering-return-nullptr-t.cpp	a return type of '<...>'
+not reached	a return with no value
+not reached	a return's copy constructor of another shape
+not reached	a scalar assigned a braced list of <...> values
+not reached	a scalar parameter given a braced list of <...> values
+not reached	a scalar's braces holding more than one value
+not reached	a scope's cleanup that is not the innermost pad
+not reached	a scoped enumeration mixed with another type
+not reached	a sizeof not folded
+not reached	<...>array built at run time
+not reached	a static aggregate built otherwise
+not reached	a static reference's temporary built otherwise
+not reached	a static class of <...> parts
+not reached	a static local
+not reached	a static local built at run time
+not reached	a static local built at run time inside a handler on the Microsoft ABI
+not reached	a static local built from a braced list of no initializer_list
+reached 1 tests/cases/lowering-static-local-default-arguments.cpp	a static local built with default arguments
+not reached	a static local of <...> parts
+not reached	a static local of type '<...>'
+not reached	a static local whose construction left a scope open
+not reached	a static local whose destructor the parser registered none for
+not reached	a static local with a destructor
+not reached	a static local's constructor of another class
+not reached	a static local's default constructor of parameters
+not reached	a static local's initializer_list of another parameter
+not reached	a static member
+not reached	a static member function called through what is not an object
+reached 1 tests/cases/lowering-static-member-through-object.cpp	a static member reached through what is not a name
+not reached	a static reference bound to another type
+not reached	a static reference of <...> parts
+not reached	a static reference that can write bound to a const
+not reached	a static reference to '<...>'
+not reached	a static reference to a function bound to what is not that function
+not reached	a std::nullptr_t parameter given what is not a null pointer constant
+not reached	a step of a pointer to an incomplete type
+not reached	a step of what is not a scalar object
+not reached	a step of what is not an object
+not reached	a stepped bit-field as an object
+not reached	a string inside a braced list
+not reached	a string not typed
+not reached	a subscript of <...> parts
+not reached	a subscript of what is not a pointer
+not reached	a switch of <...> parts
+not reached	a switch on what is not an integer
+reached 2 tests/cases/lowering-thread-local-reference-global.cpp	a thread_local reference
+not reached	a thread_local reference, or no thread_local, in __tls_init
+not reached	a thread_local whose construction left a scope open
+not reached	a throw copied by a constructor of another class
+not reached	a throw of <...> parts
+not reached	a throw of a class that is not plain
+not reached	a throw of a class value that is not an object or a temporary
+not reached	a throw of a class with a virtual base
+not reached	a throw of a pointer to a data member
+not reached	a throw of a temporary the lowering cannot build
+not reached	a throw of a type whose ThrowInfo the parser did not finish
+not reached	a throw of a type with no type_info
+not reached	a throw of an object of another class
+not reached	a throw of what is not a scalar
+not reached	a throw whose copy drops const
+not reached	a throw with no ThrowInfo to name
+not reached	a throw with no type_info to name
+not reached	a throw(...) list on the Microsoft ABI
+not reached	a thrown temporary list-initialised
+not reached	a thunk forwarding a '<...>'
+not reached	a thunk returning a '<...>'
+not reached	a thunk whose name states no adjustment
+not reached	a thunk with no `this`
+not reached	a try whose part is not a handler
+not reached	a try with no handler
+not reached	a typeid of a polymorphic value that is not an object
+not reached	a typeid read at run time of what is not polymorphic
+not reached	a unary '<...>'
+not reached	a unary '<...>' of what is not a number
+not reached	a unary of <...> parts
+not reached	a user-defined literal
+not reached	a va builtin of another shape
+not reached	a va_arg of type '?<...>'
+not reached	a va_list that is not a pointer
+not reached	a value-initialised cast to what is not a scalar
+not reached	a var not typed
+not reached	a var of <...> parts
+not reached	a variadic argument of type '<...>'
+not reached	a virtual base the class does not lay out
+not reached	a virtual base the class lays out no vbtable entry for
+not reached	a virtual base's destructor of another shape
+not reached	a virtual operator
+not reached	a vptr out of a VTT
+not reached	a vptr out of a VTT this function is not handed
+not reached	a vptr out of no table the parser named
+not reached	a while of <...> parts
+not reached	an address of a '<...>'
+not reached	an address of a 'sizeof'
+not reached	an address of what is not an object
+not reached	an aggregate whose members the parser built otherwise
+not reached	an aggregate with a destructor built member by member
+not reached	an aggregate with a destructor whose members' values leave temporaries
+not reached	an aggregate's member built from values the parser counted otherwise
+not reached	an aggregate's member guarded from no address of this block
+not reached	an aggregate's member with a destructor that no constructor builds
+not reached	an anonymous union past a braced list's end
+not reached	an array 'new' of a class with constructors
+not reached	an array built at run time before main
+not reached	an array built by no constructor the parser recorded
+not reached	an array element built with default arguments
+not reached	an array element copied from another type
+not reached	an array element copied from what is not an object
+not reached	an array element's constructor of another arity
+not reached	an array element's constructor of another class
+not reached	an array initialised from a string of another width
+not reached	an array initialised from a string the program does not hold
+not reached	an array initialised with more values than it holds
+not reached	an array member destroyed on unwinding by no destructor the parser recorded
+not reached	an array member built by no constructor the parser recorded
+not reached	an array member built with default arguments the parser recorded none of
+not reached	an array member given an initialiser
+not reached	an array member's constructor of another class
+not reached	an array of '<...>'
+not reached	an array of a class initialised from a list the parser recorded none for
+not reached	an array whose elements' destructor the parser recorded none for
+not reached	an array zeroed before its elements are built
+not reached	an array's constructor of another class
+not reached	an array's list of more elements than the array holds
+not reached	an array's list with parts its record does not place
+not reached	an array's tail constructor of another class
+not reached	an assignment of <...> parts
+not reached	an assignment that is no lvalue
+not reached	an assignment to a const bit-field
+not reached	an assignment to what is not a scalar object
+not reached	an assignment to what is not an object
+not reached	an assignment's operator= of another shape
+not reached	an elided call that did not come back into its local
+not reached	an enumerator of no arithmetic type
+not reached	an expression statement of <...> parts
+not reached	an if of <...> parts
+not reached	an init function with parameters
+not reached	an init function's object not typed
+not reached	an initializer_list element built with default arguments
+not reached	an initializer_list element copied from another type
+not reached	an initializer_list element copied from what is not an object
+not reached	an initializer_list element's constructor of another arity
+not reached	an initializer_list element's constructor of another class
+reached 1 tests/cases/lowering-initializer-list-class-elements.cpp	an initializer_list of '<...>' elements
+not reached	an initializer_list of elements with a destructor outside a full expression
+not reached	an initializer_list of no layout the lowering knows
+not reached	an initializer_list parameter passed as no other class is
+not reached	an integer literal not folded
+not reached	an operator of no operands
+not reached	an operator of no plain symbol
+not reached	an operator that is no lvalue
+not reached	an operator-> answering with no pointer
+not reached	an operator-> asked of what is not a class
+not reached	an operator-> of another shape
+not reached	an operator-> the lowering does not call
+not reached	an operator-> whose last answer is a class
+not reached	arithmetic on a nullptr
+not reached	arithmetic on a pointer to an incomplete type
+not reached	the name '<...>' is no object
+not reached	the name '<...>', a static memberthisof another kind
+not reached	the operator '<...>'
+not reached	two pointers to different types compared
+unmatched	tests/cases/lowering-implicit-copy-bitfield.cpp	a constructor of a class with bases, a vptr or members to build
+unmatched	tests/open/array-static-tail-defaults.cpp	internal error: an array's tail built with default arguments the record does not place

@@ -1,0 +1,13 @@
+# The Ast.h residue at M6's start, as the user accepted it (Q7 of the M6c review, 2026-11-15). Written by the
+# coordinator when a milestone opens, never edited inside one; tools/ast-residue --check prints the delta from it.
+# Accepted on 2026-11-15, the five raises of 434bdf8a..458f8974 (at 434bdf8a: ExprPtr 2009 StmtPtr 634 node-casts
+# 164 node-refs 409 ast-lines 849; visits had no row): 0712b7a2 ExprPtr +4 StmtPtr +4 node-casts +1 node-refs +2,
+# visits 124 first recorded; 1f8ec47b the M5-PLAN record of a raise; 3f22b845 node-refs +2; afe32013 ExprPtr +3
+# StmtPtr +1; 94d75187 ast-lines +1 (Local::declared). From here the residue only goes down; a raise is the user's.
+ExprPtr 2016
+StmtPtr 639
+node-casts 165
+node-refs 413
+visits 124
+readers 14
+ast-lines 850
