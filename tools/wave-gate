@@ -62,6 +62,9 @@ if [ "${1:-}" = --box ]; then
     if [ "$B" = windows ]; then T=$(pwd); V=$T/../$N-verdicts.txt; LOG=$T/../$N; X=${WAVEGATE_TI6X:-/c/Users/GRA/work/ti6x}
         export CXX1=./cxx3-msvc.exe JOBS=${WINLANES:-10} TIRTS=${WAVEGATE_TIRTS:-/c/ti/c6747-lib}
         job() { c=$1; shift; timeout "$c" "$@"; }                                # the caller pins the affinity
+        # python3 on this box is the Store's stub (asm6x.sh's 837 failures in r6w's run): a shim to the real one first
+        PY=${WAVEGATE_PYTHON:-/c/Program Files/Python312/python.exe}; mkdir -p "$T/../$N-py3"
+        printf '#!/bin/sh\nexec "%s" "$@"\n' "$PY" > "$T/../$N-py3/python3"; chmod +x "$T/../$N-py3/python3"; PATH=$T/../$N-py3:$PATH
     else T=$HOME/$N; V=$HOME/$N-verdicts.txt; LOG=$HOME/$N; X=$HOME/ti6x
         export TMPDIR=$T/tmp TIRTS=$HOME/c6747-lib
         job() { c=$1; shift; flock "$HOME/.boxleg.lock" timeout "$c" "$@"; }       # one box job: the lock, then the cap
