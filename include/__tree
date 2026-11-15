@@ -106,6 +106,7 @@ private:
     __tree_link *head_;
 };
 
+// KeyOf gives the key of an element (`get`) and the order of two keys (`less`): <map>'s comparator, if one was named.
 template <class V, class KeyOf>
 class __tree {
 public:
@@ -145,7 +146,7 @@ public:
         __tree_link *n = head_.left;
         __tree_link *at = const_cast<__tree_link *>(&head_);
         while (n != 0) {
-            if (KeyOf::get(nodeValue(n)) < k) n = n->right;
+            if (KeyOf::less(KeyOf::get(nodeValue(n)), k)) n = n->right;
             else { at = n; n = n->left; }
         }
         return at;
@@ -154,14 +155,14 @@ public:
         __tree_link *n = head_.left;
         __tree_link *at = const_cast<__tree_link *>(&head_);
         while (n != 0) {
-            if (k < KeyOf::get(nodeValue(n))) { at = n; n = n->left; }
+            if (KeyOf::less(k, KeyOf::get(nodeValue(n)))) { at = n; n = n->left; }
             else n = n->right;
         }
         return at;
     }
     __tree_link *findLink(const key_type &k) const {
         __tree_link *at = lowerLink(k);
-        if (at == &head_ || k < KeyOf::get(nodeValue(at))) return const_cast<__tree_link *>(&head_);
+        if (at == &head_ || KeyOf::less(k, KeyOf::get(nodeValue(at)))) return const_cast<__tree_link *>(&head_);
         return at;
     }
 
@@ -280,8 +281,8 @@ private:
         __tree_link *n = head_.left;
         while (n != 0) {
             *parent = n;
-            if (k < KeyOf::get(nodeValue(n))) { *goLeft = true; n = n->left; }
-            else if (KeyOf::get(nodeValue(n)) < k) { *goLeft = false; n = n->right; }
+            if (KeyOf::less(k, KeyOf::get(nodeValue(n)))) { *goLeft = true; n = n->left; }
+            else if (KeyOf::less(KeyOf::get(nodeValue(n)), k)) { *goLeft = false; n = n->right; }
             else return n;
         }
         return 0;

@@ -1606,6 +1606,7 @@ private:
     // so its statics, enumerators and nested types are named bare.
     std::map<std::string, const Type *> closureScope_;
     const Type *lambdaScope() const;
+    const Type *closureOuterClass() const;
     // The const locals with known values of the function a lambda was written in, by closure tag:
     // its body reads them without a capture, [expr.prim.lambda]/12 (1.27).
     std::map<std::string, std::vector<Local> > closureConstants_;

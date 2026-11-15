@@ -7,6 +7,7 @@
 #define _CXX1_SET
 
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <utility>
@@ -14,16 +15,19 @@
 
 namespace std {
 
-template <class T>
+// The comparator is made where it is asked, as <map>'s is.
+template <class T, class C>
 struct __set_key {
     typedef T key_type;
     static const T &get(const T &v) { return v; }
+    static bool less(const T &a, const T &b) { return C()(a, b); }
 };
 
-template <class T>
+template <class T, class C = std::less<T> >
 class set {
 public:
     typedef T key_type;
+    typedef C key_compare;
     typedef T value_type;
     typedef std::size_t size_type;
     typedef __tree_const_iterator<T> iterator;
@@ -81,15 +85,15 @@ public:
     }
 
 private:
-    __tree<T, __set_key<T> > tree_;
+    __tree<T, __set_key<T, C> > tree_;
 };
 
-template <class T>
-bool operator==(const set<T> &a, const set<T> &b) { return __tree_equal(a, b); }
-template <class T>
-bool operator!=(const set<T> &a, const set<T> &b) { return !__tree_equal(a, b); }
-template <class T>
-bool operator<(const set<T> &a, const set<T> &b) { return __tree_less(a, b); }
+template <class T, class C>
+bool operator==(const set<T, C> &a, const set<T, C> &b) { return __tree_equal(a, b); }
+template <class T, class C>
+bool operator!=(const set<T, C> &a, const set<T, C> &b) { return !__tree_equal(a, b); }
+template <class T, class C>
+bool operator<(const set<T, C> &a, const set<T, C> &b) { return __tree_less(a, b); }
 
 }  // namespace std
 
