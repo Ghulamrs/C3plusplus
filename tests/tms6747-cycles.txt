@@ -718,7 +718,7 @@ template-static-data-member 103 191
 template-static-data-member-ctor 74 139
 template-static-member-no-init 41 88
 template-static-member-on-use 92 218
-template-subst 448 1751
+template-subst 949 -
 template-template-alias 213 557
 template-template-deduction 309 1335
 template-template-members 161 427
@@ -828,3 +828,4 @@ accepted member-template-body-unchosen -O2 3075 accepted 2026-11-15 (the user, t
 accepted return-self-referential -O2 16897 accepted 2026-11-15 (the user, the M6c review Q1) as a library cost: the inliner unit budget declines rotateLeft in rebalance; the column is round 22 (m6-ae), the cap wave 19
 accepted static-local-braced-list -O2 16160 accepted 2026-11-15 (the user, the M6c review Q1) as a library cost: the inliner unit budget declines rotateLeft in rebalance; the column is round 22 (m6-ae), the cap wave 19
 accepted pipelined-data-exit -O2 1414571 accepted 2026-11-15 (the user, as the correct-code baseline): main's 1,414,163 was code the C6000 cannot encode - an EXT A-side source to a B-side home that only vm6747 ran, refused by asm6x and ti-link (lane r6c); lane r6e's correct encoding costs +408
+# template-subst re-recorded 2026-11-15 at 949 (-O2): lane r6f widened the case's source for R109 (every arithmetic type, unary * and &), a different program - not a cycle change; -O0 to be recorded
