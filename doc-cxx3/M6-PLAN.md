@@ -2144,3 +2144,37 @@ lowered in the round's commit.
 - **Gate (Linux, the lane's tree)**: make rc 0; exclusions, comments (0 over), memory gate, ast-residue all rc 0,
   ast-residue +0 on every kind against the start; an unmarked test raise (baseline ExprPtr 2017) refused rc 1, the
   same line marked accepted, `--record` over a lower baseline refused rc 1; run.sh 1221 / 0; self-compile 103 / 103.
+
+### Lane r6w - the wave gate balanced over both boxes, 2026-11-15 (the user's split, second form)
+
+From r6a 7ee2291a, r6b merged (for `tools/c6x-cycles`). Only `tools/wave-gate`, `tools/verify-three` (one line) and this
+entry changed; src/ lines before and after: the same.
+- **One table, `BOXTAB`**, at the top of the script: every step's box - `linux` (what runs x86_64-linux code, -j4,
+  JOBS=4), `windows` (winpass, cdb, the self-host, names/overload/win-structure under `REQUIRE_ORACLE=1` per r6d,
+  release - by hand), `split` (tms0-2, wtms0-2, sim: SHARD=k/6, k=1-3 on Linux and 4-6 on Windows, at once) and
+  `idle` (identical ARCHS=tms6747 against ~/w19g's main build, emit, census -arch tms6747 -O2, declines (r6e's R108),
+  asm0/asm1/asm2 (r6e: -O1 too), cycles - each claimed by an atomic mkdir by the first leg free, the report names it).
+  `-B step=box` or WAVEGATE_BOXES overrides a row; `-t <commit>` gates another commit's tree with this script; `-p`
+  prints each box's list. subst (r6f's tests/subst.sh, R109) is a Linux step. A split step's verdict is the join of
+  both halves (counts summed, either half failing fails it); cycles waits for both tms2 halves, then judges the two
+  boxes' cycles.txt concatenated (R106's tool and baseline copied beside it when the gated commit predates them).
+- **Disk**: every verdict written while its box is above 70% full is a FAIL (Linux 29%, Windows 66% at the start).
+- **The run, `tools/wave-gate r6w -t 458f8974`** (-n fixed, mac, winpass0/2): **38 minutes** wall for the main
+  driver, 48 for the whole run with the Windows halves' rerun (18:02-18:50), against r6a's 44 for 9 verdicts;
+  here **19 passed, 7 failed, 14 not run, 0 without a reason** (report `~/cxxopt-build/wave-gate/r6w-report.txt`).
+  - Linux PASS: build, static, gdb 5/5, run1 1221/0, maketest rc 0, selfc 103/103; idle on Linux: identical
+    1744 compared 0 differ, emit (no golden on the box), census outside=0, asm2 837/0.
+  - Windows PASS: wbuild, winpass1 832/0 (masm 831/0), cdb 5/5 x2, wselfc 103/103; idle on Windows: cycles 815
+    cases, 808 equal, 7 worse all owed or accepted, 0 missing - the joined file from both boxes' tms2 halves.
+  - Split, joined: tms2 818/0, wtms0 818/0, wtms1 818/0, wtms2 818/0 (407 + 411 each).
+  - FAIL, found: **sim joined 814 passed, 4 failed** - temporary-member-call and inheriting-constructors ("EXT's
+    source and destination are on one side"), pipelined-data-exit (EXTU, the same), long-double-literal-exact-digits
+    (sim6747's output differs) - the first three are r6e's c6x-ext-home-side; names 161, overload 1, winstruct 557
+    (R103, r6d's, as r6a found).
+  - FAIL, this lane's own faults, not the compiler's: tms0's and tms1's Windows halves - the first Windows half
+    failed for want of tools/wave-gate in a commit before r6a (wbuild now copies it); the rerun's first shard was
+    counted with orphans of a stopped run (494 for 411) and its -O1 half met "Device or resource busy" spawning
+    cxx3-msvc.exe while the first driver ran in the same tree. asm0 on Windows: python3 is the Store's stub there
+    (837 failed); a shim to Python312 now comes first. Owed: tms0/tms1 Windows halves and asm0 again, alone.
+- **Owed**: the walked ratchet has no recorded value (WAVEGATE_WALKED); emit has no golden on the boxes; two
+  drivers in one Windows tree collide - one driver a tree.
