@@ -12,6 +12,7 @@
 #   tools/verify-three c6747        TI's own C6747 toolchains alone: tools/c6747-three
 #   tools/verify-three ride         RIDE's tests/test --require-tools on the Windows box
 #   tools/verify-three tms6747      TI's lnk6x over every case, on the Linux box (or CXX1_TI_BOX's Windows box)
+#   tools/verify-three wave <name> [...]   the wave gate: tools/wave-gate with the same arguments (its header has the steps)
 #
 # **No C6000 work runs on the Mac.** The C6000's suites, builds and simulators are the boxes': the Linux leg runs
 # tests/tms6747.sh and tests/asm6x.sh with the TI tools built there from source (tools/ti6x-build.sh, in ~/ti6x),
@@ -26,6 +27,8 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WHICH=${1:-all}
+# The wave gate is its own script (R105): the fixed list of steps a wave owes, each a verdict or NOT RUN.
+[ "$WHICH" = wave ] && { shift; exec "$ROOT/tools/wave-gate" "$@"; }
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
@@ -177,7 +180,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         lstep 'CXX1="./cxx3.exe -Os" sh tests/run.sh' &&
         lstep 'sh tools/determinism.sh ./cxx3.exe $HOME/cxx1-verify/det > det.log 2>&1; r=$?; tail -3 det.log; exit $r' && selfhost &&
         lstep 'ASM6X=$T/ASM6x/build/asm6x.exe C6XDIFF=$T/ASM6x/tests/c6xdiff.py sh tests/asm6x.sh' &&
-        for o in "" -O2; do
+        for o in "" -O1 -O2; do      # -O1 is its own configuration on the C6000 too (the M6c review, R107)
             lstep 'CXX1_FLAGS='$o' VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \
                 LNK6X=$T/LNK6x/build/lnk6x.exe TIRTS=$T/RTS6x/build sh tests/tms6747.sh | tail -1' || rc=1
         done &&
