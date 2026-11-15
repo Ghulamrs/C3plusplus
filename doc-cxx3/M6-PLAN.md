@@ -1587,3 +1587,21 @@ files (lane m6ad's):
   (emit 3415 / 0, typed 864 / 0, ssa 894 / 0, syntax 3 / 0, coff 1,700 objects 0 differ). emit.sh against wave 18's
   golden (work\sh2w, recorded with work\w18g's compiler): **40 of 3,415 changed**, 0 added - the ten cases that include
   `<map>` or `<set>` (the nine above and map-set-comparator) on four targets: no comparator object, one order.
+
+### Wave 18 landed, 2026-11-15 (the coordinator)
+
+The self-host mend (sh-1: overload sets over a namespace, its unnamed namespace and the arguments' namespaces;
+`<map>`/`<set>` comparators; `this` in a nested `[&]` lambda), its cycles mend (sh-2: `std::less` ordered by `<`),
+M6c round 21 (m6ad: D5.5, D5.6 - no loop pass reads `Line`) and M8's first piece (m8a: the instantiation census and
+substitution for the simplest function template, behind CXX1_TEMPLATE_SUBST).
+- **Self-host: cxx3 compiles 103 of its 103 sources** (100 at main 505b68bb); the wave gate compiles every src/*.cpp
+  with cxx3 from now on.
+- **Gate at 4639c9af** (Windows winpass -O0 and -O2 832 / 0, masm 831 / 0; cdb 5/5; Mac 1219 / 0 and lldb 5/5; Linux
+  make test rc 0 - run 1221/0, emit 3415/0, typed 864/0, ssa 894/0; gdb 5/5) **and at 6b27e9de** (winpass -O0 832 / 0,
+  self-compile 103/103 on both boxes, Linux make test rc 0, run 1221/0; tms6747 818 / 0 at -O0 and -O2 on the
+  selector and the walker; asm6x 837 / 0 at both; Mac 1219 / 0, lldb 5/5; cdb 5/5; gdb 5/5).
+- **Cycles, per case** (tms6747 -O2, the 811 cases common with round 22): 192,009,106 -> 192,021,032. **Owed: 7 cases
+  above round 22 by +11,926** (map-set-node-stability +10,050 and six of a few hundred) - the inliner's unit budget
+  declines one `rotateLeft` in `rebalance`; two mends tried made it worse and were reverted. Also owed: cxx3's
+  refusal of `C()(a,b)` inside OptTable.cpp (no standalone case yet), and tests/open/namespace-unnamed-nested-leaks.
+  New baseline: 192,802,451 cycles over all 815 (818 passed).
