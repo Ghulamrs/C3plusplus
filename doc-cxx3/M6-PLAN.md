@@ -1509,3 +1509,43 @@ files (lane m6ad's):
   range-for-vector, return-self-referential, static-local-braced-list) on four targets: each instantiation's name
   carries the comparator now. Static: exclusions 129 sites 0 uncited 0 stale (three citations re-pointed),
   comments 0 over, memory gate, ast-residue, ide/generate.py --check rc 0; open.sh 31 differ (one new entry).
+### M6c, round 21 (D5.5 and D5.6: the last loop pass on entries; `LoopText` holds no lines), 2026-11-15, lane m6ad
+
+- **Landed, each its own commit of identical output: D5.5** `hoistConstantPairs` (72dd28a8) reads and composes
+  entries - the pair by `sameOperands`, its web's readers renamed on the operand (`MOperand` of the renamed
+  spelling) and judged by `legal(MInst)`, the hoisted pair two fresh `MInst`s of the spellings (as `edited` made
+  them from no entry); **D5.6** (7f863b93) `LoopText::v`, `set(Line)`, `apply(lines)`, C6xPack's `edited` and `entry`
+  and the `c6x-loop-unread` census line deleted. No loop pass names `Line`.
+- **The one pass that meets placed entries.** To the lines a placed entry was no instruction, and a label where it
+  starts in the first column: the kernel's own label (a `Label`, placed) by its name, a `||` turn by a name no
+  branch spells. `LoopText::label` answers no for both, so the pass asks `placedLabel` (C6xSched.cpp), which reads
+  the placed entry's spelling: a region holding a `||` turn alone is not refused for it, one holding any other
+  placed entry is, and a back edge may name a kernel's label - all as before.
+- **What `v` was still deciding, kept on entries**: `apply` dropped a line of no text with the blanked - an entry
+  that spells nothing (a blank line kept verbatim) is dropped still, by its spelling; a pending blank's liveness
+  reads the blanked entry as nothing (`LiveFacts()`, what the blank line's facts were) and every other by
+  `liveFacts(MInst)`, which reads a placed entry through `viewOf` as before.
+- **What still reads `Line`**: the five folds (`Folding::v`, D6.2); the pipeliner's line halves (D6.3); the table's
+  `Line` readers, `lineOf`/`viewOf`, `legalForm(Line &)`, `renameable`, `rebuilt`, `make` and the `!modelled` halves
+  (`LoopText::rw` among them) (D6.4); `parse`, `streamOf` and `c6xSchedule`'s read of the walker's text (D6.5).
+  `Line` is named 22 times in C6xSched.cpp (30 at round 20), 29 in C6xPack.cpp (35), 11 in C6xPipe.cpp.
+- src/ +76 -104 lines (C6xSched.cpp 1,356 -> 1,369, C6xPack.cpp 1,460 -> 1,422, C6xModel.h 148 -> 145).
+- **Gate.** Windows, cl /W4 /WX clean at each commit (work\m6ad1 72dd28a8, m6ad2 7f863b93), against round 20's
+  compiler (work\m6ac3, 41edb042), tests/cases at -O0, -O1, -O2 by md5: **2,601 texts same, 1,068 refused alike, 0
+  differ**, plain and under `CXX1_C6X_WALKER=1`, at both; census -O2 0 to any text pass, 6,835 selected, kernels
+  219 / 9,122; exclusions 129 sites 0 uncited 0 stale, comments 0 over, memory gate rc 0, generate up to date, at
+  both. The rewrite the identity covers: `hoistConstantPairs` changes 79 of the walker's texts at -O2
+  (`CPP11_C6XSKIP=pairs` against them, boxkit/m6ad-fired.sh). Linux (~/m6ad, a fresh tree of 7f863b93; REF main
+  85fe99fe's compiler in ~/w7ref), g++ -Werror clean: `identical.sh ARCHS=tms6747` -O0 and -O2 1,736 compared, 2
+  differ; -O0 -g 1 differ once the tree path in `.dwpsn` is normalised (91 by that alone) -
+  static-reference-to-temporary, round 18's fix; every text against round 20's own (~/m6ac4-ident, -identg: 1,702
+  and 851 compared) 0 differ; tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed,
+  192,009,106 cycles** (unchanged); walker legs at -O2 **814 / 0** (195,919,053, unchanged); g-same 867 same, 0
+  differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0 and -O2; census 0; exclusions 0/0, comments 0 over,
+  memory gate, ast-residue, generate rc 0. **Not finished at the hour**: the walker legs at -O0 (the chain was
+  still running behind wave 17's gate on the one lock; ~/m6ad-gate.out holds them). Not run (the coordinator's):
+  winpass, make test, ssa.sh.
+- **The lane's cxx3 on the files it changed** (the coordinator's ask; `./cxx3.exe -std=c++11 -O0 -Isrc -c`):
+  C6xSched.cpp compiles, 0 errors; C6xPack.cpp is refused at 209:40 (`c6x::crossings` with two arguments), the
+  refusal round 20's file meets at the same place (lane sh1's) - what lies behind that first error is not seen.
+- **Owed:** D6.2-D6.5, in round 19's order.

@@ -444,50 +444,74 @@ void reuseEntryLoads(LoopText &t) {
     t.compact();
 }
 
+// What the loop passes ask of operands, held by the model or as text: an address, a pair, two entries' spelled alike but the last `but`.
+bool isAddress(const MOperand &o) { return o.kind == MOperand::Memory || (o.kind == MOperand::Symbol && o.text[0] == '*'); }
+bool isPair(const MOperand &o) { return o.kind == MOperand::Pair || (o.kind == MOperand::Symbol && o.text.find(':') != std::string::npos); }
+bool sameOperands(const MInst &a, const MInst &b, int but = 0) {
+    if (a.operands != b.operands) return false;
+    for (int o = 0; o + but < a.operands; o++) if (a.op[o].str() != b.op[o].str()) return false;
+    return true;
+}
+
+// What the pass below takes for a label: one that is, or a placed entry that starts in the first column - the
+// kernel's label, a `||` turn - named up to its `:`. No branch names a turn; a region is not refused for one.
+bool placedLabel(const LoopText &t, std::size_t k, std::string &name) {
+    if (t.label(k, name)) return true;
+    if (t.gone[k] || !t.s[k].packed) return false;
+    std::string raw = t.s[k].str();
+    raw.erase(raw.size() - 1);
+    if (raw.empty() || raw[0] == '\t') return false;
+    name = raw.substr(0, raw.find(':'));
+    return true;
+}
+
 // **A constant made inside a loop nest is made before it**: `MVKL sym, d; MVKH sym, d`, the only writer of d
 // anywhere in a loop's region - inner loops and all - with d not live into the head and no branch into
 // the region but the back edge to its head, goes in front of the head. `comp` in sieve's outer loop.
 void hoistConstantPairs(LoopText &t) {
-    std::vector<Line> &v = t.v;
+    const MStream &s = t.s;
     std::map<std::string, std::size_t> at;
     std::map<std::string, int> named;
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (isLabel(v[i])) at[labelName(v[i])] = i;
-        if (v[i].instr) for (std::size_t o = 0; o < v[i].ops.size(); o++) named[v[i].ops[o]]++;
+    std::string name;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        if (placedLabel(t, i, name)) at[name] = i;
+        if (t.instr(i)) for (int o = 0; o < s[i].operands; o++) named[s[i].op[o].str()]++;
     }
+    // The label a `B` at k names, or "" where k is no such branch.
+    auto target = [&](std::size_t k) { return t.instr(k) && s[k].m == "B" && s[k].operands != 0 ? s[k].op[0].str() : std::string(); };
     std::set<std::string> hoistedHeads;                    // a region holding one of these has been rewritten already
-    for (std::size_t i = 0; i < v.size(); i++) {
-        const Line &b = v[i];
-        if (!b.instr || b.mnem != "B" || !at.count(b.ops[0]) || named[b.ops[0]] != 1) continue;
-        const std::size_t h = at[b.ops[0]];
-        if (h >= i || h == 0 || !v[h - 1].instr || v[h - 1].mnem != "B" || v[h - 1].pred.empty()) continue;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const std::string head = target(i);
+        if (!t.instr(i) || s[i].m != "B" || !at.count(head) || named[head] != 1) continue;
+        const std::size_t h = at[head];
+        if (h >= i || h == 0 || !t.instr(h - 1) || s[h - 1].m != "B" || s[h - 1].pred == kNoReg) continue;
         bool ok = true;                                     // every branch into the region starts inside it
         std::set<std::string> inside;
-        for (std::size_t k = h; k <= i; k++) if (isLabel(v[k])) inside.insert(labelName(v[k]));
-        for (std::size_t k = 0; k < v.size() && ok; k++)
-            if ((k < h || k > i) && v[k].instr && v[k].mnem == "B" && inside.count(v[k].ops[0])) ok = false;
-        for (std::size_t k = h + 1; k < i && ok; k++) if ((!v[k].instr && !isLabel(v[k])) || (isLabel(v[k]) && hoistedHeads.count(labelName(v[k])))) ok = false;
+        for (std::size_t k = h; k <= i; k++) if (placedLabel(t, k, name)) inside.insert(name);
+        for (std::size_t k = 0; k < s.size() && ok; k++)
+            if ((k < h || k > i) && t.instr(k) && s[k].m == "B" && inside.count(target(k))) ok = false;
+        for (std::size_t k = h + 1; k < i && ok; k++) if (!t.instr(k) && (!placedLabel(t, k, name) || hoistedHeads.count(name))) ok = false;
         if (!ok) continue;
         const std::uint64_t headIn = t.liveIn(h);
         std::map<std::string, int> writers;
         for (std::size_t k = h + 1; k < i; k++) {
-            if (!v[k].instr) continue;
+            if (!t.instr(k)) continue;
             std::vector<std::string> r, w;
-            readsAndWrites(v[k], r, w);
-            if (v[k].mnem == "CALLP" || (v[k].mnem == "B" && !inside.count(v[k].ops[0]) && !at.count(v[k].ops[0]))) { writers["*"]++; }
+            t.rw(k, r, w);
+            if (s[k].m == "CALLP" || (s[k].m == "B" && !inside.count(target(k)) && !at.count(target(k)))) { writers["*"]++; }
             for (std::size_t x = 0; x < w.size(); x++) writers[w[x]]++;
         }
         if (writers.count("*")) continue;                   // a call clobbers what a constant would sit in
         std::set<std::string> used;
-        for (std::size_t k = h; k <= i; k++) if (v[k].instr) { std::vector<std::string> r, w; readsAndWrites(v[k], r, w); used.insert(r.begin(), r.end()); used.insert(w.begin(), w.end()); }
-        std::vector<Line> hoisted;
+        for (std::size_t k = h; k <= i; k++) if (t.instr(k)) { std::vector<std::string> r, w; t.rw(k, r, w); used.insert(r.begin(), r.end()); used.insert(w.begin(), w.end()); }
+        MStream hoisted;
         for (std::size_t k = h + 1; k + 1 < i; k++) {
-            const Line &l = v[k], &m = v[k + 1];
-            if (!l.instr || l.mnem != "MVKL" || l.ops.size() != 2 || !l.pred.empty() || !m.instr || m.mnem != "MVKH" || m.ops != l.ops || !m.pred.empty()) continue;
-            const std::string d = l.ops[1];
+            const MInst &l = s[k], &m = s[k + 1];
+            if (!t.instr(k) || l.m != "MVKL" || l.operands != 2 || l.pred != kNoReg || !t.instr(k + 1) || m.m != "MVKH" || !sameOperands(m, l) || m.pred != kNoReg) continue;
+            const std::string d = l.op[1].str();
             if (!sideOf(d) || d == "A15" || d == "B15" || d == "B3" || d == "B14") continue;
             std::string f = d;
-            std::vector<std::pair<std::size_t, Line> > web;         // the readers renamed, where d is written elsewhere too
+            std::vector<std::pair<std::size_t, MInst> > web;        // the readers renamed, where d is written elsewhere too
             if (writers[d] != 2 || (headIn & bitOf(d))) {
                 // A fresh register the region never names and the head is not entered with: the pair's value in
                 // it, its readers up to d's next write in this straight run renamed, or the pair stays.
@@ -500,33 +524,31 @@ void hoistConstantPairs(LoopText &t) {
                 if (f.empty()) continue;
                 bool ok = true, ended = false;
                 for (std::size_t x = k + 2; x < i && ok && !ended; x++) {
-                    const Line &u = v[x];
-                    if (!u.instr || isBranch(u.mnem)) { ok = false; break; }
+                    MInst u = s[x];
+                    const std::string &um = u.m.str();
+                    if (!t.instr(x) || isBranch(um)) { ok = false; break; }
                     std::vector<std::string> r, w;
-                    readsAndWrites(u, r, w);
+                    t.rw(x, r, w);
                     if (has(w, d)) ended = true;
                     if (!has(r, d)) continue;
-                    if (!u.pred.empty() || u.mnem == "MVKH" || u.mnem == "ADDK") { ok = false; break; }
-                    std::vector<std::string> ops = u.ops;
-                    for (std::size_t o = 0; o < ops.size(); o++) {
-                        if (ops[o].find(':') != std::string::npos) { ok = false; break; }
-                        const bool read = o + 1 < ops.size() || isStore(u.mnem) || ops[o][0] == '*';
-                        if (read && !(o + 1 == ops.size() && !isStore(u.mnem) && ops[o][0] != '*')) {
-                            if (ops[o][0] == '*' && sideOf(f) != sideOf(d) && renamed(ops[o], d, f) != ops[o]) { ok = false; break; }
-                            ops[o] = renamed(ops[o], d, f);
-                        }
+                    if (u.pred != kNoReg || um == "MVKH" || um == "ADDK") { ok = false; break; }
+                    // Every operand read - all but a destination register - names f for d; a pair, or an address across the files, cannot.
+                    for (int o = 0; o < u.operands; o++) {
+                        const std::string was = u.op[o].str();
+                        if (was.find(':') != std::string::npos) { ok = false; break; }
+                        if (!(o + 1 < u.operands || isStore(um) || was[0] == '*')) continue;
+                        const std::string now = renamed(was, d, f);
+                        if (now == was) continue;
+                        if (was[0] == '*' && sideOf(f) != sideOf(d)) { ok = false; break; }
+                        u.op[o] = MOperand(now);
                     }
-                    if (!ok) break;
-                    Line r2 = rebuilt(u.mnem, ops, u.pred);
-                    if (crossings(r2) > 1 || (unitsFor(r2) == 0 && !isLoad(r2.mnem) && !isStore(r2.mnem))) { ok = false; break; }
-                    web.push_back(std::make_pair(x, r2));
+                    if (!ok || !legal(u)) { ok = false; break; }
+                    web.push_back(std::make_pair(x, u));
                 }
                 if (!ok || !ended) continue;
             }
-            Line a = l, b2 = m;
-            a.ops[1] = f; b2.ops[1] = f;
-            hoisted.push_back(rebuilt(a.mnem, a.ops));
-            hoisted.push_back(rebuilt(b2.mnem, b2.ops));
+            hoisted.push_back(MInst(l.m.str().c_str(), MOperand(l.op[0].str()), MOperand(f)));
+            hoisted.push_back(MInst(m.m.str().c_str(), MOperand(m.op[0].str()), MOperand(f)));
             for (std::size_t x = 0; x < web.size(); x++) t.set(web[x].first, web[x].second);
             used.insert(f);
             t.blank(k);
@@ -534,20 +556,11 @@ void hoistConstantPairs(LoopText &t) {
             k++;
         }
         if (hoisted.empty()) continue;
-        hoistedHeads.insert(b.ops[0]);
+        hoistedHeads.insert(head);
         i = t.apply(h, hoisted, i);
         at.clear();
-        for (std::size_t k = 0; k < v.size(); k++) if (isLabel(v[k])) at[labelName(v[k])] = k;
+        for (std::size_t k = 0; k < s.size(); k++) if (placedLabel(t, k, name)) at[name] = k;
     }
-}
-
-// What the loop passes ask of operands, held by the model or as text: an address, a pair, two entries' spelled alike but the last `but`.
-bool isAddress(const MOperand &o) { return o.kind == MOperand::Memory || (o.kind == MOperand::Symbol && o.text[0] == '*'); }
-bool isPair(const MOperand &o) { return o.kind == MOperand::Pair || (o.kind == MOperand::Symbol && o.text.find(':') != std::string::npos); }
-bool sameOperands(const MInst &a, const MInst &b, int but = 0) {
-    if (a.operands != b.operands) return false;
-    for (int o = 0; o + but < a.operands; o++) if (a.op[o].str() != b.op[o].str()) return false;
-    return true;
 }
 
 // The stream's labels, and every operand an instruction spells (a label named there is no pass-through).
