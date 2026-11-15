@@ -4,3 +4,4 @@ template-nontype-numeric TI's rts6740 printf writes "+inf" where the .expected (
 ssa-conditional-const-class any runtime: reads argc > 0 (vm6747 passes 1); sim6747 --run fills no .args, so main gets argc 0, as TI's boot gives with no --args (RTS6x src/boot/Startup.cpp) - M3b.8 f8a
 ssa-conditional-copy-arm any runtime: reads argc > 0 (vm6747 passes 1); sim6747 --run fills no .args, so main gets argc 0, as TI's boot gives with no --args (RTS6x src/boot/Startup.cpp) - M3b.8 f8a
 ssa-reference-conditional-converted any runtime: reads argc > 0 (vm6747 passes 1); sim6747 --run fills no .args, so main gets argc 0, as TI's boot gives with no --args (RTS6x src/boot/Startup.cpp) - M3b.8 f8a
+long-double-literal-exact-digits TI's rts6740 printf rounds "%.17g" in its last two digits ("1.8446744073709557e+19" for 2^64, the .expected - clang's - has ...552) - cl6x 7.4.4's own build of the same printf prints the same on sim6747 (r6e, 2026-11-15); the data cxx3 emits is exact

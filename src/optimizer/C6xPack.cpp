@@ -180,6 +180,9 @@ Node makeNode(const MInst &i, const std::set<std::string> &labels) { return node
 // An operand held as text that names a register, a memory address or a number is one the table cannot read.
 bool onOperands(const MInst &i) {
     const std::string m = i.m.str();
+    // CXX1_C6X_UNSPELL names one mnemonic taken as unread, so the decline path runs in a gate (R108).
+    static const char *const unspell = std::getenv("CXX1_C6X_UNSPELL");
+    if (unspell != nullptr && m == unspell) return false;
     if (i.operands == 0 && !isBranch(m)) return true;
     if (i.operands < ((isLoad(m) || isStore(m)) ? 2 : 1)) return false;
     for (int k = 0; k < i.operands; k++) {
@@ -190,6 +193,16 @@ bool onOperands(const MInst &i) {
         if (s.empty() || !regs.empty() || s[0] == '*' || s.find(':') != std::string::npos || isNumber(s)) return false;
     }
     return true;
+}
+// The first instruction of the stream whose operands the table does not read, spelled without its line end.
+bool firstUnread(const MStream &s, std::string &line) {
+    for (std::size_t k = 0; k < s.size(); k++) {
+        if (s[k].kind != MInst::Instruction || onOperands(s[k])) continue;
+        line = s[k].str();
+        while (!line.empty() && (line[line.size() - 1] == '\n' || line[line.size() - 1] == '\r')) line.erase(line.size() - 1);
+        return true;
+    }
+    return false;
 }
 bool modelled(const MInst &i) { return i.kind == MInst::Instruction && !i.packed && onOperands(i); }
 // The stream's instructions, placed ones too: the first the table cannot read is named (the census's `c6x-line`).

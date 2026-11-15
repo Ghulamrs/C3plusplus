@@ -1,0 +1,34 @@
+#!/bin/sh
+# **The C6000 functions the scheduler declined, counted** (R108 and Q5 of the M6c review): every tests/cases program
+# is compiled for tms6747 at -O1 and -O2 with CPP11_DECLINES set, and each `decline c6x-unscheduled` (a function whose
+# serial text went out unscheduled) and `decline c6x-pipeline-unmodelled` (a loop left unpipelined) line is counted.
+#
+#   tools/c6x-declines             the count, and each decline
+#   tools/c6x-declines --check     fail where the count is above tools/c6x-declines.baseline - it only goes down -
+#                                  or where CXX1_C6X_UNSPELL=ADD declines nothing (the path must run)
+#   tools/c6x-declines --record    write today's count as the baseline
+set -u
+cd "$(dirname "$0")/.."
+CXX1="${CXX1:-./cxx3.exe}"
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+: > "$TMP/lines"
+for e in tests/cases/*.expected; do
+    n=$(basename "$e" .expected)
+    if [ -f "tests/cases/$n.notarget" ] && grep -q '^tms6747' "tests/cases/$n.notarget"; then continue; fi
+    for l in -O1 -O2; do
+        CPP11_DECLINES=1 "$CXX1" -S $l -nologo -arch tms6747 "tests/cases/$n.cpp" -o "$TMP/o.s" 2>&1 < /dev/null \
+            | grep '^decline c6x-' | sed "s/^decline /$n $l /" >> "$TMP/lines"
+    done
+done
+count=$(wc -l < "$TMP/lines" | tr -d ' ')
+cat "$TMP/lines"
+echo "c6x-declines: $count"
+case "${1:-}" in
+--record) echo "$count" > tools/c6x-declines.baseline ;;
+--check)
+    base=$(cat tools/c6x-declines.baseline)
+    if [ "$count" -gt "$base" ]; then echo "c6x-declines: $count is above the baseline $base"; exit 1; fi
+    knob=$(CXX1_C6X_UNSPELL=ADD CPP11_DECLINES=1 "$CXX1" -S -O2 -nologo -arch tms6747 tests/cases/c6x-ext-home-side.cpp -o "$TMP/o.s" 2>&1 < /dev/null | grep -c '^decline c6x-unscheduled ')
+    if [ "$knob" -eq 0 ]; then echo "c6x-declines: CXX1_C6X_UNSPELL=ADD declined nothing"; exit 1; fi
+    echo "c6x-declines: baseline $base holds; the knob declines $knob functions" ;;
+esac

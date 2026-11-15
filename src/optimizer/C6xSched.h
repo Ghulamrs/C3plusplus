@@ -8,5 +8,7 @@
 
 #include <string>
 
-// The packets of `before`, a selected body's entries, `after`; `spelled` false: a line not spelled, the text returned.
-std::string c6xSchedule(const std::string &before, const c6x::MStream *selected, const std::string &after, int level, bool &spelled);
+// The packets of `before`, a selected body's entries, `after`. `declined` names why the serial text is returned
+// unscheduled (R108); `refused` names an instruction no unit encodes, which the caller refuses.
+std::string c6xSchedule(const std::string &before, const c6x::MStream *selected, const std::string &after, int level,
+                        std::string &declined, std::string &refused);

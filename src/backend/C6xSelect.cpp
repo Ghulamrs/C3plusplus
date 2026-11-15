@@ -724,12 +724,20 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     }
     case ir::Op::SExt: case ir::Op::ZExt: {
-        const std::string a = x(0);
         const int from = ssaType(f, f.operand(i, 0))->size(target_);
-        const char *ext = i.op == ir::Op::SExt ? "EXT" : "EXTU";
-        if (from == 1) ssaEmit(c6x::MInst(ext, a, 24, 24, d));
-        else if (from == 2) ssaEmit(c6x::MInst(ext, a, 16, 16, d));
-        else if (a != d) ssaEmit(c6x::MInst("MV", a, d));
+        if (from >= 4) {
+            const std::string a = x(0);
+            if (a != d) ssaEmit(c6x::MInst("MV", a, d));
+            finish();
+            return;
+        }
+        // EXT and EXTU have no cross path: the source is read at its home where that is the result's side,
+        // through A4 for a result on the A side, and copied to a B-side result first, which is then widened in place.
+        std::string a = y(0);
+        if (a[0] == 'B' && d[0] != 'B') a = x(0);
+        if (a[0] != 'B' && d[0] == 'B') { ssaEmit(c6x::MInst("MV", a, d)); a = d; }
+        const int n = from == 1 ? 24 : 16;
+        ssaEmit(c6x::MInst(i.op == ir::Op::SExt ? "EXT" : "EXTU", a, n, n, d));
         finish();
         return;
     }

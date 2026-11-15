@@ -1064,21 +1064,39 @@ void rounds(MStream &s) {
     }
 }
 
-std::string c6xSchedule(const std::string &before, const MStream *selected, const std::string &after, int level, bool &spelled) {
-    spelled = true;
-    std::string text = before;
-    if (selected != nullptr) {
-        std::ostringstream body;
-        write(*selected, body);
-        text += body.str();
-    }
-    text += after;
-    if (level <= 0) return text;
+// The first instruction not yet placed that no unit encodes as written - more than one crossing source, or one
+// where the form has no cross path - spelled, or "" (the four wrong answers of 2026-11-15: `EXT A4, 24, 24, B26`).
+std::string unencodable(const MStream &s) {
+    for (std::size_t k = 0; k < s.size(); k++)
+        if (s[k].kind == MInst::Instruction && !s[k].packed && crossings(s[k]) > 1) return s[k].str().substr(0, s[k].str().size() - 1);
+    return std::string();
+}
+
+std::string c6xSchedule(const std::string &before, const MStream *selected, const std::string &after, int level,
+                        std::string &declined, std::string &refused) {
+    // The serial text, made only where it is what is returned: -O0, or a function the stream declines.
+    const auto text = [&]() {
+        std::string t = before;
+        if (selected != nullptr) {
+            std::ostringstream body;
+            write(*selected, body);
+            t += body.str();
+        }
+        return t + after;
+    };
+    if (level <= 0) return text();
     // A function is one stream from here to the packetiser: the walker's text read once, a selected body's entries as
-    // they stand. A line the stream does not spell, or operands the table cannot read, is refused by the caller.
+    // they stand. A line the stream does not spell, or operands the table cannot read, declines the function.
     MStream s;
-    spelled = readSerial(before, s) && (selected == nullptr || addSerial(*selected, s)) && readSerial(after, s) && onOperands(s);
-    if (!spelled) return text;
+    const auto decline = [&](const char *where) {
+        std::string line;
+        declined = std::string(where) + (firstUnread(s, line) ? ": " + line : std::string());
+        return text();
+    };
+    if (!(readSerial(before, s) && (selected == nullptr || addSerial(*selected, s)) && readSerial(after, s))) { declined = "a line the stream does not spell"; return text(); }
+    if (!onOperands(s)) return decline("operands the table does not read");
+    refused = unencodable(s);
+    if (!refused.empty()) return std::string();
     foldFront(s, !skipped("thread"), !skipped("labels"));
     rounds(s);
     if (!skipped("arms") && predicateArms(s)) rounds(s);
@@ -1088,9 +1106,9 @@ std::string c6xSchedule(const std::string &before, const MStream *selected, cons
         loopPass(s, hoistInvariants);
         if (!skipped("induct")) loopPass(s, inductionPointers);
         if (!skipped("fill")) loopPass(s, widenFills);
-        // The loops are pipelined on the stream; a kernel whose entries do not spell is refused as a line is.
-        spelled = onOperands(s) && pipelineLoops(s);
-        if (!spelled) return text;
+        // The loops are pipelined on the stream; a kernel whose entries do not spell leaves its loop as it was.
+        if (!onOperands(s)) return decline("operands the table does not read, after the loop passes");
+        pipelineLoops(s);
         int placed = 0;
         for (std::size_t k = 0; k < s.size(); k++) placed += s[k].packed ? 1 : 0;
         if (placed != 0 && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-kernel: %d placed entries\n", placed);
@@ -1104,8 +1122,9 @@ std::string c6xSchedule(const std::string &before, const MStream *selected, cons
     }
     rounds(s);
     foldAddressing(s, !skipped("index"));
-    spelled = onOperands(s);
-    if (!spelled) return text;
+    if (!onOperands(s)) return decline("operands the table does not read, after the folds");
+    refused = unencodable(s);
+    if (!refused.empty()) return std::string();
     packetise(s);
     foldBranchNops(s, s.size() * 4 + 512 < 8192);
     std::ostringstream packed;
