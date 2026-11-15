@@ -1803,3 +1803,34 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+## The M6c review's mends
+
+### Lane r6d: R103 (names, overload, win-structure on Windows) and R110 (ADL), 2026-11-15, from 458f8974
+
+- **What made the three suites run on Windows** (their home, the user's Q9): `tools/windows/names-overload.cmd`
+  finds clang++ under whichever VS 2022 is installed (the box has the Build Tools; the script named Community's
+  LLVM) and a real python (Git's bash finds the Store's `python3` stub first), and now runs win-structure too;
+  win-structure takes `$PYTHON`, falling back to `python`; the four python tools guard `signal.SIGPIPE`, which
+  Windows' python lacks; `ulimit -t` is quiet in Git's bash. A missing oracle is **NOT RUN, status 3** in all
+  three - never rc 0; `make test` lets 3 through only without `REQUIRE_ORACLE=1`, which a gate sets.
+- **R110 mended.** `Lookup::lookupKeys` takes every argument's type ([basic.lookup.argdep]/2; the two-operand form
+  delegates to it), and no argument-dependent lookup is added where a block-scope function declaration of the
+  name is live (/3; `Parser::blockFunctions_`, popped by `leaveScope`). Cases `adl-every-argument` (clang 1 2)
+  and `adl-after-block-declaration` (clang 2; cxx3 answered 1 before), in tests/cases and tests/overload.
+- **names.sh on Windows**: 712 passed / 161 failed at 458f8974 + the ADL mend; **731 / 143** at r6d. The 143 by
+  case: box headers (clang refused: no Linux/Darwin headers, MSVC's STL at -std=c++11, a clang crash for
+  arm64-darwin) 78; C1/D1 and other inline special members on ELF (clang's constructor aliases; emission, not a
+  name) 44; runtime calls each compiler picks (`__cxa_free_exception`, `_Unwind_Resume`, `_Init_thread_abort`)
+  5; clang 19's `TnT_`/`TpTn` 6; an unused internal constant or exit helper emitted 2; the exe busy under my own
+  winpass 3 (all three passed in the first run). **Real, 5 cases, in tests/open/names-register.txt**: closures
+  met during a lambda's return deduction emitted as `$deduced_N` (2), and a lifetime-extended temporary's name
+  (`?$S1@@3HB` where clang writes `?$RT1@r@@3AEBHEB`, Itanium `_ZGR2ir_`; 3). Moved out of "other" this round:
+  30 .nonames rows citing reasons already recorded (static locals, closures, the unnamed namespace, RTTI emitted
+  where the class is defined, cl's `_TI2CPEAD` - measured with cl 19.44, clang writes `_TIC2PEAD`); and
+  tools/mangled-names drops file-local `__cxx1_vec_*` / `__cxx_global_array_dtor` and memset/memcpy/bzero
+  (48 rows differed by these alone).
+- **win-structure** (python working): layout 748 compared, 3 differ before the RTTI rows were recorded,
+  9 under a recorded names difference (was 557 of 747 under the Store stub); unwind 0 faults except
+  8 `dispUnwindHelp 0` in three cases' functions whose try cannot throw - registered.
+- **overload.sh** 45 agreed / 1 differed (base-rvalue-reference: clang cannot read MSVC's <utility> at -std=c++11).

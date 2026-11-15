@@ -14,7 +14,7 @@ A row leaves when names.sh passes the case or a .nonames gives it a recorded rea
                                               arm64-darwin                         > __ZGR2ir_
 3. win-structure's unwind check: dispUnwindHelp 0 in a function whose try body cannot throw (8 faults):
    nested-parse-state -O2 ?tryHoldsALambda@@YAHXZ; ssa-ms-try -O0/-O2 ?nothingThrows@@YAHH@Z;
-   ssa-try-catch -O0 ?quiet@@YAHH@Z - both spellings. clang gives the slot an 8-byte home inside the frame.
+   ssa-try-catch -O0 ?quiet@@YAHH@Z - both spellings; tools/win-unwind-check: "not an 8-byte slot inside the frame".
 
 Emission, not names (counted, not registered as defects): unused inline special members cxx1 defines
 (C1/D1 on ELF, C2: ssa-handler-exits, ssa-virtual-base-parts, ssa-ctor-delegate, ssa-class-prvalue; 46 rows);
