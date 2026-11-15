@@ -1463,3 +1463,14 @@ the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-ll
   -O2 (`CPP11_INDUCT`, `CPP11_FILL`). Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** D5.5 `hoistConstantPairs` (the one pass that meets placed entries), D5.6, then D6.2-D6.5, in round 19's
   order.
+
+### Wave 17 landed, 2026-11-15 (the coordinator)
+
+M6c round 20 (m6ac: D5.2 hoistInvariants, D5.3 inductionPointers, D5.4 widenFills on entries; src/ +230 -176).
+- **Gate at 4ee0964c**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0; cdb 5/5 both spellings. Mac
+  run.sh -O0 and -O2 1215 / 0; lldb 5/5. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, comments 0); gdb 5/5. tms6747 814 / 0 at -O0 and -O2 (**192.0 M**); walker 814 / 0 at both (447.8 M,
+  195.9 M); asm6x 833 / 0 at both.
+- **Found after this gate, not by it** (lane m8a's census): main's cxx3 compiles 100 of its own 103 sources - three C6x
+  files refused (C6xPack.cpp:209, C6xPipe.cpp:539, C6xSelect.cpp:420); 102 / 102 at M5's close. The wave gate never
+  self-compiled. Lane sh1 mends the compiler and library; from wave 18 the gate compiles every src/*.cpp with cxx3.
