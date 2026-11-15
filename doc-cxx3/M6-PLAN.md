@@ -1803,3 +1803,47 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+## The M6c review's mends
+
+### Lane r6a - the wave gate in the tree (R105, R107, R104's script half), 2026-11-15
+
+- **`tools/wave-gate <name>`** (new; `tools/verify-three wave <name>` is the same command). The fixed list of
+  steps, each printing PASS, FAIL or NOT RUN with its reason; the last line fails on a failure or on a step not
+  run with no `-n <step>=<reason>` on the command line. It ships HEAD (`git archive`, the commit printed), and
+  chooses a box per step (the user, 2026-11-15: the Windows box relieves Linux):
+  - Linux (what executes x86_64-linux code): `build static gdb run1 maketest selfc fixed0 fixed2`, one detached
+    chain, each step a box job under the lock and the 25-minute cap.
+  - Windows (/affinity 3FF, WINLANES): `wbuild winpass0 winpass1 winpass2 cdb wselfc names overload winstruct
+    tms0 tms1 tms2 wtms0 wtms1 wtms2 cycles sim asm0 asm2 wfixed0 wfixed2`.
+  - Mac (one job at a time, -j2, under the caps): `mbuild mrun0 mrun2 lldb`; `mfixed` only under `-a mfixed`.
+  `-k` runs only the steps with no verdict yet, in the trees already built; `-r` prints the report again.
+- **The user's decisions on the review, written as steps**: Q4 - `sim` (tms6747.sh -O2, SIM=1, six shards) is owed
+  by every wave; Q4b - `mfixed` (target 4's fixed point on the Mac) is not a wave step, run at a milestone's close
+  with `-a mfixed`; Q9 - `names`, `overload`, `winstruct` run on the Windows box in every wave.
+- **R107**: `tms1`/`wtms1` (tests/tms6747.sh at `CXX1_FLAGS=-O1`, selector and walker), `run1` and `winpass1` are
+  steps; `tools/verify-three`'s C6000 loop takes -O1 too. tests/tms6747.sh needed no change.
+- **R104's script half**: `selfc`/`wselfc` (stage 0 over every source) are owed by every wave. **The fixed point**
+  (`fixed0`, `fixed2` on Linux by tools/self-host; `wfixed0`, `wfixed2` on Windows by self-host.cmd in the MASM
+  spelling: stages 0 = 1 = 2 and 2 = 3) is owed at a milestone's close and by any wave that deletes a code path
+  or changes what stage 0 is built from; any other wave must say `-n fixed=<why>`, so it is never silent.
+- **The run, `tools/wave-gate r6a` at c7770572 (458f8974's src/, tools/ alone differ)**: 6 passed, 3 failed, 24 not
+  run, each with its reason; the report is `~/cxxopt-build/wave-gate/r6a-report.txt` on the Mac.
+  - **The -O1 leg (R107), first execution, on the Windows box**: tms6747.sh -O1 selector **818 passed, 0 failed**;
+    walker **818 / 0** (vm6747, SIM=0). x86 at -O1: winpass **832 same / 0 differ, masm 831 / 0**.
+  - Windows PASS: wbuild (cl /W4 /WX), cdb 5/5 in both spellings, wselfc 103 of 103.
+  - **Windows FAIL - what wave 19 did not run (R103), found by the first run**: names.sh 711 passed, **161 failed**;
+    overload.sh 43 agreed, **1 differed**; win-structure.sh layout 747 compared, **557 differ**, names 96
+    differing. Not root-caused here: whether each is the range's regression or the Windows box's environment
+    (Git bash, clang 19.1.5 from BuildTools) is lanes C and D's to say. Logs beside the report.
+  - NOT RUN: Linux build, gdb, run1, maketest, selfc - the box lock was held by lanes B and C for the lane's whole
+    hour, and the chain was stopped by PID as its build began; static was run by hand in its tree (exclusions 0
+    uncited 0 stale, comments 0 over the cap, memory-gate rc 0, ide up to date). winpass0/2, tms0/2, wtms0/2,
+    asm0/2 (wave 19's numbers stand; the C6000 steps moved to Windows mid-run); cycles (lane B's tool); sim
+    (SIM6747 is not built on the Windows box yet); the four fixed-point steps (lane C); the Mac's four.
+- **Found in the script by its own run, and mended**: `start /b /wait` loses a suite's exit status - the first
+  names step passed on names-overload.cmd's "no clang++" message; a suite's status is now a line it prints.
+- **Owed**: SIM6747 built on the Windows box (then `sim` runs there); `tilink`, `identical`, `emit`, `census`
+  and `release-check` are not steps yet; the Mac steps and the Linux chain's steps past `build` have not been
+  executed by this script once; stopping a Linux chain by its PID leaves the step's children (kill those too).
+- **Question for the user**: none new. src/ lines unchanged (no src/ file touched).
