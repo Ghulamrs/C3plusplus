@@ -41,7 +41,8 @@ OUT=tests/out-overload
 one() {
     base=$1; src=tests/overload/$base.cpp
     (
-        if "$CLANG" -x c++ -std=c++11 -w "$src" -o "$OUT/$base.clang" \
+        # cxx1's C++ library, not the host's: MSVC 14.44's STL needs C++14 (r6n, 2026-11-15)
+        if "$CLANG" -x c++ -std=c++11 -w -nostdinc++ -isystem include "$src" -o "$OUT/$base.clang" \
                     2> "$OUT/$base.clang.err"; then
             echo accept > "$OUT/$base.clang.verdict"
             "$OUT/$base.clang" > "$OUT/$base.clang.out" 2>&1 || true

@@ -120,12 +120,23 @@ names() {
     sort -u
 }
 
+# clang reads the headers cxx1 reads, include/ and lib/, so one program is compared and not two: the Windows box has
+# no C library for the Itanium targets, and MSVC's has inline stdio and a C++14 STL (r6n, 2026-11-15). clang keeps
+# its own <stdarg.h> and <stddef.h>; the shim adds the v-functions cxx1's <stdarg.h> declares.
+mkdir "$OUT/shim"
+printf '%s\n' '#include_next <stdarg.h>' '#ifndef R6N_SHIM_STDARG' '#define R6N_SHIM_STDARG' '#include <stddef.h>' \
+    '#ifdef __cplusplus' 'extern "C" {' '#endif' 'int vprintf(const char *, va_list);' \
+    'int vfprintf(void *, const char *, va_list);' 'int vsprintf(char *, const char *, va_list);' \
+    'int vsnprintf(char *, size_t, const char *, va_list);' 'int rename(const char *, const char *);' \
+    '#ifdef __cplusplus' '}' '#endif' '#endif' > "$OUT/shim/stdarg.h"
+HEADERS="-nostdlibinc -isystem $OUT/shim -isystem $ROOT/include -idirafter $ROOT/lib"
+
 status=0
 # TARGETS in the environment names the targets to compare, all three unless set: tests/win-structure.sh asks
 # for the x86_64-windows row alone, beside its object-level checks.
 for pair in "x86_64-linux:x86_64-linux-gnu" \
             "x86_64-windows:x86_64-pc-windows-msvc" \
-            "arm64-darwin:arm64-apple-macos"; do
+            "arm64-darwin:arm64-apple-macos11"; do
     mine=${pair%%:*}
     theirs=${pair#*:}
     case " ${TARGETS:-x86_64-linux x86_64-windows arm64-darwin} " in *" $mine "*) ;; *) continue ;; esac
@@ -155,7 +166,8 @@ for pair in "x86_64-linux:x86_64-linux-gnu" \
     ( "$CXX1" -S -arch "$mine" $spell $CXX1_FLAGS "$SRC" -o "$OUT/mine.s" 2>"$OUT/mine.err"; echo $? > "$OUT/mine.rc" ) &
     EH=-fexceptions
     RTTI=-frtti
-    ( clang++ -x c++ -std=c++11 $EH $RTTI -w -target "$theirs" -S "$SRC" -o "$OUT/theirs.s" 2>"$OUT/theirs.err"; echo $? > "$OUT/theirs.rc" ) &
+    ( clang++ -x c++ -std=c++11 $EH $RTTI -w $HEADERS -target "$theirs" -S "$SRC" -o "$OUT/theirs.s" \
+        2>"$OUT/theirs.err"; echo $? > "$OUT/theirs.rc" ) &
     wait
     if [ "$(cat "$OUT/mine.rc")" != 0 ]; then
         echo "$mine: cxx1 refused it"

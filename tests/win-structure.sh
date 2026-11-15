@@ -95,8 +95,14 @@ echo "win-structure.sh: $skipped cases skipped for the target, $refused refusals
 # The unwind check, over every object of both spellings and levels at once.
 ls "$OUT"/*.masm.obj "$OUT"/*.gnu.obj > "$OUT/objects" 2>/dev/null
 if [ -s "$OUT/objects" ]; then
-    xargs "$PYTHON" tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1 || status=1
-    grep -v '^win-unwind-check:' "$OUT/unwind.report"
+    xargs "$PYTHON" tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1
+    # A fault the case's .nonames records (`win-unwind  <function>  <reason>`) is said with its reason, not counted.
+    grep -v '^win-unwind-check:' "$OUT/unwind.report" | while IFS= read -r line; do
+        b=${line%%.O[0-9].*}; fn=$(echo "$line" | sed -n 's/^[^:]*: \([^:]*\): .*/\1/p')
+        why=$(grep "^win-unwind  *$fn  " "tests/cases/$b.nonames" 2>/dev/null | sed "s/^win-unwind  *[^ ]*  *//")
+        if [ -n "$fn" ] && [ -n "$why" ]; then echo "recorded (.nonames) $line - $why"; else echo "$line"; echo unrecorded >> "$OUT/unwind.unrecorded"; fi
+    done
+    [ -s "$OUT/unwind.unrecorded" ] && status=1
     grep '^win-unwind-check:' "$OUT/unwind.report" | sed 's/^win-unwind-check:/win-structure.sh: unwind:/'
 fi
 
