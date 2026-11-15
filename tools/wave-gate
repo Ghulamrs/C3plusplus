@@ -43,7 +43,7 @@ if [ "${1:-}" = --suite ]; then
     PATH="$(dirname "$(cygpath -u "${CXX1_WINDOWS_CLANG:-C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\clang.exe}")"):$PATH"
     export PATH CLANG=clang++ CXX1=./cxx3-msvc.exe
     command -v clang++ > /dev/null || { echo "wave-gate: no clang++ on the Windows box's PATH"; exit 2; }
-    exec sh "tests/$2.sh"
+    sh "tests/$2.sh"; rc=$?; echo "wave-gate: $2.sh rc $rc"; exit $rc     # the status as a line: `start /wait` loses it
 fi
 
 # ---- the Linux box's side: sh wave-gate --linux <name> <step>...  in the shipped tree's own copy of this file
@@ -191,8 +191,9 @@ windows_leg() {
             [ -n "${1:-}" ] && [ "$1" = "$2" ] && verdict wselfc PASS "$d" windows || verdict wselfc FAIL "${d:-no count}; $L" windows ;;
         names|overload|winstruct) u=$s; [ $s = winstruct ] && u=win-structure
             capped 1500 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --suite $u" > "$L" 2>&1; rc=$?
-            d=$(tr -d '\r' < "$L" | grep -a "^$u.sh: \|^wave-gate: " | tail -1 | cut -c1-240)
-            [ $rc -eq 0 ] && [ -n "$d" ] && verdict "$s" PASS "$d" windows || verdict "$s" FAIL "rc $rc; ${d:-no count line}; $L" windows ;;
+            d=$(tr -d '\r' < "$L" | grep -a "^$u.sh: \|^wave-gate: no " | tail -2 | tr '\n' ';' | cut -c1-300)
+            if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && ! grep -a -q "^$u.sh: skipped" "$L"
+            then verdict "$s" PASS "$d" windows; else verdict "$s" FAIL "${d:-no count line}; $L" windows; fi ;;
         wfixed[02]) f=; [ $s = wfixed2 ] && f=-O2
             sh "$W/self-host-stages.sh" "$N" "$f" > "$L" 2>&1
             a=$(grep -a 'the same object from stages 0, 1 and 2' "$L" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$L" | tail -1)
