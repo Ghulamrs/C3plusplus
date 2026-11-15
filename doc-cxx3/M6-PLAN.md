@@ -1676,3 +1676,59 @@ files (lane m6ad's):
 - **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
   C6xSched.cpp, C6xSelect.cpp and C6xMir.cpp each compile, 0 errors.
 - **Owed:** D6.5 (`parse`, `streamOf`, `Line`), then the pipeliner's spelling halves of a placed entry.
+### M6c, round 25 (D6.5: the scheduler takes entries; `Line`, `parse` and `streamOf` deleted), 2026-11-15, lane m6ah
+
+- **Landed, identical output: D6.5** (3075c4d2; 9198b442 a comment). `c6xSchedule(before, selected, after, level,
+  spelled)`: a selected function's body reaches the scheduler as the selector's own entries (`Tms6747::ssaMir_`, by `addSerial`) - it is no
+  longer written out and read back; a walked function's text, and the prologue, parameter copies and epilogue the
+  walker's helpers write round either body, are read once by `readSerial`. Both leave the -O0 padding (`NOP`) out and
+  answer false for a line that is an instruction to the scheduler (a tab, a predicate, a capital) and is not spelled
+  back the same, so the refusal by name is where it was. `entryOf` (C6xMir.cpp) is the one reader of a line - `parse`'s
+  fields go straight into an `MInst` - and `read` (a helper's text in a selected body, `ssaAbsorb`) is a loop over it.
+- **Deleted**: `struct Line`, `parse` (C6xSched.cpp), `streamOf` (C6xPack.cpp), `c6xSchedule`'s vector of lines, and
+  the pipeliner's spelling halves - `Src::typed` and the `!typed` arms of `reg`, `number`, `pair`, `regAt`, `side`,
+  `regsIn`, `byteAddress`, with the text `byteAddress`. `c6xSchedule` asks `onOperands` before `pipelineLoops` too, so
+  the pipeliner never meets an operand it would have read by its spelling. `Line` is named nowhere in src/.
+- **What the walker keeps until M6d, exactly**: its text. A walked function is `out_` text handed to `c6xSchedule` and
+  read by `readSerial`; a selected one still has the walker's prologue, parameter copies (`emitParams`), `earlyExit`
+  and epilogue as text on either side of its entries, and its helpers' text inside the body through `ssaAbsorb`/`read`.
+  So `entryOf`, `read`, `readSerial`, `MOperand`'s parse of a spelling, `write`/`MInst::str`, and the refusal "a line
+  the scheduler's stream does not spell" stay until the walker emits entries or goes (M6d). At -O0 a selected body is
+  still written as text (`c6xSchedule` returns it unscheduled).
+- **Assumed, and what would show it wrong**: a selected entry reads the same from the stream as from its spelling read
+  back (`MInst::str` then `entryOf` gives the entry: kinds, immediates, a Symbol's text); no placed or kept entry
+  reached the pipeliner's `!typed` arms with an answer the operand does not give. The identity below holds both.
+- **What is left of the text passes: none.** No pass holds a line; every pass reads and edits entries. What remains
+  of *spelling* is inside operands, not lines, and is not a text pass: `registersIn` over `MOperand::str()` at 11
+  sites and `renamed` at 4 (the folds and loop passes in C6xPack.cpp/C6xSched.cpp reading an address's registers),
+  and 6 `kind == Symbol` halves (`isAddress`, `isPair`, `renameReg`, `Ins`'s `name[]`) that `onOperands` now makes
+  unreachable for a register, an address or a number. They are a tidy round's, or go with M6d.
+- src/ +111 -153 lines (C6xSched.cpp 1,143 -> 1,114, C6xPack.cpp 1,390 -> 1,366, C6xPipe.cpp 2,372 -> 2,336,
+  C6xModel.h 130 -> 119, C6xMir.cpp 181 -> 229, C6xMir.h 138 -> 140, C6xSched.h 10 -> 13, Tms6747.cpp +5 -2).
+- **M6c closed, in code.** Nothing of the text passes is left: the packetiser, the pipeliner, the folds and the loop
+  passes read and write entries, `Line` is deleted, and the fallback to text is a refusal by name that no case
+  reaches. Since M6c began (m6-i b7510429) the seven C6x optimizer files took +3,310 -2,687 lines: C6xSched.cpp 2,297
+  -> 1,114, C6xPipe.cpp 2,007 -> 2,336, C6xPack.cpp 0 -> 1,366 (the table on operands, the folds, the stream's
+  liveness), 4,694 -> 5,317 in all - the text passes went, their readers on operands came.
+- **The row's judge.** tms6747.sh and asm6x.sh below. The cycle table case by case at -O2: against round 24, 815
+  cases, 0 differ; against wave 18's gate (`~/cyc-w18g.txt`), 815 cases, 0 worse, 0 better; against round 22's
+  (`~/cyc-m6ae.txt`, M6a's 192,009,106 on its 811 cases) **802 equal, 9 worse, 0 better** - deque-both-ends,
+  include-map-set, library-self-compile-pieces-2, map-move-only-mapped, map-set-node-stability,
+  member-template-body-unchosen, range-for-vector, return-self-referential, static-local-braced-list, +777,307
+  cycles between them. All nine came with wave 18's base (include/, lane sh2's to mend), none from a C6x pass: every
+  M6c round is 0 differ in text against its own base's build. The judge is whole when sh2's mend lands.
+- **Gate** (3075c4d2; the reference is round 24's own build, cecf1d27's code). Windows, cl /W4 /WX clean
+  (work\m6ah1 against work\m6ag1), tests/cases at -O0, -O1, -O2 by md5: **2,613 texts same, 1,068 refused alike, 0
+  differ**, plain and under `CXX1_C6X_WALKER=1`; census -O2 0 to any text pass, 0 `c6x-line`, 7,012 selected, kernels
+  219 / 9,122; exclusions 129 sites 0 uncited 0 stale, comments 0 over (1 over at 3075c4d2, mended by 9198b442),
+  memory gate rc 0, generate up to date. Linux (~/m6ah against ~/m6ag), g++ -Werror clean: `identical.sh
+  ARCHS=tms6747` -O0 and -O2 **1,744 compared, 0 differ**; -O0 -g 0 differ once the tree path in `.dwpsn` is
+  normalised. Against main 85fe99fe's compiler (~/w7ref): 26 differ and -g 10 after normalising, rounds 23 and 24's
+  numbers (the base's cases). tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **818 passed, 0 failed, 192,802,451
+  cycles**, per case as above; walker legs **818 / 0** at -O2 and at -O0; g-same 871 same, 0 differ, 0 broken;
+  asm6x.sh 837 objects, 0 failed at -O0 and -O2; census 0 (`c6x-line` 0); exclusions 0/0, comments 0 over, memory
+  gate, ast-residue, generate rc 0. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
+  C6xSched.cpp, C6xSelect.cpp and C6xMir.cpp each compile, 0 errors.
+- **Owed:** the nine cases' cycles (lane sh2, include/); the operand-spelling readers above (a tidy round, or
+  M6d); M6d itself - the walker, and with it `readSerial`, `read` and the text round a selected body.
