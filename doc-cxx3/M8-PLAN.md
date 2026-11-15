@@ -251,5 +251,5 @@ The census row at this tree (`tests/subst.sh census`, switch on, -O0):
 | --- | --- | --- | --- |
 | `tests/cases`, x86_64-linux, 865 units reach the census | 17 (16 in `template-subst`, `ident<unsigned>` in `template-subst-refused`) | 812 | 340 an argument that is not arithmetic, 153 a parameter that is not a type, 51 `typename`, 45 `inline`, 40 `int`, 39 no sibling of the layout, 36 `auto`, 22 `decltype`, 16 `bool`, 16 `+`, 13 a lookup; the new refusals: 3 a `bool` argument, 2 a conversion between parameters, 2 a literal |
 
-Gates: GATEROW
-src/ lines: SRCBEFORE before, SRCAFTER after.
+Gates: on the Linux box (g++ `-Werror` build clean) at this src: **`tests/subst.sh` 0 failed** - `run.sh` with the switch 1222 passed, 0 failed at -O0 and at -O2; `typed.sh` with it 865 passed, 0 failed, 1 not for this host, at both; the probes counted as recorded and `-g` at 0; on against off over the 147 cases reaching the function door, 880 files compared (3 targets, -O0 and -O2), 880 the same, 0 differ; `run.sh` with the switch off 1222 passed, 0 failed; self-compile 103 of 103 (stage 0, -O2); exclusions 0 uncited 0 stale (three Templates.cpp citations re-pointed), comment cap 0, memory gate, ast-residue and `ide/generate.py --check` pass. On the Windows box (cl /W4 /WX clean): both probes print clang's output on and off at -O0 and -O2 in both spellings; winpass -O0 (WINLANES=4) gnu 833 same, 0 differ, 355 refused as recorded, 33 skipped; masm 832 same, 0 differ, 355, 34 - wave 19's 832/831 with the one new case.
+src/ lines: 94,210 before, 94,230 after.
