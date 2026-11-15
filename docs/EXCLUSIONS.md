@@ -104,9 +104,6 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2307` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:266` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3146`, `src/parser/ParserTopLevel.cpp:835` |
-| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
-| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:264` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3146`, `src/parser/ParserTopLevel.cpp:836` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:764` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
