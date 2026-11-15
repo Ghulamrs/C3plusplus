@@ -84,7 +84,7 @@ if [ "${1:-}" = --box ]; then
     # the fixed point at $2: stages "0 1", 2, 3 as box jobs, a cut stage resumed twice
     fixed() { s=$1; o=$HOME/$N-$s; : > "$LOG-$s.log"
         for st in 0 1 2 3; do res=
-            for try in 1 2 3; do job 1500 env SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
+            for try in 1 2 3; do job 1500 env SELFHOST_JOBS=4 SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
         done
         a=$(grep -a 'the same object from stages 0, 1 and 2' "$LOG-$s.log" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$LOG-$s.log" | tail -1)
         n=$(find src -name "*.cpp" | wc -l | tr -d " ")
@@ -94,13 +94,13 @@ if [ "${1:-}" = --box ]; then
     for s in "$@"; do
         case $s in
         build) rm -rf "$T" && mkdir -p "$T/tmp" && tar -C "$T" -xzf "$HOME/$N-tree.tgz" && cd "$T" || { verdict build FAIL "no tree from ~/$N-tree.tgz"; exit 1; }
-            if job 540 make -j2 cxx3.exe > "$LOG-build.log" 2>&1; then verdict build PASS "cxx3.exe built by $(g++ --version | head -1)"
+            if job 540 make -j4 cxx3.exe > "$LOG-build.log" 2>&1; then verdict build PASS "cxx3.exe built by $(g++ --version | head -1)"
             else verdict build FAIL "$(grep -a -m1 'error' "$LOG-build.log" | cut -c1-160); $LOG-build.log"; exit 1; fi ;;
         static) d=; ok=1
             for c in "python3 tools/exclusions --check docs/EXCLUSIONS.md" "make comments" "python3 tools/memory-gate --check" "python3 ide/generate.py --check"; do
                 $c > "$LOG-static.log" 2>&1; rc=$?; l=$(tail -1 "$LOG-static.log" | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
             [ $ok = 1 ] && verdict static PASS "$d" || verdict static FAIL "$d" ;;
-        maketest) job 1500 make test > "$LOG-maketest.log" 2>&1; rc=$?
+        maketest) job 1500 env JOBS=4 make test > "$LOG-maketest.log" 2>&1; rc=$?
             d=$(grep -a '^[a-z0-9.-]*\.sh: .*[0-9] \(passed\|changed\|failed\)' "$LOG-maketest.log" | sed 's/ (.*//; s/, [0-9]* \(skipped\|were\|printed\).*//' | tr '\n' ';' | cut -c1-400)
             [ $rc -eq 0 ] && verdict maketest PASS "rc 0; $d" || verdict maketest FAIL "rc $rc$(capnote $rc); $d $LOG-maketest.log" ;;
         run1) suite run1 '^run.sh: ' env CXX1="./cxx3.exe -O1" sh tests/run.sh ;;
