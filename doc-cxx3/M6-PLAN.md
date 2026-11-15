@@ -2585,3 +2585,71 @@ their columns taken out. Owed: W2's causes D (an inliner round for newly selecte
 next tidy round); the 14 merge bodies to the round "frame slots shared by scope", diagnosed there. Totals: -O2
 192,025,550 -> 191,867,154 (404 better), -O0 397,272,350 -> 385,994,327 (439 better). tests/wave-expected.txt holds
 mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 outputs and p7's case on three hosts).
+
+### Resume point, 2026-11-15 ~23:45 PKT (the coordinator; the user: "Save context of all threads!")
+
+
+#### Where things stand
+- **main = m3-line = 006deb20** (wave 21: the wave gate under the user's QA rule). M5 closed; M6c closed (wave 19);
+  the M6c review's mends landed (waves 20-21); M7 closed; M8 not started on main.
+- **Wave 22 - not landed yet.** Branch `wave22`, worktree `~/cxxopt-build/w22`, head **e24b1927** = main 006deb20's
+  g1 part + M6a.2 W1 (m6a2-w1c d5fa2715) + W2 (m6a2-w2b bd64531b, the four C6xSelect conflicts resolved by lane mg22)
+  + p7 219a667c (N7, ADL state across nested parses) + rh1 826515fb (release-check hang: Git's find.exe) + w1-accept
+  bcf9f0f3 + main 006deb20 + the user's acceptance of wave 22's slower cases (161 lines, 2 caps raised, 18 stale out)
+  + tests/wave-expected.txt (1,838 rows vs 006deb20). Walked count -O0 2,390 / -O2 2,442. mg22's lane gate: every
+  C6000 shard 0 failed on both boxes; run.sh 1231/0; self-compile 103/103.
+- **The w22g gate** (`tools/wave-gate w22g -w 006deb20`, started 23:31, log `boxkit/w22g-wavegate.out`, verdicts in
+  `~/cxxopt-build/wave-gate/w22g/{linux,windows,mac}.verdicts`): at 23:45 PASS so far - build, static, gdb 5/5,
+  run1 and run2 1231/0, tms0@1-3 421/0, tms1@1-3 421/0, mac mbuild/mrun0/mrun2 1229/0/lldb 5/5, wbuild, tms0@4-6
+  407/0; still running: the other C6000 shards, winpass, cdb, wselfc, names/overload/winstruct, release, identical*,
+  emit, census, cycles, maketest, ssa1/2, subst, selfc. **Next session: read the verdict files; if the run finished
+  with 0 failed, land wave22 at e24b1927 (push to main and m3-line, then a "Wave 22 landed" entry); if it was cut or
+  failed, re-run `cd ~/cxxopt-build/w22 && sh tools/wave-gate w22g -w 006deb20` (or `-k`), land only on 0 failed.**
+
+#### Open branches (local, not pushed)
+- `wave22` e24b1927 - as above, the next landing.
+- `m6a2-w3` = e24b1927, no code: lane w3's ABI findings in `boxkit/w3-handover.md` (cl6x 7.4.4: <=4-byte trivially
+  copyable struct in A4 / one register; <=8 in a pair; 12-byte via A3, passed as the caller copy's address; a class
+  with copy ctor or dtor through a hidden first parameter in A4); its four-step plan; scripts w3-ship.sh, w3-linux.sh.
+  Check first: class-result calls are followed by a memcpy - callers freed by W3 may stay walked for W5's reason.
+- `m8-b` 0c6336ce - M8.1 commit 1 (`-check=templates` count); `m8-c` = m8-b, no code: `boxkit/m8c-handover.md`
+  (first make Target::sizeOf answer "dependent" by name, then commit 2, then commit 3 from boxkit/m8b-read.patch).
+- Merged into wave22 and kept for reference: m6a2-w1, m6a2-w1b (causes), m6a2-w1c, m6a2-w2, m6a2-w2b, p7, rh1,
+  w1-accept. Landed and done: r6a-r6i, r6w, r6x, r6n, g1, g2, mc6 (read-only), m8a.
+
+#### Owed (recorded in doc-cxx3/M6-PLAN.md's owed table and entries)
+- The round **"frame slots shared by scope"** (after M6a.2, before M6d): W1's slower cases (lifetime ledger scans),
+  SsaPromote's pad rule, SsaInline near pads, map-set-node-stability +11,356+, and the 14 pad-and-variadic bodies.
+- An **inliner round for newly selected callers** (W2's cause D) and the **selector's next tidy round** (E, F, G).
+- tests/open: names-register.txt's 5 defects ($deduced_N closures, a lifetime temporary's MS name, unwind
+  dispUnwindHelp 0, `p->~Base()` through a typedef accepted, `std::__fn_op` mangling); walker-static-reference-temporary;
+  namespace-unnamed-nested-leaks; cxx3's refusal of `C()(a,b)` in OptTable.cpp.
+- ASM6x taking cl6x's `||name||` (the user's QC: keep `A4+0`). Windows -O0 fixed point not on record.
+  A per-case walked baseline (g1). The mend check's should-fixes N6 (no gate runs a declined function), N8-N12.
+
+#### Next steps, in order (the user's path)
+1. Finish/land wave 22 under QA (above).
+2. **M6a.2 W3** (class values; a Fable lane - the hardest), then W4 (64-bit and floating), W5 (memcpy/memset),
+   W6 (indirect calls + the 24 outside the lowering) - each a coding lane, gated as a wave, walked baseline lowered.
+3. The owed rounds above as the plan orders them, then **M6d** (the walker's Ast.h nodes and the parser's building
+   half deleted; walked count 0 first).
+4. **M8.1** from m8c's note (commits 2, 3, then 4), then M8.2-M8.9.
+
+#### Standing rules (the user's)
+- **Always the recommended option** for project decisions (cycle acceptances beyond the standing rule, plan order,
+  keep-or-redo a lane, gate details): take it, record it as "the recommended option, taken under the user's standing
+  instruction (2026-11-15)", send one line. Ask first for money (AWS sizes), GitHub deletes/archives, lifting caps
+  (lanes, Fable, the Windows share, Mac use), or no clear recommendation.
+- **Cycle standing rule**: accept worse cycle cases without asking only when the total falls at the level judged, no
+  case is newly worse, and every worse case's cause is written as owed with its round. **But the permission classifier
+  refuses writing cycle acceptances that reach the coordinator through another session: put them to the user
+  directly in this session first.**
+- **QA**: a wave lands only when tools/wave-gate shows 0 failed, every expected difference named in
+  tests/wave-expected.txt (emptied when a wave lands).
+- **Caps**: 3 lanes, at most 2 Fable (Fable for the wave's hardest lane); 1 hour a lane; compile 9 min, run 3 min;
+  job 25 min (timeout 1500) - **40 min (2400) only for the wave's hardest Fable lane** (Mac: MACRUN_FABLE=1).
+  Linux (c7i.xlarge, 4 vCPU) jobs through `~/slot` (two slots, -j2 each); Windows up to 10 processors at /affinity
+  3FF, shared - never kill by name; disks below 70%. Box split: boxkit/windows-split-2026-11-15.md.
+- **No new tasks beyond the plan** ("No new tasks plz, to make the matters proceed"): no side lanes unless a planned
+  landing needs them; owed items stay owed; report landings only.
+- The user's decisions on the M6c review and after: boxkit/user-decisions-m6c-review.md.
