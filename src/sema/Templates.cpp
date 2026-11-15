@@ -343,7 +343,7 @@ static bool substitutableTokens(const std::vector<Token> &tokens, std::size_t at
             return *why = "a binary operator", false;
         }
         if (param) { if (opens) continue; return *why = "a parameter named where no declaration starts", false; }
-        if (tokens[t].kind != TokenKind::Ident) return *why = "a token outside the subset: '" + x + "'", false;
+        if (tokens[t].kind != TokenKind::Ident) return *why = "a token outside the subset: " + (x.empty() ? std::string("a literal") : "'" + x + "'"), false;
         if (x == self && depth == 0 && selfSeen++ == 0) continue;
         // A declarator's name: back over `*`, `&` and `const` to the parameter the declaration starts with.
         std::size_t b = t;

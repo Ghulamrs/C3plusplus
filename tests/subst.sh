@@ -27,7 +27,7 @@ census)
     ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |
         xargs -P "$JOBS" -n 1 sh -c 'CXX1_TEMPLATE_SUBST=1 CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo -S "$0" -o /dev/null 2> "$OUT/$(basename "$0" .cpp).census" > /dev/null'
     cat "$OUT"/*.census | grep '^template-census:' | tr ' ' '\n' | grep = | tr '=' ' ' |
-        awk -v units="$(cat "$OUT"/*.census | grep -c '^template-census:')" '{s[$1]+=$2} END {printf "subst.sh census: %d by substitution, %d by replay of %d function bodies over %d units\n", s["by-substitution"], s["function"] - s["by-substitution"], s["function"], units}'
+        awk -v units="$(cat "$OUT"/*.census | grep -c '^template-census:')" '{s[$1]+=$2} END {printf "subst.sh census: %d by substitution, %d by replay of %d function bodies over %d units\n", s["by-substitution"], s["function"], s["function"] + s["by-substitution"], units}'
     cat "$OUT"/*.census | sed -n 's/^template-replayed (\([0-9]*\)): /\1 /p' |
         awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d%s\n", s[k], k}' | sort -rn
     # The probes, against what they were written to show.
@@ -36,9 +36,12 @@ census)
     r="$OUT/template-subst-refused.census"
     got=$(sed -n 's/.* by-substitution=\([0-9]*\).*/\1/p' "$r")
     [ "$got" = 1 ] || { echo "FAIL template-subst-refused: by-substitution=$got, not 1 (ident<unsigned> alone)"; bad=$((bad + 1)); }
-    for why in "a conversion between two parameters' types" "a bool argument" "a name the template does not declare" "a token outside the subset: '0'"; do
+    for why in "a conversion between two parameters' types" "a bool argument" "a name the template does not declare" "a token outside the subset: a literal"; do
         grep -q "^template-replayed ([0-9]*): $why" "$r" || { echo "FAIL template-subst-refused: no replay counted as \"$why\""; bad=$((bad + 1)); }
-    done ;;
+    done
+    # -g refuses every one: a substituted body has no block table.
+    got=$(CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo -g -templates=subst -S tests/cases/template-subst.cpp -o /dev/null 2>&1 | sed -n 's/.* by-substitution=\([0-9]*\).*/\1/p')
+    [ "$got" = 0 ] || { echo "FAIL template-subst -g: by-substitution=$got, not 0"; bad=$((bad + 1)); } ;;
 same)
     [ -n "$(ls "$OUT"/*.census 2>/dev/null)" ] || { echo "subst.sh same: run the census step first"; exit 2; }
     grep -l '^template-census: function=[1-9]' "$OUT"/*.census | sed 's,.*/,,; s,\.census$,,' > "$OUT/reached"
