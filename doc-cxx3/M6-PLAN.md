@@ -1788,3 +1788,18 @@ substitution for the simplest function template, behind CXX1_TEMPLATE_SUBST).
   declines one `rotateLeft` in `rebalance`; two mends tried made it worse and were reverted. Also owed: cxx3's
   refusal of `C()(a,b)` inside OptTable.cpp (no standalone case yet), and tests/open/namespace-unnamed-nested-leaks.
   New baseline: the 811 common cases at 192,021,032 plus the four new ones (818 passed; 192,802,451 is wave 18 before sh-2).
+
+### Wave 19 landed - **M6c closed**, 2026-11-15 (the coordinator)
+
+M6c rounds 22-25 (m6ae D6.2 the folds on operands, m6af D6.3 the pipeliner on entries, m6ag D6.4 the table on
+operands, m6ah D6.5 `Line`, `parse` and `streamOf` deleted): no text pass is left in the C6000 optimizer; the
+walker's text is read once into entries until M6d (round 25's entry names what it keeps).
+- **Gate at e37e175a** (m6-ah ff2bc12a merged with main 1001aa4b): Windows winpass -O0 and -O2: 832 same / 0 differ,
+  masm 831 / 0; cdb 5/5 both spellings. Mac run.sh -O0 and -O2 1219 / 0; lldb 5/5. Linux make test rc 0 (run
+  1221/0, emit 3415/0, typed 864/0, ssa 894/0, c90 447/0, comments 0); gdb 5/5; **self-compile 103 / 103**.
+  tms6747 818 / 0 at -O0 and -O2 on the selector and the walker; asm6x 837 / 0 at both.
+- **M6c's judge, cycles case by case against round 22** (tms6747 -O2, 811 common cases): 802 equal, 7 above (+11,926,
+  wave 18's library change, owed there), 0 below; no case moved by a C6x pass. 815 cases total 192,036,975.
+- **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
+  `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
+  optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
