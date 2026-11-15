@@ -15,12 +15,11 @@
 
 namespace std {
 
-// The comparator is made where it is asked, as <map>'s is.
 template <class T, class C>
 struct __set_key {
     typedef T key_type;
+    typedef C key_compare;
     static const T &get(const T &v) { return v; }
-    static bool less(const T &a, const T &b) { C c; return c(a, b); }
 };
 
 template <class T, class C = std::less<T> >
