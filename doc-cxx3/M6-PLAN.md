@@ -2495,3 +2495,19 @@ W2 did not have worse; sum 192,015,699 -> 192,010,879.** Nothing accepted or rec
   (the lists above carry the counts before it). Its legs: Linux SIM=1 -O0, -O1, -O2 and SIM=0 -O2 six shards and
   asm6x -O2, comment cap, memory gate, exclusions; Windows cl clean, SIM=1 -O2 and the walker 4-6/6 - the numbers in
   `boxkit/w2b-handover.md`'s last lines. The walker, SIM=0 -O0/-O1, identical.sh and self-compile were not re-run on it.
+
+### M6a.2 W1's slower cases, accepted - the user, 2026-11-15
+
+**The user's decision**, given directly in the coordinator's session ("Yes, write them"): W1's slower cases are accepted
+as owed - at -O2 the 23 cases tests/tms6747-cycles.txt now lists as `accepted ... (the user, M6a.2 W1)` plus
+map-set-node-stability's cap raised to 7,641,691; at -O0 the 5 such lines. template-subst is not W1's (its source was
+widened, re-recorded at f9e35d30). The two lines return-self-referential and map-move-only-mapped (the user's Q1) are
+out: both are now below their columns, and c6x-cycles fails a stale line.
+**Owed - a planned round, "frame slots shared by scope"** (after M6a.2's W1-W6, before M6d): the selector's frame
+layout gives each alloca its own word where the walker shared one between sibling scopes, which makes the lifetime
+ledger (tests/cases/lifetime.h) scan longer - the cause of every case over +1,000; with it, the two pass rules lane w1b
+named (SsaPromote keeps a handler-live local in memory; SsaInline declines a call in or near a pad) and
+map-set-node-stability's +11,356 (two __tree insertUnique calls, +5,685 each), to be diagnosed in that round.
+**The user's standing rule for cycles** (2026-11-15) is now in the cycle file's header: the coordinator may accept a
+round's worse cases itself only when the total falls at the level judged, no case is newly worse, and every worse
+case's cause is named there as owed with its round; anything else is the user's.
