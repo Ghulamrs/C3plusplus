@@ -1,4 +1,4 @@
 # tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
-# a3134937 (M6a.2 W1), Linux box, g++ build, CENSUS_SOURCES=0, 1,232 cases; M6a.2 is done when both read 0.
--O0 3313
--O2 3527
+# 4987cca0 (wave 22: M6a.2 W1 + W2 merged, p7, rh1), Linux box, g++ build, CENSUS_SOURCES=0, 1,237 cases; M6a.2 is done when both read 0.
+-O0 2390
+-O2 2442
