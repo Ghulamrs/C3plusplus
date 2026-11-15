@@ -27,7 +27,9 @@ and "Where it stands" appended to as steps land.
 **Lanes code, the coordinator gates** (`boxkit/brief-m3b5-par4.txt`). Every C6000 run is on the Linux box (TI's
 tools in `~/ti6x`), never on the Mac. *Superseded, the user, 2026-11-15: everything that does not execute
 x86_64-linux code runs on the Windows box (`boxkit/windows-split-2026-11-15.md`) - the C6000's suites, simulators and
-TI tools among it.*
+TI tools among it.* *The Linux box's one lock is two (the user, 2026-11-15, lane r6x): every Linux job through `~/slot`,
+the first free of `~/.boxleg.lock.1`/`.2` at -j2/JOBS=2 each, `tools/wave-gate`'s SLOT its source, two steps at once;
+the Windows steps pooled within WINLANES=10 at /affinity 3FF, steps sharing a tree folder never together.*
 
 ## Where it stands
 
