@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 
@@ -2257,6 +2258,7 @@ Program Parser::parse() {
         classes_.defineImplicitFunctions();
         if (program.functions.size() == had) break;
     }
+    if (std::getenv("CXX1_TEMPLATE_CENSUS") != nullptr) std::fprintf(stderr, "%s\n", tmpl_.censusLine().c_str());
     classes_.pruneExternalVtables(program);
     pruneUnchosenCandidates(program);
     finishDynamicInit(program);

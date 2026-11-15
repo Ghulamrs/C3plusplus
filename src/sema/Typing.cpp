@@ -931,6 +931,30 @@ bool Typer::fromTemplate(const std::string &symbol) const {
     return false;
 }
 
+namespace {
+struct Retype {
+    const Templates *tmpl; const Templates::Substituted *s;
+    const Type *operator()(const Type *t) const { return tmpl->substituted(*s, t); }
+};
+}
+
+TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
+    const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
+    if (s == p_.tmpl_.substituted_.end()) return typeFunction(fn);
+    const std::size_t node = tree_.size(), record = tree_.resolutionCount();
+    const TypedId t = typeFunction(fn);
+    const Retype retype = { &p_.tmpl_, &s->second };
+    tree_.retype(node, record, p_.types_, retype);
+    return t;
+}
+
+TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const {
+    const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
+    const TypeId declared = declaredReturn(fn);
+    if (s == p_.tmpl_.substituted_.end() || !declared.valid()) return declared;
+    return TypeTable::id(p_.tmpl_.substituted(s->second, p_.types_.type(declared)));
+}
+
 Census Typer::census(const Parser &p, const Program &program) {
     Census c;
     std::map<std::string, std::size_t> bySymbol;
@@ -951,6 +975,18 @@ Census Typer::census(const Parser &p, const Program &program) {
         if (at == bySymbol.end()) continue;                 // read and then pruned: an unused inline
         if (std::getenv("CXX1_CENSUS") != nullptr) std::fprintf(stderr, "body %s\n", sym->second.c_str());
         c.bodies.push_back(std::make_pair(id, at->second));
+    }
+    // M8.1: a specialization made by substitution has its sibling's root, placed where its own function stands.
+    for (std::map<std::string, Templates::Substituted>::const_iterator k = p.tmpl_.substituted_.begin(); k != p.tmpl_.substituted_.end(); ++k) {
+        const std::map<std::string, std::size_t>::const_iterator at = bySymbol.find(k->first);
+        for (std::size_t b = 0; at != bySymbol.end() && b < c.bodies.size(); b++) {
+            const std::unordered_map<std::uint32_t, std::string>::const_iterator sym = p.syntaxFunctions_.find(c.bodies[b].first.v);
+            if (sym == p.syntaxFunctions_.end() || sym->second != k->second.pattern || c.bodies[b].second == at->second) continue;
+            std::size_t to = 0;
+            while (to < c.bodies.size() && c.bodies[to].second < at->second) to++;
+            c.bodies.insert(c.bodies.begin() + static_cast<long>(to), std::make_pair(c.bodies[b].first, at->second));
+            break;
+        }
     }
     for (std::map<std::string, int>::const_iterator k = kinds.begin(); k != kinds.end(); ++k) c.synthesised.push_back(*k);
     return c;

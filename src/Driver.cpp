@@ -1444,7 +1444,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     });
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
         const Function &fn = program.functions[c.bodies[r].second];
-        const sema::TypedId t = typer.typeFunction(c.bodies[r].first);
+        const sema::TypedId t = typer.typeBody(c.bodies[r].first, fn.symbol());
         ir::FunctionFacts facts;
         factsOf(fn, facts);
         if (facts.takesVtt) splitBodies[facts.recordKey] = t;
@@ -1457,7 +1457,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         facts.ctorTry = typer.ctorTry(facts.recordKey);
         facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
                                                           !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
-        const TypeId declared = typer.declaredReturn(c.bodies[r].first);
+        const TypeId declared = typer.declaredReturnOf(c.bodies[r].first, fn.symbol());
         if (declared.valid()) facts.returns = declared;
         std::string why;
         // A local aligned past its type (alignas): its alignment by serial, for the lowering's alloca of it.
