@@ -157,12 +157,32 @@ public:
 
     std::vector<Specialization> specializations_;
 
+    // **The census of the doors** (M8.0): what each instantiation was, counted where it is made; CXX1_TEMPLATE_CENSUS prints it.
+    enum Door { FunctionBody, ClassBody, MemberBody, MemberTemplate, DependentBase, SfinaeTrial, SfinaeFailed, AliasId,
+                ConstexprAhead, BySubstitution, Doors };
+    void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
+    std::string censusLine() const;
+    // M8.1, under CXX1_TEMPLATE_SUBST: function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
+    bool substituteFunction(std::size_t i, std::string *why);
+    // A specialization made by substitution: its symbol to the sibling whose body it shares, and the types that change.
+    struct Substituted { std::string pattern; std::vector<const Type *> from, to; };
+    std::map<std::string, Substituted> substituted_;
+    const Type *substituted(const Substituted &s, const Type *t) const;
+
 private:
+    long census_[Doors] = {};
+    std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.
     std::map<std::string, std::size_t> memberTemplateMade_;
     struct Owed { std::vector<const Type *> binding; std::vector<long long> values; std::vector<TemplateArg> args; std::size_t pos; };
     std::map<std::string, std::vector<Owed> > owedBodies_;   // by the declaration's "<owner>::<name>@<declaredAt>"
+};
+
+// A substitution as a function of a type, which TypedTree::retype is handed.
+struct SubstitutedTypes {
+    const Templates *tmpl; const Templates::Substituted *s;
+    const Type *operator()(const Type *t) const { return tmpl->substituted(*s, t); }
 };
 
 }   // namespace sema

@@ -1463,6 +1463,52 @@ the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-ll
   -O2 (`CPP11_INDUCT`, `CPP11_FILL`). Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** D5.5 `hoistConstantPairs` (the one pass that meets placed entries), D5.6, then D6.2-D6.5, in round 19's
   order.
+
+### Wave 17 landed, 2026-11-15 (the coordinator)
+
+M6c round 20 (m6ac: D5.2 hoistInvariants, D5.3 inductionPointers, D5.4 widenFills on entries; src/ +230 -176).
+- **Gate at 4ee0964c**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0; cdb 5/5 both spellings. Mac
+  run.sh -O0 and -O2 1215 / 0; lldb 5/5. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, comments 0); gdb 5/5. tms6747 814 / 0 at -O0 and -O2 (**192.0 M**); walker 814 / 0 at both (447.8 M,
+  195.9 M); asm6x 833 / 0 at both.
+- **Found after this gate, not by it** (lane m8a's census): main's cxx3 compiles 100 of its own 103 sources - three C6x
+  files refused (C6xPack.cpp:209, C6xPipe.cpp:539, C6xSelect.cpp:420); 102 / 102 at M5's close. The wave gate never
+  self-compiled. Lane sh1 mends the compiler and library; from wave 18 the gate compiles every src/*.cpp with cxx3.
+### The self-host regression of the M6c waves, 2026-11-15, lane sh1
+
+At M5's close the Linux self-host compiled 102 of 102 sources; main 3b8a80fb's cxx3 refused three of its own C6000
+sources, each a shape g++ and cl take and clang takes too. Mended in the compiler and the library, none in the C6x
+files (lane m6ad's):
+- `C6xPack.cpp:209` (c1601e30, round 3) and `:380` (b25b87fa, round 7): `crossings(i, m)` from `c6x::crossings`, the
+  two-argument one in c6x's unnamed namespace, and the reverse from inside it. **Root:** `resolveOverload` took the
+  first key lookup answered as the whole set, so a namespace's own functions hid its unnamed namespace's
+  ([namespace.unnamed]/1 makes them one scope), and an argument's namespace was asked only when nothing else
+  answered ([basic.lookup.argdep] adds it always). **Mend:** one set from the three keys (`src/sema/Overload.cpp`).
+- `C6xPipe.cpp:539` (ca93c160, round 13) and `:1842` (041e0247, round 15): `std::map<int, int, ByName>`,
+  `std::set<int, ByName>`. **Root:** `<map>` and `<set>` had no comparator parameter. **Mend:** `Compare =
+  std::less<K>`, read through `__tree`'s KeyOf (`less`); a comparator that keeps state is not taken (it is made where
+  it is asked).
+- `C6xSelect.cpp:420` (73dd2103, M6b round 3): a `[&]` lambda inside a `[&]` lambda of a member function naming a
+  member. **Root:** in the outer closure's call operator the inner scan asked the closure, not the class, whether
+  the name was a member, so the inner lambda never took `this`. **Mend:** `closureOuterClass()`, read by
+  `namesOwnMember` and `capturedThisClass` (`src/parser/ParserExprLambda.cpp`).
+- Cases (clang's output): `namespace-unnamed-overload-set`, `map-set-comparator`, `lambda-nested-this-default`.
+  Open: `namespace-unnamed-nested-leaks` - an unnamed namespace inside `n` answers a lookup at file scope (the
+  directive is kept in one file-wide list), so `::f` defined after `n`'s unnamed `f` is taken for it.
+- src/ 94,414 -> 94,450 lines (include/ +32 -23).
+- A fourth refusal met on the way: `C()(a, b)` in the first `less` is a functional-cast temporary of a template
+  class, which cxx3 refuses ("not supported yet"), so `OptTable.cpp` (a `std::map<std::string, ...>`) fell; the
+  comparator is a named object (20f14d2e) and `map-set-comparator` takes a `std::string` key.
+- **Gate at 20f14d2e:** self-host stage 0 at -O0 **103 of 103** sources on Windows (cxx3-msvc) and on Linux
+  (`tools/self-host`, 197 s; stage 1 built); cl /W4 /WX clean. Windows winpass -O0 **831 same / 0 differ, masm 830
+  / 0** (828 / 827 + the three cases). Linux run.sh 1220 / 0; typed 863 / 0; ssa 893 / 0; syntax 3 / 0; coff 1,698
+  objects, 0 differ; c90 447 / 0; overload, names and win-structure skipped (no clang++ on the box). emit.sh (on
+  Windows, against main 3b8a80fb's golden): **36 of 3,399 changed, 12 added** - the 12 are the three cases on four
+  targets; the 36 are nine cases that include `<map>` or `<set>` (deque-both-ends, include-map-set,
+  library-self-compile-pieces-2, map-move-only-mapped, map-set-node-stability, member-template-body-unchosen,
+  range-for-vector, return-self-referential, static-local-braced-list) on four targets: each instantiation's name
+  carries the comparator now. Static: exclusions 129 sites 0 uncited 0 stale (three citations re-pointed),
+  comments 0 over, memory gate, ast-residue, ide/generate.py --check rc 0; open.sh 31 differ (one new entry).
 ### M6c, round 21 (D5.5 and D5.6: the last loop pass on entries; `LoopText` holds no lines), 2026-11-15, lane m6ad
 
 - **Landed, each its own commit of identical output: D5.5** `hoistConstantPairs` (72dd28a8) reads and composes

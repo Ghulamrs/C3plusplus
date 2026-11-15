@@ -14,6 +14,7 @@
 #define _CXX1_MAP
 
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <stdexcept>
@@ -22,10 +23,12 @@
 
 namespace std {
 
-template <class K, class V>
+// The comparator is made where it is asked, so one that keeps state is not one this map can take.
+template <class K, class V, class C>
 struct __map_key {
     typedef K key_type;
     static const K &get(const std::pair<const K, V> &v) { return v.first; }
+    static bool less(const K &a, const K &b) { C c; return c(a, b); }
 };
 
 // **An element is `pair<const K, V>`**, [map.overview], since 1.27 (2026-10-21, review of 1.25, item
@@ -34,11 +37,12 @@ struct __map_key {
 // so the const key costs nothing there; a `pair<K, V>` given to insert - `make_pair(k, v)` - goes to
 // an overload that builds the element from its two halves (pair's converting constructor deduces its
 // first member's type only, see <utility>).
-template <class K, class V>
+template <class K, class V, class C = std::less<K> >
 class map {
 public:
     typedef K key_type;
     typedef V mapped_type;
+    typedef C key_compare;
     typedef std::pair<const K, V> value_type;
     typedef std::size_t size_type;
     typedef __tree_iterator<value_type> iterator;
@@ -126,15 +130,15 @@ public:
     }
 
 private:
-    __tree<value_type, __map_key<K, V> > tree_;
+    __tree<value_type, __map_key<K, V, C> > tree_;
 };
 
-template <class K, class V>
-bool operator==(const map<K, V> &a, const map<K, V> &b) { return __tree_equal(a, b); }
-template <class K, class V>
-bool operator!=(const map<K, V> &a, const map<K, V> &b) { return !__tree_equal(a, b); }
-template <class K, class V>
-bool operator<(const map<K, V> &a, const map<K, V> &b) { return __tree_less(a, b); }
+template <class K, class V, class C>
+bool operator==(const map<K, V, C> &a, const map<K, V, C> &b) { return __tree_equal(a, b); }
+template <class K, class V, class C>
+bool operator!=(const map<K, V, C> &a, const map<K, V, C> &b) { return !__tree_equal(a, b); }
+template <class K, class V, class C>
+bool operator<(const map<K, V, C> &a, const map<K, V, C> &b) { return __tree_less(a, b); }
 
 }  // namespace std
 

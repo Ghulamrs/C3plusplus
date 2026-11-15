@@ -569,6 +569,32 @@ Signature Overload::resolveOverload(const std::string &written,
                 }
         if (!merged.empty()) set = &merged;
     }
+    // One set from three places: the scope found, its unnamed namespace seen from outside it ([namespace.unnamed]/1),
+    // and the arguments' namespaces, [basic.lookup.argdep]/3 - not after a qualified name or a member.
+    if (object == nullptr && set != nullptr && merged.empty() && p_.lookup_.functions_[set->front()].owner.empty()) {
+        const std::string tag = "_GLOBAL__N_1::";
+        const std::size_t cut = name.rfind("::");
+        std::string scope = cut == std::string::npos ? std::string() : name.substr(0, cut + 2);
+        if (scope.size() >= tag.size() && scope.compare(scope.size() - tag.size(), tag.size(), tag) == 0)
+            scope.erase(scope.size() - tag.size());
+        const std::string last = cut == std::string::npos ? name : name.substr(cut + 2);
+        std::vector<std::string> keys(1, name);
+        if (p_.namespacePrefix().compare(0, scope.size() + tag.size(), scope + tag) != 0) {
+            keys.push_back(scope + last);
+            keys.push_back(scope + tag + last);
+        }
+        if (written.find("::") == std::string::npos && !args.empty()) {
+            const std::vector<std::string> adl =
+                p_.lookup_.lookupKeys(written, args[0]->type(), args.size() > 1 ? args[1]->type() : nullptr);
+            for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);
+        }
+        for (std::size_t i = 0; i < keys.size(); i++)
+            if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
+                for (std::size_t k = 0; k < s->size(); k++)
+                    if (std::find(merged.begin(), merged.end(), (*s)[k]) == merged.end())
+                        merged.push_back((*s)[k]);
+        if (merged.size() > set->size()) set = &merged;
+    }
 
     if (set == nullptr) {
         // Only constructor templates, and none of them deduced from these arguments.
