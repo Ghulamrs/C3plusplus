@@ -1,0 +1,1 @@
+x86_64-windows  the ThrowInfo of a `const char *`: cxx1 writes `_TI2CPEAD`, as cl 19.44 does (measured 2026-11-15, dumpbin of cl /EHsc), where clang 19 writes `_TIC2PEAD` - cl is the authority on the Microsoft ABI (r6d).

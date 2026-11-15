@@ -931,6 +931,8 @@ private:
     std::vector<::Local> fnVars_;
     bool inParams_ = false;
     std::vector<std::size_t> scopeStarts_;
+    // Each live block-scope function declaration and the scope depth it was made at: [basic.lookup.argdep]/3.
+    std::vector<std::pair<std::string, std::size_t> > blockFunctions_;
     std::vector<int> blocks_;
     std::vector<int> blockStack_;
     std::vector<std::size_t> blockAt_;     // where each block of blocks_ opens (its `{` or `for`), 0 unknown: -g under SSA

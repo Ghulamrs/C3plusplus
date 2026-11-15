@@ -2678,6 +2678,7 @@ void Parser::blockFunctionDeclaration(const Declared &d) {
     bool variadic = false;
     parameterTypes(params, variadic);
     declareFunction(d.name, d.type, params, variadic, false, d.pos);
+    blockFunctions_.push_back(std::make_pair(d.name, scopeStarts_.size()));
 }
 
 // **`Ts... rest` - one thing written, several parameters made.** In a pattern the pack

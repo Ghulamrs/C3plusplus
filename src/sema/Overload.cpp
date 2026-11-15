@@ -587,7 +587,9 @@ Signature Overload::resolveOverload(const std::string &written,
             keys.push_back(scope + last);
             keys.push_back(scope + tag + last);
         }
-        if (written.find("::") == std::string::npos && !args.empty()) {
+        bool blockDeclared = false;
+        for (std::size_t i = 0; i < p_.blockFunctions_.size(); i++) blockDeclared |= p_.blockFunctions_[i].first == written;
+        if (written.find("::") == std::string::npos && !args.empty() && !blockDeclared) {
             const std::vector<std::string> adl =
                 p_.lookup_.lookupKeys(written, argumentTypes(args));
             for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);

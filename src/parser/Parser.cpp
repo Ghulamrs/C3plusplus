@@ -775,6 +775,7 @@ void Parser::leaveScope() {
     }
     locals_.resize(scopeStarts_.back());
     scopeStarts_.pop_back();
+    while (!blockFunctions_.empty() && blockFunctions_.back().second > scopeStarts_.size()) blockFunctions_.pop_back();
     if (localTypeUndoStarts_.empty()) return;
     for (std::size_t i = localTypeUndo_.size(); i-- > localTypeUndoStarts_.back(); ) {
         if (localTypeUndo_[i].had != nullptr) localTypes_[localTypeUndo_[i].name] = localTypeUndo_[i].had;
