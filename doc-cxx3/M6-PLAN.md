@@ -2312,3 +2312,66 @@ Tms6747.h 309 -> 311).
   two changed C6x files at -O0 and -O2: 4 / 0. exclusions 0 uncited 0 stale; comment cap 0 over; memory gate
   holds; ide/generate.py up to date. **Not done**: cl6x 8.2.2's `-S` (7.4.4 alone was asked), a cl6x-built caller
   against a selected callee, SIM=0 at -O0/-O1 on Windows, run.sh, and the cycle question above.
+
+## M6a.2, round W2's cycles: the 57 worse cases read and three causes mended - lane w2b, 2026-11-15
+
+From m6a2-w2 055920a9, branch m6a2-w2b. src/: +35 -5 in two files (C6xSelect.cpp 806 -> 836, Tms6747.h one comment).
+Measured as W2 was: `tools/c6x-cycles --check`, -O2, six shards on Linux (g++, ~/w2b), vm6747, against
+tests/tms6747-cycles.txt (458f8974). **57 worse and unaccepted -> 37; 293 better -> 323; 448 equal; no case worse that
+W2 did not have worse; sum 192,015,699 -> 192,010,879.** Nothing accepted or recorded by this lane.
+
+- **Cause A, mended: a cast of a remade value held from its definition.** `%2 = bitcast(addr @str)` is made where
+  the argument list begins; a call between it and its own call (`printf("..", f())`) gave it a saved register, and
+  with none free a frame word. `ssaAssign` marks such a cast `ssaFused_ == 2` - every reader a call no deeper in
+  loops than the definition, or no register won - and `ssaLoad` makes its operand afresh at the reader. A loop's
+  cast keeps its register (W2's withdrawn mend remade those too: 129 worse).
+- **Cause B, mended in part: the first block's label.** `L$f$ssa1:` stood between the prologue and the text, so the
+  packer could not pair the first instructions with the frame's (+2 a `main`). It is written now only where an edge
+  reaches it or a parameter has a home. **Dropped everywhere it gave 515 better but five cases +1 to +3** (move-only,
+  raw-string-literal, return-copy-balance, return-parameter-moves, member-init-class: the parameter's move is then
+  folded away and `MVKL x, A4` can no longer pair beside the load through it) - so it stays where a parameter has
+  a home; the fold is the next thing to read (about 190 cases would gain).
+- **Cause C, mended: a variadic call's words all through A4.** They are made through A4, A6 and A8 in turn (each an
+  argument register, loaded after), so two strings' halves pair (raw-string-literal).
+- **Not W2's: template-subst +501.** The base 79b00a6e's own text measures 949 (identical text, `main` walked);
+  the rise came between 458f8974 and 79b00a6e.
+- **A mend tried and withdrawn: the word stored where it is made** (`boxkit/w2b-earlyword.patch`). A variadic call's
+  word whose value is made before an earlier call of its block was stored at once, the call's words opened there as
+  the walker opens them. It gained six of the group below (throw-class +8 -> +3, throw-class-pointer-ms +16 -> +2,
+  local-class-two-functions +8 -> +3) and made five cases newly worse - array-loop-local +31,773, ssa-for-init-object
+  +20,410, nested-handler-exits +11,208, handler-exit-end-catch +10,904, ssa-catch-by-value +10,838 - the same with
+  it kept out of loops' blocks, so the cost is elsewhere in those functions; not read. Every shard still passed.
+- **Still worse, 36 of W2's, by cause** (base against this tree, `boxkit/w2b-class.sh`; each is the user's question):
+  - *The SSA inliner's body in a newly selected caller* - a callee inlined before its own calls were folded, so the
+    caller writes more calls than the walker's one, or inlined loops whose values overflow the eight saved registers
+    into frame words: fill-stores +7,651 (three fills inlined in `main`, 2 -> 11 frame loads), array-loop-member-copy
+    +13,803 (`show` with three sums inlined, `lfReport`), reference-collapsing +95, const-overload +48,
+    forwarding-pack +39, member-template-class-pack +32, ssa-destructor-through-base +31,
+    global-scope-qualifier-expression +28 (`cc::use()` is `MVK 107` alone, three calls inside `main`),
+    ssa-functor-member +20, namespace-unnamed +19, namespace-nested-class-member-out-of-line +18,
+    member-value-init-default-argument +10, ssa-call-through-star +6, template-keyword-member +6. (fill-stores,
+    global-scope-qualifier-expression and reference-collapsing read; the rest grouped by the calls written changing.)
+    `SsaInline` is not this lane's file (the plan's inliner round).
+  - *A call's result held for a later call's word* - the walker stores it into the open outgoing words at once, the
+    selector keeps it in a saved register (a save and a restore) or a frame word until the call: member-pointer-condition
+    +50 (2 -> 14 frame loads), member-pointer-models +24, throw-class-pointer-ms +16, ssa-volatile +15, throw-class
+    +8, local-class-two-functions +8, ssa-try-catch +5, ssa-nested-braced-list +4,
+    static-array-runtime-initialiser +3, rethrow-through-handlers +3, point-of-declaration-static +3,
+    switch-condition-declaration-enum +1. (Grouped by the saved registers or frame loads rising with the calls
+    unchanged; static-array-runtime-initialiser and stdin-gets read line by line, the rest by those counts.)
+  - *A `?:` of two addresses through a block parameter* (a branch and a move where the walker wrote a predicated
+    pair), +2 or +3: stdin-gets, switch-condition-declaration, lambda-reads-static-local, template-body-namespace.
+  - *Division by a constant left to the EABI helper*: divide-by-constant-signs +30 (was +405) - nine `__c6xabi_divu`
+    and nine `__c6xabi_remu` in the selected `unsignedRow` where the walker multiplied.
+  - *Not read*: va-arg-shapes +38, mem-init-two-rules +16, ssa-pack-small-shapes +8, call-nullptr-static-ssa +6,
+    template-sfinae-fallback +3 (`main` walked in each; calls and saved registers not up).
+- **Gate at 91ea9ffc (a coding lane's; the wave gates it fully).** Linux (g++, ~/w2b): tests/tms6747.sh six shards
+  at SIM=1 -O0, -O1, -O2, under the walker at -O2 and at SIM=0 -O0, -O1, -O2 - every leg 0 failed; asm6x.sh at -O1
+  and -O2: 843 objects, 0 failed; tools/c6x-declines --check: baseline 0 holds; census -O2 walked 3,383 = the
+  baseline (this lane selects nothing new: no baseline commit); self-compile of C6xSelect.cpp at -O0 and -O2: 2 / 0;
+  identical.sh ARCHS=tms6747 against W2's build: 2,634 compared, 1,486 differ over 552 cases, named in
+  `boxkit/w2b-ident.log` (a function with a string argument or no parameter's home changes; not read one by one);
+  comment cap 0 over, memory gate holds, exclusions 0 uncited 0 stale. Windows (cl /W4 /WX clean, work\w2b): shards
+  4-6/6 at SIM=1 -O2 and under the walker at -O2, 0 failed. **Not done**: Windows at -O0/-O1 and SIM=0,
+  identical.sh and self-compile on Windows, c6x-cycles at -O0, ide/generate.py --check, run.sh.
+  `return-self-referential`'s accepted line is still stale (W2's note); the baseline file is untouched.
