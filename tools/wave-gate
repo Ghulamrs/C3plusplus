@@ -25,7 +25,8 @@
 # tms<L>/wtms<L>: tests/tms6747.sh at -O<L> on the selector / the walker (CXX1_C6X_WALKER=1), six shards, SIM=0;
 # -O1 is R107's leg. cycles: tools/c6x-cycles --check over tms2's joined cycles.txt. identical: tools/identical.sh
 # ARCHS=tms6747 against the box's main build (WAVEGATE_REF); emit: tests/emit.sh's changed count; census:
-# tools/ssa-census -arch tms6747 -O2, its walked count held to WAVEGATE_WALKED when set. release: by hand. selfc: stage 0 compiles every
+# tools/ssa-census -arch tms6747 -O2, its walked count held to WAVEGATE_WALKED when set. release: by hand.
+# declines: tools/c6x-declines --check, the count only down (R108, Q5). asm<L>: tests/asm6x.sh at -O<L>, -O1 included. selfc: stage 0 compiles every
 # src/*.cpp. run1/winpass1: the x86 cases at -O1. cdb wants the LINK a winpass builds (winout-tools).
 # **sim: tests/tms6747.sh -O2 with SIM=1** (asm6x, lnk6x, TI's runtime, sim6747), the six shards, in every wave gate -
 # the user's decision on the M6c review's Q4, 2026-11-15: the Linux time is accepted.
@@ -44,7 +45,7 @@ BOXTAB="build=linux static=linux gdb=linux run1=linux maketest=linux selfc=linux
  wbuild=windows winpass0=windows winpass1=windows winpass2=windows cdb=windows wselfc=windows names=windows
  overload=windows winstruct=windows release=windows wfixed0=windows wfixed2=windows
  tms0=split tms1=split tms2=split wtms0=split wtms1=split wtms2=split sim=split
- identical=idle emit=idle census=idle asm0=idle asm2=idle cycles=idle
+ identical=idle emit=idle census=idle declines=idle asm0=idle asm1=idle asm2=idle cycles=idle
  mbuild=mac mrun0=mac mrun2=mac lldb=mac"
 STEPS_asked="mfixed"; NSHARD=6; SPLIT_LINUX=1-3; SPLIT_WINDOWS=4-6
 # ---- the Windows box's side, under Git's bash in the built tree: sh tools/wave-gate --suite names|overload|win-structure
@@ -131,7 +132,10 @@ if [ "${1:-}" = --box ]; then
             elif [ -n "${WAVEGATE_WALKED:-}" ] && [ "$n" -gt "$WAVEGATE_WALKED" ]; then verdict census FAIL "$d - the walked ratchet is $WAVEGATE_WALKED"
             else verdict census PASS "$d; walked ratchet ${WAVEGATE_WALKED:-not set (WAVEGATE_WALKED)}"; fi ;;
         asm0) suite asm0 '^asm6x.sh: ' env CXX1_FLAGS= sh tests/asm6x.sh ;;
+        asm1) suite asm1 '^asm6x.sh: ' env CXX1_FLAGS=-O1 sh tests/asm6x.sh ;;     # r6e: ssa-layout's wrong instruction was -O1's alone
         asm2) suite asm2 '^asm6x.sh: ' env CXX1_FLAGS=-O2 sh tests/asm6x.sh ;;
+        declines) if [ -f tools/c6x-declines ]; then suite declines '^c6x-declines: ' env CXX1="${CXX1:-./cxx3.exe}" sh tools/c6x-declines --check
+            else verdict declines "NOT RUN" "tools/c6x-declines is not in this tree (R108, lane r6e)"; fi ;;
         gdb) suite gdb '^debug.sh gdb' sh tests/debug.sh gdb ./cxx3.exe ;;
         selfc) res=; : > "$LOG-selfc.log"
             for try in 1 2 3; do job 1500 env SELFHOST_RESUME=$res sh tools/self-host "$HOME/$N-selfc" "" 0 >> "$LOG-selfc.log" 2>&1; rc=$?; [ $rc -eq 124 ] || break; res=1; done
