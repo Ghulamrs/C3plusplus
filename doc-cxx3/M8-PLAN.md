@@ -268,7 +268,7 @@ without `-check=templates`):
 
 | commit | what | state |
 | --- | --- | --- |
-| 1 | **The count.** `syntax::Tree::differs` holds two subtrees against each other - 0 the same, 1 a text differs under the same kinds, 2 a kind or a child count; `Templates::holdBodies` at the function, class-member and member-template doors keeps the first `function` node read for a body (keyed by its declarator's place) and holds every later replay of that body against it; `-check=templates` prints `bodies= held= same= text= shape=` and each body whose replays differ in shape; `tests/subst.sh bodies` sums it over `tests/cases` and compares a case's `.templates` record | **landed, `c1504cb9`** |
+| 1 | **The count.** `syntax::Tree::differs` holds two subtrees against each other - 0 the same, 1 a text differs under the same kinds, 2 a kind or a child count; `Templates::holdBodies` at the function, class-member and member-template doors keeps the first `function` node read for a body (keyed by its declarator's place) and holds every later replay of that body against it; `-check=templates` prints `bodies= held= same= text= shape=` and each body whose replays differ in shape; `tests/subst.sh bodies` sums it over `tests/cases` and compares a case's `.templates` record | **landed, `c1504cb9`, `d3d90a13`** |
 | 2 | **The signature at the declaration.** `templatedName`'s pattern read (the parameters bound to themselves, `patternOnly_`) notes the `function` node and its parameters' `var` nodes and keeps them on `TemplateDecl`; a `pattern` mark on `syntax::Node` beside `dead`, so `-dump=syntax` shows the node once and `roots()`, the Typer's census and `adopt` pass it by; the count gains `signature=` (replays whose parameter list agrees) | planned |
 | 3 | **A function template's body at the declaration**, under the flag: `skipTemplatedDefinition` replaced there by the function production in pattern mode - a declaration of dependent type makes a `var` and no slot, an expression over a dependent operand goes to `ParserDependent`'s reader (which notes syntax as it builds its `DepExpr`), a non-dependent one to the ordinary productions - into a function state of its own that reaches none of the tables a definition writes (`lookup_.functions_` and `functionIndex_`, `program.functions`, the defined-symbol and discardable-inline sets, static locals, the string pool, `specializations_`); a body the pattern read cannot take is **unread by name**, counted as replay's reasons are; the count holds each replay against the declaration's tree instead of the first replay's | planned |
 | 4 | **The class doors**, where 95% of the self-host's replays are: a class template's held member bodies, out-of-line members (`OutOfLine::start`), partial specializations (`Partial::bodyAt`), member templates and an alias's type-id, each read as commit 3 reads a function | planned |
@@ -287,15 +287,44 @@ as it is. Measured on the Windows box, cl build of `c1504cb9`, `-S` at -O0 (`box
 | the self-host, 103 of 103 sources compile under the flag | 60,612 | 11,912 | 16,410 | 31,933 | 357 (0.7% of the 48,700 compared) | 8 bodies |
 
 **The shapes, read** - four families, and M8.2-M8.4 owe each a node that holds it: **a pack** (`f(args...)`,
-`sizeof...`, `A &&...a`: the expansion is copied per member - M8.4's row already turns it into one node), every
-`tests/cases` place bar the library's and `make_owned`, `__fn_model::call`, `make_shared`, `emplace_back`;
-**`T()` and `value_type(k, V())`** - value-initialisation is a constructor call for a class and a zero for a scalar
-(`map::operator[]`, `unordered_map::operator[]`: 41 of the self-host's 73 lines); **a direct-initialised local**
-`vector<T> keep(first, last)` (`vector::insert`, 19); **a mem-initialiser** `first(p.first)` (`pair`'s converting
-constructor, 1). Not counted: the constexpr-ahead door (`Constexpr.cpp`, 32 and 564 bodies in M8.0's census), a
+`sizeof...`, `A &&...a`: the expansion is copied per member - M8.4's row already turns it into one node) - in
+`tests/cases` every place in a case's own source, and in the library `__fn_model::call`, `function::operator()`,
+`make_shared`, `vector::emplace_back`, with `make_owned` in the compiler's `Ast.h`; **`T()` in an expression**,
+`value_type(k, V())` - value-initialisation is a constructor call for a class and a zero for a scalar
+(`map::operator[]`, `unordered_map::operator[]`: 41 of the self-host's 73 shape lines); **a direct-initialised
+local**, `vector<T> keep(first, last)` (`vector::insert`, 19 lines); **a mem-initialiser**, `first(p.first)`
+(`pair`'s converting constructor, 1 line). Not counted: the constexpr-ahead door (`Constexpr.cpp`, 32 and 564 bodies in M8.0's census), a
 class's head and member declarations (no `function` node with a block), and an alias's type-id.
 
-**Gates** at `c1504cb9`: GATEROWS
+**Commit 3 tried and not landed** (`boxkit/m8b-read.patch`, 65 lines, for the lane that takes it): under the flag,
+at the unit's end, each defined function template was read from `afterParams` by `topLevel` under a `Trial`, its
+parameters bound to themselves and `patternOnly_` set, the function it made popped again. Over `tests/cases` on the
+Linux box, 110 templates in the units that survive: **5 read** (4 differing from their first replay in text alone, 1 in
+shape), 105 unread - 44 a pack, 23 a non-type parameter, 11 a template template parameter (the three the read does
+not bind yet), 20 "has no member" (a member access through a dependent object), 2 a call with a dependent argument, 5
+others one each. **And 97 units die in it**: a local or a by-value parameter of dependent type is sized, and the
+target's size function prints "no size for this type yet" and exits, outside any trial (`src/backend`, which this lane
+may not touch). So the walls commit 3 meets, in order: the frame (a `var` of dependent type must take no slot and ask
+no size), dependent member access, dependent calls - then the three parameter kinds. A read that can end the process
+is not kept behind a count other gates sum, so it is a patch and not a commit.
+
+**Gates** at `d3d90a13` (the code; this entry and three citations follow it): on the Linux box
+(g++ `-Werror` build clean; REF `~/m8bref` built from `git archive ff3e7e1f`): `tools/identical.sh` REF against NEW for
+tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,274 compared, 0 differ**; `run.sh` 1228 passed, 0 failed;
+`typed.sh` 871 passed, 0 failed, 1 not for this host; `tests/subst.sh bodies` 0 failed (5,119 bodies over 871 units -
+the `.error` cases left out - 3,381 / 682 / 1,004 / 52, the two `.templates` records as written); self-compile stage 0
+103 of 103; exclusions 129 sites 0 uncited 0 stale (three `Templates.cpp` citations re-pointed), comment cap 0, memory
+gate held, ast-residue +0 (`c1504cb9` read node-refs +1 - two `syntax::` references in `holdBodies`; `d3d90a13` names
+none), `ide/generate.py --check` up to date. On the Windows box (cl /W4 /WX clean, `work\m8bf`; REF `work\m8bref`):
+every case's `-S` text and diagnostics, NEW against REF, at -O0 and -O2 for x86_64-windows `-masm=masm` and `-masm=gnu`,
+x86_64-linux, arm64-darwin and tms6747 (`boxkit/m8bf-win.sh same`), 1,234 cases, 12,340 comparisons - **12,328 the
+same, 12 differ**, all twelve the `#error` caret of the two refused cases (`posix-headers`, `windows-h-layout`) standing
+two columns apart under a tree path two letters shorter, the known path diagnostic (read: `fc` of the two `.err`);
+`-check=templates` as tabled above over `tests/cases` and the 103 sources; `self-compile.cmd` 103 of 103. The five static gates pass there too (its ast-residue reads 0 for the four pointer kinds on
+that box and is not the measure). **Not run**: `tests/subst.sh`'s other four steps (the stand-in's, untouched),
+`names.sh`, `overload.sh`, the -O1 rows and Compiler++'s units of `identical.sh`; no `tests/cases` program was added,
+so winpass and the C6000 baselines have nothing new to hold. The Windows box dropped every ssh session once in this
+hour (about 22:48 PKT, back in two minutes with no job of any lane left); the Windows rows are from the rerun after it.
 src/ lines: 94,348 before, 94,424 after.
 
 **Asked of the user (Q8)**: M8.1's row is five commits, and commits 3 and 4 are each more than a lane-hour (the
