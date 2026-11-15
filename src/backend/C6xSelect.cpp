@@ -64,7 +64,6 @@ const ir::Function *Tms6747::ssaChoose(const Function &fn) {
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
 std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (fn.isVariadic() || f.variadic) return "variadic";
     if (fn.hasLandingPads() || f.landingPads) return "landing pads";
     if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return "exception specification";
     if (fn.sretSlot() != 0 || f.sret.valid() || fn.returns()->isStructOrUnion()) return "class result";
@@ -95,6 +94,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::LShr: case ir::Op::AShr: case ir::Op::Neg: case ir::Op::Not:
             case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
             case ir::Op::Br: case ir::Op::CondBr: case ir::Op::Switch: case ir::Op::Ret: case ir::Op::Unreachable:
+            case ir::Op::VaStart: case ir::Op::VaArg: case ir::Op::VaEnd:
                 break;
             case ir::Op::ICmp:
                 if (i.cc > ir::Cmp::Uge) return "a floating comparison";
@@ -102,9 +102,9 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::Call: {
                 const ir::CallInfo &c = f.calls[i.call];
                 if (c.symbol.empty()) return "indirect call";
-                if (c.variadic) return "variadic call";
+                if (c.variadic && (c.hasThis || c.namedArgs < 1 || c.namedArgs > abi_.intCount)) return "variadic call";
                 if (c.sret || c.resultAlloca >= 0) return "class result of a call";
-                if (i.count > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
+                if (!c.variadic && i.count > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
                 for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
                     if (p->isStructOrUnion()) return "class argument";
                 break;
@@ -743,14 +743,32 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     }
     case ir::Op::Call: {
         const ir::CallInfo &c = f.calls[i.call];
-        for (std::uint32_t k = 0; k < i.count; k++) ssaLoad(f, f.operand(i, k), abi_.intRegs[k]);
-        if (i.count > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
-        openArea(8);
+        // A variadic callee's last named argument and every one after it: a word each above the reserved word, as cl6x's -S.
+        const std::uint32_t inRegs = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
+        const int area = c.variadic ? roundUp(4 + 4 * static_cast<int>(i.count - inRegs), 8) : 8;
+        openArea(area, i.count > inRegs);
+        for (std::uint32_t k = inRegs; k < i.count; k++) {
+            const std::string v = ssaRead(f, f.operand(i, k), "A4");
+            const int at = 4 + 4 * static_cast<int>(k - inRegs);
+            if (at / 4 <= 31) { ssaEmit(c6x::MInst("STW", v, "*+B15(" + std::to_string(at) + ")")); continue; }
+            regAdd("B15", at, "B0");
+            ssaEmit(c6x::MInst("STW", v, "*B0"));
+        }
+        for (std::uint32_t k = 0; k < inRegs; k++) ssaLoad(f, f.operand(i, k), abi_.intRegs[k]);
+        if (inRegs > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         call(c6x::symbolOperand(c.symbol));
         closeArea();
         if (i.result.valid() && rt != nullptr && !rt->isVoid()) { narrowInt(rt); ssaStore(f, i.result, "A4"); }
         return;
     }
+    case ir::Op::VaStart: case ir::Op::VaArg:
+        ssaLoad(f, f.operand(i, 0), "A4");
+        if (i.op == ir::Op::VaStart) { vaStartAt(); return; }
+        vaArgAt(rt);
+        ssaStore(f, i.result, "A4");
+        return;
+    case ir::Op::VaEnd:
+        return;
     case ir::Op::Ret:
         if (i.count == 1) ssaLoad(f, f.operand(i, 0), "A4");
         jump(returnLabel_);

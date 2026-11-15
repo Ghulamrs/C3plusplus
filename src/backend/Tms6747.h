@@ -74,6 +74,8 @@ public:
     void visit(const StrLit &) override;
     void visit(const VaStart &) override;
     void visit(const VaArg &) override;
+    void vaStartAt();                         // A4 = &ap, for the walker and the selector
+    void vaArgAt(const Type *t);
     void visit(const MemberAccess &) override;
     void visit(const Switch &) override;
     void visit(const While &) override;

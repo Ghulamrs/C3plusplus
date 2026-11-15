@@ -1921,14 +1921,19 @@ void Tms6747::visit(const StrLit &n) { genAddr(n); }  // an array: its address
 // there (8-byte ones 8-aligned, a struct through its pointer) and steps on.
 void Tms6747::visit(const VaStart &n) {
     n.list().accept(asVisitor());                 // A4 = &ap
+    vaStartAt();
+}
+void Tms6747::vaStartAt() {
     regAdd("A15", vaStart_, "A6");
     out_ << "\tSTW\tA6, *A4\n";
 }
 void Tms6747::visit(const VaArg &n) {
-    const Type *t = n.type();
+    n.list().accept(asVisitor());                 // A4 = &ap
+    vaArgAt(n.type());
+}
+void Tms6747::vaArgAt(const Type *t) {
     bool byRef = t->isStructOrUnion() && !inPair(t);
     int slot = isWide(t) || inPairWide(t) ? 8 : 4;
-    n.list().accept(asVisitor());                 // A4 = &ap
     out_ << "\tLDW\t*A4, A6\n\tNOP\t4\n";  // A6 = ap
     if (slot == 8) out_ << "\tADD\tA6, 7, A6\n\tCLR\tA6, 0, 2, A6\n";   // round up to 8: AND puts no constant second
     out_ << "\tADD\tA6, " << slot << ", A3\n\tSTW\tA3, *A4\n";   // ap += slot
