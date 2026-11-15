@@ -15,29 +15,6 @@
 
 namespace c6x {
 
-namespace {
-
-// The entry as the model's table reads one: its spelling without the packet mark, parsed (as `legal` asks).
-Line lineOf(const MInst &i) {
-    MInst x = i;
-    x.par = false;
-    std::string s = x.str();
-    if (!s.empty() && s[s.size() - 1] == '\n') s.erase(s.size() - 1);
-    return parse(s);
-}
-
-}   // namespace
-
-// An entry as the text passes read it: a placed entry a kept line, no instruction to them; any other its spelling.
-Line viewOf(const MInst &i) {
-    if (!i.packed) return lineOf(i);
-    Line l;
-    l.raw = i.str();
-    l.raw.erase(l.raw.size() - 1);
-    l.verbatim = true;
-    return l;
-}
-
 // A placed entry that starts in the first column - a kernel's label, a `||` turn - named up to its `:`.
 bool placedName(const MInst &i, std::string &name) {
     if (!i.packed) return false;
@@ -50,12 +27,14 @@ bool placedName(const MInst &i, std::string &name) {
 
 namespace {
 
-// What the text pass takes for a label: a Label, or a kept line that starts in the first column; its name ends at `:`.
+// What the passes take for a label: a Label, or a kept line that starts in the first column; its name ends at `:`.
 bool labelLike(const MInst &i, std::string &name) {
     if (i.kind == MInst::Instruction) return false;
-    const Line l = lineOf(i);
-    if (!isLabel(l)) return false;
-    name = labelName(l);
+    std::string raw = i.m.str();
+    if (i.kind == MInst::Label) raw += ":";
+    else if (!raw.empty() && raw[raw.size() - 1] == '\n') raw.erase(raw.size() - 1);
+    if (raw.empty() || raw[0] == '\t') return false;
+    name = raw.substr(0, raw.find(':'));
     return true;
 }
 
@@ -196,14 +175,10 @@ Node nodeOf(const MInst &i, const std::set<std::string> &labels) {
 
 }   // namespace
 
-// The node of an entry: on its operands where they are modelled, else by its spelling.
-Node makeNode(const MInst &i, const std::set<std::string> &labels) {
-    return modelled(i) ? nodeOf(i, labels) : c6x::makeNode(lineOf(i), labels);
-}
+Node makeNode(const MInst &i, const std::set<std::string> &labels) { return nodeOf(i, labels); }
 
-// An operand held as text that names a register, a memory address or a number is read by its spelling; nothing else.
-bool modelled(const MInst &i) {
-    if (i.kind != MInst::Instruction || i.packed) return false;
+// An operand held as text that names a register, a memory address or a number is one the table cannot read.
+bool onOperands(const MInst &i) {
     const std::string m = i.m.str();
     if (i.operands == 0 && !isBranch(m)) return true;
     if (i.operands < ((isLoad(m) || isStore(m)) ? 2 : 1)) return false;
@@ -213,6 +188,16 @@ bool modelled(const MInst &i) {
         std::vector<std::string> regs;
         registersIn(s, regs);
         if (s.empty() || !regs.empty() || s[0] == '*' || s.find(':') != std::string::npos || isNumber(s)) return false;
+    }
+    return true;
+}
+bool modelled(const MInst &i) { return i.kind == MInst::Instruction && !i.packed && onOperands(i); }
+// The stream's instructions, placed ones too: the first the table cannot read is named (the census's `c6x-line`).
+bool onOperands(const MStream &s) {
+    for (std::size_t k = 0; k < s.size(); k++) {
+        if (s[k].kind != MInst::Instruction || onOperands(s[k])) continue;
+        if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-line: %s", s[k].str().c_str());
+        return false;
     }
     return true;
 }
@@ -239,11 +224,12 @@ void readsAndWrites(const MInst &i, std::vector<int> &reads, std::vector<int> &w
     if (m == "MVKH" || m == "ADDK") names(last, reads);
 }
 
-// What liveness reads of an entry: its operands where `modelled`, else its spelling - the one reader either way.
+// What liveness reads of an entry: a placed one is kept, a label where it starts in the first column, no instruction.
 LiveFacts liveFacts(const MInst &i) {
-    if (i.packed) return liveFacts(viewOf(i));   // a kept line, `||` and all, read as a line
-    if (i.kind != MInst::Instruction || !modelled(i)) return liveFacts(lineOf(i));
     LiveFacts f;
+    f.kept = i.packed;
+    f.label = i.packed ? placedName(i, f.name) : labelLike(i, f.name);
+    if (i.packed || i.kind != MInst::Instruction) return f;
     f.instr = true;
     f.predicated = i.pred != kNoReg;
     f.mnem = i.m.str();
@@ -302,15 +288,9 @@ bool removeDead(MStream &s, LiveSpan &live) {
         const std::string m = x.m.str();
         if (isBranch(m) || isStore(m) || isLoad(m)) continue;
         std::vector<std::string> reads, writes;
-        if (modelled(x)) {
-            const MOperand &last = x.op[x.operands - 1];
-            if (last.kind == MOperand::Pair || last.kind == MOperand::Memory) continue;
-            readsAndWrites(x, reads, writes);
-        } else {
-            const Line l = lineOf(x);
-            if (l.ops.empty() || l.ops.back().find(':') != std::string::npos || l.ops.back()[0] == '*') continue;
-            readsAndWrites(l, reads, writes);
-        }
+        const MOperand &last = x.op[x.operands - 1];
+        if (last.kind == MOperand::Pair || last.kind == MOperand::Memory) continue;
+        readsAndWrites(x, reads, writes);
         if (writes.size() != 1) continue;
         const std::string &d = writes[0];
         if (d == "A15" || d == "B15" || d == "B14" || d == "B3" || !deadAfter(s, live.out, i, d)) continue;
@@ -342,14 +322,9 @@ bool flipPredicates(MStream &s, LiveSpan &live) {
     return changed;
 }
 
-// The table's readers on any entry, and its label and stepped register: a `!modelled` one's by its spelling.
-void rwOf(const MInst &x, std::vector<std::string> &reads, std::vector<std::string> &writes) {
-    if (modelled(x)) readsAndWrites(x, reads, writes); else readsAndWrites(lineOf(x), reads, writes);
-}
-int crossingsOf(const MInst &i) { return modelled(i) ? crossings(i) : crossings(lineOf(i)); }
-unsigned unitsOf(const MInst &i) { return modelled(i) ? unitsFor(i) : unitsFor(lineOf(i)); }
+// An entry's label - a Label, a kept line or a placed entry in the first column - and its stepped register by number.
 bool labelOf(const MInst &i, std::string &name) { return i.packed ? placedName(i, name) : labelLike(i, name); }
-int steppedOf(const MInst &i, long &by) { return regNumber(modelled(i) ? steppedRegister(i, by) : steppedRegister(lineOf(i), by)); }
+int steppedOf(const MInst &i, long &by) { return regNumber(steppedRegister(i, by)); }
 
 namespace {
 
@@ -365,12 +340,6 @@ bool mayRename(const MInst &x) {
 void renameOperand(MOperand &x, int from, int to) {
     if ((x.kind == MOperand::Register || x.kind == MOperand::Memory) && x.reg == from) x.reg = static_cast<std::uint8_t>(to);
     if (x.kind == MOperand::Memory && x.index == from) x.index = static_cast<std::uint8_t>(to);
-}
-
-// `renamed` on an operand: its register by number where the entry is modelled, else in the spelling it is held as.
-void renameIn(MOperand &x, bool byNumber, const std::string &from, const std::string &to) {
-    if (byNumber) renameOperand(x, regNumber(from), regNumber(to));
-    else x = MOperand(renamed(x.str(), from, to));
 }
 
 }   // namespace
@@ -401,7 +370,7 @@ bool forwardConstants(MStream &s, LiveSpan &live) {
                 if (first && small) ok = true;
                 else if ((m == "CMPEQ" || m == "CMPGT" || m == "CMPLT") && small && at == 0) ok = true;
                 else if ((m == "CMPGTU" || m == "CMPLTU") && ucst && at == 0) ok = true;
-                else if (m == "SUB" && ucst && at == 1 && crossingsOf(u) == 0) ok = true;
+                else if (m == "SUB" && ucst && at == 1 && crossings(u) == 0) ok = true;
                 else if ((m == "SHL" || m == "SHR" || m == "SHRU") && ucst && at == 1) ok = true;
                 if (!ok) break;
                 if (first && at == 1) { u.op[1] = u.op[0]; at = 0; }
@@ -422,20 +391,14 @@ bool forwardConstants(MStream &s, LiveSpan &live) {
 bool legalForm(MInst &r) {
     const std::string m = r.m.str();
     const bool commutes = m == "ADD" || m == "AND" || m == "OR" || m == "XOR" || m == "MPYDP" || m == "ADDDP" || m == "MPYSP" || m == "ADDSP" || m == "MPY32" || m == "CMPEQ";
-    if (crossingsOf(r) > 1 && commutes && r.operands == 3 && !isNumber(r.op[0].str()) && !isNumber(r.op[1].str())) std::swap(r.op[0], r.op[1]);
-    return crossingsOf(r) <= 1 && (unitsOf(r) != 0 || isLoad(m) || isStore(m));
+    if (crossings(r) > 1 && commutes && r.operands == 3 && !isNumber(r.op[0].str()) && !isNumber(r.op[1].str())) std::swap(r.op[0], r.op[1]);
+    return crossings(r) <= 1 && (unitsFor(r) != 0 || isLoad(m) || isStore(m));
 }
 
 namespace {
 
 // An address over both register files, which no unit reaches.
 bool memSide(const MInst &e) {
-    if (!modelled(e)) {
-        const Line r = lineOf(e);
-        for (std::size_t o = 0; o < r.ops.size(); o++)
-            if (r.ops[o][0] == '*') { std::vector<std::string> m; registersIn(r.ops[o], m); if (m.size() > 1 && sideOf(m[0]) != sideOf(m[1])) return true; }
-        return false;
-    }
     for (int k = 0; k < e.operands; k++)
         if (e.op[k].kind == MOperand::Memory && e.op[k].index != kNoReg && sideOfReg(e.op[k].reg) != sideOfReg(e.op[k].index)) return true;
     return false;
@@ -463,7 +426,7 @@ struct Folding {
         if (!held && stale) { liveness(s, live.in, live.out); stale = false; }
         return deadAfter(s, live.out, i, reg);
     }
-    void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(k)) rwOf(s[k], reads, writes); }
+    void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(k)) readsAndWrites(s[k], reads, writes); }
     bool touches(std::size_t k, const std::vector<std::string> &regs) const {
         std::vector<std::string> reads, writes;
         rw(k, reads, writes);
@@ -490,7 +453,7 @@ bool forwardMoves(MStream &s, LiveSpan &live) {
             if (writes.size() == 1) {
                 MInst e = s[i - 1];
                 e.op[e.operands - 1] = MOperand(D);
-                if (crossingsOf(e) <= 1 && unitsOf(e) != 0) {
+                if (crossings(e) <= 1 && unitsFor(e) != 0) {
                     f.set(i - 1, e);
                     f.erase(i);
                     i--;
@@ -512,10 +475,9 @@ bool forwardMoves(MStream &s, LiveSpan &live) {
                 if (pair) break;
                 const bool keepDest = !isStore(m) && m != "B" && f.last(j)[0] != '*';
                 MInst e = s[j];
-                const bool byNumber = modelled(e);
-                for (int k = 0; k < e.operands; k++) if (!(keepDest && k + 1 == e.operands)) renameIn(e.op[k], byNumber, D, S);
+                for (int k = 0; k < e.operands; k++) if (!(keepDest && k + 1 == e.operands)) renameOperand(e.op[k], regNumber(D), regNumber(S));
                 // A memory operand's registers stay on the unit's side; a branch register stays B.
-                if (memSide(e) || crossingsOf(e) > 1 || unitsOf(e) == 0 || (e.m.str() == "B" && sideOf(e.op[0].str()) == 'A')) break;
+                if (memSide(e) || crossings(e) > 1 || unitsFor(e) == 0 || (e.m.str() == "B" && sideOf(e.op[0].str()) == 'A')) break;
                 f.set(j, e);
                 f.erase(i);
                 i--;
@@ -658,7 +620,7 @@ void numberValues(MStream &s) {
             std::vector<std::size_t> where;
             MInst d = s[p];
             d.op[d.operands - 1] = MOperand(F);
-            if (crossingsOf(d) > 1 || (unitsOf(d) == 0 && !isLoad(d.m.str()))) continue;
+            if (crossings(d) > 1 || (unitsFor(d) == 0 && !isLoad(d.m.str()))) continue;
             changed.push_back(d); where.push_back(p);
             for (std::size_t k = p + 1; k <= end && k < here && ok; k++) {   // the web's last entry may write D too
                 std::vector<std::string> r, w;
@@ -674,10 +636,9 @@ void numberValues(MStream &s) {
                 }
                 if (!ok) break;
                 MInst r2 = s[k];
-                const bool byNumber = modelled(r2);
-                for (std::size_t q = 0; q < o; q++) renameIn(r2.op[q], byNumber, D, F);
+                for (std::size_t q = 0; q < o; q++) renameOperand(r2.op[q], regNumber(D), regNumber(F));
                 const std::string m2 = r2.m.str();
-                if (crossingsOf(r2) > 1 || (unitsOf(r2) == 0 && !isLoad(m2) && !isStore(m2))) { ok = false; break; }
+                if (crossings(r2) > 1 || (unitsFor(r2) == 0 && !isLoad(m2) && !isStore(m2))) { ok = false; break; }
                 changed.push_back(r2); where.push_back(k);
             }
             if (!ok) continue;
@@ -749,7 +710,7 @@ void numberValues(MStream &s) {
             if (!holder.empty()) {
                 if (holder == dst) { f.set(i, blank); continue; }   // gone: no operands left to read
                 const MInst r("MV", MOperand(holder), MOperand(dst));
-                if (crossingsOf(r) <= 1) { f.set(i, r); val[dst] = number; continue; }
+                if (crossings(r) <= 1) { f.set(i, r); val[dst] = number; continue; }
             }
             val[dst] = number;
             defAt[number] = i;
@@ -1061,7 +1022,7 @@ void foldPushPop(MStream &s, const LiveSpan &live) {
             continue;
         }
         std::vector<std::string> reads, writes;
-        rwOf(s[i], reads, writes);
+        readsAndWrites(s[i], reads, writes);
         if (has(reads, "B15") || has(writes, "B15")) open.clear();
     }
     std::vector<bool> drop(s.size(), false);
@@ -1075,7 +1036,7 @@ void foldPushPop(MStream &s, const LiveSpan &live) {
             bool ok = deadAfter(s, live.out, push, l) && deadAfter(s, live.out, push, h);
             for (std::size_t k = push + 1; k <= pop + 1 && ok; k++) {
                 std::vector<std::string> r, w;
-                rwOf(s[k], r, w);
+                readsAndWrites(s[k], r, w);
                 if (has(r, l) || has(w, l) || has(r, h) || has(w, h)) ok = false;
             }
             if (ok) { lo = l; hi = h; }
@@ -1259,9 +1220,9 @@ bool predicateArms(MStream &s) {
         for (; j < s.size() && s[j].kind == MInst::Instruction && !isBranch(s[j].m.str()) && ok; j++) {
             const MInst &l = s[j];
             const std::string m = l.m.str();
-            if (j - i > 4 || l.pred != kNoReg || (!isLoad(m) && !isStore(m) && unitsOf(l) == 0)) ok = false;
+            if (j - i > 4 || l.pred != kNoReg || (!isLoad(m) && !isStore(m) && unitsFor(l) == 0)) ok = false;
             std::vector<std::string> reads, writes;
-            rwOf(l, reads, writes);
+            readsAndWrites(l, reads, writes);
             if (has(writes, P) || has(reads, "B15") || has(writes, "B15") || has(writes, "A15")) ok = false;
         }
         if (!ok || j >= s.size() || !isInstr(s[j], "B") || s[j].pred != kNoReg || !labels.count(opText(s[j], 0))) continue;
@@ -1287,7 +1248,7 @@ void tidyStream(MStream &s, bool labels) {
 LoopText::LoopText(MStream &stream) : s(stream), gone(stream.size(), false) {}
 bool LoopText::label(std::size_t k, std::string &name) const { return !gone[k] && !s[k].packed && labelLike(s[k], name); }
 void LoopText::rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
-    if (modelled(s[k])) readsAndWrites(s[k], reads, writes); else readsAndWrites(lineOf(s[k]), reads, writes);
+    readsAndWrites(s[k], reads, writes);
 }
 void LoopText::blank(std::size_t k) { gone[k] = pending = stale = true; }
 void LoopText::set(std::size_t k, const MInst &x) { s[k] = x; stale = true; }
@@ -1341,7 +1302,7 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
             if (p.instr != l.instr || p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred) return false;
         }
         // A placed line the text's fold would read as an instruction and the stream cannot: not spelled either.
-        if (l.verbatim && i.kind == MInst::Verbatim && lineOf(i).instr) return false;
+        if (l.verbatim && i.kind == MInst::Verbatim && parse(par ? l.raw.substr(2) : l.raw).instr) return false;
         i.par = par;
         i.packed = l.verbatim;
         s.push_back(i);

@@ -108,11 +108,7 @@ MInst::MInst(const char *mnem, const MOperand &a, const MOperand &b, const MOper
 int MInst::slots() const { return kind == Instruction ? delaySlots(m.str()) : 0; }
 
 bool legal(const MInst &i) {
-    if (modelled(i)) return crossings(i) <= 1 && unitsFor(i) != 0;
-    std::vector<std::string> ops;
-    for (int k = 0; k < i.operands; k++) ops.push_back(i.op[k].str());
-    const Line l = rebuilt(i.m.str(), ops);
-    return crossings(l) <= 1 && unitsFor(l) != 0;
+    return onOperands(i) && crossings(i) <= 1 && unitsFor(i) != 0;
 }
 
 int MInst::side() const {

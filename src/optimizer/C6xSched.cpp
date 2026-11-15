@@ -82,20 +82,6 @@ Line parse(const std::string &raw) {
     return l;
 }
 
-Line make(const std::string &mnem, const std::string &a, const std::string &b, const std::string &c) {
-    std::string raw = "\t" + mnem + "\t" + a;
-    if (!b.empty()) raw += ", " + b;
-    if (!c.empty()) raw += ", " + c;
-    return parse(raw);
-}
-
-// An instruction rebuilt from its parts, every operand kept, and the predicate with it.
-Line rebuilt(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred) {
-    std::string raw = "\t" + (pred.empty() ? std::string() : "[" + pred + "]\t") + mnem;
-    for (std::size_t o = 0; o < ops.size(); o++) raw += (o == 0 ? "\t" : ", ") + ops[o];
-    return parse(raw);
-}
-
 bool isNameChar(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$' || c == '.'; }
 
 // The registers an operand names: A0-A31 and B0-B31 as whole words, so a
@@ -136,39 +122,6 @@ std::uint64_t maskOf(const char *const *names, std::size_t n) {
     return m;
 }
 
-// What the instruction reads and writes: the last operand is the destination
-// unless it is memory (a store) or a branch target, and MVKH keeps its low half.
-void readsAndWrites(const Line &l, std::vector<std::string> &reads, std::vector<std::string> &writes) {
-    if (!l.pred.empty()) reads.push_back(l.pred[0] == '!' ? l.pred.substr(1) : l.pred);
-    if (l.ops.empty()) return;
-    bool hasDest = !isStore(l.mnem) && l.mnem != "B" && l.mnem != "NOP" && l.ops.back()[0] != '*';
-    std::size_t n = hasDest ? l.ops.size() - 1 : l.ops.size();
-    for (std::size_t i = 0; i < n; i++) registersIn(l.ops[i], reads);
-    for (std::size_t i = 0; i < l.ops.size(); i++)      // `*R++`, `*R--`: the access writes its address register too
-        if (l.ops[i][0] == '*' && (l.ops[i].find("++") != std::string::npos || l.ops[i].find("--") != std::string::npos)) registersIn(l.ops[i], writes);
-    if (!hasDest) return;
-    registersIn(l.ops.back(), writes);
-    if (l.mnem == "MVKH" || l.mnem == "ADDK") registersIn(l.ops.back(), reads);
-}
-
-// The address register a `*R++(k)` or `*R--(k)` operand steps, and by how many bytes (signed), or "" for none.
-std::string steppedRegister(const Line &l, long &by) {
-    by = 0;
-    for (std::size_t i = 0; i < l.ops.size(); i++) {
-        const std::string &m = l.ops[i];
-        std::size_t p = m.find("++");
-        if (m.empty() || m[0] != '*' || (p == std::string::npos && (p = m.find("--")) == std::string::npos)) continue;
-        std::vector<std::string> regs;
-        registersIn(m, regs);
-        if (regs.size() != 1) return "";
-        std::size_t open = m.find('(', p);
-        by = open == std::string::npos ? 1 : std::atol(m.substr(open + 1).c_str());
-        if (m[p] == '-') by = -by;
-        return regs[0];
-    }
-    return "";
-}
-
 bool has(const std::vector<std::string> &v, const std::string &r) {
     for (std::size_t i = 0; i < v.size(); i++) if (v[i] == r) return true;
     return false;
@@ -181,11 +134,8 @@ bool isNumber(const std::string &s) {
     return true;
 }
 
-bool isLabel(const Line &l) { return !l.instr && !l.raw.empty() && l.raw[0] != '\t'; }
-std::string labelName(const Line &l) { return l.raw.substr(0, l.raw.find(':')); }
 // CALLP is a branch that ends its block too, and a call: A4's rule that no push/pop pair spans a call rests on it.
 bool isBranch(const std::string &m) { return m == "B" || m == "CALLP"; }
-bool blockEnd(const Line &l) { return !l.instr || isBranch(l.mnem); }
 
 // ----- the calls, the returns and what they read and write -----
 
@@ -214,7 +164,6 @@ bool isReturnTo(const std::string &m, const std::string &t, const std::set<std::
     if (sideOf(t)) return t == "B3";
     return labels.count(t) == 0 && (startsWith(t, "L$return$") || startsWith(t, "L.return."));
 }
-bool isCall(const Line &l, const std::set<std::string> &labels) { return isCallTo(l.mnem, l.ops.empty() ? "" : l.ops[0], labels); }
 
 // ----- liveness over the blocks -----
 
@@ -270,23 +219,6 @@ void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveI
     }
 }
 
-LiveFacts liveFacts(const Line &l) {
-    LiveFacts f;
-    f.instr = l.instr;
-    f.label = isLabel(l);
-    f.kept = l.verbatim;
-    f.predicated = !l.pred.empty();
-    if (f.label) f.name = labelName(l);
-    if (!l.instr) return f;
-    f.mnem = l.mnem;
-    if (!l.ops.empty()) f.target = l.ops[0];
-    std::vector<std::string> reads, writes;
-    readsAndWrites(l, reads, writes);
-    f.reads = maskOf(reads);
-    f.writes = maskOf(writes);
-    return f;
-}
-
 int accessSize(const std::string &m) {
     if (m == "LDDW" || m == "STDW") return 8;   // LDW ends in DW too
     if (endsWith(m, "W")) return 4;
@@ -323,30 +255,8 @@ bool mayCross(const std::string &m, std::size_t o) {
     return false;
 }
 
-unsigned unitsFor(const Line &l);
-
 // A pair crosses only as the second source of MPYDP, ADDDP or SUBDP - the xdp forms ASM6x's table has (ADDDP and SUBDP on .S alone).
 bool pairMayCross(const std::string &m) { return m == "MPYDP" || m == "ADDDP" || m == "SUBDP"; }
-
-// How many of an instruction's source registers sit on the other side from
-// its destination - at most one may, over the cross path, and only in a
-// position that has a crossed form; 2 answers for anything illegal.
-int crossings(const Line &l) {
-    if (l.ops.empty() || isStore(l.mnem) || isLoad(l.mnem) || isBranch(l.mnem)) return 0;
-    std::vector<std::string> dst;
-    registersIn(l.ops.back(), dst);
-    if (dst.empty()) return 0;
-    int n = 0;
-    for (std::size_t o = 0; o + 1 < l.ops.size(); o++) {
-        std::vector<std::string> regs;
-        registersIn(l.ops[o], regs);
-        bool crossed = false;
-        for (std::size_t k = 0; k < regs.size(); k++) if (sideOf(regs[k]) != sideOf(dst[0])) crossed = true;
-        if (crossed && (!mayCross(l.mnem, o) || (regs.size() > 1 && !pairMayCross(l.mnem)))) return 2;
-        if (crossed) n++;
-    }
-    return n;
-}
 
 // The aligned pair `odd:even` the two registers make, lo the even one, or "" where they are not one pair of one side.
 std::string pairOf(const std::string &lo, const std::string &hi) {
@@ -355,42 +265,12 @@ std::string pairOf(const std::string &lo, const std::string &hi) {
     return a % 2 == 0 && b == a + 1 ? hi + ":" + lo : "";
 }
 
-// A rebuilt instruction with one legal crossing at most: a commutative one turns its sources about where the first crosses.
-bool legalForm(Line &r) {
-    const std::string &m = r.mnem;
-    const bool commutes = m == "ADD" || m == "AND" || m == "OR" || m == "XOR" || m == "MPYDP" || m == "ADDDP" || m == "MPYSP" || m == "ADDSP" || m == "MPY32" || m == "CMPEQ";
-    if (crossings(r) > 1 && commutes && r.ops.size() == 3 && !isNumber(r.ops[0]) && !isNumber(r.ops[1])) {
-        std::vector<std::string> ops = r.ops;
-        std::swap(ops[0], ops[1]);
-        r = rebuilt(m, ops, r.pred);
-    }
-    return crossings(r) <= 1 && (unitsFor(r) != 0 || isLoad(m) || isStore(m));
-}
-
-// A register-to-register instruction whose operands may be renamed: no
-// memory operand, and no pair - a half of A5:A4 cannot be renamed alone.
-bool renameable(const Line &l) {
-    if (!l.instr || isBranch(l.mnem) || isStore(l.mnem) || isLoad(l.mnem) || l.mnem == "ADDK") return false;   // ADDK reads its destination
-    for (std::size_t o = 0; o < l.ops.size(); o++) if (l.ops[o].find(':') != std::string::npos || l.ops[o][0] == '*') return false;
-    return true;
-}
-
 // The other half of an aligned pair, and the register it is copied from or to beside this copy: `MV S, L` wants `MV S^1, L^1`.
 std::string partner(const std::string &r) {
     if (!sideOf(r)) return "";
     int n = std::atoi(r.c_str() + 1);
     return std::string(1, r[0]) + std::to_string(n ^ 1);
 }
-
-// Whether line j reads or writes any of the registers named, the predicate included.
-bool touches(const Line &l, const std::vector<std::string> &regs) {
-    std::vector<std::string> reads, writes;
-    readsAndWrites(l, reads, writes);
-    for (std::size_t k = 0; k < regs.size(); k++) if (has(reads, regs[k]) || has(writes, regs[k])) return true;
-    return false;
-}
-
-bool passThrough(const Line &l, const std::set<std::string> &named);
 
 // The one register a load's address reads as it stands (`*R`, or displaced forward by a constant), or "" for any other.
 std::string plainBase(const MOperand &a) {
@@ -995,107 +875,6 @@ void widenFills(LoopText &t) {
 
 // ----- the list scheduler -----
 
-
-// The units a mnemonic has a form on for these operands, from asm6x's table
-// (ASM6x src/forms.h): the three-operand arithmetic on any of .L .S .D with a
-// register, the small constants on .L and .S, the wider ones on .D alone.
-unsigned unitsFor(const Line &l) {
-    const std::string &m = l.mnem;
-    if (isBranch(m) || m == "ADDK") return US;
-    if (isLoad(m) || isStore(m)) return UD;
-    if (m == "MPY32" || m == "MPY32U" || m == "MPYSP" || m == "MPYDP" || startsWith(m, "MPY")) return UM;
-    bool pair = false;
-    for (std::size_t o = 0; o < l.ops.size(); o++) if (l.ops[o].find(':') != std::string::npos) pair = true;
-    long k = 0; int at = -1;
-    if (l.ops.size() == 3) { if (isNumber(l.ops[0])) { at = 0; k = std::atol(l.ops[0].c_str()); } else if (isNumber(l.ops[1])) { at = 1; k = std::atol(l.ops[1].c_str()); } }
-    bool small = at >= 0 && k >= -16 && k <= 15, ucst = at >= 0 && k >= 0 && k <= 31;
-    if (m == "ADD" || m == "AND" || m == "OR" || m == "XOR") {
-        if (pair) return UL;
-        if (at < 0) return UL | US | UD;
-        if (small) return UL | US | (ucst ? UD : 0);
-        return ucst && m == "ADD" && crossings(l) == 0 ? UD : 0;
-    }
-    if (m == "SUBAW" || m == "ADDAW") return crossings(l) == 0 ? UD : 0;   // .D alone, the sources on its side
-    if (m == "SUB") {
-        if (pair) return UL;
-        if (at < 0) {               // a crossed first source has the .S form and .L's crossed-first one, never .D's
-            std::vector<std::string> first, dst;
-            registersIn(l.ops[0], first); registersIn(l.ops[2], dst);
-            bool firstCrosses = !first.empty() && !dst.empty() && sideOf(first[0]) != sideOf(dst[0]);
-            return firstCrosses ? UL | US : UL | US | UD;
-        }
-        if (at == 0 && small) return UL | US;
-        if (at == 1 && ucst && crossings(l) == 0) return UD;
-        return 0;
-    }
-    if (m == "NOT") return UL | US | UD;
-    if (m == "NEG") return UL | US;
-    if (m == "MV") return pair ? UL : UL | US | UD;
-    if (m == "ZERO") return UL;
-    if (m == "CLR" || m == "EXT" || m == "EXTU" || m == "SHL" || m == "SHR" || m == "SHRU") return US;
-    if (m == "MVK") return isNumber(l.ops[0]) && std::atol(l.ops[0].c_str()) >= -16 && std::atol(l.ops[0].c_str()) <= 15 ? UL | US : US;
-    if (m == "MVKL" || m == "MVKH") return US;
-    if (m == "CMPEQ" || m == "CMPGT" || m == "CMPLT" || m == "CMPGTU" || m == "CMPLTU") return UL;
-    if (endsWith(m, "SP") || endsWith(m, "DP")) {
-        if (startsWith(m, "CMP") || m == "SPDP") return US;
-        if (m == "ADDDP" || m == "SUBDP") return crossings(l) > 0 ? US : UL | US;   // the xdp form is .S's alone
-        if (m == "ADDSP" || m == "SUBSP") return UL | US;
-        if (m == "DPSP" || m == "SPTRUNC" || m == "DPTRUNC" || startsWith(m, "INT")) return UL;
-    }
-    return 0;
-}
-
-// The frame slot a memory operand names, `*-A15(k)` or `*+A15(k)`, so two such accesses that do not overlap need no order.
-bool frameSlot(const std::string &op, long &off) {
-    if (op == "*A15") { off = 0; return true; }
-    if (!startsWith(op, "*-A15(") && !startsWith(op, "*+A15(")) return false;
-    std::string k = op.substr(6, op.size() - 7);
-    if (!isNumber(k)) return false;
-    off = std::atol(k.c_str()) * (op[1] == '-' ? -1 : 1);
-    return true;
-}
-
-Node makeNode(const Line &l, const std::set<std::string> &labels) {
-    Node n;
-    n.callp = l.mnem == "CALLP";
-    std::vector<std::string> reads, writes;
-    readsAndWrites(l, reads, writes);
-    n.reads = maskOf(reads);
-    n.writes = maskOf(writes);
-    n.lat = delaySlots(l.mnem) + 1;
-    n.late = lateReads(l.mnem);
-    n.units = unitsFor(l);
-    if (isBranch(l.mnem)) {
-        n.branch = true;
-        n.call = isCall(l, labels);
-        if (n.call) { n.reads |= callReads(); n.writes |= callWrites(); }
-        if (l.mnem == "CALLP") { n.reads &= ~bitOf("B3"); n.side = 1; return n; }
-        if (sideOf(l.ops[0])) { n.side = 1; if (sideOf(l.ops[0]) == 'A') n.cross = 1; }
-        return n;
-    }
-    if (isLoad(l.mnem) || isStore(l.mnem)) {
-        n.mem = true;
-        n.store = isStore(l.mnem);
-        const std::string &addr = n.store ? l.ops[1] : l.ops[0];
-        const std::string &data = n.store ? l.ops[0] : l.ops[1];
-        std::vector<std::string> a, d;
-        registersIn(addr, a);
-        registersIn(data, d);
-        n.side = a.empty() ? 0 : sideIndex(a[0]);
-        n.tpath = d.empty() ? 0 : sideIndex(d[0]);
-        n.memSize = accessSize(l.mnem);
-        n.memFrame = frameSlot(addr, n.memOff);
-        long by;
-        n.stepped = bitOf(steppedRegister(l, by));
-        return n;
-    }
-    std::vector<std::string> dst;
-    if (!l.ops.empty()) registersIn(l.ops.back(), dst);
-    n.side = dst.empty() ? 0 : sideIndex(dst[0]);
-    if (crossings(l) > 0) n.cross = n.side;
-    return n;
-}
-
 // Two memory accesses are independent when both are frame slots that do not overlap.
 bool mayAlias(const Node &a, const Node &b) {
     if (!a.memFrame || !b.memFrame) return true;
@@ -1274,7 +1053,6 @@ void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows) {
 // A label of the backend's own flow - the kinds only a branch of this text
 // names - that no instruction names is no block boundary: the instructions
 // on either side are scheduled together and the label is kept in front.
-bool passThrough(const Line &l, const std::set<std::string> &named) { return passThroughName(labelName(l), named); }
 bool passThroughName(const std::string &name, const std::set<std::string> &named) {
     static const char *const kinds[] = { ".begin", ".step", ".end", ".else", ".shortcut", ".wide", ".widend", ".noresult", ".case", ".default", ".inline", ".ssain" };
     if (named.count(name)) return false;     // spelled with dots here; the TI spelling makes them $ later
@@ -1326,9 +1104,9 @@ std::string c6xSchedule(const std::string &text, int level, bool &spelled) {
         if (l.mnem != "NOP") lines.push_back(l);    // the -O0 padding, re-derived by the scheduler
     }
     // A function is one stream from here to the packetiser, the selector's and the walker's alike; a line the stream
-    // does not spell is refused by the caller, the text handed back as it came.
+    // does not spell, or an instruction the table cannot read on its operands, is refused by the caller, the text handed back.
     MStream s;
-    spelled = streamOf(lines, s);
+    spelled = streamOf(lines, s) && onOperands(s);
     if (!spelled) return text;
     foldFront(s, !skipped("thread"), !skipped("labels"));
     rounds(s);
@@ -1355,6 +1133,8 @@ std::string c6xSchedule(const std::string &text, int level, bool &spelled) {
     }
     rounds(s);
     foldAddressing(s, !skipped("index"));
+    spelled = onOperands(s);
+    if (!spelled) return text;
     packetise(s);
     foldBranchNops(s, s.size() * 4 + 512 < 8192);
     std::ostringstream packed;

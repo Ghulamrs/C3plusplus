@@ -75,7 +75,6 @@ struct Node;
 // **The packetiser** (C6xPack.cpp): the text passes' lines as a stream, false where a line is not spelled back the same;
 // each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
 bool streamOf(const std::vector<Line> &v, MStream &s);
-Line viewOf(const MInst &i);                      // one entry as a line: a placed one kept, `||` and all, any other its spelling parsed
 bool placedName(const MInst &i, std::string &name);       // a placed entry that starts in the first column, named up to its `:`
 void packetise(MStream &s);
 void foldBranchNops(MStream &s, bool near);
@@ -83,21 +82,21 @@ void foldBranchNops(MStream &s, bool near);
 // **The pipeliner** (C6xPipe.cpp): its counted loops' kernels as placed entries; false, untouched, where one is not spelled.
 bool pipelineLoops(MStream &s);
 
-// **The table's readers on operands** (C6xPack.cpp): C6xSched's `makeNode`, `crossings` and `unitsFor` read from an
-// entry's registers and immediates; `modelled` is false where an operand is text naming a register, asked by spelling.
+// **The table's readers on operands** (C6xPack.cpp): `makeNode`, `crossings` and `unitsFor` read an entry's registers
+// and immediates. `onOperands` is false where an operand is text naming a register, an address or a number - the
+// table cannot read it, and `c6xSchedule` refuses the function; `modelled` is that of an instruction not yet placed.
+bool onOperands(const MInst &i);
+bool onOperands(const MStream &s);                // every instruction's, a placed one's too
 bool modelled(const MInst &i);
 int crossings(const MInst &i);
 unsigned unitsFor(const MInst &i);
-// `readsAndWrites` on a modelled entry: the registers it reads and writes by name, in the order the text pass lists them.
+// The registers an entry reads and writes by name: sources in order, a stepped address's, then the destination's.
 void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes);
 void readsAndWrites(const MInst &i, std::vector<int> &reads, std::vector<int> &writes);                 // the same by number
 void readsAndWrites(const MInst &i, std::uint64_t &reads, std::uint64_t &writes);      // the same as masks, added to
 
-// The same readers on any entry, a `!modelled` one read by its spelling (C6xPack.cpp), with its label's name - a
-// Label, a kept line or a placed entry in the first column - and the register a stepped access writes, by number.
-void rwOf(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes);
-int crossingsOf(const MInst &i);
-unsigned unitsOf(const MInst &i);
+// An entry's label by name - a Label, a kept line or a placed entry in the first column - and the register a stepped
+// access writes, by name and by number.
 bool labelOf(const MInst &i, std::string &name);
 std::string steppedRegister(const MInst &i, long &by);
 int steppedOf(const MInst &i, long &by);
@@ -123,9 +122,9 @@ void foldAddressing(MStream &s, bool index);    // index: foldScaledIndex too (C
 struct LoopText;
 void loopPass(MStream &s, void (*pass)(LoopText &));
 
-// `makeNode` on an entry: its operands where `modelled`, else its spelling - the one table either way.
+// The scheduler's node of an entry, from its operands.
 Node makeNode(const MInst &i, const std::set<std::string> &labels);
-// Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
+// Whether the instruction stands as written: operands the table reads, one crossing source at most, and a unit.
 bool legal(const MInst &i);
 bool legalForm(MInst &r);                         // the same, a commutative one's sources turned about where the first crosses
 

@@ -99,20 +99,9 @@ void accessOf(const std::string &m, Ins &x) {
     } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) x.base = regNumber(m.substr(1));
 }
 
-// An entry's reads and writes by number and as masks: `rwOf`'s names where it is not `modelled`.
-void regsOf(const MInst &e, std::vector<int> &reads, std::vector<int> &writes) {
-    if (modelled(e)) { readsAndWrites(e, reads, writes); return; }
-    std::vector<std::string> r, w;
-    rwOf(e, r, w);
-    for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
-    for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
-}
-void masksOf(const MInst &e, std::uint64_t &reads, std::uint64_t &writes) {
-    if (modelled(e)) { readsAndWrites(e, reads, writes); return; }
-    std::vector<std::string> r, w;
-    rwOf(e, r, w);
-    reads |= maskOf(r); writes |= maskOf(w);
-}
+// An entry's reads and writes by number and as masks.
+void regsOf(const MInst &e, std::vector<int> &reads, std::vector<int> &writes) { readsAndWrites(e, reads, writes); }
+void masksOf(const MInst &e, std::uint64_t &reads, std::uint64_t &writes) { readsAndWrites(e, reads, writes); }
 
 Ins insOf(const MInst &e) {
     Ins x;
@@ -267,10 +256,10 @@ struct Src {
         return isNumber(op(i, k));
     }
     bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : op(i, k).find(':') != std::string::npos; }
-    void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(i)) rwOf((*s)[i], reads, writes); }
+    void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(i)) readsAndWrites((*s)[i], reads, writes); }
     // The same by number and as masks, and a register operand or the predicate as a number.
     void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const { if (instr(i)) regsOf((*s)[i], reads, writes); }
-    unsigned units(std::size_t i) const { return instr(i) ? unitsOf((*s)[i]) : 0; }
+    unsigned units(std::size_t i) const { return instr(i) ? unitsFor((*s)[i]) : 0; }
     void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const { if (instr(i)) masksOf((*s)[i], reads, writes); }
     int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(op(i, k)); }
     int predReg(std::size_t i) const { return instr(i) ? (*s)[i].pred : kNoReg; }
@@ -368,7 +357,7 @@ struct Loop {
     // What a pass may not rename or fold away: the counter, a register bound, the predicate, and with `count` the count.
     std::uint64_t fixedM(bool count) const { return bit(ivR) | bit(boundR) | bit(PR) | (count ? bit(CR) : 0); }
     bool plainAt(std::size_t o) const { return bodyM[o].pred == kNoReg; }
-    void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const { rwOf(bodyM[o], reads, writes); }
+    void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const { readsAndWrites(bodyM[o], reads, writes); }
     // The same by number, in the order `rw` lists them.
     void regs(std::size_t o, std::vector<int> &reads, std::vector<int> &writes) const { regsOf(bodyM[o], reads, writes); }
     // Operand k of body line o as a pair `hi:lo` of two registers.

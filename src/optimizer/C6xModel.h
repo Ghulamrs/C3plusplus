@@ -66,8 +66,6 @@ bool endsWith(const std::string &s, const char *p);
 int delaySlots(const std::string &m);
 int lateReads(const std::string &m);
 Line parse(const std::string &raw);
-Line make(const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "");
-Line rebuilt(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred = "");
 void registersIn(const std::string &op, std::vector<std::string> &out);
 bool isNameChar(char c);
 bool isStore(const std::string &m);
@@ -76,26 +74,16 @@ char sideOf(const std::string &r);
 int sideIndex(const std::string &r);
 std::uint64_t bitOf(const std::string &r);
 std::uint64_t maskOf(const std::vector<std::string> &regs);
-void readsAndWrites(const Line &l, std::vector<std::string> &reads, std::vector<std::string> &writes);
 bool has(const std::vector<std::string> &v, const std::string &r);
 bool isNumber(const std::string &s);
-bool isLabel(const Line &l);
-std::string labelName(const Line &l);
 bool isBranch(const std::string &m);
-bool blockEnd(const Line &l);
-bool isCall(const Line &l, const std::set<std::string> &labels);
-bool renameable(const Line &l);
 bool isCallTo(const std::string &m, const std::string &target, const std::set<std::string> &labels);
 bool isReturnTo(const std::string &m, const std::string &target, const std::set<std::string> &labels);
-// What liveness reads of a line or a stream's entry: the blocks, the flow and the registers, by each form's reader.
+// What liveness reads of a stream's entry: the blocks, the flow and the registers.
 struct LiveFacts { bool instr = false, label = false, kept = false, predicated = false; std::string name, mnem, target; std::uint64_t reads = 0, writes = 0; };
 void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
-LiveFacts liveFacts(const Line &l);
 int accessSize(const std::string &m);
 std::string renamed(const std::string &op, const std::string &from, const std::string &to);
-int crossings(const Line &l);
-unsigned unitsFor(const Line &l);
-Node makeNode(const Line &l, const std::set<std::string> &labels);
 // The call's registers and the cross-path positions, read by the table's readers on the stream too (C6xPack.cpp).
 std::uint64_t callReads();
 std::uint64_t callWrites();
@@ -103,16 +91,13 @@ bool mayCross(const std::string &m, std::size_t o);
 bool pairMayCross(const std::string &m);
 bool fits(const Packet &p, const Node &n);
 void add(Packet &p, const Node &n);
-bool passThrough(const Line &l, const std::set<std::string> &named);
 bool passThroughName(const std::string &name, const std::set<std::string> &named);
 bool assignUnits(const std::vector<const Node *> &m, std::size_t k, bool taken[2][4]);
 // One block list-scheduled into rows, and the wait where a block is empty: read by C6xPack.cpp.
 std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &rows, const std::vector<Pending> &in, bool carry);
 void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows);
-std::string steppedRegister(const Line &l, long &by);
 std::string pairOf(const std::string &lo, const std::string &hi);
 std::string partner(const std::string &r);
-bool legalForm(Line &r);
 
 // What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit, a stream's (C6xPack.cpp):
 // an entry blanked or set, a preheader inserted, the blanks dropped, liveness asked.
