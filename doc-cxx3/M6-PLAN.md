@@ -1891,3 +1891,39 @@ in the Linux box's home (`~/cyc-m6ae.txt`, `~/cyc-w19g.txt`). No src/ line chang
   uncited, 0 stale; comment-lines 0 groups over the cap; ide/generate.py --check up to date. tools/memory-gate does
   not start on Windows (`signal.SIGPIPE`, tools/memory-gate:30 - a defect for the split); no src/ file changed, so
   its count is wave 19's.
+### Lane r6c: R102, R103 and R104 measured at 458f8974, 2026-11-15 (box runs, no source change)
+
+Every number below is of `458f8974`'s tree, built afresh on each box (Linux g++ `cxx3.exe`; Windows cl `cxx3-msvc.exe`,
+/W4 /WX clean). The coordinator's re-route at 16:54 ("use the Windows box to relieve Linux load") moved the C6000
+legs to Windows; Linux keeps the self-host.
+- **R102, TI's own tools.** `tests/tms6747.sh` SIM=1 CYCLES=1 at -O2, four shards on Windows (SIM6747 1.12 built
+  there with cl from the Linux box's sources, `work\ti6x\SIM6747`): **814 passed, 4 failed** (208/0, 201/1, 199/2,
+  206/1), every other pass also on sim6747 with TI's `rts6740_elf_eh.lib`; cycles **192,036,975**, wave 19's total
+  to the cycle. The four: `inheriting-constructors`, `temporary-member-call` and `pipelined-data-exit`, which asm6x
+  refuses at -O2 ("EXT's source and destination are on one side", EXTU for the third) - vm6747 never assembled
+  them; and `long-double-literal-exact-digits`, whose five numbers differ from .expected in the last digits on
+  sim6747 (TI's runtime prints them) and not on vm6747. `tests/ti-link.sh` -O2 on Linux (TI's lnk6x 7.4.4):
+  **828 linked, 3 failed** - the same three asm6x refusals - 34 not for this target; at -O0 on Windows (the same
+  lnk6x 7.4.4) **831 linked, 0 failed**. `release-check-box.py` on
+  Windows: **PASS, 34 programs x O1 O2 Os, 166 s**, sim ok and emu ok on every one.
+- **R104, the fixed point.** Windows, MASM spelling, -O2: **103 of 103 the same object from stages 0, 1 and 2,
+  and 103 of 103 from stages 2 and 3** (36 minutes, stage 0's cl build included). Linux -O0: stage 0 103/103 in 199 s, stage 1 103/103 (one job
+  cut at its 25 minutes at 91, resumed with SELFHOST_RESUME=1, 527 s more), stage 2 built; stage 2's compile was
+  running at the hour. The -O0 stages compile slowly because each is a -O0 build of cxx3: a whole -O0 stage passes
+  25 minutes on 2 cores, so the job is split. Linux -O2 and Windows -O0 were queued behind them. Windows -O0's first
+  try failed ("stage 0 did not build"): `self-host.cmd` stage 0 calls `msvc\build.cmd`, which relinks
+  `cxx3-msvc.exe` - a self-host in the tree a suite is running from takes the compiler from under it (below).
+- **R103, the clang oracle on Windows** (clang 19.1.5, BuildTools). `tools/windows/names-overload.cmd` cannot start
+  on this box: it names VS **Community**'s LLVM directory and the box has **BuildTools**; the suites were run
+  under Git's bash with BuildTools' clang. **overload.sh: 43 agreed, 1 differed** - `base-rvalue-reference`, which
+  includes `<utility>`: clang -std=c++11 cannot read MSVC 14.44's STL (a box limit). **names.sh: 711 passed, 161
+  failed** (872 cases; 83 first refused were the self-host relink above, re-run one by one: 58 pass). Of the 161:
+  77 hit the box's header limit (no Linux or Darwin headers for clang; MSVC's STL at C++11), 54 of them with a
+  difference as well; **45 show only extra `C1`/`D1` symbols on Itanium** (cxx1 emits the complete-object
+  constructor or destructor where clang emits none); 4 are clang 19's new `TnT_` mangling of a non-type parameter
+  of dependent type (`_Z3valIiTnT_Li9EES0_v` beside cxx1's `_Z3valIiLi9EET_v`); 35 are other differences (the
+  `__cxx1_vec_del_*` helpers, Microsoft lambda names `$_0` against `<lambda_0>`, `??_R17` beside `??_R4`). Not the
+  `.nonames` reasons only: the review's verify fails here, and a Mac or Linux clang must say which of the 45 and 35
+  are new. **win-structure.sh: names 504 agreeing, 96 differing, 225 under a .nonames**; its layout and unwind
+  checks cannot run on this box - `python3` in Git's bash is the Store stub, and with a shim the tools stop on
+  `signal.SIGPIPE`, which Windows' Python lacks - so its "557 differ" is the tools failing, not a measurement.
