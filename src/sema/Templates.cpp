@@ -359,6 +359,8 @@ static bool substitutableTokens(const std::vector<Token> &tokens, std::size_t at
 bool Templates::substituteFunction(std::size_t i, std::string *why) {
     const Specialization sp = specializations_[i];
     if (sp.explicitly) return *why = "an explicit specialization", false;
+    // The C6000's walker still reads a function's Ast body, and a substituted function has none to give it.
+    if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
     for (std::size_t q = 0; q < sp.params.size(); q++) {
         if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate) return *why = "a parameter that is not a type", false;
         const Type *b = q < sp.binding.size() ? sp.binding[q] : nullptr;
@@ -387,7 +389,7 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
         for (std::size_t q = 0; q < params.size(); q++) params[q].type = substituted(s, params[q].type);
         std::vector< ::Local> locals = f.locals();
         for (std::size_t q = 0; q < locals.size(); q++) { locals[q].type = substituted(s, locals[q].type); locals[q].declared = substituted(s, locals[q].declared); }
-        Function g(f.name(), substituted(s, f.returns()), params, StmtPtr(make_owned<Block>(std::vector<StmtPtr>())), f.frameSize(), f.isStatic(),
+        Function g(f.name(), substituted(s, f.returns()), params, p_.oneStatement({}), f.frameSize(), f.isStatic(),
                    f.sretSlot(), f.isVariadic(), f.regSaveSlot(), f.pos(), locals);
         g.setSymbol(sp.symbol);
         if (f.hasDisplayName()) g.setDisplayName(Type::displaySpelling(sp.display));
