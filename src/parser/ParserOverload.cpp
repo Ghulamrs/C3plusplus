@@ -657,6 +657,8 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     hidden.swap(locals_);
     std::vector<std::size_t> starts;
     starts.swap(scopeStarts_);
+    std::vector<std::pair<std::string, std::size_t> > blockFns;
+    blockFns.swap(blockFunctions_);
     // **The enclosing function is hidden for the same reason the locals are.**
     // [dcl.fct.default]/5 reads a default in the scope of the declaration, so what
     // the expression declares belongs there - a lambda's closure type included.
@@ -706,6 +708,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     at_ = resume;
     locals_.swap(hidden);
     scopeStarts_.swap(starts);
+    blockFunctions_.swap(blockFns);
     currentFunction_ = outerFunction;
     defaultsOwner_ = outerOwner;
     currentFunctionName_ = outerFunctionName;

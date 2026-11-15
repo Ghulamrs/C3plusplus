@@ -45,6 +45,7 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     locals_.insert(locals_.end(), constants.begin(), constants.end());
     if (haveThis) locals_.push_back(keptThis);
     scopeStarts_.clear();
+    carryBlockFunctions(outer.blockFunctions);
     alive_.clear();
     pendingTemps_.clear();
     bodyCleanupFrom_ = 0;
