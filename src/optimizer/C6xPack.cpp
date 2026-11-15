@@ -386,6 +386,8 @@ void renameOperand(MOperand &x, int from, int to) {
     if (x.kind == MOperand::Memory && x.index == from) x.index = static_cast<std::uint8_t>(to);
 }
 
+}   // namespace
+
 // C6xSched's `legalForm` on an entry: a commutative one turns its sources about where the first crosses.
 bool legalForm(MInst &r) {
     const std::string m = r.m.str();
@@ -393,6 +395,8 @@ bool legalForm(MInst &r) {
     if (crossingsOf(r) > 1 && commutes && r.operands == 3 && !isNumber(r.op[0].str()) && !isNumber(r.op[1].str())) std::swap(r.op[0], r.op[1]);
     return crossingsOf(r) <= 1 && (unitsOf(r) != 0 || isLoad(m) || isStore(m));
 }
+
+namespace {
 
 // An address over both register files, which no unit reaches.
 bool memSide(const MInst &e) {

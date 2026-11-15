@@ -730,33 +730,18 @@ void hoistInvariants(LoopText &t) {
 // once by `ADD 1, iv, iv`, `SHL iv, k, S; ADD base, S, T; LDx/STx *T` - or `ADD base, iv, T` - with base never written in the
 // loop and S, T read nowhere else, is `*P++(1<<k)`, P made once in the preheader: T where nothing else writes or exits with it.
 void inductionPointers(LoopText &t) {
-    std::vector<Line> &v = t.v;
+    const MStream &s = t.s;
     std::set<std::string> labels, named;
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (isLabel(v[i])) labels.insert(labelName(v[i]));
-        for (std::size_t o = 0; o < v[i].ops.size(); o++) named.insert(v[i].ops[o]);
-    }
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (!v[i].instr || v[i].mnem != "B" || v[i].pred.empty() || !labels.count(v[i].ops[0])) continue;
-        std::size_t h = i; int uses = 0;
-        for (std::size_t k = 0; k < i; k++) if (isLabel(v[k]) && labelName(v[k]) == v[i].ops[0]) h = k;
-        for (std::size_t k = 0; k < v.size(); k++) if (v[k].instr) for (std::size_t o = 0; o < v[k].ops.size(); o++) if (v[k].ops[o] == v[i].ops[0]) uses++;
-        if (h == i || uses != 1 || h == 0) continue;
+    namesOf(t, labels, named);
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const std::size_t h = loopHead(t, i, labels);
+        if (h == i) continue;
         // Entered by falling in from the guard's branch over a straight run - the preheader, where the pointers are made.
         std::size_t g = h;
-        while (g > 0 && v[g - 1].instr && !isBranch(v[g - 1].mnem)) g--;
-        if (g == 0 || !v[g - 1].instr || v[g - 1].mnem != "B" || v[g - 1].pred.empty()) continue;
-        bool ok = true;
+        while (g > 0 && t.instr(g - 1) && !isBranch(s[g - 1].m.str())) g--;
+        if (g == 0 || !t.instr(g - 1) || s[g - 1].m != "B" || s[g - 1].pred == kNoReg) continue;
         std::vector<std::size_t> body, exits;
-        std::set<std::string> inside;
-        for (std::size_t k = h; k <= i; k++) if (isLabel(v[k])) inside.insert(labelName(v[k]));
-        for (std::size_t k = h + 1; k < i && ok; k++) {
-            if (isLabel(v[k])) { ok = passThrough(v[k], named); continue; }
-            if (!v[k].instr) ok = false;
-            else if (isBranch(v[k].mnem)) { if (v[k].mnem != "B" || v[k].pred.empty() || inside.count(v[k].ops[0]) || !labels.count(v[k].ops[0])) ok = false; else exits.push_back(k); }
-            else body.push_back(k);
-        }
-        if (!ok) continue;
+        if (!loopBody(t, h, i, labels, named, body, exits)) continue;
         // The liveness of the loop as it is entered: its own edits step pointers it chose from registers free here.
         const std::uint64_t headIn = t.liveIn(h);
         std::uint64_t liveAtExits = t.liveOut(i);
@@ -765,16 +750,18 @@ void inductionPointers(LoopText &t) {
         std::vector<std::vector<std::string> > reads(body.size()), writes(body.size());
         std::set<std::string> used;
         for (std::size_t b = 0; b < body.size(); b++) {
-            readsAndWrites(v[body[b]], reads[b], writes[b]);
+            t.rw(body[b], reads[b], writes[b]);
             for (std::size_t r = 0; r < reads[b].size(); r++) { readers[reads[b][r]]++; used.insert(reads[b][r]); }
             for (std::size_t w = 0; w < writes[b].size(); w++) { writers[writes[b][w]]++; used.insert(writes[b][w]); }
         }
         // The counter: stepped once, by one.
         std::string iv; std::size_t stepAt = 0;
         for (std::size_t b = 0; b < body.size(); b++) {
-            const Line &l = v[body[b]];
-            if (l.mnem != "ADD" || !l.pred.empty() || l.ops.size() != 3 || writers[l.ops[2]] != 1) continue;
-            if ((l.ops[0] == "1" && l.ops[1] == l.ops[2]) || (l.ops[1] == "1" && l.ops[0] == l.ops[2])) { if (!iv.empty()) { iv.clear(); break; } iv = l.ops[2]; stepAt = b; }
+            const MInst &l = s[body[b]];
+            if (l.m != "ADD" || l.pred != kNoReg || l.operands != 3) continue;
+            const std::string a = l.op[0].str(), c = l.op[1].str(), to = l.op[2].str();
+            if (writers[to] != 1) continue;
+            if ((a == "1" && c == to) || (c == "1" && a == to)) { if (!iv.empty()) { iv.clear(); break; } iv = to; stepAt = b; }
         }
         if (iv.empty()) continue;
         std::vector<std::string> pool;
@@ -800,36 +787,39 @@ void inductionPointers(LoopText &t) {
             }
             return (liveAtExits & bitOf(r)) != 0 || (headIn & bitOf(r)) != 0;
         };
-        std::vector<Line> entry;
+        MStream entry;
         std::set<std::size_t> gone;
         for (std::size_t b = 0; b < body.size(); b++) {
-            const Line &m = v[body[b]];
-            if (!m.pred.empty() || m.ops.size() != 2 || (!isLoad(m.mnem) && !isStore(m.mnem))) continue;
-            const std::string &addr = isStore(m.mnem) ? m.ops[1] : m.ops[0];
-            if (addr.size() < 2 || addr[0] != '*' || !sideOf(addr.substr(1))) continue;
-            const std::string T = addr.substr(1);
+            const MInst &m = s[body[b]];
+            const std::string &mm = m.m.str();
+            if (m.pred != kNoReg || m.operands != 2 || (!isLoad(mm) && !isStore(mm))) continue;
+            // The address is `*T` as it stands: no step, no displacement.
+            const int at = isStore(mm) ? 1 : 0;
+            const MOperand &addr = m.op[at];
+            if (addr.kind != MOperand::Memory || addr.mode != MOperand::Base || addr.hasOffset) continue;
+            const std::string T = regName(addr.reg);
             std::vector<std::string> data;
-            registersIn(m.ops[isStore(m.mnem) ? 0 : 1], data);
+            registersIn(m.op[1 - at].str(), data);
             if (has(data, T) || T == "A15" || T == "B15" || T == iv || readAgain(T, b)) continue;
             const std::size_t ta = reaches(T, b);
             if (ta >= body.size() || gone.count(ta)) continue;
-            const Line &add = v[body[ta]];
-            if (add.mnem != "ADD" || !add.pred.empty() || add.ops.size() != 3 || isNumber(add.ops[0]) || isNumber(add.ops[1])) continue;
+            const MInst &add = s[body[ta]];
+            if (add.m != "ADD" || add.pred != kNoReg || add.operands != 3 || isNumber(add.op[0].str()) || isNumber(add.op[1].str())) continue;
             // One source is the counter, or a shift of it reaching here alone; the other the base, which the loop never writes.
             std::string S, base; long k = 0; std::size_t sa = ta; bool found = false;
             for (int side = 0; side < 2 && !found; side++) {
-                const std::string &cand = add.ops[static_cast<std::size_t>(side)], &other = add.ops[static_cast<std::size_t>(1 - side)];
+                const std::string cand = add.op[side].str(), other = add.op[1 - side].str();
                 if (!sideOf(cand) || !sideOf(other) || writers.count(other) || cand == other || other == iv) continue;
                 if (cand == iv) { base = other; found = true; break; }
                 const std::size_t sh = reaches(cand, ta);
                 if (sh >= body.size() || gone.count(sh) || (cand != T && readAgain(cand, ta))) continue;   // `ADD base, S, S` reads S once more, as T
-                const Line &shl = v[body[sh]];
-                if (shl.mnem == "SHL" && shl.pred.empty() && shl.ops.size() == 3 && shl.ops[0] == iv && isNumber(shl.ops[1]) && cand != iv) {
-                    S = cand; k = std::atol(shl.ops[1].c_str()); sa = sh; base = other; found = true;
+                const MInst &shl = s[body[sh]];
+                if (shl.m == "SHL" && shl.pred == kNoReg && shl.operands == 3 && shl.op[0].str() == iv && isNumber(shl.op[1].str()) && cand != iv) {
+                    S = cand; k = std::atol(shl.op[1].str().c_str()); sa = sh; base = other; found = true;
                 }
             }
             if (!found || k < 0 || k > 3 || base == T) continue;
-            const long size = accessSize(m.mnem), stride = 1L << k;
+            const long size = accessSize(mm), stride = 1L << k;
             if (stride % size != 0 || stride / size > 31) continue;
             // The pointer: T where this is its only write and no exit reads it, else a register the loop never names.
             std::string P = T;
@@ -840,17 +830,17 @@ void inductionPointers(LoopText &t) {
             }
             // The address the first turn uses: base + (iv << k), one more stride where the shift reads the stepped counter.
             const bool afterStep = stepAt < sa;
-            Line first = S.empty() ? make("ADD", base, iv, P) : make("SHL", iv, std::to_string(k), P);
+            MInst first = S.empty() ? MInst("ADD", base, iv, P) : MInst("SHL", iv, static_cast<long long>(k), P);
             if (!legalForm(first)) continue;
-            Line second = make("ADD", base, P, P);
+            MInst second("ADD", base, P, P);
             if (!S.empty() && !legalForm(second)) continue;
             entry.push_back(first);
             if (!S.empty()) entry.push_back(second);
-            if (afterStep) entry.push_back(make("ADD", std::to_string(stride), P, P));
-            std::vector<std::string> ops = m.ops;
-            ops[isStore(m.mnem) ? 1 : 0] = "*" + P + "++(" + std::to_string(stride) + ")";
-            if (std::getenv("CPP11_INDUCT")) std::fprintf(stderr, "induct%s -> P=%s stride=%ld base=%s S=%s after=%d\n", m.raw.c_str(), P.c_str(), stride, base.c_str(), S.c_str(), afterStep ? 1 : 0);
-            t.set(body[b], rebuilt(m.mnem, ops));
+            if (afterStep) entry.push_back(MInst("ADD", static_cast<long long>(stride), P, P));
+            MInst stepped = m;
+            stepped.op[at] = MOperand("*" + P + "++(" + std::to_string(stride) + ")");
+            if (std::getenv("CPP11_INDUCT")) std::fprintf(stderr, "induct%s -> P=%s stride=%ld base=%s S=%s after=%d\n", m.str().substr(0, m.str().size() - 1).c_str(), P.c_str(), stride, base.c_str(), S.c_str(), afterStep ? 1 : 0);
+            t.set(body[b], stepped);
             gone.insert(ta);
             if (!S.empty()) gone.insert(sa);
         }

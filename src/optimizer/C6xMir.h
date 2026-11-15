@@ -117,6 +117,7 @@ void loopPass(MStream &s, void (*pass)(LoopText &));
 Node makeNode(const MInst &i, const std::set<std::string> &labels);
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);
+bool legalForm(MInst &r);                         // the same, a commutative one's sources turned about where the first crosses
 
 // The text of a walker's helper, line by line, onto the stream: an instruction where it spells back the same.
 void read(const std::string &text, MStream &to);
