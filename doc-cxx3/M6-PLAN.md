@@ -2934,7 +2934,7 @@ a destructor alone returned, of one word and of three; a returned class referenc
 
 **Gate:** g++ -Werror (Linux) and cl /W4 /WX (Windows, work\w7b at 24caa303; 69e4ef10 after it changes only the case) clean;
 **tests/tms6747.sh SIM=1** on the final tree: Linux shards 1-3/6 at -O0, -O1 and -O2 421 / 0 each, the walker
-(CXX1_C6X_WALKER=1) at -O2 421 / 0; Windows shards 4-6/6 at -O2 410 / 0 on b46345b8 (the later commits change no -O2 text:
+(CXX1_C6X_WALKER=1) at -O2 421 / 0; Windows shards 4-6/6 at -O2 412 / 0 on b46345b8 (the later commits change no -O2 text:
 the census and every selected function are the same at -O2) and at -O0 412 / 0 on 24caa303 (work\w7b); tools/exclusions, the comment cap
 and the memory gate hold (python3); c6x-declines 0; self-compile of C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp at -O0 and -O2
 6 / 0 (Linux, final).
