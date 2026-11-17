@@ -3203,3 +3203,49 @@ x86_64-windows); names.sh on them (their constructors are inline); SIM=0, -O1, t
 **What M6d still needs:** the 2 functions above (or their two cases declared the walker's last and refused by name on the C6000 as on
 x86); then the shell's reads of Ast.h - emitFunction, emitParams, emitExceptionTable (the FESD is now read from `fn.exceptionSpec()` for
 selected bodies too: it wants the list on ir::Function), emitScope, emitData, the 16 `fn.` reads - CXX1_C6X_WALKER and the gate's wtms legs.
+
+### M6d, first round: the walked count at 0, and the shell's first reads off Ast.h - lane m6d1, 2026-11-18
+
+From m6-r1 e6a662bd. src/ +7 lines (Driver.cpp, Tms6747.cpp, Tms6747.h, C6xSelect.cpp, Lowering.cpp, Lowering.h).
+
+**(1) Walked -O0 2 -> 0, -O2 2 -> 0** (tools/ssa-census -arch tms6747, CENSUS_SOURCES=0, Linux: 11,510 of 11,510 functions selected in
+1,246 cases; tools/c6x-walked.baseline lowered in its own commit). The two functions R1 left are **refused by name on the C6000**, as on
+x86 and arm64: Driver.cpp prints a function `outside the SSA lowering` as an error for tms6747 too, so the walker is no second path for
+a refused function. `lowering-static-local-default-arguments` and `lowering-return-derived-temporary-destructor` lose their tms6747
+`.notarget` lines; their `.error` (the reason, cited in docs/EXCLUSIONS.md's owed block, whose head now names the C6000) holds on all
+four targets at -O0 and -O2. Neither was lowered: the first wants a parser record (`memberDefaults_` for a static local), the second
+the parser's destruction of the derived temporary - both C++11, owed, on every target.
+
+**(2) The shell, what moved** (each step of identical tms6747 text against e6a662bd's binary, tools/identical.sh ARCHS=tms6747 LEVELS "0 2"):
+- **the IR's function is always there**: tms6747 lowers under `CXX1_C6X_WALKER` as well (the switch is read by `ssaChoose`, no longer by
+  Driver.cpp), and `emitFunction` finds `irFn` by the symbol once - none is `unsupported`, by name. `ssaChoose(fn, f)` takes it.
+- **`emitExceptionTable(noexcept_, spec)`** takes no Ast.h `Function`: the throw(...) list is `ir::Function::spec` (filled from
+  `FunctionFacts::spec`, which Driver.cpp's `factsOf` copies), the table's names are `functionName_`.
+- **`emitFunction`** reads `irFn` for the symbol (labels, `.global`/`.weak`, the exidx entry), `isStatic`, `isInline`, `variadic`, `pos`
+  (-g's first line), `noexcept_` and `spec`: 23 lines reading `fn.` -> 12. C6xSelect.cpp 19 -> 16.
+
+**(2) The shell, what is left on Ast.h, and why it did not move in this hour.** What `ir::Function` does not carry: the parser's frame -
+`params()` (type and offset: `emitParams`, `layoutSsa`, `ssaAssign`, `selectBody`, `ssaOutside`, the variadic start), `sretSlot()`,
+`returns()` as declared (`f.returns` is unqualified), `alias()`, `hasLandingPads()` (`f.landingPads` also counts the lowering's own pads:
+reading it would move `needFrame` and 8 bytes of frame), `locals()` and `blocks()`/`blockAt()` (-g's `emitVariables`/`emitScope`, the
+frame sharing of `layoutSsaLocals`, `ssaLocalAllocas`), `name()`; and `emitData`/`emitGlobal` read `Program`'s globals. These are
+records, not nodes (`Param`, `Local`, `Function` in Ast.h), and every helper that reads them (`stackParamOffset`, `resetBlocks`,
+`planParams`) is shared with the walker's path. **So the order is the other way round**: delete the walker first (it needs only the
+walked count at 0, which holds), then give the shell one record of the frame - on `ir::Function`, or the parser's `Function` kept as a
+record in a header of its own once its `body_` is gone - rather than a copy of each field while two paths read it.
+
+**(3) Not done:** the walker (`Tms6747`'s `visit`s, `Walker` as its base, the plan/inline helpers), `CXX1_C6X_WALKER` (now in
+C6xSelect.cpp's `ssaChoose`) and tools/wave-gate's `wtms0/1/2` legs all stand. `tools/ast-residue --count` is unmoved, the start's to the
+unit: ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, visits 124, readers 14, ast-lines 850 (--check holds, +0 each).
+
+**Cycles** (tools/c6x-cycles --check, Linux shards 1-6, final tree; nothing accepted or written): -O2 **149,248,103**, R1's to the cycle,
+18 unowned worse (R1's count); -O0 on the same text (identical.sh 0 differ) - its sum is in the handover.
+
+**Gate (coding lane), final tree 91857562, Linux (~/m6d1b):** g++ -Werror clean; identical.sh ARCHS=tms6747 LEVELS "0 2" against
+e6a662bd's binary (~/r1b): 1,808 compared, **0 differ**, and 1,808 / 0 differ with CXX1_C6X_WALKER=1 on both sides (the walker's text
+with the IR lowered beside it); tests/tms6747.sh SIM=1 shards 1-6: -O2 850 passed / 0 failed, -O0 in the handover; census 0 / 0;
+c6x-declines 0; exclusions 554 sites, 0 uncited, 0 stale; the comment cap and the memory gate hold; self-compile -arch tms6747 of
+C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0 (Driver.cpp is no C6000 source: `<unistd.h>` refuses the target by name).
+**Windows and what the wave gate owes:** in boxkit/m6d1-handover.md's last lines (the cl /W4 /WX build and shards 4-6 as far as the hour
+went); x86 and arm64 identity for Lowering.cpp's one line and Driver.cpp's (identical.sh, the other ARCHS), run.sh, winpass, ssa.sh,
+SIM=0, -O1, the wtms legs, asm6x, ti-link, make test.
