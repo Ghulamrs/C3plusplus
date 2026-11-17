@@ -2667,3 +2667,12 @@ mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 o
   identical's build) is identical's to judge, not emit's FAIL. No row removed: each is one identical differs on.
 - Linux legs owed (the box is off limits): build, static, gdb, run1/2, maketest, ssa1/2, subst, selfc, identical*,
   emit, and the C6000 shards' Linux half.
+
+### Wave 22 landed - W1, W2, p7, rh1 and wf22's varargs fix, 2026-11-17 (the coordinator)
+
+- **Gate: tools/wave-gate w22h -w 006deb20 at 8283ced0** (wave22 e24b1927 + the resume entry + wf22): **43 passed, 0
+  failed, 4 not run** (the fixed points, not owed by the script's check). The first run's one FAIL was Windows `names`
+  cut by the 25-minute cap beside other steps with no count line; rerun alone by the gate (`-k`): 882 passed, 0 failed,
+  in 4 minutes. wf22 mended the Microsoft x64 varargs overflow pointer in X86_64Linux::receiveParameters
+  (`16 + (intsUsed + stackWords)*8`; main had the bug, winpass's c6x-variadic-selected found it).
+- tests/wave-expected.txt emptied (1,841 rows were this wave's).
