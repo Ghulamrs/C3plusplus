@@ -3088,3 +3088,62 @@ capped build; only C6xSelect.cpp since); SIM=0 over the suite; the walker's legs
 debug stepping on vm6747/sim6747, release-check); run.sh, winpass and ssa.sh on the other targets (CallInfo::byName is read
 by the C6000 selector alone; IrText prints `byname`, in no recorded dump today); the census on the cl build; FS3's three
 (a constructor's unwind edge, the ledger cases' reading, map-set-node-stability) and c6x-class-values -O2.
+
+### M6a.2 W8: the last walked reasons but R1's - 64-bit arguments past the sixth, an array read, a member's variadic call, a 64-bit divide - lane w8, 2026-11-18
+
+Branch m6a2-w8 from b563f30e: 63b1959f (the selector and the divide), c3eb6e53 (the baseline), a9cf1974 (the case). src/ 95,182 ->
+95,208 lines (C6xSelect.cpp, Tms6747.h, SsaDivide.cpp).
+
+- **A 64-bit argument or parameter in the seventh register or later** (`64-bit argument past the sixth` 6 / 6, `64-bit parameter
+  past the sixth` 1): the pair's high register is A11, B11, A13 or B13 - saved registers the selector gives as homes. Where one
+  arrives or leaves there (`Tms6747::ssaPairPastSixth`, the call's named words from the IR; the parameter's from its type), the
+  function takes no saved home at all, and a call that writes one saves A11-B13 in the prologue (`usesSavedPairRegs_`, the
+  walker's own flag), as A10-B12 were for a seventh word.
+- **An array read that decays** (`aggregate value` 2 / 3): `std::forward<const char (&)[6]>(a)` decayed is lowered `load const
+  char [6]` then a bitcast to `const char *` - the read is its address. A non-volatile array read whose every use is a bitcast to
+  a pointer is selected as that bitcast (`ssaArrayDecay`), and the frame's liveness follows the address through it as through a
+  bitcast (`layoutSsaTemps`' roots and touches), so an object it points at is not taken for dead.
+- **A member function's variadic call** (`variadic call` 1, va-arg-shapes' `Tally::add`): the lowering's `namedArgs` counts the
+  signature's parameters, `this` among them, so the named words and the area are already the EABI's; the `hasThis` refusal went.
+- **`smulh` 10 and `umulh` 2 at -O2**: the C6000 has no 64x64 high product, and cl6x 7.4.4 -O2 calls `__c6xabi_divlli` for
+  `x / 10LL` and `__c6xabi_remull` for `x % 7ULL` (measured, Linux box). `SsaDivide` leaves a 64-bit divide by a constant
+  that is not a power of two to the helpers on tms6747 (the target's name; a power of two is still shifts), which the selector
+  already calls as the walker does.
+
+**Walked count** (tools/c6x-walked.baseline, Linux, g++ build, 1,244 cases): **-O0 34 -> 24, -O2 47 -> 24**, every one
+`outside the SSA lowering` (R1's, boxkit/w6-outside-O2.txt; 18 cases). No other reason is left at either level.
+
+**Can M6d delete the walker?** Not yet, for three reasons the census does not count. (1) The 24 R1 functions are still walked
+at both levels: until R1's rounds lower them (or they are refused by name), deleting the walker refuses 18 cases on tms6747.
+(2) The selector runs inside the walker's shell: `emitFunction`, `emitParams`, `emitExceptionTable`, `emitVariables`/
+`emitScope` (-g's records) and `emitData` read Ast.h's `Function` and `Program` (16 reads of `fn.` in C6xSelect.cpp: params'
+offsets, the result slot, locals for the frame's sharing, `blockAt` for -g), and helpers the selector calls (`copyBlock`,
+`loadPair`, `localAddr`, `wideBinary`) live beside the walker's `visit`s in Tms6747.cpp - M6d must move those reads to the IR or
+the typed tree before Ast.h's nodes go. (3) The walker's switches: `CXX1_C6X_WALKER` in Driver.cpp and tools/wave-gate's
+`wtms*` legs (the only user in tests/ and tools/), deleted with it; asm6x and the -g legs have no walker-only path (the selector
+writes -g since M6a round 6), but their walker-all runs go too.
+
+**Case** tests/cases/c6x-last-walked (clang's .expected, the Windows box's clang, `-nostdinc++ -isystem include`): 64-bit
+arguments in the seventh, eighth and tenth registers with values live across the call, one through a function-pointer table, a
+`std::forward` of an array reference decayed, a member's variadic call, 64-bit divides and remainders by 10, 7 and -1000003. 0
+walked at -O0 and -O2 (the base walks 6 and 9); right at -O0, -O1, -O2 SIM=0 and SIM=1 and by the walker (Linux).
+
+**Cycles** (tools/c6x-cycles --check, Linux shards 1-6, a9cf1974; nothing accepted or written): **-O2 149,248,103** (FS2
+149,287,156), 735 better, 9 equal, 71 worse of which **18 unowned**: FS2's 17 at the same counts and string-literal-array-reference
+70 -> 96 (+26, main newly selected: it calls `std::forward` and `h()` out of line where the walker walked them in place - the
+[value call] family); against FS2 case by case 13 better, 818 equal, 1 worse (deque-both-ends -16,686, unordered-map -13,720,
+ssa-divide -6,749 - the helper over the serial high product). **-O0 307,812,480** (FS2 307,814,752), 781 better, 2 equal, 31 worse
+of which **4 unowned**, FS2's 4 at the same counts; against FS2 4 better, 826 equal, 2 worse under their baselines
+(string-literal-array-reference +6, va-arg-shapes +9). boxkit/w8-worse-O2.txt, w8-worse-O0.txt.
+
+**Gate (coding lane):** Linux g++ -Werror clean; cl /W4 /WX clean on C6xSelect.cpp, Tms6747.cpp and SsaDivide.cpp, linked
+(work\w8, a delta over lane fs2's objects: Tms6747.h gained two non-virtual members only - the full clean cl build is owed);
+**tests/tms6747.sh SIM=1** on the final tree, Linux shards 1-6: -O2 836 passed / 0 failed, -O0 836 / 0; the walker
+(CXX1_C6X_WALKER=1) -O2 shards 1-3 417 / 0; Windows shards 4-6/6 (work\w8, the cl build) -O2 419 / 0 and -O0 419 / 0; census -O2 24, -O0 24 (Linux); c6x-declines 0;
+tools/exclusions, the comment cap and the memory gate hold (python3); self-compile of C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp
+at -O0 and -O2 6 / 0.
+**Owed to the wave gate:** a full clean cl build; SIM=0 and -O1 over the suite; the walker's other legs; asm6x, ti-link,
+identical.sh ARCHS=tms6747 (the newly selected functions, and every 64-bit divide by a non-power constant at -O2 now a helper
+call); run.sh, winpass and ssa.sh on the other targets (SsaDivide changes only tms6747's IR; C6xSelect is the C6000's alone); the
+census on the cl build; string-literal-array-reference's +26 at -O2 with the [value call] family; R1's 24 and the shell's Ast
+reads above before M6d.
