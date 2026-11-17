@@ -469,6 +469,7 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         // The read's own layer: its signature, its typedefs and a function specialization it asks for are found in it, and go with it.
         Lookup::Layer layer = p_.lookup_.pushLayer();
         const std::size_t hadSpecializations = specializations_.size();
+        const int hadTemps = p_.refTemps_;      // its temporaries' numbers too: a `$chain4` label is the replay's to number
         const std::map<std::string, std::size_t> hadMemberTemplates = memberTemplateMade_;
         const std::map<std::string, std::vector<Owed> > hadOwed = owedBodies_;
         // The pattern is no function: what its read writes - definition, static locals, literals - is a program of its own.
@@ -503,6 +504,7 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         p_.at_ = resume;
         p_.lookup_.popLayer(layer);
         specializations_.erase(specializations_.begin() + static_cast<long>(hadSpecializations), specializations_.end());
+        p_.refTemps_ = hadTemps;
         memberTemplateMade_ = hadMemberTemplates;
         owedBodies_ = hadOwed;
         p_.syntaxTree_.kill(mark);
