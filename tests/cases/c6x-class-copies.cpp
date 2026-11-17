@@ -1,6 +1,7 @@
 // M6a.2 W7: a class whose copy or destruction is a call, passed by value on the C6000 selector - the caller builds the
 // copy in a frame slot and passes its address, as cl6x does; small and large, first and later arguments, beside words,
-// a 64-bit one and a pair, a member function's, a call through a pointer; and a class with a destructor alone returned.
+// a 64-bit one and a pair, a member function's, a call through a pointer; a class with a destructor alone returned; and
+// a reference to a class returned and dropped (at -O0 a class read nothing uses).
 #include <stdio.h>
 
 static int copies = 0, gone = 0;
@@ -43,6 +44,9 @@ struct Holder {
     int add(Counted c) const { return base + c.v; }
 };
 
+struct Sink { int n; Sink &add(int k); };
+Sink &Sink::add(int k) { n += k; return *this; }
+
 int through(int (*f)(Counted), int k) { Counted c(k); return f(c); }
 
 int main() {
@@ -61,6 +65,10 @@ int main() {
     int sum = 0;
     for (int i = 0; i < 4; i++) sum += take(Counted(i));
     printf("loop %d\n", sum);
+    Sink s = { 0 };
+    s.add(3);
+    s.add(4).add(5);
+    printf("sink %d\n", s.n);
     printf("give %d\n", give(21).v);
     Wide w = spread(5);
     printf("spread %d %d %d\n", w.w[0], w.w[1], w.w[2]);
