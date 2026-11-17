@@ -3175,7 +3175,7 @@ From m6a2-w8 1d2df724. **Walked -O0 24 -> 2, -O2 24 -> 2** (tools/ssa-census -ar
   default for a static local (`memberDefaults_` has keys for members, list elements and `^.name` entries only) - a parser record, then two lines.
 - `lowering-return-derived-temporary-destructor` (`_Z1fv`, "a class with a destructor returned from another type"): `return L();` into a
   base with a destructor - lowered and taken back: the parser releases the temporary and emits no `L::~L()` (undefined at link on
-  x86_64-linux). It needs the parser to destroy the derived temporary, which is a wrong answer of today's walker text too.
+  x86_64-linux). It needs the parser to destroy the derived temporary (whether the walker's text destroys it was not read).
 
 **Cases:** 13 `lowering-*` cases lose their `.error` and their tms6747 `.notarget` for clang's `.expected` (the Windows box's clang 19.1.5 over
 cxx3's library; all equal cxx3's x86_64-linux output); `lowering-named-return-in-handler` and `lowering-return-destructor-in-handler` are
@@ -3191,7 +3191,7 @@ other case's text moved.
 W8's totals to the cycle (R1 moved no case the baseline holds); unowned worse 18 and 4, W8's at the same counts. boxkit/r1-worse-O2.txt, -O0.txt.
 
 **Gate (coding lane):** g++ -Werror clean; tests/tms6747.sh SIM=1 on the final tree, Linux shards 1-6: -O2 850 passed / 0 failed, -O0 850 / 0;
-census 2 / 2; c6x-declines 0 (3c6f6414); exclusions 554 outside() sites (the base's), 0 uncited, 0 stale - the new refusals reuse listed
+census 2 / 2; c6x-declines 0; exclusions 554 outside() sites (the base's), 0 uncited, 0 stale - the new refusals reuse listed
 reasons; the comment cap and the memory gate hold; self-compile of C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0.
 **Windows (work\r1x), on 3c6f6414 - the tree before the last commit** (86d02a63 folds refusal sites, restores one order, shortens the case):
 full clean cl /W4 /WX build clean; SIM=1 shards 4-6 -O2 424 passed, 1 failed - c6x-lowering-refusals on vm6747 ("an exception
