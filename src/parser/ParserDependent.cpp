@@ -365,3 +365,36 @@ std::string Parser::depText(std::size_t from, std::size_t to) const {
     }
     return text;
 }
+
+// **A pattern's body reads an operand of dependent type as any other and gives it no meaning**: the
+// ordinary productions note their syntax, and what they hand on is a zero of a dependent type (M8.1).
+bool Parser::dependentOperand(const Type *t, bool pointers) const {
+    if (!patternBody_ || t == nullptr || !dependentType(t)) return false;
+    return pointers || !(t->unqualified()->isPointer() || t->unqualified()->isArray());
+}
+
+const Type *Parser::dependentResult() {
+    DepExpr n;
+    n.op = DepExpr::UnresolvedName;
+    n.name = n.text = "a dependent expression";
+    return types_.dependentExpr(depNode(n), false);
+}
+
+// One postfix step on an object of dependent type, its tokens alone: a subscript, a member's name, `++`.
+bool Parser::dependentPostfix(const Type *object, PostfixStep &step) {
+    const bool plain = dependentOperand(object, false);
+    if (consume("[")) {
+        step.index = syn(expr());
+        expect("]");
+        return true;
+    }
+    if ((peek().is(".") && plain) || (peek().is("->") && (plain || object->unqualified()->isPointer()))) {
+        std::size_t k = 1;
+        if (peekAt(k).is("template")) k++;
+        while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::")) k += 2;
+        if (peekAt(k).kind != TokenKind::Ident) return false;      // `~T`, an operator's name: the ordinary reader's refusal
+        at_ += k + 1;
+        return true;
+    }
+    return consume("++") || consume("--");
+}

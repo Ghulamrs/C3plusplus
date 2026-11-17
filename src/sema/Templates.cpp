@@ -530,7 +530,11 @@ void Templates::holdDeclarations() {
         declTally_[0]++;
         const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(declRead_[i]).loc);
         if (held == bodyOnce_.end()) declTally_[4]++;
-        else declTally_[1 + p_.syntaxTree_.differs(held->second, declRead_[i])]++;
+        else {
+            const int d = p_.syntaxTree_.differs(held->second, declRead_[i]);
+            declTally_[1 + d]++;
+            if (d == 2) declShapes_.insert(p_.syntaxTree_.node(declRead_[i]).loc);
+        }
     }
 }
 
@@ -546,6 +550,8 @@ std::string Templates::bodiesReport() const {
     out += "-check=templates declarations: functions=" + std::to_string(declTally_[0] + unread) + " read=" + std::to_string(declTally_[0]) +
            " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[1]) + " text=" + std::to_string(declTally_[2]) +
            " shape=" + std::to_string(declTally_[3]) + " unreplayed=" + std::to_string(declTally_[4]) + "\n";
+    for (std::set<std::uint32_t>::const_iterator i = declShapes_.begin(); i != declShapes_.end(); ++i)
+        out += "-check=templates declaration shape: " + p_.src_.where(*i) + "\n";
     for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i)
         out += "-check=templates unread (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;

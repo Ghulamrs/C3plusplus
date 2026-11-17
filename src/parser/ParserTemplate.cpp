@@ -1719,6 +1719,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         at_++;
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
+        if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
 
         std::vector<const Type *> argTypes;
         for (std::size_t i = 0; i < callArgs.size(); i++)
@@ -1787,6 +1788,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     at_++;
     std::vector<ExprPtr> callArgs;
     parseArguments(callArgs);
+    if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
     const std::size_t afterCall = at_;
     std::vector<const Type *> argTypes;
     for (std::size_t i = 0; i < callArgs.size(); i++) argTypes.push_back(tmpl_.deductionArgType(*callArgs[i]));
@@ -2101,6 +2103,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         if (ExprPtr mine = qualifiedMemberThroughThis(cls, *m, member, mpos)) return mine;
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
+    if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());     // a pattern class's: instantiation's to find
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");
 }

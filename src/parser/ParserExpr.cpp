@@ -84,6 +84,7 @@ const char *binOpSpelling(BinOp op) {
 // looked for on the left operand only, and the two halves are ranked together.**
 ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
                                  std::size_t pos) {
+    if (dependentOperand(lhs->type()) || dependentOperand(rhs->type())) return zeroOf(dependentResult());
     const Type *lt = lhs->type();
     const Type *rt = rhs->type();
     // **An enumeration operand asks for an operator too** - [over.match.oper]/1 names class *or enumeration* type,
@@ -171,6 +172,7 @@ ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
 // built-in", not "there is a problem"**: a class with no `operator&` has an address.
 ExprPtr Parser::overloadedUnary(const char *spelling, ExprPtr &operand,
                                 std::size_t pos) {
+    if (dependentOperand(operand->type(), false)) return zeroOf(dependentResult());
     if (!operand->type()->unqualified()->isStructOrUnion()) return nullptr;
 
     // Read before the operand is moved from: memberCallWith wants the type
@@ -307,6 +309,7 @@ ExprPtr Parser::staticCast(std::size_t pos) {
     ExprPtr v;
     { OverloadTarget hold(*this, to); v = expr(); }
     expect(")");
+    if (patternBody_ && (dependentType(to) || dependentOperand(v->type()))) return zeroOf(to);
 
     if (to->isReference()) {
         const Type *referent = to->referent();
@@ -2963,6 +2966,13 @@ ExprPtr Parser::postfix() {
         n = notePostfix(std::move(n), step);
         step = beginPostfix(n);
         std::size_t pos = peek().pos;
+        if (dependentOperand(n->type()) && dependentPostfix(n->type(), step)) { n = zeroOf(dependentResult()); continue; }
+        // A callee of dependent type: its arguments read, and a result of dependent type.
+        if (peek().is("(") && dependentOperand(n->type(), false) && !n->type()->isFunction()) {
+            at_++;
+            n = finishCall("a dependent callee", "$pattern$", std::move(n), dependentResult(), std::vector<const Type *>(), true, pos);
+            continue;
+        }
 
         // `f(1, 2)` where f is an object. **[over.call]: the call operator has to be
         // a non-static member function** - there is no non-member form of it - so the

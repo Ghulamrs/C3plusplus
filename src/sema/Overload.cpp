@@ -532,6 +532,18 @@ Signature Overload::resolveOverload(const std::string &written,
                                           const std::vector<ExprPtr> &args,
                                           std::size_t pos,
                                           const Type *object, bool objectLvalue) {
+    // A pattern's call with a dependent argument is resolved where it is instantiated: a signature of its own arguments.
+    bool dependent = false;
+    for (std::size_t i = 0; object == nullptr && i < args.size(); i++) dependent = dependent || p_.dependentOperand(args[i]->type());
+    if (dependent) {
+        Signature unresolved = Signature();
+        unresolved.name = written;
+        unresolved.symbol = "$pattern$" + written;
+        unresolved.returns = p_.dependentResult();
+        for (std::size_t i = 0; i < args.size(); i++) unresolved.params.push_back(args[i]->type());
+        unresolved.pos = pos;
+        return unresolved;
+    }
     p_.refuseOverloadArguments(args, written);
     // An unqualified name inside a namespace names that namespace's function
     // if it has one - the enclosing scopes are tried from the innermost out,

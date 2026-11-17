@@ -664,6 +664,7 @@ ExprPtr Parser::shiftOf(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos) {
 }
 
 void Parser::requireAssignable(const Expr &e, std::size_t pos, const char *what) {
+    if (dependentOperand(e.type())) return;
     if (!isLvalue(e))
         src_.fail(pos, std::string(what) + " is not something that can be assigned to");
     if (e.type()->isArray())
@@ -680,6 +681,7 @@ void Parser::requireAssignable(const Expr &e, std::size_t pos, const char *what)
 }
 
 ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t pos) {
+    if (dependentOperand(target->type()) || dependentOperand(value->type())) return zeroOf(dependentResult());
     requireAssignable(*target, pos, "the left of a compound assignment");
     const Type *to = target->type();
 
@@ -786,6 +788,7 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
 }
 
 ExprPtr Parser::incDec(ExprPtr target, bool increment, bool prefix, std::size_t pos) {
+    if (dependentOperand(target->type())) return zeroOf(dependentResult());
     // **The dummy `int` is how the standard tells the two apart**, and it is a
     // real parameter: [over.inc] gives the postfix form an extra int and passes 0
     // in it, so postfix is the ordinary two-operand resolution and prefix the one.
@@ -1192,6 +1195,7 @@ ExprPtr Parser::assign() {
 // `n = value` once both are read - by the class's `operator=` where it has one, else by bytes. Also
 // what `Base::operator=(o)` in a member of a derived class is, on the base subobject (M1 L8).
 ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
+    if (dependentOperand(n->type()) || dependentOperand(value->type())) return zeroOf(dependentResult());
     const Type *to = n->type();
     // **`t = 5` where the class declares an `operator=` that takes an int.**
     if (to->unqualified()->isStructOrUnion() && value->type() != nullptr &&

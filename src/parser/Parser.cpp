@@ -784,6 +784,7 @@ void Parser::leaveScope() {
     for (std::size_t i = scopeStarts_.back(); i < locals_.size(); i++) {
         const Local &l = locals_[i];
         if (l.offset <= 0 || !l.staticName.empty() || l.isParameter || inParams_ || l.sharesSlot) continue;
+        if (patternBody_ && dependentType(l.type)) continue;     // a pattern's local has no slot to give back
         const Type *stored = l.type->isReference() ? types_.pointerTo(l.type->referent()) : l.type;
         freeSlots_.push_back(FreeSlot{ stored, l.offset, objectAlign(stored, target_) });
     }

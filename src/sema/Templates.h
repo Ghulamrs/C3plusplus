@@ -192,6 +192,7 @@ private:
     std::set<std::uint32_t> bodyShapes_;
     // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
     long declTally_[5] = {};
+    std::set<std::uint32_t> declShapes_;
     std::map<std::string, int> declUnread_;
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;

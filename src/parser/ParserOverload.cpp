@@ -738,6 +738,7 @@ std::vector<syntax::NodeId> Parser::withDefaults(const Expr &e, const std::vecto
 
 void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
                              const std::string &what) const {
+    if (patternBody_ && (dependentType(to) || dependentOperand(from.type()))) return;
     const Type *ft = from.type();
 
     if (ft == to) return;
