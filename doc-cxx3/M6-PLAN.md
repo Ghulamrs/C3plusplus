@@ -2853,3 +2853,45 @@ the unowned cases are functions W5 newly selects, causes not read in the hour (i
 large one, +9,243 at -O2 and +31,258 at -O0). 25 (-O2) and 41 (-O0) accepted lines are now stale; the lane took none out.
 **Owed to the wave gate:** SIM=0 over the suite, the walker legs, asm6x, identical.sh ARCHS=tms6747, ti-link, cl6x's `-S`
 of the class-argument shapes, the census on the Windows cl build, and the causes of the unowned worse cases.
+
+### M6a.2 W6: calls through a value on the C6000 selector - lane w6, 2026-11-17
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp 1,350 -> 1,356 lines; branch m6a2-w6 from 94d49f8d): a call
+whose callee is a value - a function pointer, a pointer to member function once the lowering has read the slot, a virtual
+call through the vtable - is the direct call's text with the callee, the IR's first operand, loaded into B1 after the
+argument registers and before A3 or A4 takes a class result's address, then `B B1` with B3 the return (`Tms6747::call`,
+the walker's own shape); every count over the call's operands (`stack arguments`, a class argument's copy slot,
+`wideCall`) now starts past the callee. A variadic call with no named argument (`f(...)`) puts every argument in its
+area, as the walker's `visit(Call)`. cl6x's `-S` was not run: the text is the walker's, which the suites hold.
+
+**Walked count** (tools/c6x-walked.baseline, Linux, g++ build, 1,241 cases): **-O0 374 -> 137, -O2 389 -> 108**.
+`indirect call` reads 0. **Left, by reason** (-O0 / -O2): `class argument of another shape` 42 / 43 (a class with a copy
+constructor or destructor, or a variadic call's: TI's convention for the callee's copy unmeasured); `aggregate value` 45 / 3;
+`outside the SSA lowering` 24 - the lowering's own refusals (R1's rounds), by reason in boxkit/w6-outside-O2.txt: a
+function try block or an exception specification 6, a class result of another shape in the lowering 7 (from another
+type, inside a handler, with a destructor alive, a named return value built with defaults), `std::nullptr_t` returned 2,
+a constructor with bases or members to build 1, an implicit copy of a class with a bit-field or reference 1, a reference
+member bound to another type 1, a static local with default arguments 1, class locals from another type 2, an
+initializer_list of a class 1, a braced list past what the lowering places 1, a static member through an expression 1;
+`class result of another shape` 19; `N-bit smulh` 0 / 10 and `umulh` 0 / 2 (-O2: the optimizer's 64-bit divide by a
+constant); `N-bit argument past the sixth` 5, `parameter past the sixth` 1; `variadic call` 1 (va-arg-shapes: a member
+function's variadic call, `hasThis`).
+
+**Case** tests/cases/c6x-indirect-calls (clang's .expected, the Windows box's clang): calls through function pointers with
+word, 64-bit, floating, small and large class arguments and results, six register arguments, a pointer to member function
+(plain and virtual), virtual calls returning a word, a `long long` and a class, a call through a pointer inside a `try`,
+and a table of callees in a loop; 37 of 37 selected at -O2; right at -O0/-O1/-O2 with SIM=0 and SIM=1 and by the walker at
+-O2 (Windows).
+
+**Gate:** g++ -Werror (Linux, 7755c068) and cl /W4 /WX (Windows, 5c377a8a and 7755c068) clean; **tests/tms6747.sh SIM=1**:
+Linux shards 1-3/6 on the final tree 7755c068 at -O2 416/0 and -O0 416/0 (and on 5c377a8a the same); Windows shards 4-6/6 on
+5c377a8a at -O2 416/0 and -O0 416/0 - the final commit changes only template-sfinae-fallback's `main`, which is in shard 1;
+tools/exclusions, the comment cap and the memory gate hold (python3); c6x-declines 0; self-compile of C6xSelect.cpp,
+Tms6747.cpp and C6xPack.cpp at -O0 and -O2 6 / 0 (Linux, 5c377a8a).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O2 722 better, 12 equal, 81 worse of which 20
+unowned, total 192,025,550 (458f8974) -> 149,551,568** (W5 149,569,883); **-O0 591 better, 7 equal, 216 worse of which 49 unowned (37 W5's, 12 new), total 397,272,350 -> 321,403,278** (W5 321,440,599). Lists: boxkit/w6-worse-O2.txt,
+w6-worse-O0.txt - 10 of the 20 at -O2 are W5's, the other 10 cases with a call through a value now selected (ssa-layout
++24,496, complete-object-builder +9,755 and hoist-invariants +9,665 the large ones); one function read (hoist-invariants'
+`called`): its loop is right and no longer than the walker's, the cost not found in the hour.
+**Owed to the wave gate:** -O1 and SIM=0 over the suite, the walker legs, asm6x, identical.sh ARCHS=tms6747, ti-link, cl6x's
+`-S` of a call through B1, the census on the Windows cl build, the causes of the unowned worse cases, and the remainder above.
