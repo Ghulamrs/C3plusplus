@@ -900,3 +900,59 @@ agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **
 **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
 `-check=templates` by door on Windows (the Linux counts above are the measure); no `tests/cases` program was
 added. src/ lines: 95,217 before, 95,326 after.
+
+**M8.1, commit 4, second step: the class doors' own faults, a dependent member and a dependent base,
+2026-11-18** (lane m8l, branch `m8-e` from `edeb7535`; one lane-hour; code `381643e3`). Still under
+`-check=templates` alone; the replay is what emits. **Four mends.** (1) *The type table*: a pattern class the
+class door's read is first to ask for (`pair<$T0,$T1>`, asked as `pair<const K, V>` by `map`) is noted
+(`readShallow_`) and gives its arguments and namespace back when the read ends, so the unit's first asker
+names it as it always did - the class is still interned, it keeps nothing of the read's. (2) *A partial's
+"defined twice"*: the read's tag was `C<$T0>$read<mark>` with `mark` the syntax tree's size, which the read
+itself puts back - a partial with as many parameters as its primary took the primary's tag and met its
+definition; the tag takes a serial of the read's own (`readSerial_`). (3) *A dependent data member*: in a
+read's class (`Parser::readLayout_`, set by `readClassBody` for a read only) a member whose size no pattern
+has is laid out as nothing (`Type::DependentLayout`: size 0, align 1 while the member is placed), and the
+class is marked (`setDependentLayout`), so its own size asked in a body is refused by the same name as
+before, "the size of a dependent type" - never a number. (4) *A dependent base*: `struct D : B<T>` in a
+read's class leaves the base out (it is no class yet) and marks the class the same way; a member it would
+bring is then refused by name in the body that names it.
+
+**Read / not read by door**, Linux `~/m8ln` (the committed sources), `boxkit/m8l-count.sh`, `m8l-self.sh`;
+before is m8k's table above:
+
+| door | `tests/cases` before: bodies / read | after: bodies / read / unread | the self-host before | after: bodies / read / unread |
+| --- | --- | --- | --- | --- |
+| function (unchanged) | 3,478 / 3,379 | 3,478 / 3,379 / 99 | 7,512 / 7,323 | 7,512 / 7,323 / 189 |
+| class members | 4,728 / 2,755 | 12,175 / 7,529 / 4,646 | 16,745 / 12,652 | 29,421 / 20,794 / 8,627 |
+| out-of-line members | 22 / 0 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 1,737 / 251 | 607 / 442 / 165 | 3,186 / 1,054 | 1,796 / 1,389 / 407 |
+| alias type-ids | 7 / 7 | 7 / 7 / 0 | 0 | 0 |
+
+(`bodies` is a floor while a class is refused whole, so the class door's rose as its classes were read and the
+partials' fell as 1,388 / 1,835 "defined twice" classes became their few bodies.) Read bodies against their
+replays, cases: class members 1,083 the same, 553 in text, **2 in shape**, 5,891 unreplayed; the self-host
+3,722 / 2,861 / 0 / 14,211. **Gone** (cases / self-host): the class: a base has to be complete (666 / 826), the
+class: the size of a dependent type (278 / 514, partials 62 / 101), a partial's "defined twice" (1,388 / 1,835).
+**Not read, by reason, after**: no function called takes these arguments (2: 1,768 / 2,652; 4: 408 / 612; 3:
+136 / 204; 1: 91 / 259) - REF's own wall (85 / 198 there), now met in the classes it could not read: an
+unqualified call of the class's own member with a member access as an argument, `void set(const S &o) {
+assign(o.p, o.n); }`, where `this->assign(o.p, o.n)` and `assign(s, k)` both read, and a parameter `C *` fails as `const C *`
+does - so it is the argument: `o.p` through a reference to the class being read looks dependent, and the
+call is resolved over it instead of held (probes in Linux `~/m8l-probe`; not confirmed, not mended); the size of a dependent type in a body (641 / 1,398; partials 16 / 96);
+a template parameter in this place of a signature (589 / 915; partials 68 / 102); the arms of `?:` (342 / 555;
+partials 16 / 96); the pseudo-destructor (168 / 396); the class: "expected" a token (162 / 204); declares no
+member with these parameters (59 / 101, and as many in partials); in-class initialiser of a static member
+(84 / 102); has no member called (40 / 352); was not declared (27 / 311); incomplete type (the class 69 / 85,
+a body 14 / 178, out-of-line's class 11); the class: declared twice (11 / 127); needs a complete type (4 / 90).
+
+**The flag against no flag** (`-S`, Linux): the cases **0 differ** of 1,239 (4 before); the self-host **102 of
+103 the same and `Driver`** in its `__TIME__` line alone (its diff opened: one `.byte` line; 69 differed
+before).
+
+**Left of commit 4**: (1) the unqualified own-member call above - the largest reason by far, and one root;
+(2) a dependent size in a body, and the signature's "this place" (the expression reader's shapes); (3) the
+pseudo-destructor over a dependent type (`explicitDestructorCall` compares `named` with `plain`; in a read
+either may be dependent - one condition, not made because the function door shares the line and the gates
+were already running); (4) "has no member" through a base left out; (5) a door for member templates - not
+started; (6) the out-of-line door's 14 (11 an incomplete class, 3 "declares no member"). The signature's
+expression reader: not started.
