@@ -169,9 +169,17 @@ public:
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);
     // A function template's definition read once in pattern mode where it is declared; at the unit's end, held against its first replay.
-    void readDeclaration(const TemplateDecl &decl);
+    // M8.1 commit 4's doors read the same way under -check=templates: `which` is the out-of-line member or the partial.
+    enum ReadDoor { ReadFunction, ReadClass, ReadOutOfLine, ReadPartial, ReadAlias, ReadDoors };
+    void readDeclaration(const TemplateDecl &decl, ReadDoor door = ReadFunction, std::size_t which = 0);
+    void tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody);
+    const Type *readClassBody(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
+                              const std::vector<TemplateArg> &args, const std::vector<TemplateParam> &useParams,
+                              const std::vector<const Type *> &useBinding, const std::vector<long long> &useValues,
+                              const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
+    std::map<std::string, const Type *> readPattern_;
     void holdDeclarations();
-    std::vector<syntax::NodeId> declRead_;
+    std::vector<syntax::NodeId> declRead_[ReadDoors];
     std::string bodiesReport() const;
     // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
     bool substitute_ = false, substituteDebug_ = false;
@@ -191,10 +199,10 @@ private:
     long signatureTally_[2] = {};       // replays of a function template whose signature was kept, and those whose parameters agree
     std::set<std::uint32_t> bodyShapes_;
     // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
-    long declTally_[5] = {};
+    long declTally_[ReadDoors][5] = {};
     std::set<std::uint32_t> declShapes_;
     std::vector<std::string> declShapeTrees_;     // each shape's two trees: the read's, then the first replay's
-    std::map<std::string, int> declUnread_;
+    std::map<std::string, int> declUnread_[ReadDoors];
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.

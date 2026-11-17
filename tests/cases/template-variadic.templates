@@ -4,3 +4,4 @@
 -check=templates shape: tests/cases/template-variadic.cpp:38:37
 -check=templates declarations: functions=4 read=1 unread=3 same=1 text=0 shape=0 unreplayed=0
 -check=templates unread (3): the size of a dependent type
+-check=templates declarations class-members: bodies=1 read=1 unread=0 same=1 text=0 shape=0 unreplayed=0

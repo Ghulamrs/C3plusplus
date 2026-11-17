@@ -450,6 +450,7 @@ bool Parser::templateDeclaration() {
         }
         expect(";");
         tmpl_.templates_[decl.name] = decl;
+        tmpl_.readDeclaration(decl, sema::Templates::ReadAlias);
         return true;
     }
 
@@ -560,6 +561,7 @@ bool Parser::templateDeclaration() {
         at_ = decl.afterParams;
         skipTemplatedDefinition();
         primary->second.partials.push_back(ps);
+        tmpl_.readDeclaration(primary->second, sema::Templates::ReadPartial, primary->second.partials.size() - 1);
         return true;
     }
 
@@ -649,6 +651,7 @@ bool Parser::templateDeclaration() {
         ool.isData = !defined && (sawInit || constructs || dataNoInit);
         ool.nested = nestedIn;
         owner->second.outOfLine.push_back(ool);
+        if (!ool.isData && owner->second.defined) tmpl_.readDeclaration(owner->second, sema::Templates::ReadOutOfLine, owner->second.outOfLine.size() - 1);
         return true;
     }
 
@@ -691,6 +694,7 @@ bool Parser::templateDeclaration() {
                             "yet - a specialization is written 'template <> "
                             "struct " + decl.name + "<...>'");
     }
+    if (decl.defined) tmpl_.readDeclaration(decl, sema::Templates::ReadClass);
     return true;
 }
 
