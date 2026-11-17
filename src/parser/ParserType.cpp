@@ -205,6 +205,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // laid down in the order written, which is the order their constructors run in.
     struct WrittenBase { const Type *type; Access access; bool isVirtual; };
     std::vector<WrittenBase> written;
+    bool dependentLaid = false;     // a class door's read: a dependent base or member, in no layout
     if (peek().is(":")) {
         at_++;
         for (;;) {
@@ -232,6 +233,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 if (b != nullptr) b = b->unqualified();
             } else {
                 baseName = expectIdent("a base class name");
+            }
+            // A read's `struct D : B<T>`: the base is no class yet, so it is left out and its members are not found.
+            if (readLayout_ && b != nullptr && b->isSpecialization() && !b->isComplete() && dependentArgs(b->templateArgs())) {
+                dependentLaid = true;
+                if (!consume(",")) break;
+                continue;
             }
             if (b == nullptr || !b->isStructOrUnion())
                 src_.fail(bpos, "'" + baseName + "' is not a class, so it "
@@ -1298,6 +1305,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // declared type stays the reference, which makes every read dereference.
             const Type *slot = d.type->isReference()
                              ? types_.pointerTo(d.type->referent()) : d.type;
+            const Type::DependentLayout laid(readLayout_);
             int a = Packed::to(slot->align(target_), pack);
             refuseWeakAlignas(mquals.alignAs, slot, d.pos);
             if (mquals.alignAs > a) a = mquals.alignAs;
@@ -1366,6 +1374,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (kind == Kind::Union) { if (endBits > widestBits) widestBits = endBits; }
             else bitCursor = endBits;
             msUnitBits = 0;          // a member that is not a bitfield closes the unit
+            dependentLaid = dependentLaid || laid.met();
             if (!consume(",")) break;
         }
         if (!heldBody) expect(";");
@@ -1554,6 +1563,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (noData) empties.push_back(Type::EmptyAt{ type, 0 });
     type->setEmptySubobjects(empties);
     type->complete(members, size, align);
+    if (dependentLaid) type->setDependentLayout();
     // Held bodies are read now, class complete, so a body may name a later member; taken out of the vector first,
     // since a body may define a class with held bodies. A specialization also takes its nested classes' bodies,
     // [temp.inst]/2; **so does any class** (1.27, item 3): a nested one waits for the outermost, [class.mem]/2.

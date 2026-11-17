@@ -520,6 +520,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         std::vector<Shadow> undo;
         p_.clearFunctionState();
         Type::nameDependentSizes(true);
+        classDoor_ = door != ReadFunction;
         try {
             Parser::Trial trial(&p_);
             const std::vector<long long> values(binding.size(), 0);
@@ -542,7 +543,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, packs);
                 const std::string tag = specializationKey(decl.name, args);
                 std::vector<Parser::PendingBody> bodies;
-                const Type *made = readClassBody(decl, tag + "$read" + std::to_string(mark), partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
+                const Type *made = readClassBody(decl, tag + "$read" + std::to_string(readSerial_++), partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
                 readPattern_[tag] = made;
                 p_.replayingInline_ = true;
@@ -570,6 +571,13 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
             tallied = false;
         }
         readPattern_.clear();
+        // A pattern class the read was first to ask for keeps no arguments of the read's: the unit's first asker gives its own.
+        for (std::size_t s = 0; s < readShallow_.size(); s++) {
+            readShallow_[s]->setSpecialization(std::string(), std::vector<TemplateArg>());
+            readShallow_[s]->setTemplateNamespace(std::string());
+        }
+        readShallow_.clear();
+        classDoor_ = p_.readLayout_ = false;
         p_.classStack_ = wasClasses;
         p_.currentClass_ = wasClass;
         p_.inlineOwner_ = wasInline;
@@ -1736,9 +1744,11 @@ const Type *Templates::readClassBody(const TemplateDecl &decl, const std::string
     // And its body names things in its own namespace, as a function template's does, wherever it is used from.
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+    p_.readLayout_ = kept != nullptr;      // a read's class is laid out over its dependent members and bases
     const Type *made = partial
         ? p_.structOrUnionSpecifier(Kind::Struct, false)
         : p_.specifiers(&sc, &quals);
+    p_.readLayout_ = false;
     p_.namespaceStack_ = outerStack;
     p_.angleSplit_ = outerAngle;
     p_.classInstantiationTag_.clear();
@@ -1793,7 +1803,10 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // **A pattern's `C<T>`**, the stand-in applied: a shape deduction matches and Itanium spells `T_I...E`.
     if (decl.ttParam >= 0) {
         Type *shallow = p_.types_.structType(Kind::Struct, tag);
-        if (!shallow->isSpecialization()) shallow->setSpecialization(decl.name, args);
+        if (!shallow->isSpecialization()) {
+            shallow->setSpecialization(decl.name, args);
+            if (classDoor_) readShallow_.push_back(shallow);
+        }
         p_.lookup_.declareTypeName(tag, shallow);
         return shallow;
     }
@@ -1806,6 +1819,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
         if (!shallow->isSpecialization()) {
             shallow->setSpecialization(decl.name, args);
             shallow->setTemplateNamespace(decl.ns);
+            if (classDoor_) readShallow_.push_back(shallow);
         }
         // Registered so that `Box<T>::get` reads: the declarator's qualified
         // path looks the class up by name, and this is the only name it has.

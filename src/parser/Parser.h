@@ -226,6 +226,7 @@ private:
     bool patternOnly_ = false;
     // M8.1: a function template's body is being read at its declaration - a dependent local takes no slot, a pattern no linker name.
     bool patternBody_ = false;
+    bool readLayout_ = false;       // a class door's read is laying its class out: Type::DependentLayout
     // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
     bool patternUses_ = false;
     // M8.1: a pattern is read into a program of its own (`unit_` is the unit's meanwhile), its labels off a count of its own.

@@ -178,6 +178,9 @@ public:
                               const std::vector<const Type *> &useBinding, const std::vector<long long> &useValues,
                               const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
     std::map<std::string, const Type *> readPattern_;
+    std::vector<Type *> readShallow_;
+    std::size_t readSerial_ = 0;
+    bool classDoor_ = false;
     void holdDeclarations();
     std::vector<syntax::NodeId> declRead_[ReadDoors];
     std::string bodiesReport() const;
