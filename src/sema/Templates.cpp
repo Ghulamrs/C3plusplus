@@ -1666,7 +1666,10 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
         return shallow;
     }
 
-    if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
+    if (const Type *had = p_.lookup_.findTypedef(tag)) {
+        if (!p_.patternUses_) madeWhereAsked(tag, pos);
+        return had;
+    }
     const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
@@ -1788,6 +1791,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // Its member bodies, replayed later, ask from one deeper than the body that asked for the class.
     sp.depth = p_.instantiationDepth_ + 1;
     refuseInstantiationDepth(decl.name, sp.depth, pos);
+    if (replayed.was) askedByPattern_[tag] = specializations_.size();
     specializations_.push_back(sp);
     return made;
 }
