@@ -312,10 +312,9 @@ static bool c6xDestructorName(const std::string &s) {
     return p < s.size() && (s.compare(p, std::string::npos, "D1Ev") == 0 || s.compare(p, std::string::npos, "D2Ev") == 0);
 }
 
-// The objects that are no local (temporaries, an inlined callee's), by liveness: two never live together lie in the same bytes.
-// One is live from a touch of its address until the lowering's own destructor call on it, where its storage ends; a destructor
-// called by name (CallInfo::byName) ends nothing, a stored pointer may build there again. One whose address never leaves the
-// function's loads, stores and copies lives to its last touch. Past 256 of them, or with one alone, each has its own bytes.
+// The objects that are no local (temporaries, an inlined callee's): two never live together lie in the same bytes. One is live
+// from a touch of its address to the lowering's own destructor call on it, where its storage ends - never to one called by name
+// (CallInfo::byName) - or, its address never leaving, to its last touch. Past 256 of them, or with one alone, each has its own.
 int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
     std::vector<std::size_t> todo;
     std::vector<int> idx(f.frame.size(), -1);
