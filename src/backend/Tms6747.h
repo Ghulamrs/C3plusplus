@@ -244,8 +244,8 @@ private:
     void moveValue(const Type *t, const char *reg);  // accumulator -> reg (pair)
     void fpConst(const Type *t, double v, const char *reg);
     void isZero(const Type *t);               // A4 = (accumulator == 0)
-    void fpBinary(const Binary &n, bool dp);  // operands in A5:A4 / A7:A6
-    void wideBinary(const Binary &n);         // 64-bit integers, the same places
+    void fpBinary(BinOp op, bool dp);       // operands in A5:A4 / A7:A6
+    void wideBinary(BinOp op, bool sign);     // 64-bit integers, the same places
     bool constDivisor(const Binary &n, long long &d) const;   // -O1 and up: a 32-bit / or % by a constant
     void divideByConstant(bool quotient, bool sign, long long d);   // A4 = A4 / d or A4 % d, no helper
     void wideCast(const Type *from, const Type *to);
@@ -309,6 +309,11 @@ private:
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
     void ssaClassResult(const Type *t);       // a class result from its address in A4 (W3)
+    // A 64-bit value (W4) has no home: eight bytes of the frame, read into a pair and written from A5:A4.
+    bool ssaWideV(const ir::Function &f, ir::ValueId v) const { return v.valid() && f.value(v).type.valid() && isWide(ssaType(f, v)); }
+    void ssaPair(const ir::Function &f, ir::ValueId v, const char *lo);    // v into lo's pair, or a word into lo
+    void ssaKeep(const ir::Function &f, ir::ValueId v);                    // A5:A4, or A4, into v's place
+    bool ssaWideInst(const ir::Function &f, const ir::Inst &i);            // an instruction over 64-bit or floating values
     // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
     std::vector<char> ssaInner_;
     std::string ssaBlockLabel(ir::BlockId b) const { return label(b.v < ssaInner_.size() && ssaInner_[b.v] ? "ssain" : "ssa", static_cast<int>(b.v)); }

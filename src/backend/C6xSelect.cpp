@@ -36,8 +36,9 @@ const char *const kHome[] = { "A10", "A11", "A12", "A13", "B10", "B11", "B12", "
                               "B24", "B25", "B26", "B27", "B28", "B29", "B30", "B31" };
 const unsigned kKept = 0xffu, kScratch = 0xffffff00u, kScratchA = 0xffff00u, kBside = 0xff0000f0u;
 
-bool callsOut(ir::Op op) {     // a call, or the EABI's divide helper
-    return op == ir::Op::Call || op == ir::Op::Invoke || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem;
+bool callsOut(ir::Op op) {     // a call, or an EABI helper: a divide, or a conversion that may be one
+    return op == ir::Op::Call || op == ir::Op::Invoke || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem ||
+           op == ir::Op::FDiv || op == ir::Op::FpToSi || op == ir::Op::FpToUi || op == ir::Op::SiToFp || op == ir::Op::UiToFp;
 }
 
 // A constant of lo..hi, as movImm would write it.
@@ -68,20 +69,19 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     // A class result (W3): in A5:A4, or copied through A3's pointer, or built through the hidden first parameter in A4.
     const bool cls = fn.returns()->isStructOrUnion(), hidden = fn.sretSlot() != 0 && hiddenInA4(fn.returns());
     if (f.sret.valid() != hidden || (cls ? !inPair(fn.returns()) && fn.sretSlot() == 0 : fn.sretSlot() != 0)) return "class result of another shape";
-    if (!cls && (fn.returns()->isFloating() || (!fn.returns()->isVoid() && accessSize(fn.returns()) > 4))) return "floating or 64-bit result";
     if (fn.params().size() != f.params.size()) return "parameters differ";
     for (std::size_t n = 0; n < fn.params().size(); n++) {
         const Type *p = fn.params()[n].type;
-        if (!p->isStructOrUnion()) { if (accessSize(p) > 4) return "64-bit parameter"; continue; }
+        // A 64-bit parameter (W4) arrives in a pair; past the sixth the pair's high register is a home (A11, B11, A13, B13).
+        if (!p->isStructOrUnion()) { if (accessSize(p) > 4 && n + (hidden ? 1 : 0) >= 6) return "64-bit parameter past the sixth"; continue; }
         if (!ssaTypes_->type(f.values[f.params[n].v].type)->isPointer()) return "class parameter of another shape";
     }
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
         if (t->isVoid()) continue;
-        if (t->isFloating()) return "floating value";
         if (t->isStructOrUnion() || t->isArray() || t->isFunction()) return "aggregate value";
-        if (t->size(target_) > 4) return "64-bit value";
+        if (t->size(target_) > 8) return "a value past 64 bits";
     }
     for (ir::BlockId b : f.blocks) {
         const ir::Block &blk = f.block(b);
@@ -91,7 +91,16 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
             const ir::Inst &i = f.inst(id);
-            for (const ir::Succ &s : i.succ) if (s.count > kStages) return "a branch past eight arguments";
+            // A 64-bit argument of a branch is staged in a pair of the eight registers.
+            for (const ir::Succ &s : i.succ) {
+                std::uint32_t stage = 0;
+                for (std::uint32_t a = 0; a < s.count; a++) stage = ssaWideV(f, f.arg(s, a)) ? (stage + 1) / 2 * 2 + 2 : stage + 1;
+                if (stage > kStages) return "a branch past eight arguments";
+            }
+            bool wide = ssaWideV(f, i.result);
+            for (std::uint32_t n = 0; n < i.count; n++) wide = wide || ssaWideV(f, f.operand(i, n));
+            if (wide && (i.op == ir::Op::Gep || i.op == ir::Op::Switch || i.op == ir::Op::UMulH || i.op == ir::Op::SMulH || i.op == ir::Op::PtrToInt ||
+                         i.op == ir::Op::IntToPtr || i.op == ir::Op::VaStart || i.op == ir::Op::CondBr)) return "64-bit " + ir::opName(i.op);
             switch (i.op) {
             case ir::Op::IConst: case ir::Op::Null: case ir::Op::Undef: case ir::Op::Addr: case ir::Op::Alloca:
             case ir::Op::Load: case ir::Op::Store: case ir::Op::Gep:
@@ -102,9 +111,9 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::Br: case ir::Op::CondBr: case ir::Op::Switch: case ir::Op::Ret: case ir::Op::Unreachable:
             case ir::Op::CatchPad: case ir::Op::CleanupPad:
             case ir::Op::VaStart: case ir::Op::VaArg: case ir::Op::VaEnd:
-                break;
-            case ir::Op::ICmp:
-                if (i.cc > ir::Cmp::Uge) return "a floating comparison";
+            case ir::Op::ICmp: case ir::Op::SMulH:
+            case ir::Op::FConst: case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: case ir::Op::FNeg: case ir::Op::FCmp:
+            case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp: case ir::Op::UiToFp: case ir::Op::FpExt: case ir::Op::FpTrunc:
                 break;
             case ir::Op::Call: case ir::Op::Invoke: {
                 const ir::CallInfo &c = f.calls[i.call];
@@ -118,6 +127,13 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 if (!c.variadic && i.count + (hiddenInA4(cr) ? 1 : 0) > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
                 for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
                     if (p->isStructOrUnion()) return "class argument";
+                // A 64-bit argument (W4) goes in its register's pair: not among a variadic call's words, nor past the sixth.
+                const std::uint32_t named = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
+                for (std::uint32_t n = 0; n < i.count; n++) {
+                    if (!ssaWideV(f, f.operand(i, n))) continue;
+                    if (n >= named) return "64-bit variadic argument";
+                    if (n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
+                }
                 break;
             }
             default:
@@ -152,7 +168,8 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid()) continue;
         if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) || ssaHome_[v] != 0 || ssaFused_[v]) continue;
-        cur = roundUp(cur, 4) + 4;
+        const bool pair = isWide(ssaTypes_->type(f.values[v].type));
+        cur = roundUp(cur, pair ? 8 : 4) + (pair ? 8 : 4);
         ssaValueSlot_[v] = cur;
     }
     ssaAllocaSlot_.assign(f.frame.size(), 0);
@@ -285,21 +302,35 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
             if (m != n && (moves[m].second.v == moves[n].first.v || (ssaHome_[moves[m].second.v] != 0 && ssaHome_[moves[m].second.v] == ssaHome_[moves[n].first.v]))) clash = true;
     if (!clash) {
         for (std::size_t m = 0; m < moves.size(); m++) {
+            if (ssaWideV(f, moves[m].second)) { ssaPair(f, moves[m].first, "A4"); ssaKeep(f, moves[m].second); continue; }
             if (const char *h = ssaHomeOf(moves[m].second)) { ssaLoad(f, moves[m].first, h); continue; }
             const std::string r = ssaUse(f, moves[m].first, "A4");
             ssaStore(f, moves[m].second, r.c_str());
         }
         return;
     }
+    // Each move's staging register; a 64-bit one (W4) takes the next even:odd pair, as ssaOutside counted them.
+    std::vector<std::size_t> stage(moves.size(), 0);
+    for (std::size_t m = 0, at = 0; m < moves.size(); m++) {
+        const bool pair = ssaWideV(f, moves[m].second);
+        stage[m] = pair ? (at + 1) / 2 * 2 : at;
+        at = stage[m] + (pair ? 2 : 1);
+    }
     bool loads = false;
     for (std::size_t m = 0; m < moves.size(); m++) {
-        if (remade(f, moves[m].first) || ssaHome_[moves[m].first.v] != 0 || ssaFused_[moves[m].first.v] == 2) { ssaLoad(f, moves[m].first, kStage[m]); continue; }
+        const char *st = kStage[stage[m]];
+        if (ssaWideV(f, moves[m].second)) { ssaPair(f, moves[m].first, st); continue; }
+        if (remade(f, moves[m].first) || ssaHome_[moves[m].first.v] != 0 || ssaFused_[moves[m].first.v] == 2) { ssaLoad(f, moves[m].first, st); continue; }
         const std::string mem = ssaMem(ssaValueSlot_[moves[m].first.v], 4);
-        ssaEmit(c6x::MInst("LDW", mem, kStage[m]));
+        ssaEmit(c6x::MInst("LDW", mem, st));
         loads = true;
     }
     if (loads) ssaNop(4);
-    for (std::size_t m = 0; m < moves.size(); m++) ssaStore(f, moves[m].second, kStage[m]);
+    for (std::size_t m = 0; m < moves.size(); m++) {
+        if (!ssaWideV(f, moves[m].second)) { ssaStore(f, moves[m].second, kStage[stage[m]]); continue; }
+        const std::string mem = ssaMem(ssaValueSlot_[moves[m].second.v], 8);
+        out_ << "\tSTDW\t" << pairOf(kStage[stage[m]]) << ", " << mem << "\n";
+    }
 }
 
 // **Homes for the values** (M6b), as arm64's ssaAssign: a linear scan over live ranges, a range that crosses a call in a
@@ -381,7 +412,8 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             for (std::size_t s = 0; s < i.succ.size(); s++)
                 for (std::uint32_t n = 0; n < i.succ[s].count; n++) { use(f.arg(i.succ[s], n), 1); if (f.arg(i.succ[s], n).valid()) kept2[f.arg(i.succ[s], n).v] = 1; }
             if (i.result.valid()) weight[i.result.v] += heat;
-            const bool compare = i.op == ir::Op::ICmp && k + 1 == blk.insts.size() && blk.term.valid();
+            const bool word = i.op == ir::Op::ICmp && i.cc <= ir::Cmp::Uge && !ssaWideV(f, f.operand(i, 0)) && !ssaType(f, f.operand(i, 0))->isFloating();
+            const bool compare = word && k + 1 == blk.insts.size() && blk.term.valid();
             if (compare && f.inst(blk.term).op == ir::Op::CondBr && f.operand(f.inst(blk.term), 0).v == i.result.v) ssaFused_[i.result.v] = 1;
         }
     }
@@ -390,6 +422,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     // at its call: held from its definition, it takes a saved register across a call between the two.
     for (std::size_t v = 1; v < nv; v++) {
         if (!f.values[v].def.valid() || f.inst(f.values[v].def).op != ir::Op::Bitcast || uses[v] == 0 || kept2[v]) continue;
+        if (ssaWideV(f, ir::ValueId(static_cast<std::uint32_t>(v)))) continue;
         const ir::ValueId from = f.operand(f.inst(f.values[v].def), 0);
         if (!remade(f, from)) continue;
         ssaFused_[v] = 2;
@@ -430,6 +463,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<std::size_t> order;
     for (std::size_t v = 1; v < nv; v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v]) continue;
+        if (isWide(ssaTypes_->type(f.values[v].type))) continue;      // a 64-bit value lives in the frame (W4)
         // A remade value a loop reads keeps a register where one is free, and no weight: any other value takes it back.
         hot[v] = hot[v] && hoists(f, ir::ValueId(static_cast<std::uint32_t>(v)));
         if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && (!hot[v] || unwound[v])) continue;
@@ -529,6 +563,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     // A cast of a remade value that won no register is remade where it is read: two instructions, where a word is a store and loads.
     for (std::size_t v = 1; v < nv; v++) {
         if (ssaHome_[v] != 0 || ssaFused_[v] || !f.values[v].def.valid() || f.inst(f.values[v].def).op != ir::Op::Bitcast) continue;
+        if (ssaWideV(f, ir::ValueId(static_cast<std::uint32_t>(v)))) continue;
         if (remade(f, f.operand(f.inst(f.values[v].def), 0))) ssaFused_[v] = 2;
     }
     for (int r = 0; r < 8; r++) if (taken & (1u << r)) promoted_.push_back(kHome[r]);
@@ -548,6 +583,137 @@ bool Tms6747::ssaCompare(const ir::Function &f, const ir::Inst &c, const std::st
     const char *op = c.cc == ir::Cmp::Eq || c.cc == ir::Cmp::Ne ? "CMPEQ" : gt ? (u ? "CMPGTU" : "CMPGT") : (u ? "CMPLTU" : "CMPLT");
     ssaEmit(c6x::MInst(op, a, b, d));
     return c.cc == ir::Cmp::Ne || c.cc == ir::Cmp::Sle || c.cc == ir::Cmp::Ule || c.cc == ir::Cmp::Sge || c.cc == ir::Cmp::Uge;
+}
+
+// v into lo's pair (W4): a constant's two words, else its eight bytes of the frame; a word goes into lo alone.
+void Tms6747::ssaPair(const ir::Function &f, ir::ValueId v, const char *lo) {
+    if (!ssaWideV(f, v)) { ssaLoad(f, v, lo); return; }
+    const std::string pair = pairOf(lo), hi = pair.substr(0, pair.find(':'));
+    const ir::Inst *d = f.value(v).def.valid() ? &f.inst(f.value(v).def) : nullptr;
+    if (d != nullptr && (d->op == ir::Op::IConst || d->op == ir::Op::Null)) {
+        const unsigned long long k = d->op == ir::Op::Null ? 0 : static_cast<unsigned long long>(d->k);
+        movImm(lo, static_cast<long long>(k & 0xffffffffu));
+        movImm(hi.c_str(), static_cast<long long>(k >> 32));
+        return;
+    }
+    const std::string m = ssaMem(ssaValueSlot_[v.v], 8);
+    out_ << "\tLDDW\t" << m << ", " << pair << "\n\tNOP\t4\n";
+}
+
+void Tms6747::ssaKeep(const ir::Function &f, ir::ValueId v) {
+    if (!ssaWideV(f, v)) { ssaStore(f, v, "A4"); return; }
+    if (ssaValueSlot_[v.v] == 0) return;
+    const std::string m = ssaMem(ssaValueSlot_[v.v], 8);
+    out_ << "\tSTDW\tA5:A4, " << m << "\n";
+}
+
+// **An instruction over 64-bit or floating values** (W4), in the walker's places and by its text: the left operand in
+// A5:A4 (A4 for a float), the right in A7:A6, the C674x's instructions and the EABI's helpers. False: a word's instruction.
+bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
+    const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
+    const ir::ValueId a = i.count > 0 ? f.operand(i, 0) : ir::ValueId(), b = i.count > 1 ? f.operand(i, 1) : ir::ValueId();
+    const Type *ot = a.valid() ? ssaType(f, a) : nullptr;
+    const bool wr = rt != nullptr && isWide(rt), wa = ssaWideV(f, a), fa = ot != nullptr && ot->isFloating();
+    const auto two = [&]() { ssaPair(f, a, "A4"); ssaPair(f, b, "A6"); };
+    switch (i.op) {
+    case ir::Op::FConst:
+        movImm("A4", static_cast<long long>(i.bits & 0xffffffffu));
+        if (wr) movImm("A5", static_cast<long long>(i.bits >> 32));
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::Load: {
+        if (!wr) return false;
+        std::string mem;
+        if (!ssaFrameMem(f, a, 8, mem)) mem = "*" + ssaUse(f, a, "A4");
+        out_ << "\tLDDW\t" << mem << ", A5:A4\n\tNOP\t4\n";
+        ssaKeep(f, i.result);
+        return true;
+    }
+    case ir::Op::Store: {
+        if (!ssaWideV(f, b)) return false;
+        ssaPair(f, b, "A4");
+        std::string mem;
+        if (!ssaFrameMem(f, a, 8, mem)) mem = "*" + ssaRead(f, a, "A6");
+        out_ << "\tSTDW\tA5:A4, " << mem << "\n";
+        return true;
+    }
+    case ir::Op::Add: case ir::Op::Sub: case ir::Op::Mul: case ir::Op::SDiv: case ir::Op::UDiv: case ir::Op::SRem: case ir::Op::URem:
+    case ir::Op::And: case ir::Op::Or: case ir::Op::Xor: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
+        if (!wr) return false;
+        two();
+        const BinOp op = i.op == ir::Op::Add ? BinOp::Add : i.op == ir::Op::Sub ? BinOp::Sub : i.op == ir::Op::Mul ? BinOp::Mul :
+                         i.op == ir::Op::SDiv || i.op == ir::Op::UDiv ? BinOp::Div : i.op == ir::Op::SRem || i.op == ir::Op::URem ? BinOp::Mod :
+                         i.op == ir::Op::And ? BinOp::BitAnd : i.op == ir::Op::Or ? BinOp::BitOr : i.op == ir::Op::Xor ? BinOp::BitXor :
+                         i.op == ir::Op::Shl ? BinOp::Shl : BinOp::Shr;
+        wideBinary(op, i.op == ir::Op::SDiv || i.op == ir::Op::SRem || i.op == ir::Op::AShr);
+        ssaKeep(f, i.result);
+        return true;
+    }
+    case ir::Op::Neg: case ir::Op::Not:
+        if (!wr) return false;
+        if (i.op == ir::Op::Not) { ssaPair(f, a, "A4"); out_ << "\tXOR\t-1, A4, A4\n\tXOR\t-1, A5, A5\n"; }
+        else { ssaPair(f, a, "A6"); out_ << "\tZERO\tA4\n\tZERO\tA5\n"; wideBinary(BinOp::Sub, true); }
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::ICmp: case ir::Op::FCmp: {
+        if (!wa && !fa) return false;
+        two();
+        const ir::Cmp c = i.cc;
+        const BinOp op = c == ir::Cmp::Eq || c == ir::Cmp::Oeq ? BinOp::Eq : c == ir::Cmp::Ne || c == ir::Cmp::Une ? BinOp::Ne :
+                         c == ir::Cmp::Slt || c == ir::Cmp::Ult || c == ir::Cmp::Olt ? BinOp::Lt :
+                         c == ir::Cmp::Sle || c == ir::Cmp::Ule || c == ir::Cmp::Ole ? BinOp::Le :
+                         c == ir::Cmp::Sgt || c == ir::Cmp::Ugt || c == ir::Cmp::Ogt ? BinOp::Gt : BinOp::Ge;
+        if (fa) fpBinary(op, isDouble(ot)); else wideBinary(op, c >= ir::Cmp::Slt && c <= ir::Cmp::Sge);
+        ssaStore(f, i.result, "A4");
+        return true;
+    }
+    case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv:
+        two();
+        fpBinary(i.op == ir::Op::FAdd ? BinOp::Add : i.op == ir::Op::FSub ? BinOp::Sub : i.op == ir::Op::FMul ? BinOp::Mul : BinOp::Div, wr);
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::FNeg:      // the sign bit alone, so -0.0 and a NaN keep their other bits
+        ssaPair(f, a, "A4");
+        movImm("A0", 0x80000000ll);
+        out_ << (wr ? "\tXOR\tA0, A5, A5\n" : "\tXOR\tA0, A4, A4\n");
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::Trunc: case ir::Op::Bitcast:
+        if (!wa && !wr) return false;
+        ssaPair(f, a, "A4");
+        if (!wr) narrowInt(rt);
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::SExt: case ir::Op::ZExt:
+        if (!wr) return false;
+        ssaPair(f, a, "A4");
+        if (!wa) { narrowInt(ot); out_ << (i.op == ir::Op::SExt ? "\tSHR\tA4, 31, A5\n" : "\tZERO\tA5\n"); }
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::FpExt: case ir::Op::FpTrunc:
+        ssaPair(f, a, "A4");
+        if (wa && !wr) out_ << "\tDPSP\tA5:A4, A4\n\tNOP\t3\n";
+        if (!wa && wr) out_ << "\tSPDP\tA4, A5:A4\n\tNOP\t1\n";
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::SiToFp: case ir::Op::UiToFp:
+        ssaPair(f, a, "A4");
+        if (wa) wideCast(ot, rt);
+        else if (wr) out_ << (i.op == ir::Op::SiToFp ? "\tINTDP" : "\tINTDPU") << "\tA4, A5:A4\n\tNOP\t4\n";
+        else out_ << (i.op == ir::Op::SiToFp ? "\tINTSP" : "\tINTSPU") << "\tA4, A4\n\tNOP\t3\n";
+        ssaKeep(f, i.result);
+        return true;
+    case ir::Op::FpToSi: case ir::Op::FpToUi:
+        ssaPair(f, a, "A4");
+        if (wr) wideCast(ot, rt);
+        else if (i.op == ir::Op::FpToUi && rt->size(target_) == 4) { openArea(8); call(wa ? "__c6xabi_fixdu" : "__c6xabi_fixfu"); closeArea(); }
+        else out_ << (wa ? "\tDPTRUNC\tA5:A4, A4" : "\tSPTRUNC\tA4, A4") << "\n\tNOP\t3\n";
+        if (!wr) narrowInt(rt);
+        ssaKeep(f, i.result);
+        return true;
+    default:
+        return false;
+    }
 }
 
 void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
@@ -579,7 +745,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         if (const char *h = ssaHomeOf(f.params[i])) { regOf_[ps[i].offset] = h; continue; }
         const std::string m = ssaMem(ps[i].offset, accessSize(ps[i].type));
         loadFrom(ps[i].type, m);
-        ssaStore(f, f.params[i], "A4");
+        ssaKeep(f, f.params[i]);
     }
     // -g: each variable at its alloca's slot (ssaPlace_); a value in a register has no record, as the walker's regOf_.
     ssaPlace_.assign(fn.locals().size(), -1);
@@ -707,6 +873,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         for (std::size_t k = 0; k < ssaLater_.size(); k++) { defineLabel(ssaLater_[k].first); edge(*ssaLater_[k].second, false); }
         ssaLater_.clear();
     };
+    if (ssaWideInst(f, i)) return;
     switch (i.op) {
     case ir::Op::IConst: case ir::Op::Addr:
         if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
@@ -768,7 +935,14 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         finish();
         return;
     }
-    case ir::Op::UMulH: { const std::string a = x(0), b = x(1); ssaEmit(c6x::MInst("MPY32U", a, b, "A1:A0")); ssaNop(3); ssaEmit(c6x::MInst("MV", "A1", d)); finish(); return; }
+    case ir::Op::UMulH: case ir::Op::SMulH: {      // the product's high word
+        const std::string a = x(0), b = x(1);
+        ssaEmit(c6x::MInst(i.op == ir::Op::UMulH ? "MPY32U" : "MPY32", a, b, "A1:A0"));
+        ssaNop(3);
+        ssaEmit(c6x::MInst("MV", "A1", d));
+        finish();
+        return;
+    }
     case ir::Op::And: binK("AND", -16, 15, true); finish(); return;
     case ir::Op::Or:  binK("OR", -16, 15, true); finish(); return;
     case ir::Op::Xor: binK("XOR", -16, 15, true); finish(); return;
@@ -850,7 +1024,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             ssaEmit(c6x::MInst("LDW", ssaMem(sretSlot_, 4), reg));
             ssaNop(4);
         };
-        for (std::uint32_t k = 0; k < inRegs; k++) ssaLoad(f, f.operand(i, k), abi_.intRegs[k + hid]);
+        for (std::uint32_t k = 0; k < inRegs; k++) ssaPair(f, f.operand(i, k), abi_.intRegs[k + hid]);
         if (inRegs + hid > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         if (cr->isStructOrUnion() && !inPair(cr)) into(hid ? "A4" : "A3");
         call(c6x::symbolOperand(c.symbol));
@@ -881,7 +1055,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             if (inPair(cr)) { into("A3"); storePair(cr->size(target_), cr->align(target_)); }
             into("A4");
             if (i.result.valid()) ssaStore(f, i.result, "A4");
-        } else if (i.result.valid() && rt != nullptr && !rt->isVoid()) { narrowInt(rt); ssaStore(f, i.result, "A4"); }
+        } else if (i.result.valid() && rt != nullptr && !rt->isVoid()) { narrowInt(rt); ssaKeep(f, i.result); }
         if (i.op == ir::Op::Invoke) {
             edge(i.succ[0], true);
             if (i.succ[0].block.v != next.v) writeLater();
@@ -892,12 +1066,12 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         ssaLoad(f, f.operand(i, 0), "A4");
         if (i.op == ir::Op::VaStart) { vaStartAt(); return; }
         vaArgAt(rt);
-        ssaStore(f, i.result, "A4");
+        ssaKeep(f, i.result);
         return;
     case ir::Op::VaEnd:
         return;
     case ir::Op::Ret:
-        if (i.count == 1) ssaLoad(f, f.operand(i, 0), "A4");
+        if (i.count == 1) ssaPair(f, f.operand(i, 0), "A4");
         if (i.count == 1) ssaClassResult(functionOf_->returns());
         jump(returnLabel_);
         writeLater();
