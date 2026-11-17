@@ -390,10 +390,13 @@ bool Parser::dependentPostfix(const Type *object, PostfixStep &step) {
     }
     if ((peek().is(".") && plain) || (peek().is("->") && (plain || object->unqualified()->isPointer()))) {
         std::size_t k = 1;
-        if (peekAt(k).is("template")) k++;
+        const bool written = peekAt(k).is("template");
+        if (written) k++;
         while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::")) k += 2;
         if (peekAt(k).kind != TokenKind::Ident) return false;      // `~T`, an operator's name: the ordinary reader's refusal
         at_ += k + 1;
+        // [temp.names]/4: after `template` the name is a template's, and `<` opens its arguments.
+        if (written && peek().is("<")) skipTemplateArguments();
         return true;
     }
     return consume("++") || consume("--");

@@ -464,11 +464,15 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
     for (std::size_t i = 0; i < decl.params.size(); i++) {
         binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
-    const std::size_t mark = p_.syntaxTree_.size(), had = p_.current_->functions.size(), resume = p_.at_;
+    const std::size_t mark = p_.syntaxTree_.size(), resume = p_.at_;
     const std::size_t hadSignatures = p_.lookup_.functions_.size();
-    const std::size_t hadGlobals = p_.current_->globals.size(), hadStrings = p_.current_->strings.size();
-    const int stringCount = p_.strings_;
-    if (why.empty()) {
+    {
+        // The pattern is no function: what its read writes - definition, static locals, literals - is a program of its own.
+        Program pattern;
+        Program *const into = p_.current_, *const wasUnit = p_.unit_;
+        pattern.dialect = into->dialect;
+        struct Back { Parser *p; Program *into, *unit; ~Back() { p->current_ = into; p->unit_ = unit; } } back = { &p_, into, wasUnit };
+        if (p_.unit_ == nullptr) p_.unit_ = into;
         const Parser::FunctionState outer = p_.captureFunctionState();
         const std::vector<std::string> wasStack = p_.namespaceStack_;
         const bool wasBody = p_.patternBody_, wasUses = p_.patternUses_;
@@ -481,7 +485,8 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
             p_.patternOnly_ = p_.patternBody_ = p_.patternUses_ = true;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
             p_.at_ = decl.afterParams;
-            p_.topLevel(*p_.current_);
+            p_.current_ = &pattern;
+            p_.topLevel(pattern);
         } catch (const SubstitutionFailure &f) {
             why = f.why;
         }
@@ -492,17 +497,11 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         p_.namespaceStack_ = wasStack;
         p_.restoreFunctionState(outer);
         p_.at_ = resume;
-        // The pattern is no function: its definition leaves the program, and its signature every overload set.
-        if (why.empty() && p_.current_->functions.size() > had) p_.current_->functions.pop_back();
+        // Its signature leaves every overload set.
         for (std::unordered_map<std::string, std::vector<std::size_t> >::iterator s = p_.lookup_.functionIndex_.begin(); s != p_.lookup_.functionIndex_.end(); ++s)
             for (std::size_t q = s->second.size(); q-- > 0;)
                 if (s->second[q] >= hadSignatures && !p_.lookup_.functions_[s->second[q]].fromTemplate && Parser::localOf(p_.lookup_.functions_[s->second[q]].name) == decl.name)
                     s->second.erase(s->second.begin() + static_cast<long>(q));
-        // Its string literals go with it, as a lambda's trial reading's do: unless the read emitted something that may name one.
-        if (p_.current_->functions.size() == had && p_.current_->globals.size() == hadGlobals) {
-            p_.current_->strings.resize(hadStrings);
-            p_.strings_ = stringCount;
-        }
         p_.syntaxTree_.kill(mark);
     }
     syntax::NodeId read;

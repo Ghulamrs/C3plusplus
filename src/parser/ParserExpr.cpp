@@ -655,8 +655,9 @@ const Type *Parser::simpleTypeKeyword() const {
 
 // `T{...}` for any T, the '{' still ahead - [expr.type.conv]/2, list-initialisation.
 ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
-    if (!to->isScalar()) return listTemporary(to, pos);
-    // A scalar's `T{}` or `T{x}` is noted as the cast `T()` or `T(x)` is: a zero, or its one value converted.
+    const bool pattern = patternBody_ && dependentType(to);
+    if (!to->isScalar() && !pattern) return listTemporary(to, pos);
+    // A scalar's `T{}` or `T{x}` is noted as the cast `T()` or `T(x)` is: a zero, or its one value converted; a pattern's too.
     Init in = parseInitialiser();
     const bool one = in.items.size() == 1 && !in.items[0].isList && in.items[0].value;
     const syntax::NodeId operand = one ? syn(in.items[0].value) : syntax::NodeId();
@@ -664,7 +665,7 @@ ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
     r->setDeclCategory(Expr::Category::Prvalue);
     if (!in.items.empty() && !operand.valid()) return r;
     ExprPtr made = noteCast(std::move(r), types_.withoutConst(to->unqualified()), to->describe(), pos, operand);
-    if (in.items.empty() && made && made->syntax().valid()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to->unqualified()));
+    if (in.items.empty() && !pattern && made && made->syntax().valid()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to->unqualified()));
     return made;
 }
 
@@ -1407,7 +1408,7 @@ ExprPtr Parser::primaryNode(Program *program) {
     if (atUserDefinedLiteral()) return userDefinedLiteral(program);
 
     if (peek().kind == TokenKind::Str) {
-        std::string label = ".L.str." + std::to_string(strings_++);
+        std::string label = ".L.str." + std::to_string(stringLabel()++);
         std::string text = peek().text;
         at_++;
 
@@ -2260,7 +2261,7 @@ ExprPtr Parser::primaryNode(Program *program) {
             std::string bare = currentFunctionName_;
             const std::size_t cut = bare.rfind("::");
             if (cut != std::string::npos) bare = bare.substr(cut + 2);
-            const std::string label = ".L.str." + std::to_string(strings_++);
+            const std::string label = ".L.str." + std::to_string(stringLabel()++);
             program->strings.push_back(StringLit{ label, bare + '\0', 1 });
             ExprPtr n(new StrLit(label, bare));
             n->setType(types_.arrayOf(types_.withConst(types_.charType()),

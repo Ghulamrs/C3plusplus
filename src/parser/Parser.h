@@ -228,10 +228,17 @@ private:
     bool patternBody_ = false;
     // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
     bool patternUses_ = false;
+    // M8.1: a pattern is read into a program of its own (`unit_` is the unit's meanwhile), its labels off a count of its own.
+    Program *unit_ = nullptr;
+    int patternStrings_ = 0;
+    int &stringLabel() { return unit_ != nullptr && current_ != unit_ ? patternStrings_ : strings_; }
     struct ReplayUses {
-        Parser *p; bool was;
-        explicit ReplayUses(Parser *parser) : p(parser), was(parser->patternUses_) { p->patternUses_ = false; }
-        ~ReplayUses() { p->patternUses_ = was; }
+        Parser *p; bool was; Program *into;
+        explicit ReplayUses(Parser *parser) : p(parser), was(parser->patternUses_), into(parser->current_) {
+            p->patternUses_ = false;
+            if (p->unit_ != nullptr) p->current_ = p->unit_;
+        }
+        ~ReplayUses() { p->patternUses_ = was; p->current_ = into; }
     };
     // templatedName asks readTemplateDeclaration to keep the signature it reads as syntax, and takes it from here.
     bool noteSignature_ = false;
