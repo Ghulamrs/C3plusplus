@@ -819,8 +819,8 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::And: case ir::Op::Or: case ir::Op::Xor: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         if (!wr) return false;
         long long count = 0;
-        // By a constant, at -O1 and up: the pair spliced in place, as the walker's.
-        if (optimize_ > 0 && (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) && smallConst(f, b, 0, 63, count)) {
+        // By a constant, the pair spliced in place, as the walker's at -O1; at -O0 too (W7: a bit-field's 64-bit shifts).
+        if ((i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) && smallConst(f, b, 0, 63, count)) {
             ssaPair(f, a, "A4");
             if (i.op == ir::Op::Shl) shiftPairLeft(static_cast<int>(count)); else shiftPairRight(static_cast<int>(count), i.op == ir::Op::AShr);
             ssaKeep(f, i.result);
