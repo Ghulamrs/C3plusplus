@@ -313,6 +313,7 @@ private:
     bool ssaWideV(const ir::Function &f, ir::ValueId v) const { return v.valid() && f.value(v).type.valid() && isWide(ssaType(f, v)); }
     void ssaPair(const ir::Function &f, ir::ValueId v, const char *lo);    // v into lo's pair, or a word into lo
     void ssaKeep(const ir::Function &f, ir::ValueId v);                    // A5:A4, or A4, into v's place
+    bool ssaWideInPlace(const ir::Function &f, const ir::Inst &i);         // a 64-bit operation on the home pairs
     bool ssaWideInst(const ir::Function &f, const ir::Inst &i);            // an instruction over 64-bit or floating values
     // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
     std::vector<char> ssaInner_;

@@ -301,8 +301,10 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
             if (m != n && (moves[m].second.v == moves[n].first.v || (ssaHome_[moves[m].second.v] != 0 && ssaHome_[moves[m].second.v] == ssaHome_[moves[n].first.v]))) clash = true;
     if (!clash) {
         for (std::size_t m = 0; m < moves.size(); m++) {
+            const char *h = ssaHomeOf(moves[m].second);
+            if (ssaWideV(f, moves[m].second) && h != nullptr) { ssaPair(f, moves[m].first, h); continue; }
             if (ssaWideV(f, moves[m].second)) { ssaPair(f, moves[m].first, "A4"); ssaKeep(f, moves[m].second); continue; }
-            if (const char *h = ssaHomeOf(moves[m].second)) { ssaLoad(f, moves[m].first, h); continue; }
+            if (h != nullptr) { ssaLoad(f, moves[m].first, h); continue; }
             const std::string r = ssaUse(f, moves[m].first, "A4");
             ssaStore(f, moves[m].second, r.c_str());
         }
@@ -636,6 +638,74 @@ void Tms6747::ssaKeep(const ir::Function &f, ir::ValueId v) {
     out_ << "\tSTDW\tA5:A4, " << m << "\n";
 }
 
+// **A 64-bit operation on the home pairs** (W4b): operands read where they live and the result written to its own pair,
+// with no round trip through A5:A4, where every pair is on one side. False: nothing written, the fixed places do it.
+bool Tms6747::ssaWideInPlace(const ir::Function &f, const ir::Inst &i) {
+    const ir::ValueId a = f.operand(i, 0), b = i.count > 1 ? f.operand(i, 1) : ir::ValueId();
+    const char *h = ssaWideV(f, i.result) ? ssaHomeOf(i.result) : nullptr;
+    if (i.op == ir::Op::SExt || i.op == ir::Op::ZExt) {
+        if (h == nullptr || ssaWideV(f, a) || ssaType(f, a)->size(target_) != 4) return false;
+        const std::string r = ssaRead(f, a, h), hi = pairHigh(h);
+        if (r != h) out_ << "\tMV\t" << r << ", " << h << "\n";
+        if (i.op == ir::Op::SExt) out_ << "\tSHR\t" << h << ", 31, " << hi << "\n"; else out_ << "\tZERO\t" << hi << "\n";
+        return true;
+    }
+    const auto at = [&](ir::ValueId v, const char *lo) {
+        const ir::Inst *d = f.value(v).def.valid() ? &f.inst(f.value(v).def) : nullptr;
+        const char *vh = d != nullptr && (d->op == ir::Op::IConst || d->op == ir::Op::Null) ? nullptr : ssaHomeOf(v);
+        return std::string(vh != nullptr ? vh : lo);
+    };
+    const bool cmp = i.op == ir::Op::ICmp;
+    const std::string d = cmp || h == nullptr ? "A4" : h;
+    std::string x = at(a, "A4"), y = at(b, "A6");
+    if (x[0] != d[0] || y[0] != d[0] || (x == "A4" && y == "A6" && d == "A4")) return false;
+    if (i.op == ir::Op::Add && d == y && d == x) return false;
+    if (i.op == ir::Op::Mul && d[0] != 'A') return false;
+    if (x == "A4") ssaPair(f, a, "A4");
+    if (y == "A6") ssaPair(f, b, "A6");
+    if (i.op == ir::Op::Add && d == y) std::swap(x, y);
+    const std::string xh = pairHigh(x), yh = pairHigh(y), dh = pairHigh(d), c = d.substr(0, 1) + "0";
+    switch (i.op) {
+    case ir::Op::Add:       // the carry: the sum is below an addend
+        out_ << "\tADD\t" << x << ", " << y << ", " << d << "\n\tCMPLTU\t" << d << ", " << y << ", " << c << "\n";
+        out_ << "\tADD\t" << xh << ", " << yh << ", " << dh << "\n\tADD\t" << dh << ", " << c << ", " << dh << "\n";
+        break;
+    case ir::Op::Sub:       // the borrow: the left is below the right
+        out_ << "\tCMPLTU\t" << x << ", " << y << ", " << c << "\n\tSUB\t" << x << ", " << y << ", " << d << "\n";
+        out_ << "\tSUB\t" << xh << ", " << yh << ", " << dh << "\n\tSUB\t" << dh << ", " << c << ", " << dh << "\n";
+        break;
+    case ir::Op::Mul:       // the low product whole, and the two cross products into its high word
+        out_ << "\tMPY32U\t" << x << ", " << y << ", A1:A0\n\tNOP\t3\n";
+        out_ << "\tMPY32\t" << x << ", " << yh << ", A3\n\tNOP\t3\n\tADD\tA1, A3, A1\n";
+        out_ << "\tMPY32\t" << xh << ", " << y << ", A3\n\tNOP\t3\n\tADD\tA1, A3, " << dh << "\n\tMV\tA0, " << d << "\n";
+        break;
+    case ir::Op::And: case ir::Op::Or: case ir::Op::Xor: {
+        const char *op = i.op == ir::Op::And ? "\tAND\t" : i.op == ir::Op::Or ? "\tOR\t" : "\tXOR\t";
+        out_ << op << x << ", " << y << ", " << d << "\n" << op << xh << ", " << yh << ", " << dh << "\n";
+        break;
+    }
+    case ir::Op::ICmp: {
+        const ir::Cmp k = i.cc;
+        if (k == ir::Cmp::Eq || k == ir::Cmp::Ne) {
+            out_ << "\tCMPEQ\t" << x << ", " << y << ", A0\n\tCMPEQ\t" << xh << ", " << yh << ", A4\n\tAND\tA0, A4, A4\n";
+        } else {
+            const bool gt = k == ir::Cmp::Sgt || k == ir::Cmp::Ugt || k == ir::Cmp::Sle || k == ir::Cmp::Ule;
+            const bool sign = k >= ir::Cmp::Slt && k <= ir::Cmp::Sge;
+            const char *lowOp = gt ? "\tCMPGTU\t" : "\tCMPLTU\t";
+            out_ << (gt ? (sign ? "\tCMPGT\t" : "\tCMPGTU\t") : (sign ? "\tCMPLT\t" : "\tCMPLTU\t")) << xh << ", " << yh << ", A0\n";
+            out_ << "\tCMPEQ\t" << xh << ", " << yh << ", A3\n" << lowOp << x << ", " << y << ", A4\n\tAND\tA3, A4, A4\n\tOR\tA0, A4, A4\n";
+        }
+        if (k == ir::Cmp::Ne || k == ir::Cmp::Sle || k == ir::Cmp::Ule || k == ir::Cmp::Sge || k == ir::Cmp::Uge) out_ << "\tXOR\t1, A4, A4\n";
+        ssaStore(f, i.result, "A4");
+        return true;
+    }
+    default:
+        return false;
+    }
+    if (h == nullptr) ssaKeep(f, i.result);
+    return true;
+}
+
 // **An instruction over 64-bit or floating values** (W4), in the walker's places and by its text: the left operand in
 // A5:A4 (A4 for a float), the right in A7:A6, the C674x's instructions and the EABI's helpers. False: a word's instruction.
 bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
@@ -677,6 +747,7 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
             ssaKeep(f, i.result);
             return true;
         }
+        if ((i.op == ir::Op::Add || i.op == ir::Op::Sub || i.op == ir::Op::Mul || i.op == ir::Op::And || i.op == ir::Op::Or || i.op == ir::Op::Xor) && ssaWideInPlace(f, i)) return true;
         two();
         const BinOp op = i.op == ir::Op::Add ? BinOp::Add : i.op == ir::Op::Sub ? BinOp::Sub : i.op == ir::Op::Mul ? BinOp::Mul :
                          i.op == ir::Op::SDiv || i.op == ir::Op::UDiv ? BinOp::Div : i.op == ir::Op::SRem || i.op == ir::Op::URem ? BinOp::Mod :
@@ -694,6 +765,7 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
         return true;
     case ir::Op::ICmp: case ir::Op::FCmp: {
         if (!wa && !fa) return false;
+        if (!fa && ssaWideInPlace(f, i)) return true;
         two();
         const ir::Cmp c = i.cc;
         const BinOp op = c == ir::Cmp::Eq || c == ir::Cmp::Oeq ? BinOp::Eq : c == ir::Cmp::Ne || c == ir::Cmp::Une ? BinOp::Ne :
@@ -724,6 +796,7 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
         return true;
     case ir::Op::SExt: case ir::Op::ZExt:
         if (!wr) return false;
+        if (ssaWideInPlace(f, i)) return true;
         ssaPair(f, a, "A4");
         if (!wa) { narrowInt(ot); out_ << (i.op == ir::Op::SExt ? "\tSHR\tA4, 31, A5\n" : "\tZERO\tA5\n"); }
         ssaKeep(f, i.result);
