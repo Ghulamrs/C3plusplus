@@ -523,3 +523,80 @@ locals, default-argument records, a failed read's closures, what a non-dependent
 instantiates - the two cases above are its test), so the taking-out can go; the nine shapes; the three parameter
 kinds (190 of the 292 left); `forward`'s `static_assert` over a dependent condition (59). Commit 2's remainder
 is untouched: a member template's and a class member's signature, and the dump's line for a pattern.
+
+**M8.1, commit 3: a read that marks nothing, the parameter kinds, the assertion, 2026-11-18** (lane m8g, branch
+`m8-d` from `342ffb87`; one lane-hour; code `431cae33`). Four of the things m8f's last paragraph names, and commit
+3 is **still not closed: the flag stays** (the last paragraph says why). **(1) The read's two differences are
+gone, by not writing rather than by taking out.** A use met in a pattern's own tokens marks nothing
+(`patternUses_`, set by `Templates::readDeclaration` alone): `noteUsed` and `markSymbolUsed` return, a call with
+written template arguments and a static member's use leave their marks unset - so `regex-ecmascript` no longer
+emits the `vector<const char *>::size` a pattern's body named. What the read *asks to be replayed* is no part of
+the pattern and marks as any replay does (`Parser::ReplayUses`, three doors: `instantiateClass`, a member template
+over no parameter of the pattern, a constexpr member replayed for a constant) - without it a class first
+instantiated inside a read would lose the uses its instantiation makes, for good. A function specialization the
+read asked for is recorded by key (`askedByPattern_`) and **seated among the replays where the program first asks
+for it** (`Templates::madeWhereAsked`: the read's record stays in place, emptied, so no index moves) - so
+`block-scope-typedef` emits `f<int>` before `f<double>` again. **`-S` with the flag against without: 2 of 1,238
+differ before, 0 after, on Linux and on Windows.** **(3) The three parameter kinds are bound as a pattern binds
+them** - `bindTemplateParameters` already had each (a pack of one `Kind::TemplateParam`, a non-type param-ref,
+the stand-in `$TT<i>`), and `readDeclaration`'s three refusals were all that kept the read out. **(4) A
+`static_assert` whose condition names the pattern's parameters is kept, not folded** (`staticAssertion`: read,
+its syntax noted, instantiation's to assert) - `forward`'s 59.
+
+| corpus, box | function templates defined | read | not read | read: text alone / shape / same | read, never replayed |
+| --- | --- | --- | --- | --- | --- |
+| `tests/cases`, Linux and Windows, before (`342ffb87`) | 3,478 | 3,186 | 292 | 413 / 9 / 0 | 2,764 |
+| `tests/cases`, Linux and Windows, after (`431cae33`; the same count on both) | 3,478 | **3,379** | 99 | 452 / 11 / 14 | 2,902 |
+
+**Not read, by reason, after** (Windows): 27 the size of a dependent type (3 before: a pack's or a non-type
+parameter's body asking one), 21 a pack pattern `ParserDependent` refuses in a template argument list (`Ns...`
+alone, and one beside other arguments), 14 + 6 undeclared names, 9 + 8 forms `ParserDependent` refuses in a
+signature, 7 an incomplete type, 2 a literal operator's parameter list over a pack, 2 + 1 + 1 + 1 one each. **0
+units die** (880 of 1,238 files print the count on Windows, as before).
+
+**(2) The shapes, examined** - `-check=templates` now prints each one's two trees (`declaration shape: read`,
+`replayed`; `Tree::spelled`), eleven with the two the non-type parameters brought. **Eight are the signature, not
+the body**: `m25`, `m26`, `m28`, `m30`, `m31` and `m6` of `template-sfinae-misc`, `g7` of
+`trailing-return-template-decltype`, `length` of `string-literal-array-reference` - an expression over the
+parameters in a trailing `decltype` or an array bound is read by `ParserDependent`'s own reader, which notes its
+literals or nothing (`(int "1") (int "2")` where the replay has `(binary "+" (cast "int" (int "1")) ...)`, no
+`(name "N")` for a bound) - commit 2's remainder, the signature's expression kept as syntax. **Two are `T{}`**
+(`zeroOf` of `callable-members-and-braces`, `braced` of `ssa-lvalue-forms`): a braced temporary of a dependent
+type is noted as `(name "T")`, the replay's as `(cast "int" ...)` - the class-temporary door returns its zero
+before the cast is noted. **One is a wrong read**: `p->template pick<5>(1)` in `template-keyword-member` is read
+as `(p->pick < 5) > 1` - `template` after `->` on a dependent object is not honoured in a pattern. None mended
+in this hour; each is owed before the read is trusted without the flag.
+
+**Gates** at `431cae33`, one tree on each box, each built from clean; REF built fresh from `342ffb87` in its own
+kept tree (Linux `~/m8gr`, Windows `work\m8gr`; NEW `~/m8gn`, `work\m8gn`). Linux (g++ `-Werror` clean):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,298 compared,
+0 differ**; the flag against no flag, `-S` of every case, **1,238 the same, 0 differ**; `run.sh` 1232 passed, 0
+failed; `typed.sh` 875 passed, 0 failed, 1 not for this host (other=38 name=8); `tests/subst.sh bodies` 0 failed
+(5,119 over 875 units, 3,381 / 682 / 1,004 / 52; `template-variadic`'s `.templates` record re-recorded - one of
+its four is read now, three ask a dependent size); self-compile stage 0 103 of 103; exclusions 0 uncited, 0
+stale (17 citations re-pointed); comment cap 0; memory gate held; ast-residue +0 on all seven;
+`ide/generate.py --check` up to date; `-check=templates` reads 3,379 of 3,478 (899 files print the count, as
+before). Windows (cl /W4 /WX clean): every case's `-S` text and diagnostics NEW
+against REF at -O0 and -O2 for x86_64-windows `-masm=masm` and `-masm=gnu`, x86_64-linux, arm64-darwin and
+tms6747, 1,238 cases, **12,380 the same, 0 differ**; the flag against no flag **1,238 the same, 0 differ**; the
+static gates pass; `-check=templates` reads the same 3,379 of 3,478 (880 files print the count). **Not finished
+inside the hour on Windows** (the box was shared three ways; the chain was still running at the hard stop, its
+results land in `boxkit/m8g-win-selfc.out` and `boxkit/m8g-win-names.out`): `self-compile.cmd`, `tests/names.sh`,
+`tests/overload.sh`, and the self-host's count - the coordinator's to read before this is merged. **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
+Compiler++'s units; no `tests/cases` program was added. A Linux build made over build 1's objects segfaulted in
+`Parser::parse` (objects newer than the shipped headers - CLAUDE.md's stale-object rule); every number here is
+the clean build's. src/ lines: 94,824 before, 94,863 after.
+
+**Whether commit 3 can drop the flag: no, not yet.** What this hour ended is the read's *marks* and the order of
+what it asks for; the read still **writes and takes out** - the pattern's `Function` popped, its signature erased
+from every overload set, its strings cut back, its syntax killed - and still **leaves**: a class specialization a
+non-dependent use in a body instantiates (made earlier than with no read; its place among the replays was not
+re-seated as a function's is), the `Signature` and `readTemplateDeclaration`'s effects of a function
+specialization asked for, a constexpr member replayed for a constant during a read (emitted then), and whatever a
+failed read left (static locals, default-argument records, closures) - none of which changes one byte of 1,238
+cases' `-S` on either box, which is the test and not the proof. With that: 99 templates not read, eleven shapes
+(one a wrong read), member templates and class members not read at all (commit 2's remainder), and the read's
+cost with the flag always on not measured. **What the next lane takes**: the function state proper (the pattern
+read into a `Program` and tables of its own, so the four take-outs go), a class specialization seated as a
+function's is, the `->template` read and `T{}`'s cast, the signature's expression as syntax (eight shapes, with
+commit 2's remainder), then the 99.

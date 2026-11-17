@@ -2,5 +2,5 @@
 -check=templates shape: tests/cases/template-variadic.cpp:27:37
 -check=templates shape: tests/cases/template-variadic.cpp:31:28
 -check=templates shape: tests/cases/template-variadic.cpp:38:37
--check=templates declarations: functions=4 read=0 unread=4 same=0 text=0 shape=0 unreplayed=0
--check=templates unread (4): a parameter pack
+-check=templates declarations: functions=4 read=1 unread=3 same=1 text=0 shape=0 unreplayed=0
+-check=templates unread (3): the size of a dependent type
