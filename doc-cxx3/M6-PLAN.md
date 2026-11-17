@@ -2653,3 +2653,17 @@ mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 o
 - **No new tasks beyond the plan** ("No new tasks plz, to make the matters proceed"): no side lanes unless a planned
   landing needs them; owed items stay owed; report landings only.
 - The user's decisions on the M6c review and after: boxkit/user-decisions-m6c-review.md.
+
+#### Lane wf22, 2026-11-17: wave 22's blocker and its two list faults (Windows only)
+- **c6x-variadic-selected on x86_64-windows** printed `1137198` for `1147066` at -O0/-O1/-O2, both spellings: `many(a,
+  b, c, d, e, ...)` read `e` as its first unnamed argument. Root: `X86_64Linux::receiveParameters` set the Microsoft
+  overflow pointer to `16 + intsUsed * 8`, which stops at the fifth named slot; now `16 + (intsUsed + stackWords) * 8`
+  (src/ 2 lines, +1 net). Not wave 22's: main 006deb20 built on the box prints the same; clang 19.1.5 there prints the
+  .expected. The case's three x86_64-windows rows are in tests/wave-expected.txt.
+- **identical's 13 unnamed rows** were the `.part` cases: the gate read `X.part.tms6747.O0` as case `X`, target
+  `part.tms6747`, which no row can name - tools/wave-gate now keeps `.part` in the case. **emit's "named and the
+  same"** was every -O0/-O1 row (emit measures -O2 alone): emit now judges its own level, and a -O2 row emit sees
+  unchanged (22, measured on Windows against main's golden: 5 cases new to the wave, 17 that differ only in
+  identical's build) is identical's to judge, not emit's FAIL. No row removed: each is one identical differs on.
+- Linux legs owed (the box is off limits): build, static, gdb, run1/2, maketest, ssa1/2, subst, selfc, identical*,
+  emit, and the C6000 shards' Linux half.

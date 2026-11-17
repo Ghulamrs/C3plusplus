@@ -150,12 +150,12 @@ if [ "${1:-}" = --box ]; then
         n=$(find src -name "*.cpp" | wc -l | tr -d " ")
         case "$a|$b" in "self-host: $n of $n "*"|self-host: $n of $n "*) verdict "$s" PASS "${2:--O0}: $n of $n the same from stages 0, 1, 2 and from 2, 3" ;;
             *) verdict "$s" FAIL "${2:--O0}: ${a:-stages 0-2 not compared}; ${b:-stages 2-3 not compared}; $LOG-$s.log" ;; esac; }
-    # $1 the step's "<case> <target> <level>" differences, $2 its targets, $3 its one level (emit: -O2): against tests/wave-expected.txt's rows (N2)
+    # $1 the step's "<case> <target> <level>" differences, $2 its targets, $3 its one level (emit: -O2, where a named row the same is identical's to judge, not a FAIL): against tests/wave-expected.txt's rows (N2)
     against() { sed -n 's/^\([^# ][^ ]*\) \([^ ]*\) \([0-9s]\) ..*/\1 \2 \3/p' tests/wave-expected.txt 2>/dev/null |
             awk -v t=" $2 " -v l="${3:-}" 'index(t, " " $2 " ") && (l == "" || $3 == l)' | sort -u > "$1.want"; sort -u "$1" > "$1.got"
         u=$(comm -23 "$1.got" "$1.want" | tr '\n' ',' | cut -c1-160); m=$(comm -13 "$1.got" "$1.want" | tr '\n' ',' | cut -c1-160)
         echo "$(wc -l < "$1.got" | tr -d ' ') differ, $(comm -12 "$1.got" "$1.want" | wc -l | tr -d ' ') named in tests/wave-expected.txt${u:+; NOT NAMED: $u}${m:+; named and the same: $m}"
-        [ -z "$u$m" ]; }
+        [ -z "$u" ] && { [ -n "${3:-}" ] || [ -z "$m" ]; }; }
     # tools/identical.sh at -O0, -O1, -O2 over $2 against the base's build: a difference passes only where named
     ident() { s=$1; ref=$T-base/cxx3.exe
         [ -x "$ref" ] || { verdict "$s" FAIL "no base build at $ref (-w <commit> names the wave's base)"; return; }
