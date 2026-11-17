@@ -125,7 +125,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 const ir::CallInfo &c = f.calls[i.call];
                 if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "landing pads";
                 const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;     // a call through a value: its first operand
-                if (c.variadic && (c.hasThis || c.namedArgs < 1 || c.namedArgs > abi_.intCount)) return "variadic call";
+                if (c.variadic && (c.hasThis || c.namedArgs < 0 || c.namedArgs > abi_.intCount)) return "variadic call";
                 // A class result (W3) comes back into the call's frame object, or into this function's own result (c.sret).
                 const Type *cr = ssaTypes_->type(c.signature)->returns();
                 if (cr->isStructOrUnion() ? c.variadic || (c.sret ? !(f.sret.valid() && hiddenInA4(cr)) : c.resultAlloca < 0)
@@ -140,7 +140,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                     if (inPairWide(ps[n]) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 }
                 // A 64-bit argument (W4) goes in its register's pair, not past the sixth; a variadic call's lie in its area.
-                const std::uint32_t named = c.variadic ? std::min(count, static_cast<std::uint32_t>(c.namedArgs - 1)) : count;
+                const std::uint32_t named = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
                 for (std::uint32_t n = 0; n < named; n++)
                     if (ssaWideV(f, f.operand(i, n + base)) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 break;
@@ -1195,8 +1195,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;
         const auto arg = [&](std::uint32_t k) { return f.operand(i, k + base); };
         if (i.op == ir::Op::Invoke) defineLabel(label("ssatry", row));
-        // A variadic callee's last named argument and every one after it: a word each above the reserved word, as cl6x's -S.
-        const std::uint32_t inRegs = c.variadic ? std::min(count, static_cast<std::uint32_t>(c.namedArgs - 1)) : count;
+        // A variadic callee's last named argument and every one after it (all of a `(...)` one's): a word each above the reserved word, as cl6x's -S.
+        const std::uint32_t inRegs = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
         // A 64-bit one (W4) lies 8-aligned in eight bytes, as stackArg places it.
         std::vector<int> at(count, 0);
         int end = 4;
