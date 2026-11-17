@@ -2452,7 +2452,7 @@ void Tms6747::emitFunction(const Function &fn) {
     if (calls) anyExidx_ = true;
     if (calls)
         out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << fn.symbol() << ")\n\t.ulong\t"
-             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + fn.symbol() + "\")") << "\n\t.text\n";
+             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + tiSpelling(fn.symbol()) + "\")") << "\n\t.text\n";
 
     file_ += out_.str();
     out_.str(std::string());
