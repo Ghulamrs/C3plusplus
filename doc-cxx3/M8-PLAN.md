@@ -814,3 +814,89 @@ the flag against without at `fcb6f5bc` on Windows: cases 1,238 / 0, the self-hos
 no `tests/cases` program was added (the gates are the self-host and `identical.sh`, which found the label).
 **Not done**: the signature's expression reader (eight shapes), not started; commit 4 not started.
 src/ lines: 94,877 before, 94,886 after.
+
+**M8.1, commit 4 begun: the class doors read under `-check=templates`, 2026-11-18** (lane m8k, branch `m8-e`
+from `3a922049` - m8-d merged with main `156a6b46`; one lane-hour; code `0a9076aa`). **What is read**: a class
+template's member bodies, an out-of-line member, a partial specialization's member bodies and an alias's
+type-id, each where it is declared, by `Templates::readDeclaration` with a door (`ReadClass`, `ReadOutOfLine`,
+`ReadPartial`, `ReadAlias`) - the function door's read, layer and all: the parameters bound to themselves, the
+read's own `Lookup` layer, a `Program` of its own, specializations and temporaries' numbers put back. **The
+class's read is `instantiateClass`'s own**, taken out whole as `readClassBody` (one implementation: the
+instantiation calls it with its binding, the read with the parameters themselves and a tag of that read alone,
+`C<$T0>$read<mark>`); while a class door's read lasts, the pattern's `C<T>` is that class (`readPattern_`), so
+`Box<T>::get` and a member's `Box<T>` find its members. Each held member body is then replayed in a trial of
+its own - one refused leaves the others read - and an out-of-line member is read from its `start` by
+`topLevel`. **The replay is still what emits**: the class doors run under `-check=templates` alone (the
+function door in every compile, as m8j left it), so a compile without the flag differs from `3a922049` by the
+extraction only, which the gates below hold. What a refusal thrown through the class's read left set - the
+class stack, the instantiating arguments, the held bodies, `inTemplateArgs_` (a `>` ended `r > 0` in the next
+function), the parameters' bindings (kept by the read and unbound by it, refused or not) - is put back by the
+read; found by the count over the cases, 70 of which failed under the flag before it was.
+
+**Read / not read by door**, Linux `~/m8kn` (the committed code), `boxkit/m8k-count.sh` and `m8k-self.sh`.
+Before this lane no class door was read at all (every body below was the replay's alone):
+
+| door | `tests/cases` (900 units reach the count): bodies / read / unread | same / text / shape / unreplayed | the self-host (103 of 103): bodies / read / unread | same / text / shape / unreplayed |
+| --- | --- | --- | --- | --- |
+| function (m8j's, unchanged) | 3,478 / 3,379 / 99 | 14 / 455 / 8 / 2,902 | 7,512 / 7,323 / 189 | 0 / 1,127 / 0 / 6,196 |
+| class members | 4,728 / 2,755 / 1,973 | 442 / 268 / 0 / 2,045 | 16,745 / 12,652 / 4,093 | 2,508 / 1,846 / 0 / 8,298 |
+| out-of-line members | 22 / 0 / 22 | - | 0 | - |
+| partial specializations' members | 1,737 / 251 / 1,486 | 11 / 25 / 0 / 215 | 3,186 / 1,054 / 2,132 | 6 / 103 / 0 / 945 |
+| alias type-ids (no body: read or refused) | 7 / 7 / 0 | - | 0 | - |
+
+A class whose own read is refused counts once, as "the class: ..." (its bodies are not known then), so `bodies`
+is a floor. No read body differs from its replay in shape at a class door. **Not read, by reason** (cases /
+self-host): the class: a base class has to be complete - a dependent base, `struct D : B<T>` (666 / 826, and 4
+partials); the size of a dependent type - a data member `T v;` laid out, in the class (278 / 514; partials 62 /
+101; out-of-line 6) and in a member body (326 / 885; partials 16 / 96); the pseudo-destructor does not name
+the type of this object (168 / 396); the class: "expected" a token (163 / 204); has no member called (40 / 352);
+no function called takes these arguments (85 / 198); was not declared (20 / 176); the class: is declared twice
+(11 / 127); an in-class initialiser of a static member of dependent type (84 / 102); a template parameter in
+this place of a signature (44 / 99, and 14 in the class); incomplete type (class 69 / 85, body 10 / 88,
+out-of-line 11); the arms of `?:` (partials 16 / 96); a class specialization the program has not asked for
+(3 / 26). **A fault of the read, not a wall**: a partial's class read ends "struct `X<$T0>$read` is defined
+twice" for every partial of a class whose primary was read (1,388 / 1,835 of the partials' unread - all of
+`<type_traits>`' `remove_reference`, `is_reference`, `iterator_traits`, `hash` ...): the partial's tokens are
+read by `structOrUnionSpecifier` under the read's tag and meet a definition - not found in the hour. And the
+out-of-line door reads 0 of 22: the class before it is refused (a data member of dependent type), so the
+member never gets its turn; the door stands on the class's.
+
+**What the class doors' reads leave** (the flag against no flag, `-S`, Linux): 1,235 cases the same and **4
+differ** - `library-cppparse-pieces`, `map-set-comparator`, `map-set-node-stability`,
+`member-template-body-unchosen` - each in one Itanium name, `St4pairIT_T0_E` written `St4pairIKT_T0_E`: the
+pattern's shallow `pair<$T0,$T1>` is interned in the unit's type table by its tag and keeps the arguments of
+whoever asks first, and `map`'s class read asks for `pair<const K, V>` before the unit does. The `Lookup` layer
+does not hold the type table; commit 5 cannot turn the class read on until it does (a type-table mark, or the
+shallow class keyed by its arguments' qualifiers). The self-host under the flag was not compared in the hour.
+
+**Left of commit 4**, in the order the counts give: (1) the class's layout over a dependent member - `T v;`
+takes no size in the read (the function door's `nameDependentSizes` answer, carried into `ParserClass`'s
+layout), which opens the out-of-line door with it; (2) a dependent base, kept unlaid in the read; (3) the
+partial's "defined twice"; (4) the type table in the layer (the 4 cases); (5) member templates - not started,
+no door; (6) an alias's type-id is read (7 of 7) but held against nothing - an alias makes no body to compare.
+The signature's expression reader (eight shapes): not started.
+
+**The self-host under the flag** (Linux `~/m8kn`, `boxkit/m8k-selfsame.sh`, measured after the paragraph above
+was written): `-S` with `-check=templates` against without, **34 of 103 the same, 69 differ** (3,948 lines),
+the same one fault - `make_pair`'s `St4pairIT_T0_E` and its kin renamed by the pattern class the read interned
+first. It is the flag's output alone; without the flag nothing differs (below).
+
+**Gates** on the final tree (`0a9076aa`), each box built from clean; REF built fresh from `3a922049` in its own
+kept tree (Linux `~/m8kr`, Windows `work\m8kr`; NEW `~/m8kf`, `work\m8kf`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` in
+its `__TIME__` string (its diff opened: one `.byte` line, `23:03:48` against `23:04:03`); `run.sh` 1233 passed,
+0 failed; `typed.sh` 876 passed, 0 failed, 1 not for this host (other=38 name=8); `tests/subst.sh bodies` 0
+failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52; the two `.templates` records re-recorded - each gains
+its class-members lines and nothing else); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale
+(**`3a922049` itself reads 11 uncited, 11 stale** - the merge with main moved seven `ParserTemplate.cpp`, three
+`Templates.cpp` and one `Constexpr.cpp` citation; re-pointed here with this lane's own); comment cap 0; memory
+gate held; ast-residue +0 on all seven; `ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, the box shared with three other gates): the self-host's `-S`, REF against NEW, 102 of
+103 the same and `Driver` (2 lines); static gates rc 0; `names.sh` 884 passed, 0 failed; `overload.sh` 46
+agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **4,796 the same, 0 differ** of
+12,390 when the hour ended (the step was stopped there by its PID - the rest is the wave gate's);
+`tools\windows\self-compile.cmd`, alone in a tree of its own (`work\m8ks`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts above are the measure); no `tests/cases` program was
+added. src/ lines: 95,217 before, 95,326 after.
