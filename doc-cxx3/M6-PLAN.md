@@ -2585,3 +2585,43 @@ their columns taken out. Owed: W2's causes D (an inliner round for newly selecte
 next tidy round); the 14 merge bodies to the round "frame slots shared by scope", diagnosed there. Totals: -O2
 192,025,550 -> 191,867,154 (404 better), -O0 397,272,350 -> 385,994,327 (439 better). tests/wave-expected.txt holds
 mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 outputs and p7's case on three hosts).
+
+### M6a.2 W3: class values on the C6000 selector - lane w3, 2026-11-17
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp, 887 -> 934 lines; branch m6a2-w3 from e24b1927):
+a class result - a trivially copyable class of 8 bytes or less in A4 or A5:A4 (`loadPair`), a larger one copied through
+the pointer in A3 where the caller gave one (predicated at -O1 and above, branched round at -O0, as `visit(Return)`),
+a class with a copy of its own built through the hidden first parameter in A4 (`f.sret`, read from the word
+`emitFunction` keeps it in; the arguments start at B4); a class parameter - `emitParams` already writes the pair or
+copies the caller's object into the parser's slot, and the IR's pointer is that slot's address; and a class result of
+a call - the frame object's address in A3, or in A4 before the arguments, or the pair stored into it after the call,
+and `c.sret` (a call built in this function's own result) passes the kept pointer on. cl6x 7.4.4's `-S` is the oracle
+(boxkit/w3-handover.md, 2026-11-15); 8.2.2's was not run.
+
+**Walked count** (tools/c6x-walked.baseline, Windows, cl build, 1,238 cases): -O0 2,390 -> 1,756, -O2 2,442 -> 1,823.
+`class result`, `class or 64-bit parameter` (now `64-bit parameter`, W4's 163) and `class result of a call` read 0.
+**Left in W3's reasons, by name:** `class argument` 112 / 111 (-O0 / -O2) - a trivially copyable class over 8 bytes
+must be copied by the caller (cl6x passes the copy's address; the IR passes the object's own), which wants frame room
+and a selected copy, and a small one wants `loadPair` into any argument pair; `class result of another shape` 19 - a
+class with a destructor and no copy of its own: the hidden pointer is A4 but the IR returns the object's address, so
+the selector owes `visit(Return)`'s unguarded copy; `aggregate value` 41 / 3. Most callers of a class-returning
+function stay walked for `op memcpy` (330 / 372, W5's). Functions that need W4 as well are those the census names
+`floating value`, `floating or N-bit result`, `N-bit value` and `N-bit parameter`.
+
+**A scheduler fault the newly selected bodies met** (src/optimizer/C6xPack.cpp, `foldAddressing`): an `ADD R, k, T`
+was folded into a later `LDW *T` as `*+R(k)` past a load that had rewritten R - the scan let any load into R through,
+where only the folded access itself may write it. `std::map::insert` at -O2 (map-set-node-stability) read through a
+null pointer; one condition mends it.
+
+**Case** tests/cases/c6x-class-values (clang's .expected; ledger built=9 gone=9, live, double, phantom, over, lost 0).
+
+**Gate, on Windows alone** (the Linux box was out of bounds, then back with my ssh refused: every Linux leg is owed):
+cl /W4 /WX clean; the case right at -O0/-O1/-O2 on vm6747 and sim6747 and by the walker at -O2; tests/tms6747.sh SIM=1
+shards 1-6/6 at -O2 829 passed / 0 failed and at -O0 829 / 0, on the final tree; tools/exclusions, the comment cap and
+the memory gate hold, tools/c6x-declines 0, self-compile of C6xSelect.cpp and Tms6747.cpp 4 / 0 (these four before
+the scheduler's one-condition mend). **Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): -O2 489
+better, 255 equal, 71 worse of which 21 unowned (+1 to +42; boxkit/w3-worse-O2.txt), total 191,867,154 ->
+191,556,159; -O0 450 better, 180 equal, 184 worse of which 75 unowned (boxkit/w3-worse-O0.txt), total 385,994,327 ->
+385,238,195. The causes are named by family, not diagnosed case by case. **Owed to the wave gate:** -O1, SIM=0 at
+every level, the walker legs, asm6x at -O1 and -O2, identical.sh ARCHS=tms6747, C6xPack.cpp's self-compile, every
+Linux leg (shards 1-3/6), cl6x 8.2.2's `-S`, and the remainder named above.
