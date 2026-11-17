@@ -1,0 +1,1 @@
+x86_64-windows  a class returned or a named return value built inside a handler is outside the lowering on the Microsoft ABI (the funclet), and cl ignores a throw(...) list

@@ -67,7 +67,6 @@ const ir::Function *Tms6747::ssaChoose(const Function &fn) {
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
 std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (!fn.exceptionSpec().empty()) return "exception specification";     // throw(T...): the lowering's filter has no row here
     // A class result (W3): in A5:A4, or copied through A3's pointer, or built through the hidden first parameter in A4.
     const bool cls = fn.returns()->isStructOrUnion(), hidden = fn.sretSlot() != 0 && hiddenInA4(fn.returns());
     // One with a destructor and a trivial copy (W7) is copied through the hidden pointer from the object the lowering returns.

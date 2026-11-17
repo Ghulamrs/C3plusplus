@@ -1460,8 +1460,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         facts.specFilter = typer.specFilter(facts.recordKey);
         facts.noexceptWrap = typer.noexceptWrap(facts.recordKey);
         facts.ctorTry = typer.ctorTry(facts.recordKey);
-        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
-                                                          !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
+        facts.wrappedBody = facts.specFilter.empty() && (typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
+                                                          !facts.noexceptWrap && !facts.ctorTry);
         const TypeId declared = typer.declaredReturnOf(c.bodies[r].first, fn.symbol());
         if (declared.valid()) facts.returns = declared;
         std::string why;
