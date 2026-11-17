@@ -691,3 +691,57 @@ pattern (27, with the 21 pack-pattern forms beside it), then the rest of the 99.
 flag against without, 8 of 8 the same**; the cases' 1,238 the same, 0 differ; read 3,379 of 3,478, shape 8, as
 before. It is not in the branch because it has no `identical.sh`, no Windows build and no gate behind it - the
 next lane applies it, gates it, and has the self-host comparison (all 103, `boxkit/m8h-cost.sh`) to hold it to.
+
+**M8.1, commit 3: a class specialization seated where the program asks, 2026-11-18** (lane m8i, branch `m8-d`
+from `29c9b51c`; one lane-hour; code `789e7b4a`). **Lane m8h's Windows chain, read first, all passed**:
+`self-compile.cmd` 103 of 103, `tests/names.sh` 883 passed 0 failed, `tests/overload.sh` 46 agreed 0 differed,
+the self-host under `-check=templates` 103 of 103 with 7,323 of 7,512 read (189 not, by m8g's reasons).
+**(1) The class seating, committed and gated** (`boxkit/m8h-classseat.patch`, four lines): a class
+specialization a pattern's read instantiates is recorded in `askedByPattern_`, and `instantiateClass`'s
+`findTypedef(tag)` return calls `madeWhereAsked` - its members' replays stand where the program first asks, as
+with no read. **The self-host's `-S` with the flag against without: 8 of 103 differed, now 0** on Linux and on
+Windows (`boxkit/m8i-selfsame.sh`, and `m8i-win.sh selfsame`: 102 the same; the 103rd is `Driver`, one line,
+its `__TIME__` string - different with no flag twice); `tests/cases` 1,238 the same, 0 differ, both boxes; the
+read's counts as m8h's (3,379 of 3,478; 455 / 8 / 14; 2,902 never replayed).
+**(2) The `Signature` not entered, and an asked specialization's not made at the read: not done, and not one
+door.** Two things found by reading and one by measuring. *An asked function specialization's `Signature`
+cannot be held aside*: both of `instantiate`'s callers on the call path discard what it returns
+(`Templates.cpp:1984`, `ParserTemplate.cpp:798`) and overload resolution then ranks the specialization where
+it finds it - in `functionIndex_[name]`, beside the ordinary functions; a copy the read keeps to itself is a
+candidate nobody sees. So it wants a set of the read's own that `Lookup` consults while `patternUses_` is set,
+not a branch in `instantiate`. *The pattern's own `Signature`* is made by the ordinary declaration path, as any function's, and the erase walk
+takes out entries of the pattern's own name only: whatever else a read enters (9,082 `functions_` entries over
+7,399 reads in the self-host, below) it does not look for. *Measured*
+(`boxkit/m8i-left.patch`, a count on stderr after each read, Linux `~/m8ix`, never committed): what the reads
+leave in the unit's tables, summed -
+
+| corpus (reads) | `functions_` entries | overload-set entries left | specializations | `typedefs_` entries | `enums_` | syntax nodes (killed) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/cases` (3,506 reads met) | 3,467 in 3,466 reads | 3 in 1 | 1 | 4,509 in 3,427 | 52 in 47 | 58,643 |
+| the self-host (7,512) | 9,082 in 7,399 | 1,656 in 27 | 144 in 24 | 11,964 in 7,491 | 0 | 150,641 |
+
+**So "the read writes nothing into the unit" is further off than the two tables the brief names**: nearly every
+read leaves `typedefs_` entries (the bound parameters' and the body's own, unbound but not removed), 47 leave
+enumerators, and 27 of the self-host's leave whole class specializations with their members' signatures in the
+overload sets (1,656 entries - kept on purpose: the class is the program's, made early and now seated where
+asked). None of it changes a `-S` on either box; all of it is the unit's memory with the read always on.
+
+**Whether commit 3 can drop the flag: not yet - the flag was not dropped.** The output condition now holds
+(the self-host 0 of 103 and the cases 0 of 1,238 with the flag against without, both boxes); the other half -
+a read that writes nothing into the unit - does not, by the table. **What the next lane takes**, in order: the
+read's `Lookup` as a layer (its signatures, typedefs and enumerators entered into tables of the pattern's own
+that lookups consult first while the read runs, and dropped whole at its end - one door, which also holds an
+asked specialization's `Signature` where resolution can see it); the table above at 0 but for the class
+specializations, re-measured by `m8i-left.patch`; then the flag as its own commit; then the signature's
+expression reader (eight shapes), not started here.
+
+**Gates** at `789e7b4a`, one tree on each box, each built from clean; REF built fresh from `29c9b51c` in its own
+kept tree (Linux `~/m8ir`, Windows `work\m8ir` from `git archive`; NEW `~/m8in`, `work\m8in`). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,298 compared, 0 differ**; `run.sh` 1232 passed, 0 failed; `typed.sh` 875 passed, 0 failed, 1 not for
+this host (other=38 name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52;
+no record re-recorded); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale (no citation moved);
+comment cap 0; memory gate held; ast-residue +0 on all seven; `ide/generate.py --check` up to date.
+WINGATES **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
+Compiler++'s units; no `tests/cases` program was added (the gate for this commit is the self-host comparison,
+which no case showed). src/ lines: 94,873 before, 94,877 after.
