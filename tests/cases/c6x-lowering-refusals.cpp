@@ -1,4 +1,4 @@
-// What the SSA lowering refused and the C6000's walker wrote until R1 (M6a.2, 2026-11-18): each family once, so the selector has it.
+// What the SSA lowering refused and the C6000's walker wrote until R1 (M6a.2, 2026-11-18): each family once but the throw(...) lists (exception-spec, exception-spec-unexpected and ssa-eh-tail hold those, on sim6747).
 #include <cstdio>
 #include <initializer_list>
 struct A { int v; A(int x = 7); };
@@ -37,8 +37,6 @@ K caught() { try { throw 1; } catch (int) { return K(4); } }
 P beside(P *p) { L l; return *p; }
 A sliced(int k) { D d; A a(k); if (k) return d; return a; }
 S make() { S s; s.v = 1; return s; }
-int allowed(int k) throw(int) { if (k) throw k; return 0; }
-int specified(int k) throw(int, char) { try { return allowed(k); } catch (char) { return -1; } }
 
 int main() {
     int *p = none();
@@ -65,7 +63,5 @@ int main() {
     R r(d1);
     std::initializer_list<A> l = { d1, d2 };
     printf("%d %d\n", r.r.v, (int)l.size() + l.begin()->v);
-    try { specified(5); } catch (int e) { printf("threw %d\n", e); }
-    printf("%d\n", specified(0));
     return 0;
 }

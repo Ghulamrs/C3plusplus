@@ -597,9 +597,8 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             continue;
         }
         const std::uint32_t k = count(e->second);
-        if (m.width != 0) {
+        if (m.width != 0 && k <= 1) {
             // A bit-field's initialiser goes into its unit beside the unit's other fields; `: b()` is its zero.
-            if (k > 1 || !scalar(mt)) outside("a bit-field's mem-initialiser of " + std::to_string(k) + " values");
             openFull();
             bitStore(Val(result(g), tid(mt)), m, k == 1 ? exprTo(child(e->second, 0), tid(mt)) : Val(zeroOf(tid(mt)), tid(mt)));
             closeFull();
@@ -780,11 +779,10 @@ void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema
             aggregateItem(result(u), *m.anonUnion, parts, next);
             continue;
         }
-        if (m.name.empty()) outside("a braced list reaching a member the lowering does not place");
+        if (m.name.empty() || (m.width != 0 && !scalar(*m.type->unqualified()))) outside("a braced list reaching a member the lowering does not place");
         if (m.width != 0) {
             // [dcl.init.aggr] on a bit-field: its value, or its zero, put into its unit beside the unit's other fields.
             const TypeId ft = tid(*m.type->unqualified());
-            if (!scalar(T(ft))) outside("a braced list reaching a bit-field of no scalar type");
             const InstId u = add(Op::Gep, tid(*types_.pointerTo(&T(ft))), std::vector<ValueId>(1, slot));
             at(u).k = m.offset;
             bitStore(Val(result(u), ft), m, next < parts.size() ? exprTo(parts[next++], ft) : Val(zeroOf(ft), ft));
@@ -1209,12 +1207,9 @@ ValueId Lowering::backingArray(const std::vector<sema::TypedId> &elems, const Ty
         at(g).k = static_cast<long long>(i) * e.size(target_);
         if (!built) { store(result(g), exprTo(elems[i], tid(e)).v); continue; }
         if (bytes) {
-            if (!objectNode(elems[i])) outside("an initializer_list element copied from what is not an object");
-            Val o = object(elems[i]);
-            if (T(o.type).isStructOrUnion() && T(o.type).unqualified() != e.unqualified())
-                o = baseSubobject(o, e, "an initializer_list element copied from another type");     // slicing: the base's bytes
-            if (T(o.type).unqualified() != e.unqualified()) outside("an initializer_list element copied from another type");
-            copyObject(result(g), o.v, e);
+            sema::ListElement copied;
+            copied.bytes = true;
+            listElement(result(g), e, elems[i], copied);
             continue;
         }
         if (lb.elems[i].first != i || lb.elems[i].count != 1) broken("an initializer_list element the record does not place");
@@ -1233,7 +1228,9 @@ void Lowering::listElement(ValueId at0, const Type &et, sema::TypedId part, cons
         ValueId made;
         if (convertedTemporary(part, et, true, made)) { copyObject(at0, made, et); return; }
         if (!objectNode(part)) outside("an initializer_list element copied from what is not an object");
-        const Val o = object(part);
+        Val o = object(part);
+        if (T(o.type).isStructOrUnion() && T(o.type).unqualified() != et.unqualified())
+            o = baseSubobject(o, et, "an initializer_list element copied from another type");     // slicing: the base's bytes
         if (T(o.type).unqualified() != et.unqualified()) outside("an initializer_list element copied from another type");
         copyObject(at0, o.v, et);
         return;
@@ -3292,7 +3289,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != &rt) outside("a class returned from another type");
         if (!live_.empty()) {
             // Its bytes saved, then the destructors: a destructor may write what `return *p;` names ([stmt.return]/3).
-            if (target_.microsoftNames() && handlerDepth_ != 0) outside("a class returned beside a destroyed local inside a handler");
+            if (target_.microsoftNames() && handlerDepth_ != 0) outside("a class returned while a local with a destructor is alive");
             const ValueId saved = entryAlloca(tid(rt), "$ret");
             copyObject(saved, a.v, rt);
             const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, saved));
@@ -3397,7 +3394,12 @@ void Lowering::returnDestroyed(sema::TypedId value) {
     } else {
         outside("a class with a destructor returned from what is neither a local, a temporary nor an object");
     }
+    if (handlerDepth_ == 0) {
+        for (std::size_t k = live_.size(); k-- > liveFloor_; )
+            if (live_[k].slot.v != kept.v) destroy(live_[k]);
+    }
     const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, at0));
+    if (handlerDepth_ == 0) { br(returnBlock_, std::vector<ValueId>(1, result(c))); return; }
     const ValueId elided = elidedSlot_;
     elidedSlot_ = kept;     // every other object alive is destroyed, and the handlers left ([except.handle]/7)
     leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, result(c)));
@@ -3436,11 +3438,11 @@ void Lowering::namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t) 
         if (!localBuilt_ || !localBuilt_(v.syntax, symbol, sig, defaulted, zeroed)) outside("a named return value built by no constructor the parser recorded");
         const Type &ft = T(sig);
         // As builtLocal: the defaults are the `var` node's last parts, braces reach a constructor as parentheses do.
-        if (defaulted && v.count + 1 != ft.params().size()) outside("a named return value built with default arguments");
         TypeId listParam;
         std::uint32_t listed = 0;
-        if (v.initForm == 2 && (ft.params().size() != v.count + 1 || (localList_ && localList_(v.syntax, listParam, listed))))
-            outside("a named return value built from an initializer_list");
+        if ((defaulted && v.count + 1 != ft.params().size()) ||
+            (v.initForm == 2 && (ft.params().size() != v.count + 1 || (localList_ && localList_(v.syntax, listParam, listed)))))
+            outside("a named return value built with defaults, zeroed or from a braced list");
         if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &c) outside("a named return value's constructor of another class");
         if (zeroed) {
             const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
@@ -4698,7 +4700,7 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
         const syntax::Kind ok = syn(child(id, 0)).kind;
         // [expr.ref]/1: the object expression is evaluated all the same - a call's result made and left, an lvalue reached.
         if (ok != syntax::Kind::Name && ok != syntax::Kind::This && !arrow) {
-            if (!classObjectNode(child(id, 0))) outside("a static member reached through what is not an object");
+            if (!classObjectNode(child(id, 0))) outside("a static member reached through what is not a name");
             classObject(child(id, 0));
         }
         if (sr.serial == 1) outside("a folded static member, which has no storage");

@@ -113,11 +113,11 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
         if (!assigning && m.inVirtualBase != nullptr && recorded("^" + m.inVirtualBase->unqualified()->tag(), *m.inVirtualBase->unqualified(), 0, symbol, sig)) done = true;
         if (done) continue;
         if (m.width != 0 && m.name.empty()) continue;      // padding: no member to copy
-        if (assigning && m.type->isReference()) l.outside(what + " of a class with a reference member");
+        if (m.type->isReference() ? assigning : m.width != 0 && !l.scalar(*m.type->unqualified()))
+            l.outside(what + " of a class with a bit-field or reference member");
         if (m.type->isReference() || m.width != 0) {
             // A reference member's address is copied; a bit-field's value goes into its unit beside the other fields.
             const TypeId held = m.width != 0 ? l.tid(*m.type->unqualified()) : l.tid(*l.types_.pointerTo(m.type->referent()));
-            if (m.width != 0 && !l.scalar(l.T(held))) l.outside(what + " of a class with a bit-field of no scalar type");
             const TypeId unit = l.tid(*l.types_.pointerTo(&l.T(held)));
             const ValueId to = into(l.this_, m.offset, unit), from = into(that, m.offset, unit);
             if (m.width != 0) l.bitStore(Lowering::Val(to, held), m, l.bitRead(Lowering::Val(from, held), m));
