@@ -267,7 +267,7 @@ private:
     std::vector<const Type *> debugTypes_;
     void noteType(const Type *t);
     void emitTypes();
-    void emitExceptionTable(const Function &fn);
+    void emitExceptionTable(bool noexcept_, const std::vector<std::string> &spec);
     void emitFunction(const Function &fn);
 
     // **The SSA selector** (M6a, C6xSelect.cpp): a function inside its subset is written from the module, the rest by the
@@ -281,7 +281,7 @@ private:
     std::vector<char> ssaFused_;                                   // 1: a compare written by its branch; 2: a cast remade at its calls
     std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
     int ssaSelected_ = 0, ssaWalked_ = 0;
-    const ir::Function *ssaChoose(const Function &fn);
+    const ir::Function *ssaChoose(const Function &fn, const ir::Function &f);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
     const Type *ssaType(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
     int layoutSsa(const Function &fn, const ir::Function &f);

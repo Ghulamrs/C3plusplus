@@ -2666,6 +2666,7 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     f.isStatic = facts.isStatic;
     f.isInline = facts.isInline;
     f.noexcept_ = facts.noexcept_;
+    f.spec = facts.spec;
     f.variadic = facts.variadic;
     f.pos = facts.pos;
     marks_.clear();

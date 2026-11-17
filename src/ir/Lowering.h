@@ -26,6 +26,7 @@ struct FunctionFacts {
     TypeId returns;
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
+    std::vector<std::string> spec;      // a throw(...) list's types by their type_info symbols, for a target that keeps the list in its table
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
     bool noexceptWrap;          // [except.spec]/9 as the parser kept it: the body under a catch-all that aborts
     bool ctorTry;               // [except.pre]/4: a constructor's try block over its mem-initialisers and body, or a destructor's

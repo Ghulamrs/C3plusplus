@@ -1434,6 +1434,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         facts.noexcept_ = fn.isNoexcept();
+        facts.spec = fn.exceptionSpec();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();
         if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
@@ -1611,8 +1612,8 @@ bool Driver::compile(const Job &job) {
                      job.input.c_str(), optimize_);
     }
     // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 and arm64 the only thing selected.
-    // tms6747 selects a function its selector's subset holds, the walker the rest (M6a); CXX1_C6X_WALKER: the walker all.
-    const bool c6x = targetIsTi() && std::getenv("CXX1_C6X_WALKER") == nullptr;
+    // tms6747 selects a function its selector's subset holds, the walker the rest (M6a); its shell reads the IR's function (M6d).
+    const bool c6x = targetIsTi();
     if (selects || c6x || dumpSsa_ || checkSsa_) {
         std::string dumped;
         std::vector<std::string> outside;

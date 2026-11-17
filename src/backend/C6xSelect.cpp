@@ -54,14 +54,14 @@ bool smallConst(const ir::Function &f, ir::ValueId v, long long lo, long long hi
 
 }   // namespace
 
-// The function `fn` from the module where its body is inside the subset; otherwise null, and the walker's, the reason named.
-const ir::Function *Tms6747::ssaChoose(const Function &fn) {
-    if (ssa_ == nullptr) return nullptr;
-    const ir::FuncId id = ssa_->find(fn.symbol());
-    const std::string why = !id.valid() ? std::string("outside the SSA lowering") : ssaOutside(fn, ssa_->functions[id.v]);
-    if (why.empty()) { ssaSelected_++; return &ssa_->functions[id.v]; }
+// `f`, the IR's function of `fn`, where its body is inside the subset; otherwise null, and the walker's, the reason named.
+const ir::Function *Tms6747::ssaChoose(const Function &fn, const ir::Function &f) {
+    // CXX1_C6X_WALKER: the walker all, uncounted (the gate's wtms legs).
+    if (std::getenv("CXX1_C6X_WALKER") != nullptr) return nullptr;
+    const std::string why = ssaOutside(fn, f);
+    if (why.empty()) { ssaSelected_++; return &f; }
     ssaWalked_++;
-    if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "c6x-walker %s: %s\n", fn.symbol().c_str(), why.c_str());
+    if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "c6x-walker %s: %s\n", f.symbol.c_str(), why.c_str());
     return nullptr;
 }
 
@@ -1228,7 +1228,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     c6x::write(ssaMir_, out_);
     if (std::getenv("CXX1_C6X_MIR") != nullptr) {
         const c6x::Census c = c6x::census(ssaMir_);
-        std::fprintf(stderr, "c6x-mir %s: %d instructions, %d labels, %d verbatim, %d opaque operands\n", fn.symbol().c_str(),
+        std::fprintf(stderr, "c6x-mir %s: %d instructions, %d labels, %d verbatim, %d opaque operands\n", f.symbol.c_str(),
                      c.instructions, c.labels, c.verbatim, c.opaque);
     }
 }

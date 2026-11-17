@@ -824,7 +824,7 @@ static const std::size_t kLongScope = 0xF000;
 // A row's catches come first, one per type in its chain, its cleanup last:
 // phase 2 then lands once, on the pad of the barrier phase 1 found, whose
 // selector walks the chain of pads the parser built.
-void Tms6747::emitExceptionTable(const Function &fn) {
+void Tms6747::emitExceptionTable(bool noexcept_, const std::vector<std::string> &spec) {
     std::vector<CallSite> rows;
     std::map<std::string, std::size_t> region;
     // **A cleanup region is one scope here, unsplit**: TI's personality scans a frame's scopes in order and
@@ -837,9 +837,9 @@ void Tms6747::emitExceptionTable(const Function &fn) {
         if (pure) region[c.pad] = rows.size();
         rows.push_back(c);
     }
-    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+    const bool states = noexcept_ || !spec.empty();
     if (rows.empty() && !states) return;
-    const std::string table = "__c6xabi_extab$" + fn.symbol();
+    const std::string table = "__c6xabi_extab$" + functionName_;
     std::ostringstream pads;
     std::set<std::string> made;
     // The trampoline for (pad, selector), made once and named by both.
@@ -856,7 +856,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     for (const CallSite &c : rows) padLines += 3 * (c.types.size() + 1);
     const bool wide = codeBytes(out_.str()) + 4 * padLines >= kLongScope;
     const char *const scope = wide ? "\t.ulong\t" : "\t.half\t";
-    t << "\t.sect\t\"" << ".c6xabi.extab:" << fn.symbol() << "\"\n\t.align\t4\n" << table << ":\n";
+    t << "\t.sect\t\"" << ".c6xabi.extab:" << functionName_ << "\"\n\t.align\t4\n" << table << ":\n";
     for (unsigned w : wide ? longUnwindWords() : std::vector<unsigned>(1, unwindWord(true))) {
         std::snprintf(word, sizeof word, "0x%08x", w);
         t << "\t.ulong\t" << word << "\n";
@@ -864,7 +864,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     for (std::size_t i = 0; i < rows.size(); i++) {
         const CallSite &c = rows[i];
         std::string len = "$EXTAB_SCOPE(" + c.end + ") - $EXTAB_SCOPE(" + c.begin + ")";
-        std::string off = "$EXTAB_SCOPE(" + c.begin + ") - $EXTAB_SCOPE(" + fn.symbol() + ") + 2";
+        std::string off = "$EXTAB_SCOPE(" + c.begin + ") - $EXTAB_SCOPE(" + functionName_ + ") + 2";
         if (c.terminate) {           // catch anything, and terminate: cl6x's scope over a cleanup pad
             t << scope << len << " + 1\n" << scope << off << "\n\t.ulong\t0\n\t.ulong\t0xfffffffe\n";
             continue;
@@ -882,14 +882,14 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     // A function's exception specification, over the whole of it and last: the types
     // `throw(T...)` allows - none for noexcept - and no pad, so TI's runtime calls
     // __cxa_call_unexpected - cl6x's row, with the offset's low bit set.
-    const std::string fnEnd = "L." + fn.symbol() + ".fnend";
+    const std::string fnEnd = "L." + functionName_ + ".fnend";
     if (states) {
-        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << fn.symbol() << ")\n" << scope << "3\n"
-          << "\t.ulong\t" << fn.exceptionSpec().size() << "\n";
-        for (const std::string &type : fn.exceptionSpec()) t << "\t.ulong\t$EXTAB_RTTI(" << type << ")\n";
-        t << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << functionName_ << ")\n" << scope << "3\n"
+          << "\t.ulong\t" << spec.size() << "\n";
+        for (const std::string &type : spec) t << "\t.ulong\t$EXTAB_RTTI(" << type << ")\n";
+        t << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << functionName_ << "\"\n";
     }
-    t << "\t.ulong\t0\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr" << (wide ? 2 : 3) << "\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+    t << "\t.ulong\t0\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr" << (wide ? 2 : 3) << "\", \".c6xabi.extab:" << functionName_ << "\"\n";
     if (wide) needsPr2_ = true;
     out_ << pads.str() << fnEnd << ":\n" << t.str() << "\t.text\n";
     if (states) needsUnexpected_ = true;
@@ -2303,11 +2303,15 @@ void Tms6747::emitTypes() {
 
 void Tms6747::emitFunction(const Function &fn) {
     resetLabels();
+    // The IR's function of `fn`, which the shell reads (M6d): a refusal of the lowering is an error, so each has one.
+    const ir::FuncId irId = ssa_ != nullptr ? ssa_->find(fn.symbol()) : ir::FuncId();
+    if (!irId.valid()) unsupported("a function the SSA lowering built none of");
+    const ir::Function &irFn = ssa_->functions[irId.v];
     // The symbol, not the name: with C++ linkage that is the mangled name, and
     // two overloads share a name but must not share a label.
-    functionName_ = fn.symbol();
-    labelPrefix_ = "L." + fn.symbol() + ".";
-    returnLabel_ = "L.return." + fn.symbol();
+    functionName_ = irFn.symbol;
+    labelPrefix_ = "L." + irFn.symbol + ".";
+    returnLabel_ = "L.return." + irFn.symbol;
     functionOf_ = &fn;
 
     sretSlot_ = fn.sretSlot();
@@ -2319,7 +2323,7 @@ void Tms6747::emitFunction(const Function &fn) {
     std::size_t regCount = static_cast<std::size_t>(abi_.intCount);
     firstStack_ = regCount - sretShift_;
     vaStart_ = 0;
-    if (fn.isVariadic()) {
+    if (irFn.variadic) {
         std::size_t named = fn.params().size();
         std::size_t last = named > 0 ? named - 1 : 0;
         if (last < firstStack_) firstStack_ = last;
@@ -2344,7 +2348,7 @@ void Tms6747::emitFunction(const Function &fn) {
     saveBytes_ = kSaveBytes;
     // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
     ssaPlace_.clear();
-    const ir::Function *ssaFn = ssaChoose(fn);
+    const ir::Function *ssaFn = ssaChoose(fn, irFn);
     ssaRows_ = ssaFn != nullptr;
     if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;
@@ -2376,14 +2380,14 @@ void Tms6747::emitFunction(const Function &fn) {
     // An inline definition may appear in several translation units, so the
     // linker keeps one rather than rejecting the rest: a weak definition,
     // `.weak` in place of `.global` for TI's assembler.
-    if (fn.isInline())       out_ << "\t.weak\t" << fn.symbol() << "\n";
-    else if (!fn.isStatic()) out_ << "\t.global " << fn.symbol() << "\n";
-    out_ << fn.symbol() << ":\n";
+    if (irFn.isInline)       out_ << "\t.weak\t" << irFn.symbol << "\n";
+    else if (!irFn.isStatic) out_ << "\t.global " << irFn.symbol << "\n";
+    out_ << irFn.symbol << ":\n";
     // A second name for the same code (Function::alias): a label at the same
     // address, not a copy of the body.
     if (!fn.alias().empty()) {
-        if (fn.isInline())       out_ << "\t.weak\t" << fn.alias() << "\n";
-        else if (!fn.isStatic()) out_ << "\t.global " << fn.alias() << "\n";
+        if (irFn.isInline)       out_ << "\t.weak\t" << fn.alias() << "\n";
+        else if (!irFn.isStatic) out_ << "\t.global " << fn.alias() << "\n";
         out_ << fn.alias() << ":\n";
     }
 
@@ -2391,11 +2395,11 @@ void Tms6747::emitFunction(const Function &fn) {
     const std::string early = ssaFn != nullptr ? std::string() : earlyExit(fn);
     std::ostringstream pro;
     pro.swap(out_);                                        // the prologue, scheduled with the body at -O1 and -O2
-    markLine(fn.pos());                                     // -g: the function's own line, as cl6x's first .dwpsn names it
+    markLine(irFn.pos);                                     // -g: the function's own line, as cl6x's first .dwpsn names it
     std::vector<std::string> saved = savedRegs();
     // A leaf whose parameters and locals are all in registers needs no frame at all.
     bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !fn.params().empty()) || sretSlot_ != 0 ||
-                     saved.size() > 1 || fn.hasLandingPads() || fn.isVariadic();
+                     saved.size() > 1 || fn.hasLandingPads() || irFn.variadic;
     // An odd:even pair saved side by side on an 8-aligned word (A15 is the caller's B15, 8-aligned) goes
     // in one STDW and comes back in one LDDW - one round trip to memory where there were two.
     auto pairAt = [&](std::size_t k) -> bool {
@@ -2438,21 +2442,21 @@ void Tms6747::emitFunction(const Function &fn) {
     const std::string before = early + (whole ? pro.str() : std::string()) + params + (ssaFn != nullptr ? ssaHead_ : body);
     out_ << c6xSchedule(before, ssaFn != nullptr ? &ssaMir_ : nullptr, epi.str(), optimize_, declined, refused);
     // Declined (Q5 of the M6c review): the serial text stands as -O0 writes it, and tools/c6x-declines counts the line.
-    if (!declined.empty()) opt::noteDecline("c6x-unscheduled", fn.symbol() + ": " + declined);
+    if (!declined.empty()) opt::noteDecline("c6x-unscheduled", irFn.symbol + ": " + declined);
     if (!refused.empty()) unsupported(("the C6000 instruction '" + refused + "', which no unit encodes").c_str());
     // TI's index entry for a function an exception can pass through - one that calls, so saves B3 - naming the table
     // when there are handlers, holding the word itself when there are none. A function that calls nothing gets no
     // entry, as cl6x gives none: the linker covers the run it sits in with one EXIDX_CANTUNWIND.
-    emitExceptionTable(fn);
+    emitExceptionTable(irFn.noexcept_, irFn.spec);
     char word[16];
     std::snprintf(word, sizeof word, "0x%08x", unwindWord(needFrame));
-    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+    const bool states = irFn.noexcept_ || !irFn.spec.empty();
     bool calls = !callSites().empty() || states;
     for (const std::string &r : savedRegs()) if (r == "B3") calls = true;
     if (calls) anyExidx_ = true;
     if (calls)
-        out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << fn.symbol() << ")\n\t.ulong\t"
-             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + tiSpelling(fn.symbol()) + "\")") << "\n\t.text\n";
+        out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << irFn.symbol << ")\n\t.ulong\t"
+             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + tiSpelling(irFn.symbol) + "\")") << "\n\t.text\n";
 
     file_ += out_.str();
     out_.str(std::string());
