@@ -135,7 +135,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
                 for (std::size_t n = 0; n < ps.size(); n++) {
                     if (!ps[n]->isStructOrUnion()) continue;
-                    if (c.variadic || n >= count || !(ssaCopiedArg(ps[n]) || inPair(ps[n])))
+                    // One whose copy or destruction is a call (W7): the lowering's copy in this frame, its address a word.
+                    if (c.variadic || n >= count || !(ssaCopiedArg(ps[n]) || inPair(ps[n]) || hiddenInA4(ps[n])))
                         return "class argument of another shape";
                     if (inPairWide(ps[n]) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 }
@@ -1237,7 +1238,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         };
         for (std::uint32_t k = 0; k < inRegs; k++) {
             const char *reg = abi_.intRegs[k + hid];
-            if (k >= ps.size() || !ps[k]->isStructOrUnion()) { ssaPair(f, arg(k), reg); continue; }
+            if (k >= ps.size() || !ps[k]->isStructOrUnion() || hiddenInA4(ps[k])) { ssaPair(f, arg(k), reg); continue; }
             if (ssaCopiedArg(ps[k])) {
                 localAddr(ssaArgCopy_[i.first + base + k], "A3");
                 ssaEmit(c6x::MInst("MV", "A3", reg));
