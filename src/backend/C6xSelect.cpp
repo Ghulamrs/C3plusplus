@@ -70,7 +70,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     if (!fn.exceptionSpec().empty()) return "exception specification";     // throw(T...): the lowering's filter has no row here
     // A class result (W3): in A5:A4, or copied through A3's pointer, or built through the hidden first parameter in A4.
     const bool cls = fn.returns()->isStructOrUnion(), hidden = fn.sretSlot() != 0 && hiddenInA4(fn.returns());
-    if (f.sret.valid() != hidden || (cls ? !inPair(fn.returns()) && fn.sretSlot() == 0 : fn.sretSlot() != 0)) return "class result of another shape";
+    // One with a destructor and a trivial copy (W7) is copied through the hidden pointer from the object the lowering returns.
+    if ((f.sret.valid() != hidden && (f.sret.valid() || fn.returns()->nonTrivialCopy())) || (cls ? !inPair(fn.returns()) && fn.sretSlot() == 0 : fn.sretSlot() != 0)) return "class result of another shape";
     if (fn.params().size() != f.params.size()) return "parameters differ";
     for (std::size_t n = 0; n < fn.params().size(); n++) {
         const Type *p = fn.params()[n].type;
@@ -156,8 +157,15 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
 
 // A class result from its address in A4, as visit(Return): the pair, or a copy through A3's pointer where the caller gave
 // one (cl6x gives none for a result it drops); a class built through the hidden parameter is already there.
-void Tms6747::ssaClassResult(const Type *t) {
-    if (!t->isStructOrUnion() || sretShift_ != 0) return;
+void Tms6747::ssaClassResult(const Type *t, bool built) {
+    if (!t->isStructOrUnion() || built) return;
+    if (sretShift_ != 0) {      // the hidden pointer in A4 is never null: the walker's unguarded copy
+        localAddr(sretSlot_, "A6");
+        out_ << "\tLDW\t*A6, A6\n\tNOP\t4\n";
+        copyBlock(t->size(target_), "A4", "A6", t->align(target_), t->align(target_) >= 8);
+        out_ << "\tMV\tA6, A4\n";
+        return;
+    }
     if (inPair(t)) { loadPair(t->size(target_), t->align(target_)); return; }
     const std::string skip = label("noresult", nextLabel());
     localAddr(sretSlot_, "A6");
@@ -1311,7 +1319,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Ret:
         if (i.count == 1) ssaPair(f, f.operand(i, 0), "A4");
-        if (i.count == 1) ssaClassResult(functionOf_->returns());
+        if (i.count == 1) ssaClassResult(functionOf_->returns(), f.sret.valid());
         jump(returnLabel_);
         writeLater();
         return;

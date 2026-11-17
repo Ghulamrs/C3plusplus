@@ -309,7 +309,7 @@ private:
     void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
-    void ssaClassResult(const Type *t);       // a class result from its address in A4 (W3)
+    void ssaClassResult(const Type *t, bool built);     // a class result from its address in A4 (W3), unless built in place
     int ssaAlign(const ir::Function &f, ir::ValueId p) const;    // what a block op may assume of p (W5)
     void ssaFill(int size, const char *to, int align);         // memset to zero (W5)
     bool ssaCopiedArg(const Type *p) const { return p->isStructOrUnion() && !inPair(p) && !hiddenInA4(p); }

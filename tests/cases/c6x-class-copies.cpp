@@ -1,6 +1,6 @@
 // M6a.2 W7: a class whose copy or destruction is a call, passed by value on the C6000 selector - the caller builds the
 // copy in a frame slot and passes its address, as cl6x does; small and large, first and later arguments, beside words,
-// a 64-bit one and a pair, a member function's, a call through a pointer, and a copy destroyed after the call.
+// a 64-bit one and a pair, a member function's, a call through a pointer; and a class with a destructor alone returned.
 #include <stdio.h>
 
 static int copies = 0, gone = 0;
@@ -24,6 +24,13 @@ Heavy::Heavy(int k) { for (int i = 0; i < 4; i++) w[i] = k * (i + 1); }
 Heavy::Heavy(const Heavy &o) { for (int i = 0; i < 4; i++) w[i] = o.w[i] + 1; copies++; }
 
 struct Pair { int a, b; };
+struct Owned { int v; ~Owned(); };
+Owned::~Owned() { gone++; }
+struct Wide { int w[3]; ~Wide(); };
+Wide::~Wide() { gone++; }
+
+Owned give(int k) { Owned o; o.v = k * 2; return o; }
+Wide spread(int k) { Wide w; for (int i = 0; i < 3; i++) w.w[i] = k + i; return w; }
 
 int take(Counted c) { return c.v; }
 int takeSecond(int a, Counted c, int b) { return a + c.v * 2 + b; }
@@ -54,5 +61,8 @@ int main() {
     int sum = 0;
     for (int i = 0; i < 4; i++) sum += take(Counted(i));
     printf("loop %d\n", sum);
+    printf("give %d\n", give(21).v);
+    Wide w = spread(5);
+    printf("spread %d %d %d\n", w.w[0], w.w[1], w.w[2]);
     return 0;
 }
