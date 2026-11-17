@@ -48,6 +48,11 @@ int byWord(Word w, int k) { w.a += k; return w.a; }
 int byTwo(int k, Two t) { t.a *= k; return t.a + t.b; }
 int byThree(Three t, int k, Three u) { t.a += k; u.c -= k; return t.a * 1000 + t.b * 100 + u.b * 10 + u.c; }
 double byDbl(Dbl d, Two t) { d.k += t.b; return d.d * d.k; }
+struct Empty {};
+struct Ch3 { char c[3]; };
+struct Sh3 { short s[3]; };
+int byEmpty(Empty, int k, Empty) { return k + 1; }
+int byCh3(Ch3 c, Sh3 h, int k) { c.c[1] = 9; return c.c[0] * 100 + c.c[1] * 10 + c.c[2] + h.s[0] + h.s[2] * k; }
 int byBig(const Big &r, Big b) { b.w[0] = 99; return b.w[0] + b.w[59] + r.w[0]; }
 
 unsigned sum(const char *p, int n) { unsigned s = 0; for (int k = 0; k < n; k++) s = s * 31 + p[k]; return s; }
@@ -93,5 +98,9 @@ int main() {
     Dbl e = { 1.5, 2 };
     printf("%d %d %d %g %d\n", byWord(w1, 3), byTwo(2, p), byThree(q, 5, r), byDbl(e, p), byBig(b1, b1));
     printf("%d %d %d %d %d %d\n", w1.a, p.a, q.a, r.c, e.k, b1.w[0]);
+    Empty m;
+    Ch3 c3 = { { 1, 2, 3 } };
+    Sh3 h3 = { { 1000, -1, 7 } };
+    printf("%d %d %d %d\n", byEmpty(m, 4, m), byCh3(c3, h3, 3), c3.c[1], h3.s[1]);
     return 0;
 }

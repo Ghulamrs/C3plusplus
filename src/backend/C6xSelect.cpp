@@ -135,7 +135,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
                 for (std::size_t n = 0; n < ps.size(); n++) {
                     if (!ps[n]->isStructOrUnion()) continue;
-                    if (c.variadic || n >= i.count || !(ssaCopiedArg(ps[n]) || (inPair(ps[n]) && ps[n]->align(target_) >= 4 && ps[n]->size(target_) % 4 == 0)))
+                    if (c.variadic || n >= i.count || !(ssaCopiedArg(ps[n]) || inPair(ps[n])))
                         return "class argument of another shape";
                     if (inPairWide(ps[n]) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 }
@@ -1238,11 +1238,24 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
                 ssaEmit(c6x::MInst("MV", "A3", reg));
                 continue;
             }
-            // A class of one or two words is its words, read from the object.
-            const std::string obj = ssaUse(f, f.operand(i, k), "A3"), pr = pairOf(reg);
-            ssaEmit(c6x::MInst("LDW", "*" + obj, reg));
-            if (inPairWide(ps[k])) ssaEmit(c6x::MInst("LDW", "*+" + obj + "(4)", pr.substr(0, pr.find(':'))));
-            ssaNop(4);
+            // A class of one or two words is its words, read from the object; a less aligned one in pieces, as loadPair.
+            const int sz = ps[k]->size(target_), w = std::min(ps[k]->align(target_), 4);
+            const std::string obj = ssaUse(f, f.operand(i, k), "A1"), pr = pairOf(reg), hi = pr.substr(0, pr.find(':'));
+            if (w == 4 && sz % 4 == 0) {
+                ssaEmit(c6x::MInst("LDW", "*" + obj, reg));
+                if (sz > 4) ssaEmit(c6x::MInst("LDW", "*+" + obj + "(4)", hi));
+                ssaNop(4);
+                continue;
+            }
+            for (int word = 0; word < sz; word += 4) {
+                out_ << "\tZERO\tA3\n";
+                for (int at = word; at < sz && at < word + 4; at += w) {
+                    out_ << "\t" << (w == 2 ? "LDHU" : "LDBU") << "\t*" << (at ? "+" + obj + "(" + std::to_string(at) + ")" : obj) << ", A0\n\tNOP\t4\n";
+                    if (at > word) out_ << "\tSHL\tA0, " << (at - word) * 8 << ", A0\n";
+                    out_ << "\tOR\tA3, A0, A3\n";
+                }
+                out_ << "\tMV\tA3, " << (word == 0 ? std::string(reg) : hi) << "\n";
+            }
         }
         if (inRegs + hid > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         if (cr->isStructOrUnion() && !inPair(cr)) into(hid ? "A4" : "A3");
