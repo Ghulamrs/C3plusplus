@@ -2802,3 +2802,42 @@ smulh; C6xPipe finds II=11 where the walker's text had II=5, because the selecto
 last read and the counter is not renamed ("no slot for ADD A23, 1, A23", CPP11_PIPE=3). Owed: a round that copies the
 counter at the loop's head (or steps it first) before C6xPipe; the 34 unowned -O2 cases by family in the list.
 **Owed to the wave gate:** as W4's entry, and ti-link on TI's own simulator for ADDU and CMPGTU's constant form.
+
+### M6a.2 W5: memcpy, memset and class arguments on the C6000 selector - lane w5, 2026-11-17
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp 1,259 -> 1,350 lines, Tms6747.h 321 -> 325, Tms6747.cpp
+one line; src/ 94,840 -> 94,935; branch m6a2-w5 from 936c49d0): `memcpy` is the walker's own `copyBlock` (word, halfword or
+byte at the smaller of the two pointees' alignments, LDDW/STDW pairs where both are 8-aligned, batched into B16-B23 at -O1
+and up), so its text is the walker's; `memset` is stores of B16, or of B17:B16 where the object is 8-aligned, the base
+moved on through A3 past an offset's reach (past 512 bytes it stays walked: `memset past 512 bytes`, 0 in the cases). A
+class argument (W3's left `class argument`): a trivially copyable class over 8 bytes is copied, before the call's area
+opens, into a frame slot of its own (`ssaArgCopy_`, laid out after the allocas) and the copy's address is the argument,
+as the walker's `genArg` and cl6x pass it; one of 8 bytes or less is its words in the argument's register or pair, read
+from the object, and a less aligned one (an empty class, chars, shorts) put together in A3 from byte or halfword loads, as
+`loadPair`. cl6x's `-S` was not run this round: the shapes are the walker's, which W3 measured against cl6x 7.4.4.
+**A fault the newly selected bodies met** (Tms6747.cpp): `$EXIDX_EXTAB("__c6xabi_extab$<fn>")` is inside quotes, which
+`tiSpelling` leaves alone, so `_GLOBAL__sub_I_<file>.cpp` with pads named a table whose label is `...$cpp`
+(static-local-braced-list, newly selected); the quoted name is respelled.
+
+**Walked count** (tools/c6x-walked.baseline, Linux, g++ build, 1,240 cases): **-O0 1,036 -> 374, -O2 1,117 -> 389**.
+`op memcpy` and `op memset` read 0. **Left, by reason** (-O0 / -O2): `indirect call` 240 / 284 and `outside the SSA
+lowering` 24 (W6); `class argument of another shape` 38 / 39 - a class with a copy constructor or a destructor (the IR
+passes the caller's temporary; whether TI's callee may take it as its copy is unmeasured) or a variadic call's;
+`class result of another shape` 19; `aggregate value` 45 / 3; `N-bit argument past the sixth` 5; `N-bit smulh` 4 / 10,
+`umulh` 1 / 2, `N-bit parameter past the sixth` 1; `variadic call` 2.
+
+**Case** tests/cases/c6x-memory-ops (clang's .expected, the Windows box's clang): copies and fills at every alignment, past
+an offset's reach, a member between guard bytes, and class arguments of each shape the callee changes; 26 of 26 selected at -O0 and -O2.
+
+**Gate:** g++ -Werror (Linux) and cl /W4 /WX (Windows) clean; the case right at -O0/-O1/-O2 on vm6747 and sim6747 and by
+the walker at -O2 (Linux); **tests/tms6747.sh SIM=1** - Linux shards 1-3/6 on 49254db5 at -O2 412/0 and -O0 412/0 (-O1
+412/0 on 7c5a6e45); Windows shards 4-6/6 on 7c5a6e45 at -O2 418/1 and -O0 418/1, the one failure static-local-braced-list
+(the extab name above), re-run on the final tree 49254db5 (cl build) at -O0 and -O2 with the case: 1/0 each; tools/exclusions, the comment cap and the memory gate hold
+(python3); c6x-declines 0; self-compile of C6xSelect.cpp and Tms6747.cpp at -O0 and -O2 4 / 0 (Linux).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O2 696 better, 41 equal, 77 worse of which 10
+unowned, total 191,920,912 (W4b) -> 149,569,883**; **-O0 570 better, 28 equal, 215 worse of which 37
+unowned, total 364,534,575 (W4b) -> 321,440,599**. Lists: boxkit/w5-worse-O2.txt, w5-worse-O0.txt -
+the unowned cases are functions W5 newly selects, causes not read in the hour (initializer-list-lowered +9,243 the one
+large one, +9,243 at -O2 and +31,258 at -O0). 25 (-O2) and 41 (-O0) accepted lines are now stale; the lane took none out.
+**Owed to the wave gate:** SIM=0 over the suite, the walker legs, asm6x, identical.sh ARCHS=tms6747, ti-link, cl6x's `-S`
+of the class-argument shapes, the census on the Windows cl build, and the causes of the unowned worse cases.
