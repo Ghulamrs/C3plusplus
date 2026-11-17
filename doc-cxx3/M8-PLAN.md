@@ -456,3 +456,70 @@ noting syntax and handing the ordinary reader a node back - for member access, t
 and `usualArithmetic`, the last size askers), dependent calls and casts; a function state that writes no table in
 place of the taking-out above; then the three parameter kinds. Commit 2's remainder is untouched: a member
 template's and a class member's signature, and the dump's line for a pattern.
+
+**M8.1, commit 3: an expression of dependent type, 2026-11-17** (lane m8f, branch `m8-d` from `976f133b`; one
+lane-hour; code `05f8d060`). The first of the three things m8e's last paragraph names, and commit 3 is **still
+not closed**: the read stays behind `-check=templates`, and what it leaves in the tables is still taken out, not
+never written. **The mechanism is the ordinary productions', not a second reader**: in a pattern's body
+(`patternBody_`, set by `Templates::readDeclaration` alone) an operand of dependent type is read by the production
+that reads any operand, which notes its syntax as it always does, and what it hands on is a zero of a dependent
+type - `zeroOf(dependentResult())`, a `Kind::DependentExpr` over one interned node - so the next production meets
+a dependent operand again. Three functions in `ParserDependent.cpp` (`dependentOperand` over a type,
+`dependentResult`, `dependentPostfix` for a subscript, a member's name and `++`), and one line at each door:
+`overloadedBinary` and `overloadedUnary` (every binary and unary operator; with them `pointerAdd` and
+`usualArithmetic` are never reached, the 268 size asks), `compound`, `incDec`, `assignValue` and
+`requireAssignable`, `contextualScalar`, `checkAssignable`, `static_cast`, a class temporary and `X q(a, b)` of a
+pattern class, a member of a pattern class through a template-id, a `return` to a reference, a scope's slot given
+back, a callee of dependent type (`finishCall`, its arguments read). **A call with a dependent argument**
+resolves nothing: `resolveOverload` answers a signature made of the call's own arguments (symbol `$pattern$...`,
+dependent result), and a function template's call returns before deduction (`argsDependent_`, set by
+`parseArguments`) - instantiation's to bind, M8.2. `ParserDependent`'s own reader (the signature's `DepExpr`
+tree) is as it was: the brief's "through `ParserDependent`" is the file and the stand-in type, not that reader
+noting syntax. No `ExprPtr` was added (ast-residue +0): operands are asked by type, results made by `zeroOf`.
+
+| corpus, box | function templates defined | read | not read | read: text alone / shape / same | read, never replayed |
+| --- | --- | --- | --- | --- | --- |
+| `tests/cases`, Linux and Windows, before (`976f133b`) | 3,478 | 128 | 3,350 | 66 / 1 / 0 | 61 |
+| `tests/cases`, Linux and Windows, after (`05f8d060`; the same count on both) | 3,478 | **3,186** | 292 | 413 / 9 / 0 | 2,764 |
+| the self-host, Windows, before / after | 7,512 | 334 / **6,742** | 7,178 / 770 | 70 / 0 / 0, then 1,129 / 0 / 0 | - / 5,613 |
+
+**Not read, by reason, after** (Linux): 138 a parameter pack, 41 a non-type parameter, 11 a template template
+parameter (the three kinds the read does not bind - 190 of the 292); 59 a `static_assert` the pattern's stand-in
+fails (`forward`'s "an rvalue cannot be forwarded as an lvalue": a condition over a dependent type folded, where
+it should be kept); 14 + 6 undeclared names; 8 + 7 forms `ParserDependent` refuses in a signature; 2 the size of
+a dependent type (`sizeof` of one in a body); 2 + 1 + 1 + 1 + 1 one each. **0 units die** (899 of 1,238 files
+print the count, as at `976f133b`). The nine `shape` are named now (`-check=templates declaration shape:`): five
+in `template-sfinae-misc`, one each in `trailing-return-template-decltype`, `template-keyword-member`,
+`ssa-lvalue-forms`, `callable-members-and-braces` - a pattern's tree that differs from its first replay's in
+shape, not looked at in this hour, and owed before the read is trusted without the flag. `same` stays 0 (a
+pattern's `var` spells `T`).
+
+**The read against no read** (`-S` with the flag against without, Linux, `boxkit/m8f-flag.sh`): 1,236 of 1,238
+the same, **2 differ**, where m8e's tree had 0 - the price of reading 3,186 bodies with a state that still writes
+tables: `block-scope-typedef` emits `f<int>` and `f<double>` in the other order, and `regex-ecmascript` emits
+`vector<const char *>::size`, which a pattern's body used and no replay does. Both are what the function state
+that writes no table ends, and why the flag stays.
+
+**Gates** at `05f8d060`, one tree on each box, each built from clean; REF built fresh from `976f133b` in its own
+kept tree (Linux `~/m8fr`, Windows `work\m8fr`; NEW `~/m8fn`, `work\m8fn`). Linux (g++ `-Werror` clean):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,298 compared,
+0 differ**; `run.sh` 1232 passed, 0 failed; `typed.sh` 875 passed, 0 failed, 1 not for this host (other=38
+name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52; `template-class`'s
+`.templates` record re-recorded - its one body is read now); self-compile stage 0 103 of 103; exclusions 0
+uncited, 0 stale (29 citations re-pointed); comment cap 0; memory gate held; ast-residue +0 on all seven;
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean): every case's `-S` text and diagnostics NEW
+against REF at -O0 and -O2 for x86_64-windows `-masm=masm` and `-masm=gnu`, x86_64-linux, arm64-darwin and
+tms6747, 1,238 cases, **12,380 the same, 0 differ**; the static gates pass; `-check=templates` over `tests/cases`
+reads the same 3,186 of 3,478 (880 files print the count), and over the 103 sources, all compiling, **6,742 of
+7,512** (334 before; 1,129 in text alone, 0 in shape; not read: 584 a pack, 101 `forward`'s assertion, 50 a
+reference bound to a value, 32 + 1 + 1 undeclared names, 1 a size); `self-compile.cmd` 103 of 103;
+`tests/names.sh` against that box's clang 883 passed, 0 failed; `tests/overload.sh` 46 agreed with clang, 0
+differed. **Not run**: `tests/subst.sh`'s four
+stand-in steps, `syntax.sh`, winpass, the -O1 rows and Compiler++'s units; no `tests/cases` program was added.
+src/ lines: 94,737 before, 94,824 after.
+
+**What the next lane takes** (commit 3 still open, then 4): the function state that writes no table (static
+locals, default-argument records, a failed read's closures, what a non-dependent use in the body marks or
+instantiates - the two cases above are its test), so the taking-out can go; the nine shapes; the three parameter
+kinds (190 of the 292 left); `forward`'s `static_assert` over a dependent condition (59). Commit 2's remainder
+is untouched: a member template's and a class member's signature, and the dump's line for a pattern.
