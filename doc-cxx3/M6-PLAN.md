@@ -3147,3 +3147,58 @@ identical.sh ARCHS=tms6747 (the newly selected functions, and every 64-bit divid
 call); run.sh, winpass and ssa.sh on the other targets (SsaDivide changes only tms6747's IR; C6xSelect is the C6000's alone); the
 census on the cl build; string-literal-array-reference's +26 at -O2 with the [value call] family; R1's 24 and the shell's Ast
 reads above before M6d.
+
+### M6a.2 R1: the lowering's 24 refusals on the C6000 - 22 lowered, 2 named - lane r1, 2026-11-18
+
+From m6a2-w8 1d2df724. **Walked -O0 24 -> 2, -O2 24 -> 2** (tools/ssa-census -arch tms6747, CENSUS_SOURCES=0, Linux, 86d02a63: 11,516 of
+11,518 functions selected in 1,246 cases); tools/c6x-walked.baseline lowered in its own commit. src/ 95,208 -> 95,280 lines
+(Lowering.cpp 7,911 -> 7,973; BuilderCopy.cpp, Driver.cpp, C6xSelect.cpp).
+
+**Lowered, by family (22 functions, 16 cases):**
+- **throw(...) lists (6)**: the C6000 keeps a list in its table (`specInTable`, the FESD `emitExceptionTable` writes from `fn`), so the body is
+  not wrapped: Driver's `wrappedBody` no longer counts `fn.exceptionSpec()`, and C6xSelect's decline of it is gone. x86 is untouched
+  (its filter is `specFilter`).
+- **named return values (3)**: built with defaults, zeroed or from braces as builtLocal builds a local; inside a handler on Itanium (the
+  guard and `leaveHandlers` with the elided slot were already there). The Microsoft ABI keeps the refusal (the funclet).
+- **class returns (3 of 4)**: a plain class beside a destroyed local (its bytes saved, then the destructors); a constructed class from a
+  derived object (`baseSubobject`); a destroyed class out of a handler (`leaveHandlers`; outside a handler the old order, so
+  ssa-return-destroyed's text is as it was).
+- **constructors and implicit copies (3)**: a bit-field in a mem-initialiser (`bitStore`, `buildableLayout` takes a scalar one), a
+  bit-field and a reference member in an implicit copy constructor, a reference member bound to a base.
+- **std::nullptr_t (2)**: returned and called, as a parameter and a local already were.
+- **class locals (2)**: from a derived temporary (the base's bytes), from another class's conversion function (`convertedLocal`).
+- **the rest (3 of 4)**: an initializer_list of a trivially copied class whose elements the parser recorded none of (bytes, sliced);
+  a static member through an object expression (the object evaluated, [expr.ref]/1); a braced list's bit-field.
+
+**Left (2), each outside the SSA lowering on every target:**
+- `lowering-static-local-default-arguments` (`_Z1fv`, "a static local built with default arguments"): the parser records no replay of the
+  default for a static local (`memberDefaults_` has keys for members, list elements and `^.name` entries only) - a parser record, then two lines.
+- `lowering-return-derived-temporary-destructor` (`_Z1fv`, "a class with a destructor returned from another type"): `return L();` into a
+  base with a destructor - lowered and taken back: the parser releases the temporary and emits no `L::~L()` (undefined at link on
+  x86_64-linux). It needs the parser to destroy the derived temporary, which is a wrong answer of today's walker text too.
+
+**Cases:** 13 `lowering-*` cases lose their `.error` and their tms6747 `.notarget` for clang's `.expected` (the Windows box's clang 19.1.5 over
+cxx3's library; all equal cxx3's x86_64-linux output); `lowering-named-return-in-handler` and `lowering-return-destructor-in-handler` are
+`.notarget` x86_64-windows. New `tests/cases/c6x-lowering-refusals` (each family but the throw lists, which vm6747 cannot unwind -
+exception-spec, exception-spec-unexpected and ssa-eh-tail hold those on sim6747): right at -O0, -O1, -O2, SIM=0 and SIM=1, and by the walker.
+
+**The other targets** (Lowering.cpp is theirs too), Linux, 86d02a63: run.sh -O0 1240 passed / 0 failed, -O2 1240 / 0; tools/identical.sh
+against the base's binary (~/w8), ARCHS x86_64-linux, x86_64-windows (both spellings), arm64-darwin, LEVELS 0 2: 7,232 compared, **104
+differ, all of them the 14 cases that compiled to an error before** (12 x 8, and the two handler cases x 4 - not x86_64-windows); no
+other case's text moved.
+
+**Cycles** (tools/c6x-cycles --check, Linux shards 1-6, 86d02a63; nothing accepted or written): -O2 **149,248,103**, -O0 **307,812,480** -
+W8's totals to the cycle (R1 moved no case the baseline holds); unowned worse 18 and 4, W8's at the same counts. boxkit/r1-worse-O2.txt, -O0.txt.
+
+**Gate (coding lane):** g++ -Werror clean; tests/tms6747.sh SIM=1 on the final tree, Linux shards 1-6: -O2 850 passed / 0 failed, -O0 850 / 0;
+census 2 / 2; c6x-declines 0 (3c6f6414); exclusions 554 outside() sites (the base's), 0 uncited, 0 stale - the new refusals reuse listed
+reasons; the comment cap and the memory gate hold; self-compile of C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0.
+**Windows (work\r1x), on 3c6f6414 - the tree before the last commit** (86d02a63 folds refusal sites, restores one order, shortens the case):
+full clean cl /W4 /WX build clean; SIM=1 shards 4-6 -O2 424 passed, 1 failed - c6x-lowering-refusals on vm6747 ("an exception
+specification that allows types, which this line never writes"), the reason its throw lists came out.
+**Owed to the wave gate:** the cl build and Windows shards 4-6 on 86d02a63; winpass on the 13 newly compiled cases (never run on
+x86_64-windows); names.sh on them (their constructors are inline); SIM=0, -O1, the walker's legs, asm6x, ti-link; ssa.sh; make test.
+
+**What M6d still needs:** the 2 functions above (or their two cases declared the walker's last and refused by name on the C6000 as on
+x86); then the shell's reads of Ast.h - emitFunction, emitParams, emitExceptionTable (the FESD is now read from `fn.exceptionSpec()` for
+selected bodies too: it wants the list on ir::Function), emitScope, emitData, the 16 `fn.` reads - CXX1_C6X_WALKER and the gate's wtms legs.
