@@ -3016,3 +3016,75 @@ member-pointer-overload-by-type, member-struct-return, class-temporary, namespac
 move in every selected function with locals in sibling scopes), ti-link, run.sh and winpass on the other targets (Ir.h,
 Lowering.cpp and SsaInline.cpp carry the serial; no other backend reads it), ssa.sh, the census on the Windows cl build, the
 three worse ledger cases' judgement, c6x-class-values -O2, and the "word per value" half.
+
+### M6a.2 FS2: the temporaries' liveness rule made sound, and -O0's value words measured - lane fs2, 2026-11-18
+
+Branch m6-fslots from febbef9e: 106a7670 (the rule, the case), ece4b6f5 (its comment inside the cap), a5c5147c (the block order
+at -O0). src/ 95,180 -> 95,182 lines.
+
+- **What lane fs's rule did, measured.** `layoutSsaTemps` ended an escaped object at "a call of its own class's destructor on
+  the object itself" - and asked `CallInfo::hasThis` of that call. The lowering's own destructor calls (`Lowering::destroy`,
+  the scope's end, a temporary's, a pad's) carry no hasThis, and every call that carries it hands `this` through a bitcast, not
+  the alloca: **the end fired on no call at febbef9e**. The hole the rule's words had (`p->~T(); new (p) T(..)` and the object
+  reached through a stored pointer) was therefore not reachable, and neither was the sharing of class temporaries the rule was
+  written for: tests/cases/c6x-frame-reuse-placement passes at febbef9e at -O0, -O1 and -O2 (Linux, SIM=1) - it could not be
+  made to fail there, and this entry does not claim it did.
+- **The sound rule, and why.** An automatic object's storage lasts to its block's exit, a temporary's to its full-expression's
+  end ([basic.stc.auto], [class.temporary]); a destructor called by name ends the lifetime only, and [basic.life]/5-6 lets the
+  program build there again through any pointer it kept. The destructor calls the lowering itself writes sit exactly where the
+  storage ends (the scope's or full-expression's exit, on the normal path and in the pad), so past one of them no stored pointer
+  may be used. So: **the lowering's own destructor call on the alloca ends the object; one the program wrote by name never
+  does** - `ir::CallInfo::byName`, set where `Lowering::pseudoDestructor` writes the call, kept by the inliner's copy of the
+  CallInfo, printed as `byname` in the IR text. hasThis is no longer asked; the class is compared unqualified. A fold of
+  same-type bitcasts would have opened the hole silently; the flag closes it by construction, not by the bitcast.
+- **What it buys.** Class temporaries the lowering destroys by a call now share: the case's shared() frame 168 -> 104 at -O0,
+  176 -> 112 at -O1 (176 at -O2: the inliner takes ~Cell, no call is left to end it - c6x-class-values -O2's cause, still owed).
+  reuse() and extended() keep `a`'s bytes apart from every later object at each level (136/152 at -O0, 144 at -O1/-O2).
+- **-O0's "word per value", measured and not kept.** At -O0 a block's values already sit in A16.. within the block (ssaAssign);
+  a word goes only to a value live across a call or a block. Lending a block-local value's word to the block's later values
+  (a fused compare read at the branch) passed 835 / 0 at -O0 and moved the total 320,539,886 -> 320,532,248 (-7,638, 0.002%)
+  for 60 lines: dropped; the patch is boxkit/fs2-step2-lent-words.patch. The -O0 cost was elsewhere:
+- **The selector's block order at -O0 too** (a5c5147c, one line). At -O0 the C6000 selector laid a body's blocks in the IR's
+  order unless the body was wrapped (pads, noexcept), and the lowering makes the return block early: a block ended `B next;
+  NOP 5` round it where the walker fell through. Found by the static counts of the 44 unowned -O0 cases against the walker's
+  text (NOP cycles up in 32, loads and stores level or down; boxkit/fs2-hist.py). `ssaBlockOrder` - the one order of every
+  selector, already this selector's at -O1/-O2 and for wrapped bodies at -O0 - is now its order at every level: -O0
+  320,539,886 -> **307,814,752** (-12.7 M, -4.0%), 828 of 831 cases better than lane fs's, none worse; -O1/-O2 text unmoved.
+
+**Cycles** (tools/c6x-cycles --check, Linux shards 1-6, a5c5147c): -O2 149,298,753 -> **149,287,156**, -O0 320,763,325 ->
+**307,814,752** (320,539,886 at ece4b6f5, before the block order). Against lane fs case by case: -O2 11 better, 820 equal, 0
+worse (ssa-catch-by-value-throw-out -10,289 by the rule; nine by the order, in bodies the selector writes unoptimised at -O2); -O0 828 better, 3 equal, 0 worse (at ece4b6f5: 5 better by one ledger scan each, 37,289 to 37,555 cycles, 1 worse,
+by-value-lowered +1,216 - now -55,621). Unowned worse: -O2 17 as before; **-O0 44 -> 4** (aggregate-member-from-own-class,
+plain-class-local, anonymous-union [inline copy], ssa-bitfield-step-deref-call [64-bit bit-field]). Each of the 17 and of
+the 44 (the record at ece4b6f5) and the 4 is named in boxkit/fs2-worse-O2.txt and -O0.txt with the
+baseline, lane fs's count, the all-walked count of the same tree and the static instruction counts against the walker's text:
+-O2 [pipeline] 2 (M6c), [value call] 7 (M6b), [inline copy] 7 (M6b), [class argument] 1 (FS3) - ten of the 17 are under
+today's all-walked count, worse only than the old walker's line; -O0 **[block order] 32** (the -O0 selector lays blocks in the
+IR's order and ends a block `B next; NOP 5` round the early return block where the walker fell through - owed FS3:
+ssaBlockOrder at -O0), [inline copy] 9 (M6b), [value call] 2 (M6b), [64-bit bit-field] 1 (the lowering). The three ledger cases
+worse than W7 at -O0: with the block order ssa-reference-conditional-converted is under W7's count (576,523 against 589,340),
+constructor-unwinds-parts +4,545 over it (350,919) and lambda-deduction-temporaries +9,453 (575,672), all under the
+baseline. The frame rule left them unmoved and they are **not profiled to the function**: measured is that a miss in the ledger's table costs
+37,289-37,555 cycles at -O0, so +40,301 and +37,755 are one more miss each and +10,245 hits on later rows; the candidate is
+the frame's size moving a callee's object off an address the ledger had seen (layout chance, not text) - the coordinator's to
+judge, FS3's to read. map-set-node-stability -O2 +2,017: unmoved, not profiled (a hypothesis in fs2-worse-O2.txt). Left for
+sharing: a temporary under an outer cleanup counts live into that pad along its own constructor's unwind edge (the case's
+extended()), FS3.
+**Stale accepted lines** (the coordinator's to take out): -O2 lane fs's nine and ssa-catch-by-value-throw-out, mir-volatile, ssa-volatile (12,
+boxkit/fs2-stale-O2.txt); -O0 **174** (boxkit/fs2-stale-O0.txt; 18 at ece4b6f5 - the block order took the rest under their
+baselines).
+
+**Gate (coding lane):** Linux g++ -Werror clean; tests/tms6747.sh SIM=1 on the final tree a5c5147c, Linux shards 1-6: -O0 835
+passed / 0 failed, -O2 835 / 0, -O1 835 / 0 (every ledger case's line among them: live, double, phantom, over, lost 0); walked -O2 47,
+-O0 34 (ece4b6f5; the order selects nothing): not raised; tests/g-same.sh 888 same, 0 differ; c6x-declines 0; tools/exclusions, the comment cap (0 over), the memory gate hold; self-compile of
+C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0. The case's .expected is the Windows box's clang
+(`-nostdinc++ -isystem include`), the same three lines as g++'s on Linux. Windows (work\fs2): the full cl build passed the
+9-minute cap (12 minutes on the shared box; a defect, not retried - it finished by itself), then C6xSelect.cpp alone was
+recompiled /W4 /WX clean and linked for ece4b6f5 and again for a5c5147c (boxkit/fs2-windelta.cmd); the case right at -O0, -O1,
+-O2 SIM=1 and SIM=0 and by the walker on both trees; shards 4-6/6 SIM=1 on a5c5147c: -O2 414 / 0, -O0 414 / 0.
+**Owed to the wave gate:** a full clean cl build of a5c5147c (Ir.h, IrText.cpp and Lowering.cpp were compiled /W4 /WX in the
+capped build; only C6xSelect.cpp since); SIM=0 over the suite; the walker's legs; asm6x, ti-link, identical.sh ARCHS=tms6747
+(every -O0 function's block order moves) and the -g legs beyond g-same (the lexical blocks' $blk$ ranges under the new order:
+debug stepping on vm6747/sim6747, release-check); run.sh, winpass and ssa.sh on the other targets (CallInfo::byName is read
+by the C6000 selector alone; IrText prints `byname`, in no recorded dump today); the census on the cl build; FS3's three
+(a constructor's unwind edge, the ledger cases' reading, map-set-node-stability) and c6x-class-values -O2.
