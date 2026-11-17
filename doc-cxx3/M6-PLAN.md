@@ -2716,3 +2716,12 @@ better, 255 equal, 71 worse of which 21 unowned (+1 to +42; boxkit/w3-worse-O2.t
 385,238,195. The causes are named by family, not diagnosed case by case. **Owed to the wave gate:** -O1, SIM=0 at
 every level, the walker legs, asm6x at -O1 and -O2, identical.sh ARCHS=tms6747, C6xPack.cpp's self-compile, every
 Linux leg (shards 1-3/6), cl6x 8.2.2's `-S`, and the remainder named above.
+
+### M6a.2 W3 landed - class values on the C6000 selector, 2026-11-17 (the coordinator)
+
+- **The user's decision**, given directly in the coordinator's session ("Yes, write them", 2026-11-17): W3's 96 worse
+  cases (21 at -O2, +1 to +42 each; 75 at -O0) accepted in tests/tms6747-cycles.txt, owed to the round "frame slots
+  shared by scope" (eaac4b06); totals fall at both levels. Four -O2 lines no longer worse taken out.
+- **Gate: tools/wave-gate w3h -w 91efcd2b at e425c018**, Linux legs included: **43 passed, 0 failed, 4 not run** (the
+  fixed points, not owed). The first run (w3g) failed only on its 566 unnamed tms6747 differences and the 4 stale lines.
+- tests/wave-expected.txt emptied (566 rows were W3's).
