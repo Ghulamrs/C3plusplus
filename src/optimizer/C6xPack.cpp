@@ -113,6 +113,7 @@ unsigned unitsFor(const MInst &i, const std::string &m) {
         if (at == 1 && ucst && crossings(i, m) == 0) return UD;
         return 0;
     }
+    if (m == "ADDU") return UL;
     if (m == "NOT") return UL | US | UD;
     if (m == "NEG") return UL | US;
     if (m == "MV") return pair ? UL : UL | US | UD;

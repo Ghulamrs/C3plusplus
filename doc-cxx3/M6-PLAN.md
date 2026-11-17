@@ -2725,3 +2725,92 @@ Linux leg (shards 1-3/6), cl6x 8.2.2's `-S`, and the remainder named above.
 - **Gate: tools/wave-gate w3h -w 91efcd2b at e425c018**, Linux legs included: **43 passed, 0 failed, 4 not run** (the
   fixed points, not owed). The first run (w3g) failed only on its 566 unnamed tms6747 differences and the 4 stale lines.
 - tests/wave-expected.txt emptied (566 rows were W3's).
+
+### M6a.2 W4: 64-bit and floating values on the C6000 selector - lane w4, 2026-11-17
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp, 934 -> 1,166 lines; Tms6747.cpp 2,487 -> 2,486; branch
+m6a2-w4 from f20e46ca, commits 48b38437, 8b3cf8e0, 43509534, 35d47c3a): a `long long` or a `double` is a register pair - A5:A4
+the result, each argument and parameter its register's pair (B5:B4, A7:A6 ...), as cl6x 7.4.4's `-S` writes it (Linux,
+~/w4-cl/p.asm: `mixed(int, long long, int, long long)`, `mixd(int, double, long long, float)`; 8.2.2's was not run) - and a
+`float` one register, held like a word. A 64-bit value's home is one of A29:A28, A31:A30, B29:B28, B31:B30 where no call
+crosses it, else eight 8-aligned bytes of the frame (`ssaPair` reads it into a pair, `ssaKeep` writes A5:A4 back); a
+64-bit constant is made at each use. The instructions are the walker's own text, now taken by operator
+(`fpBinary(BinOp, dp)`, `wideBinary(BinOp, sign)`, `wideCast`, `shiftPairLeft/Right`): ADDSP/ADDDP, MPYSP/MPYDP, the
+CMP*SP/DP compares, INTSP/INTDP(U), SPTRUNC/DPTRUNC, SPDP/DPSP, and `__c6xabi_divf/divd`, `divlli/divull/remlli/remull`,
+`fixdlli/fixdull/fixflli/fixfull`, `fltllid/fltulld/fltllif/fltullf`, `fixdu/fixfu`. Also: a variadic call's 64-bit
+arguments 8-aligned in its area (as `stackArg`), `va_arg` of one, a 64-bit `switch`, pointer casts over 64 bits, a
+branch's 64-bit arguments staged in pairs of B16-B23, and the 32-bit `smulh` (`MPY32` into A1:A0). A compare of 64-bit or
+floating operands is never fused into its branch.
+
+**Walked count** (tools/c6x-walked.baseline, Linux, g++ build, 1,239 cases): **-O0 1,756 -> 1,036, -O2 1,823 -> 1,117**.
+`floating value`, `floating or N-bit result`, `N-bit value` read 0. **Left in W4's reasons, by name:** `64-bit smulh` 9
+and `64-bit umulh` 2 (-O2 only: the SSA optimizer's divide of a 64-bit value by a constant wants the high half of a
+128-bit product, which no helper gives - the optimizer should not make it for this target), `64-bit parameter past the
+sixth` 1 (the pair's high register is A11, B11, A13 or B13, a home; `64-bit argument past the sixth` and `64-bit gep`
+read 0 in the cases). The rest is other rounds': `op memcpy` 384 / 437 (-O0 / -O2) and `op memset` 207 / 229 (W5),
+`indirect call` 216 / 254 and `outside the SSA lowering` 24 (W6), W3's `class argument` 138 / 137, `class result of
+another shape` 19, `aggregate value` 45 / 3, `variadic call` 2.
+
+**Case** tests/cases/c6x-wide-values (clang's .expected, the Windows box's clang): 55 of 55 functions selected at -O0 and -O2.
+
+**Gate, on the final tree 35d47c3a, both boxes:** g++ -Werror (Linux) and cl /W4 /WX (Windows) clean; the case right at
+-O0/-O1/-O2 on vm6747 and sim6747 and by the walker at -O2 (Linux); **tests/tms6747.sh SIM=1 at -O2 830 passed / 0
+failed and at -O0 830 / 0** (shards 1-3/6 Linux, 4-6/6 Windows); tools/exclusions, the comment cap and the memory gate
+hold; tools/c6x-declines 0; self-compile of C6xSelect.cpp and Tms6747.cpp at -O0 and -O2 4 / 0 (Linux).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O0 496 better, 71 equal, 247 worse of which 99
+unowned, total 397,272,350 -> 370,529,479; -O2 592 better, 129 equal, 94 worse of which 35 unowned, total 192,025,550
+-> 194,586,314 - the -O2 total RISES**, by ssa-narrow alone (+2,666,266: `down`'s 64-bit sum and the optimizer's 64-bit
+induction variable, each operation through A5:A4 / A7:A6 with moves; before the pair homes it was +19,332,989), then
+pipelined-data-exit +333,190 and local-zero-init-large +304,422. Lists with causes by family: boxkit/w4-worse-O2.txt,
+w4-worse-O0.txt; four -O2 cases were not read at all. 3 (-O2) and 15 (-O0) accepted lines are stale.
+**Owed:** the user's word on the -O2 total (the standing rule wants it to fall); a round "64-bit operations in place" (an
+add, a compare and a widening on the home pairs, no moves through A5:A4) and the pipelined shapes for selected floating
+loops; **to the wave gate:** -O1 and SIM=0 at every level over the suite, the walker legs, asm6x, identical.sh
+ARCHS=tms6747 (tests/wave-expected.txt rows), ti-link, run.sh on the hosts (Tms6747.cpp's two helpers changed
+signature only), C6xPack/Sched self-compile, cl6x 8.2.2's `-S`, and the census on the Windows cl build.
+
+### M6a.2 W4b: 64-bit operations in place on their home pairs - lane w4b, 2026-11-17
+
+**What changed** (src/backend/C6xSelect.cpp 1,166 -> 1,259 lines, Tms6747.h +1, src/optimizer/C6xPack.cpp +1; src/ 94,745 ->
+94,840; branch m6a2-w4 on 7f5e1ca4): `ssaWideInPlace` writes a 64-bit add, subtract, multiply, and/or/xor, comparison and a
+widening of a word with its operands read where they live and its result in its own pair - no moves through A5:A4 / A7:A6
+- where every pair is on one side; a block parameter's pair is loaded straight into its home. A sum's carry is bit 32 of
+ADDU's 40-bit result (masked by AND 1, so nothing rests on what the odd register's upper bits hold), which reads neither
+addend after the sum is written - the order `CMPLTU sum, addend` forced was what kept a counter's step a cycle late. A
+constant of 1..15 added or taken away uses the immediate ADD and CMPGTU's 4-bit constant for the carry or borrow, held in
+the other side's B0 / A0 so the compare takes that side's .L unit. `unitsFor` knows ADDU (.L). `down`'s loop in
+ssa-narrow: 12 cycles a turn -> 8.
+
+**Case** tests/cases/c6x-wide-values widened (walkUp, walkDown: sums and counters across the 32-bit boundary, x + x, a
+product; clang's .expected from the Windows box): 57 of 57 selected at -O0, -O1 and -O2.
+
+**Gate, on the final tree, both boxes:** g++ -Werror (Linux) and cl /W4 /WX (Windows) clean; the case right at -O0/-O1/-O2
+on vm6747 and sim6747 and by the walker at -O2; **tests/tms6747.sh SIM=1 at -O2 830 passed / 0 failed and at -O0 830 / 0**
+(shards 1-3/6 Linux, 4-6/6 Windows, tree 15f3949d; the case alone re-run after it was split); tools/exclusions, the
+comment cap and the memory gate hold - **run as `python3 tools/...`: lane w4's script ran them under `sh`, which printed
+syntax errors and rc 0, so W4's "static gates hold" was not measured until now**; c6x-declines 0; self-compile of
+C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp at -O0 and -O2 6 / 0; the census holds the baseline (1,036 / 1,117).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O2 593 better, 129 equal, 93 worse of which 34
+unowned, total 192,025,550 -> 191,920,912** (lane w4 left 194,586,314; ssa-narrow 8,054,415 -> 5,387,746, below its
+baseline; no case joined the worse list); **-O0 499 / 71 / 244 of which 96 unowned, total 397,272,350 -> 364,534,575**
+(w4 left 370,529,479). Against lane w4's own numbers at -O2 28 cases fell and 17 rose, each of the 17 still below the
+baseline: divide-by-constant +17,326 and ternary-index-after-remake +2,425 (the packer renamed and folded the A4 a value
+used to pass through; it does not fold a copy into a home), the rest +1..+45. Lists: boxkit/w4b-worse-O2.txt, -O0.txt.
+20 stale accepted lines taken out of tests/tms6747-cycles.txt (3 at -O2, 17 at -O0).
+**Read and not mended:** local-zero-init-large (+304,422) and pipelined-data-exit (+333,190) are loops newly selected for
+smulh; C6xPipe finds II=11 where the walker's text had II=5, because the selector's text steps the counter after its
+last read and the counter is not renamed ("no slot for ADD A23, 1, A23", CPP11_PIPE=3). Owed: a round that copies the
+counter at the loop's head (or steps it first) before C6xPipe; the 34 unowned -O2 cases by family in the list.
+**Owed to the wave gate:** as W4's entry, and ti-link on TI's own simulator for ADDU and CMPGTU's constant form.
+
+### M6a.2 W4 landed - 64-bit and floating values on the C6000 selector, 2026-11-17 (the coordinator)
+
+- Lanes w4 and w4b: walked -O0 1,756 -> 1,036, -O2 1,823 -> 1,117; cycles -O2 192,025,550 -> 191,920,912, -O0
+  397,272,350 -> 364,534,575 (against 458f8974's baseline).
+- **The user's decision**, given directly in the coordinator's session ("Yes, write them", 2026-11-17): W4's 130 worse
+  cases (34 at -O2, 96 at -O0) accepted in tests/tms6747-cycles.txt, each family named as owed (ca682b67): the loop
+  counter copied at the loop head ([P]: pipelined-data-exit +333,190, local-zero-init-large +304,422), W4's remainder
+  ([W], [V]), and "frame slots shared by scope" ([F], -O0).
+- **Gate: tools/wave-gate w4h -w f20e46ca at 936c49d0**: **43 passed, 0 failed, 4 not run** (the fixed points, not
+  owed). The first run (w4g) failed only on its 823 unnamed tms6747 differences.
+- tests/wave-expected.txt emptied (823 rows were W4's).

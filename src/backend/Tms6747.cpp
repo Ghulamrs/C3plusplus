@@ -1271,8 +1271,8 @@ void Tms6747::visit(const Binary &n) {
     moveValue(ot, "A6");             // A6 = rhs
     popValue(ot, "A4");              // A4 = lhs   (now A4=lhs, A6=rhs)
 
-    if (ot->isFloating()) { fpBinary(n, isDouble(ot)); return; }
-    if (isWide(ot)) { wideBinary(n); return; }
+    if (ot->isFloating()) { fpBinary(n.op(), isDouble(ot)); return; }
+    if (isWide(ot)) { wideBinary(n.op(), n.lhs().type()->isSigned(target_)); return; }
 
     bool sign = ot->isSigned(target_);
     switch (n.op()) {
@@ -1415,7 +1415,7 @@ void Tms6747::divideByConstant(bool quotient, bool sign, long long d) {
 // The C674x's own SP/DP instructions, each with its delay slots as NOPs
 // (TMS6747.md has the counts); division through the EABI helpers. <= and >=
 // are two compares ORed, which keeps NaN unordered where !(a > b) would not.
-void Tms6747::fpBinary(const Binary &n, bool dp) {
+void Tms6747::fpBinary(BinOp op, bool dp) {
     const char *l = dp ? "A5:A4" : "A4", *r = dp ? "A7:A6" : "A6";
     const char *sfx = dp ? "DP" : "SP";
     auto op3 = [&](const char *mnem, int slots) {
@@ -1426,7 +1426,7 @@ void Tms6747::fpBinary(const Binary &n, bool dp) {
         out_ << "\t" << mnem << sfx << "\t" << l << ", " << r << ", " << dst
              << "\n\tNOP\t1\n";
     };
-    switch (n.op()) {
+    switch (op) {
     case BinOp::Add: op3("ADD", dp ? 6 : 3); return;
     case BinOp::Sub: op3("SUB", dp ? 6 : 3); return;
     case BinOp::Mul: op3("MPY", dp ? 9 : 3); return;
@@ -1450,9 +1450,8 @@ void Tms6747::fpBinary(const Binary &n, bool dp) {
 // 64-bit integers in A5:A4 and A7:A6 with 32-bit instructions: carry by
 // CMPLTU of the low words, MPY32U plus the cross products, division by the
 // EABI's helpers, compares on the high word falling to the low on a tie.
-void Tms6747::wideBinary(const Binary &n) {
-    bool sign = n.lhs().type()->isSigned(target_);
-    switch (n.op()) {
+void Tms6747::wideBinary(BinOp op, bool sign) {
+    switch (op) {
     case BinOp::Add:
         out_ << "\tADD\tA4, A6, A4\n\tCMPLTU\tA4, A6, A0\n";   // carry: sum < addend
         out_ << "\tADD\tA5, A7, A5\n\tADD\tA5, A0, A5\n";
@@ -1468,7 +1467,7 @@ void Tms6747::wideBinary(const Binary &n) {
         out_ << "\tMV\tA0, A4\n\tMV\tA1, A5\n";
         return;
     case BinOp::Div: case BinOp::Mod: {
-        const char *helper = n.op() == BinOp::Div ? (sign ? "__c6xabi_divlli" : "__c6xabi_divull")
+        const char *helper = op == BinOp::Div ? (sign ? "__c6xabi_divlli" : "__c6xabi_divull")
                                                   : (sign ? "__c6xabi_remlli" : "__c6xabi_remull");
         openArea(8);
         out_ << "\tMV\tA6, B4\n\tMV\tA7, B5\n";
@@ -1489,13 +1488,13 @@ void Tms6747::wideBinary(const Binary &n) {
         // lhs < rhs: high < high, or high == high and low <u low.
         out_ << (sign ? "\tCMPLT\tA5, A7, A0\n" : "\tCMPLTU\tA5, A7, A0\n");
         out_ << "\tCMPEQ\tA5, A7, A3\n\tCMPLTU\tA4, A6, A4\n\tAND\tA3, A4, A4\n\tOR\tA0, A4, A4\n";
-        if (n.op() == BinOp::Ge) out_ << "\tXOR\t1, A4, A4\n";
+        if (op == BinOp::Ge) out_ << "\tXOR\t1, A4, A4\n";
         return;
     }
     case BinOp::Gt: case BinOp::Le: {
         out_ << (sign ? "\tCMPGT\tA5, A7, A0\n" : "\tCMPGTU\tA5, A7, A0\n");
         out_ << "\tCMPEQ\tA5, A7, A3\n\tCMPGTU\tA4, A6, A4\n\tAND\tA3, A4, A4\n\tOR\tA0, A4, A4\n";
-        if (n.op() == BinOp::Le) out_ << "\tXOR\t1, A4, A4\n";
+        if (op == BinOp::Le) out_ << "\tXOR\t1, A4, A4\n";
         return;
     }
     case BinOp::Shl: case BinOp::Shr: {
@@ -1503,7 +1502,7 @@ void Tms6747::wideBinary(const Binary &n) {
         // (or the sign), which is what makes the splice right at a count of 0.
         int id = nextLabel();
         std::string big = label("wide", id), done = label("widend", id);
-        bool left = n.op() == BinOp::Shl;
+        bool left = op == BinOp::Shl;
         const char *shr = sign ? "SHR" : "SHRU";
         out_ << "\tEXTU\tA6, 26, 26, A6\n";                       // count & 63: AND takes no 6-bit constant
         movImm("A0", 32);
