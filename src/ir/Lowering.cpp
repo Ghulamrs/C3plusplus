@@ -1684,7 +1684,12 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
     }
 }
 
+// An empty class ([class]/4: no member, no vptr, every base empty) has no value to copy: its one byte is padding.
 void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
+    const Type &k = *t.unqualified();
+    bool empty = k.isStructOrUnion() && k.isComplete() && k.kind() != Kind::Union && k.members().empty() && !k.hasVptr();
+    for (std::size_t i = 0; empty && i < k.bases().size(); i++) empty = k.bases()[i].type->unqualified()->members().empty();
+    if (empty) return;
     std::vector<ValueId> ops;
     ops.push_back(to);
     ops.push_back(from);
