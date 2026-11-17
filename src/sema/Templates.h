@@ -165,7 +165,7 @@ public:
                 ConstexprAhead, BySubstitution, Doors };
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
-    // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read of the same body.
+    // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read; the read itself is always made.
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);
     // A function template's definition read once in pattern mode where it is declared; at the unit's end, held against its first replay.

@@ -458,7 +458,6 @@ void Templates::holdBodies(std::size_t mark) {
 }
 
 void Templates::readDeclaration(const TemplateDecl &decl) {
-    if (!checkBodies_) return;
     std::string why;
     std::vector<const Type *> binding;
     for (std::size_t i = 0; i < decl.params.size(); i++) {
@@ -528,6 +527,7 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
 }
 
 void Templates::holdDeclarations() {
+    if (!checkBodies_) return;
     for (std::size_t i = 0; i < declRead_.size(); i++) {
         declTally_[0]++;
         const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(declRead_[i]).loc);

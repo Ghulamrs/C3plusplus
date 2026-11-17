@@ -666,7 +666,7 @@ bool Parser::templateDeclaration() {
             decl.outOfLine = it->second.outOfLine;
             it->second = decl;
         }
-        if (readNow) tmpl_.readDeclaration(decl);     // -check=templates alone: M8.1's read, where the template is declared
+        if (readNow) tmpl_.readDeclaration(decl);     // M8.1's read, where the template is declared
         return true;
     }
 
