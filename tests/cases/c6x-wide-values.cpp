@@ -82,6 +82,18 @@ double vsum(int n, ...) {
     return s;
 }
 
+// W4b: the same on the home pairs - sums and stepped counters carried round a loop across the 32-bit boundary.
+i64 walk(i64 from, int n, i64 by, int which) {
+    i64 s = from, up = from, down = from, twice = 1;
+    u64 m = 3;
+    for (int i = 0; i < n; ++i) {
+        s += by; up += 15; down -= 7; twice += twice;
+        m = m * (u64)by ^ (u64)up;
+        if (down < s) m -= 1;
+    }
+    return which == 0 ? s : which == 1 ? up : which == 2 ? down : which == 3 ? twice : (i64)m;
+}
+
 void show(const char *what, i64 v) { printf("%s %d %u\n", what, (int)(v >> 32), (unsigned)v); }
 void showd(const char *what, double v) { printf("%s %d\n", what, (int)(v * 1000.0)); }
 
@@ -143,5 +155,7 @@ int main() {
     showd("vsum", vsum(6, 1, 2.5, (i64)300, -4, 0.125, (i64)-50));
     printf("words %d %.3f %d %.2f\n", 1, 2.5, 3, -0.75);
     printf("pairs %.1f %d %d %.4f %d\n", 1e3, 7, 8, 0.0625, 9);
+    for (int w = 0; w < 5; ++w) show("walk", walk(0xfffffff0LL, 40, 0x7fffffffLL, w));
+    for (int w = 0; w < 5; ++w) show("walkdown", walk(5, 3, -0x100000003LL, w));
     return 0;
 }

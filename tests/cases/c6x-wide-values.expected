@@ -53,3 +53,13 @@ address 0 8
 vsum 249625
 words 1 2.500 3 -0.75
 pairs 1000.0 7 8 0.0625 9
+walk 20 4294967240
+walk 1 584
+walk 0 4294967000
+walk 256 0
+walk 4434 4294966419
+walkdown -4 4294967292
+walkdown 0 50
+walkdown -1 4294967280
+walkdown 0 8
+walkdown -231 4294966934

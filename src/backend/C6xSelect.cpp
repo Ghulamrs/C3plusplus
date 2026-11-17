@@ -659,14 +659,34 @@ bool Tms6747::ssaWideInPlace(const ir::Function &f, const ir::Inst &i) {
     const std::string d = cmp || h == nullptr ? "A4" : h;
     std::string x = at(a, "A4"), y = at(b, "A6");
     if (x[0] != d[0] || y[0] != d[0] || (x == "A4" && y == "A6" && d == "A4")) return false;
-    if (i.op == ir::Op::Add && d == y && d == x) return false;
+    // A constant of 1..15 added or taken away: the low word's immediate form, the carry or borrow by CMPGTU's constant.
+    const ir::Inst *kd = b.valid() && f.value(b).def.valid() ? &f.inst(f.value(b).def) : nullptr;
+    if ((i.op == ir::Op::Add || i.op == ir::Op::Sub) && kd != nullptr && kd->op == ir::Op::IConst && x[0] == d[0]) {
+        const long long k = i.op == ir::Op::Add ? static_cast<long long>(kd->k) : -static_cast<long long>(kd->k);
+        if (k != 0 && k >= -15 && k <= 15) {
+            if (x == "A4") ssaPair(f, a, "A4");
+            const std::string xh = pairHigh(x), dh = pairHigh(d), c = d[0] == 'A' ? "B0" : "A0";      // the other side's .L unit is free more often
+            if (k < 0) out_ << "\tCMPGTU\t" << -k << ", " << x << ", " << c << "\n\tADD\t" << k << ", " << x << ", " << d << "\n\tSUB\t" << xh << ", " << c << ", " << dh << "\n";
+            else out_ << "\tADD\t" << k << ", " << x << ", " << d << "\n\tCMPGTU\t" << k << ", " << d << ", " << c << "\n\tADD\t" << xh << ", " << c << ", " << dh << "\n";
+            if (h == nullptr) ssaKeep(f, i.result);
+            return true;
+        }
+    }
+    const bool long40 = i.op == ir::Op::Add && d[0] == 'A';       // the carry from ADDU's ninth byte, where the scratch is the A side's
+    if (i.op == ir::Op::Add && d == y && d == x && !long40) return false;
     if (i.op == ir::Op::Mul && d[0] != 'A') return false;
     if (x == "A4") ssaPair(f, a, "A4");
     if (y == "A6") ssaPair(f, b, "A6");
-    if (i.op == ir::Op::Add && d == y) std::swap(x, y);
+    if (i.op == ir::Op::Add && d == y && !long40) std::swap(x, y);
     const std::string xh = pairHigh(x), yh = pairHigh(y), dh = pairHigh(d), c = d.substr(0, 1) + "0";
     switch (i.op) {
-    case ir::Op::Add:       // the carry: the sum is below an addend
+    case ir::Op::Add:       // the carry: the sum is below an addend; or bit 32 of ADDU's sum, which reads no register twice
+        if (long40) {
+            const char *t = d == "A4" || y == "A6" ? "A7" : "A5";
+            out_ << "\tADD\t" << xh << ", " << yh << ", " << t << "\n\tADDU\t" << x << ", " << y << ", " << dh << ":" << d << "\n";
+            out_ << "\tAND\t1, " << dh << ", " << dh << "\n\tADD\t" << dh << ", " << t << ", " << dh << "\n";
+            break;
+        }
         out_ << "\tADD\t" << x << ", " << y << ", " << d << "\n\tCMPLTU\t" << d << ", " << y << ", " << c << "\n";
         out_ << "\tADD\t" << xh << ", " << yh << ", " << dh << "\n\tADD\t" << dh << ", " << c << ", " << dh << "\n";
         break;
