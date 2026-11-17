@@ -2768,3 +2768,37 @@ add, a compare and a widening on the home pairs, no moves through A5:A4) and the
 loops; **to the wave gate:** -O1 and SIM=0 at every level over the suite, the walker legs, asm6x, identical.sh
 ARCHS=tms6747 (tests/wave-expected.txt rows), ti-link, run.sh on the hosts (Tms6747.cpp's two helpers changed
 signature only), C6xPack/Sched self-compile, cl6x 8.2.2's `-S`, and the census on the Windows cl build.
+
+### M6a.2 W4b: 64-bit operations in place on their home pairs - lane w4b, 2026-11-17
+
+**What changed** (src/backend/C6xSelect.cpp 1,166 -> 1,259 lines, Tms6747.h +1, src/optimizer/C6xPack.cpp +1; src/ 94,745 ->
+94,840; branch m6a2-w4 on 7f5e1ca4): `ssaWideInPlace` writes a 64-bit add, subtract, multiply, and/or/xor, comparison and a
+widening of a word with its operands read where they live and its result in its own pair - no moves through A5:A4 / A7:A6
+- where every pair is on one side; a block parameter's pair is loaded straight into its home. A sum's carry is bit 32 of
+ADDU's 40-bit result (masked by AND 1, so nothing rests on what the odd register's upper bits hold), which reads neither
+addend after the sum is written - the order `CMPLTU sum, addend` forced was what kept a counter's step a cycle late. A
+constant of 1..15 added or taken away uses the immediate ADD and CMPGTU's 4-bit constant for the carry or borrow, held in
+the other side's B0 / A0 so the compare takes that side's .L unit. `unitsFor` knows ADDU (.L). `down`'s loop in
+ssa-narrow: 12 cycles a turn -> 8.
+
+**Case** tests/cases/c6x-wide-values widened (walkUp, walkDown: sums and counters across the 32-bit boundary, x + x, a
+product; clang's .expected from the Windows box): 57 of 57 selected at -O0, -O1 and -O2.
+
+**Gate, on the final tree, both boxes:** g++ -Werror (Linux) and cl /W4 /WX (Windows) clean; the case right at -O0/-O1/-O2
+on vm6747 and sim6747 and by the walker at -O2; **tests/tms6747.sh SIM=1 at -O2 830 passed / 0 failed and at -O0 830 / 0**
+(shards 1-3/6 Linux, 4-6/6 Windows, tree 15f3949d; the case alone re-run after it was split); tools/exclusions, the
+comment cap and the memory gate hold - **run as `python3 tools/...`: lane w4's script ran them under `sh`, which printed
+syntax errors and rc 0, so W4's "static gates hold" was not measured until now**; c6x-declines 0; self-compile of
+C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp at -O0 and -O2 6 / 0; the census holds the baseline (1,036 / 1,117).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O2 593 better, 129 equal, 93 worse of which 34
+unowned, total 192,025,550 -> 191,920,912** (lane w4 left 194,586,314; ssa-narrow 8,054,415 -> 5,387,746, below its
+baseline; no case joined the worse list); **-O0 499 / 71 / 244 of which 96 unowned, total 397,272,350 -> 364,534,575**
+(w4 left 370,529,479). Against lane w4's own numbers at -O2 28 cases fell and 17 rose, each of the 17 still below the
+baseline: divide-by-constant +17,326 and ternary-index-after-remake +2,425 (the packer renamed and folded the A4 a value
+used to pass through; it does not fold a copy into a home), the rest +1..+45. Lists: boxkit/w4b-worse-O2.txt, -O0.txt.
+20 stale accepted lines taken out of tests/tms6747-cycles.txt (3 at -O2, 17 at -O0).
+**Read and not mended:** local-zero-init-large (+304,422) and pipelined-data-exit (+333,190) are loops newly selected for
+smulh; C6xPipe finds II=11 where the walker's text had II=5, because the selector's text steps the counter after its
+last read and the counter is not renamed ("no slot for ADD A23, 1, A23", CPP11_PIPE=3). Owed: a round that copies the
+counter at the loop's head (or steps it first) before C6xPipe; the 34 unowned -O2 cases by family in the list.
+**Owed to the wave gate:** as W4's entry, and ti-link on TI's own simulator for ADDU and CMPGTU's constant form.
