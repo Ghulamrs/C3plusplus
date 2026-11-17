@@ -49,7 +49,8 @@ struct CallInfo {
     bool variadic, hasThis, sret, noexcept_;
     int namedArgs;
     int resultAlloca;       // a class returned by value: the frame object it comes back into, -1 for none
-    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1) {}
+    bool byName;            // a destructor the program called by name: the object's storage outlives it ([basic.life]/5)
+    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1), byName(false) {}
 };
 
 struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; Value() : index(0) {} };

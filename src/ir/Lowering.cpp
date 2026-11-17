@@ -5694,6 +5694,7 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
     info.hasThis = true;
     info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self));
     info.namedArgs = 1;
+    info.byName = true;
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);

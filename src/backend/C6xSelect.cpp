@@ -313,8 +313,9 @@ static bool c6xDestructorName(const std::string &s) {
 }
 
 // The objects that are no local (temporaries, an inlined callee's), by liveness: two never live together lie in the same bytes.
-// One is live from a touch of its address until its own class's destructor is called on it; one whose address never leaves the
-// function's own loads, stores and copies, only up to its last touch. Past 256 of them, or with one alone, each has its own bytes.
+// One is live from a touch of its address until the lowering's own destructor call on it, where its storage ends; a destructor
+// called by name (CallInfo::byName) ends nothing, a stored pointer may build there again. One whose address never leaves the
+// function's loads, stores and copies lives to its last touch. Past 256 of them, or with one alone, each has its own bytes.
 int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
     std::vector<std::size_t> todo;
     std::vector<int> idx(f.frame.size(), -1);
@@ -364,8 +365,8 @@ int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
                 const ir::CallInfo &c = f.calls[i.call];
                 const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
                 const Type *own = ssaTypes_->type(f.frame[todo[static_cast<std::size_t>(r)]].type);
-                if (c.hasThis && !ps.empty() && ps[0]->isPointer() && ps[0]->pointee() == own && own->isStructOrUnion() &&
-                    f.inst(f.value(v).def).op == ir::Op::Alloca && c6xDestructorName(c.symbol)) { ends = r; continue; }
+                if (!ps.empty() && ps[0]->isPointer() && ps[0]->pointee()->unqualified() == own->unqualified() && own->isStructOrUnion() &&
+                    f.inst(f.value(v).def).op == ir::Op::Alloca && !c.byName && c6xDestructorName(c.symbol)) { ends = r; continue; }
             }
             away[static_cast<std::size_t>(r)] = 1;
         }
