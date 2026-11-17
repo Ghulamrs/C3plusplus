@@ -308,6 +308,7 @@ private:
     void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
+    void ssaClassResult(const Type *t);       // a class result from its address in A4 (W3)
     // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
     std::vector<char> ssaInner_;
     std::string ssaBlockLabel(ir::BlockId b) const { return label(b.v < ssaInner_.size() && ssaInner_[b.v] ? "ssain" : "ssa", static_cast<int>(b.v)); }
