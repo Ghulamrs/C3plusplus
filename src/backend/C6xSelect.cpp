@@ -116,6 +116,10 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::ICmp: case ir::Op::SMulH:
             case ir::Op::FConst: case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: case ir::Op::FNeg: case ir::Op::FCmp:
             case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp: case ir::Op::UiToFp: case ir::Op::FpExt: case ir::Op::FpTrunc:
+            case ir::Op::Memcpy:
+                break;
+            case ir::Op::Memset:    // written out a store at a time (W5); a larger one is the runtime's
+                if (i.k > 512) return "memset past 512 bytes";
                 break;
             case ir::Op::Call: case ir::Op::Invoke: {
                 const ir::CallInfo &c = f.calls[i.call];
@@ -127,8 +131,14 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 if (cr->isStructOrUnion() ? c.variadic || (c.sret ? !(f.sret.valid() && hiddenInA4(cr)) : c.resultAlloca < 0)
                                           : c.sret || c.resultAlloca >= 0) return "class result of a call";
                 if (!c.variadic && i.count + (hiddenInA4(cr) ? 1 : 0) > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
-                for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
-                    if (p->isStructOrUnion()) return "class argument";
+                // A class argument (W5): a word or a pair of words in its registers, else the address of the caller's copy.
+                const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+                for (std::size_t n = 0; n < ps.size(); n++) {
+                    if (!ps[n]->isStructOrUnion()) continue;
+                    if (c.variadic || n >= i.count || !(ssaCopiedArg(ps[n]) || (inPair(ps[n]) && ps[n]->align(target_) >= 4 && ps[n]->size(target_) % 4 == 0)))
+                        return "class argument of another shape";
+                    if (inPairWide(ps[n]) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
+                }
                 // A 64-bit argument (W4) goes in its register's pair, not past the sixth; a variadic call's lie in its area.
                 const std::uint32_t named = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
                 for (std::uint32_t n = 0; n < named; n++)
@@ -156,6 +166,29 @@ void Tms6747::ssaClassResult(const Type *t) {
     out_ << "\tMV\tA6, A4\n";
 }
 
+// A pointer's alignment, from what it points to: 1 where that says nothing.
+int Tms6747::ssaAlign(const ir::Function &f, ir::ValueId p) const {
+    const Type *t = ssaType(f, p);
+    if (!t->isPointer() || t->pointee() == nullptr || t->pointee()->isVoid() || t->pointee()->isFunction()) return 1;
+    return std::max(1, t->pointee()->align(target_));
+}
+
+// size bytes at `to` (an A register other than A0 and A3) zeroed from B16, or B17:B16 where both are 8-aligned.
+void Tms6747::ssaFill(int size, const char *to, int align) {
+    const bool wide = align >= 8 && size >= 8;
+    out_ << (wide ? "\tZERO\tB17:B16\n" : "\tZERO\tB16\n");
+    std::string dst = to;
+    for (int off = 0, base = 0; off < size; ) {
+        int step = wide && size - off >= 8 ? 8 : size - off >= 4 ? 4 : size - off >= 2 ? 2 : 1;
+        if (step > align) step = align >= 4 ? 4 : align;
+        if ((off - base) / step > 31) { regAdd(to, off, "A3"); dst = "A3"; base = off; }
+        const int o = off - base;
+        out_ << "\t" << (step == 8 ? "STDW\tB17:B16" : step == 4 ? "STW\tB16" : step == 2 ? "STH\tB16" : "STB\tB16") << ", *"
+             << (o ? "+" : "") << dst << (o ? "(" + std::to_string(o) + ")" : "") << "\n";
+        off += step;
+    }
+}
+
 // The parser's parameter slots stay where emitParams writes them; above them a word per value, then each alloca.
 int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
     int cur = 0;
@@ -177,6 +210,21 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
         const int align = f.frame[a].align > 0 ? f.frame[a].align : t->align(target_);
         cur = roundUp(cur + t->size(target_), std::max(align, 1));
         ssaAllocaSlot_[a] = cur;
+    }
+    ssaArgCopy_.assign(f.operands.size(), 0);
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!id.valid() || (f.inst(id).op != ir::Op::Call && f.inst(id).op != ir::Op::Invoke)) continue;
+            const ir::Inst &i = f.inst(id);
+            const std::vector<const Type *> &ps = ssaTypes_->type(f.calls[i.call].signature)->params();
+            for (std::size_t n = 0; n < ps.size() && n < i.count; n++) {
+                if (!ssaCopiedArg(ps[n])) continue;
+                cur = roundUp(cur + ps[n]->size(target_), std::max(ps[n]->align(target_), 4));
+                ssaArgCopy_[i.first + n] = cur;
+            }
+        }
     }
     return roundUp(cur, 8);
 }
@@ -1031,6 +1079,15 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         ssaEmit(c6x::MInst(sz == 1 ? "STB" : sz == 2 ? "STH" : "STW", from, mem));
         return;
     }
+    case ir::Op::Memcpy: {     // the walker's block copy (W5), from A4 to A6 or the homes
+        const int align = std::min(ssaAlign(f, f.operand(i, 0)), ssaAlign(f, f.operand(i, 1)));
+        const std::string to = ssaUse(f, f.operand(i, 0), "A6"), from = ssaUse(f, f.operand(i, 1), "A4");
+        copyBlock(static_cast<int>(i.k), from.c_str(), to.c_str(), align, align >= 8);
+        return;
+    }
+    case ir::Op::Memset:
+        ssaFill(static_cast<int>(i.k), ssaUse(f, f.operand(i, 0), "A6").c_str(), ssaAlign(f, f.operand(i, 0)));
+        return;
     case ir::Op::Gep: {
         if (i.count == 2) {
             const std::string p = y(0), b = y(1);
@@ -1143,6 +1200,14 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             at[k] = roundUp(end, sz);
             end = at[k] + sz;
         }
+        // A class argument over 8 bytes is copied first, as the walker's genArg: its copy's address is the argument.
+        const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+        for (std::uint32_t k = 0; k < i.count && k < ps.size(); k++) {
+            if (!ssaCopiedArg(ps[k])) continue;
+            const std::string from = ssaUse(f, f.operand(i, k), "A4");
+            localAddr(ssaArgCopy_[i.first + k], "A6");
+            copyBlock(ps[k]->size(target_), from.c_str(), "A6", ps[k]->align(target_), ps[k]->align(target_) >= 8);
+        }
         const int area = c.variadic ? roundUp(end, 8) : 8;
         openArea(area, i.count > inRegs);
         for (std::uint32_t k = inRegs; k < i.count; k++) {
@@ -1165,7 +1230,20 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             ssaEmit(c6x::MInst("LDW", ssaMem(sretSlot_, 4), reg));
             ssaNop(4);
         };
-        for (std::uint32_t k = 0; k < inRegs; k++) ssaPair(f, f.operand(i, k), abi_.intRegs[k + hid]);
+        for (std::uint32_t k = 0; k < inRegs; k++) {
+            const char *reg = abi_.intRegs[k + hid];
+            if (k >= ps.size() || !ps[k]->isStructOrUnion()) { ssaPair(f, f.operand(i, k), reg); continue; }
+            if (ssaCopiedArg(ps[k])) {
+                localAddr(ssaArgCopy_[i.first + k], "A3");
+                ssaEmit(c6x::MInst("MV", "A3", reg));
+                continue;
+            }
+            // A class of one or two words is its words, read from the object.
+            const std::string obj = ssaUse(f, f.operand(i, k), "A3"), pr = pairOf(reg);
+            ssaEmit(c6x::MInst("LDW", "*" + obj, reg));
+            if (inPairWide(ps[k])) ssaEmit(c6x::MInst("LDW", "*+" + obj + "(4)", pr.substr(0, pr.find(':'))));
+            ssaNop(4);
+        }
         if (inRegs + hid > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
         if (cr->isStructOrUnion() && !inPair(cr)) into(hid ? "A4" : "A3");
         call(c6x::symbolOperand(c.symbol));

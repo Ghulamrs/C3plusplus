@@ -275,7 +275,8 @@ private:
     // A4, A6, B4 and A1 carry the rest. `CXX1_C6X_HOMES` 0 gives no homes, 1 the saved registers alone.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
-    std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;      // ssaHome_: 0, or one past the home's index
+    std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;
+    std::vector<int> ssaArgCopy_;     // by operand index: the frame copy of a class argument over 8 bytes (W5)      // ssaHome_: 0, or one past the home's index
     std::vector<ir::BlockId> ssaOrder_;                            // the order the blocks are written in
     std::vector<char> ssaFused_;                                   // 1: a compare written by its branch; 2: a cast remade at its calls
     std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
@@ -309,6 +310,9 @@ private:
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
     void ssaClassResult(const Type *t);       // a class result from its address in A4 (W3)
+    int ssaAlign(const ir::Function &f, ir::ValueId p) const;    // what a block op may assume of p (W5)
+    void ssaFill(int size, const char *to, int align);         // memset to zero (W5)
+    bool ssaCopiedArg(const Type *p) const { return p->isStructOrUnion() && !inPair(p) && !hiddenInA4(p); }
     // A 64-bit value (W4) has no home: eight bytes of the frame, read into a pair and written from A5:A4.
     bool ssaWideV(const ir::Function &f, ir::ValueId v) const { return v.valid() && f.value(v).type.valid() && isWide(ssaType(f, v)); }
     void ssaPair(const ir::Function &f, ir::ValueId v, const char *lo);    // v into lo's pair, or a word into lo
