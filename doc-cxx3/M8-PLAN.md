@@ -391,3 +391,68 @@ Compiler++'s units; no `tests/cases` program was added. src/ lines: 94,585 befor
 Microsoft 738); find the size askers behind 1,270; then `ParserDependent`'s reader for member access and the
 operators. Commit 2's remainder: the signature of a member template and of a class template's member, and the
 dump's line for a pattern.
+
+**M8.1, commit 3 a step further, 2026-11-17** (lane m8e, branch `m8-d` from `c6548881`; one lane-hour; code
+`c0af8ca7`). Three of the four things m8d's last paragraph names, and commit 3 is **still not closed**: the read
+stays behind `-check=templates`. **(a) The read is in `templateDeclaration`**: `Templates::readDeclaration` reads a
+defined function template's body where it is declared, under the same `Trial` and pattern state, and keeps the
+tree; the unit's end only holds each kept tree against its first replay (`holdDeclarations`). What it leaves behind
+is taken out again, not yet never written: the pattern's `Function` is popped from `program.functions`, its
+`Signature` taken out of every overload set of `lookup_.functionIndex_` (the entry itself stays in
+`lookup_.functions_`, reached by no name), and its string literals leave the pool as a lambda's trial reading's do
+(unless the read emitted a function or a global that may name one). **The measure**: every case's `-S` text with
+the flag against without it - the first build read 2 of 1,238 differing (`constructor-unwinds`,
+`function-try-block-constructor`: the pool's numbering, a pattern's literal now taken at the declaration and not
+last), the committed one **0 of 1,238** (Windows, `boxkit/m8e-win.sh flag`). Not taken out: a static local's
+global, default-argument records, a closure's functions when the read fails after making them, and whatever a
+non-dependent instantiation the body starts writes (which replay would write later) - the function state that
+writes no table is still owed. **(b) No instantiation over a pattern's own parameters**: `Parser::instantiate`
+refuses by name a binding that is dependent while a pattern body is read. The Microsoft 738 are gone, and so are
+most of Linux's 750 reads - they had been read by instantiating the callee over `T`, which Itanium can name and
+Microsoft cannot; the two boxes now read the same bodies. **(c) The size askers found** (gdb at the throw, Linux):
+the 1,270 were one line, `Parser::declare`'s debug record asking a by-value dependent parameter's alignment -
+mended; the 268 left are `Parser::pointerAdd` (the element size under `T *` arithmetic) and
+`Parser::usualArithmetic` (a comparison over a dependent operand), which are (d)'s operators and not slots.
+**(d) not started**: `ParserDependent`'s reader builds a `DepExpr` for a signature's mangling and notes no syntax,
+and refuses a local name; a body's expression needs it to note the nodes the ordinary productions note and to give
+the ordinary reader an expression of dependent type back - more than what the hour had left.
+
+| corpus, box | function templates defined | read | not read | read: text alone / shape / same | read, never replayed |
+| --- | --- | --- | --- | --- | --- |
+| `tests/cases`, Linux, before (`c6548881`) | 3,477 | 750 | 2,727 | 33 / 1 / 0 | 716 |
+| `tests/cases`, Windows, before | 3,478 | 77 | 3,401 | 17 / 1 / 0 | 59 |
+| `tests/cases`, Linux and Windows, after (`c0af8ca7`; the same on both) | 3,478 | **128** | 3,350 | 66 / 1 / 0 | 61 |
+
+**Not read, by reason, after** (the same lines on both boxes): 748 "has no member" (a member access through an
+object whose class is a pattern); 484 + 295 + 112 + 94 + 37 + 2 + 2 + 1 an operator over a dependent operand; 378
++ 9 a call with a dependent argument (the refusal of (b), most of them met inside overload resolution's trial and
+reported as "no specialization of it could be made"); 268 the size of a dependent type (`pointerAdd`,
+`usualArithmetic`); 204 a compound assignment; 177 a cast of a reference to another type; 138 a pack, 41 a
+non-type, 11 a template template parameter; 68 + 59 a construction from two arguments; 62 a static member or
+enumerator of a dependent class; 40 a member of a non-class; 75 a signature's own refusals; 14 + 3 undeclared
+names; 8 + 7 forms `ParserDependent` refuses in a signature; 6 + 2 and five more, one or two each. The walls in order for the next lane: an expression of dependent type the ordinary
+productions can carry (member access, the operators, calls, casts - one mechanism, `ParserDependent`'s), then the
+three parameter kinds; and the function state that writes no table before any of it runs without the flag.
+
+**Gates** at `c0af8ca7`, one tree on each box; REF is lane m8d's kept tree (`4c45208e`, whose `src/` is
+`c6548881`'s - Linux `~/m8d`, Windows `work\m8d`), not a new build. Linux (g++ `-Werror` clean, `~/m8e`):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,298 compared,
+0 differ**; `run.sh` 1232 passed, 0 failed; `typed.sh` 875 passed, 0 failed, 1 not for this host (other=38
+name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52, the two `.templates`
+records as written); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale (18 citations re-pointed);
+comment cap 0; memory gate held; ast-residue +0 on all seven; `ide/generate.py --check` up to date. Windows (cl
+/W4 /WX clean, `work\m8e`): every case's `-S` text and diagnostics NEW against REF at -O0 and -O2 for
+x86_64-windows `-masm=masm` and `-masm=gnu`, x86_64-linux, arm64-darwin and tms6747, 1,238 cases, **12,380 the
+same, 0 differ** (m8d's twelve `#error` caret lines do not show: the two tree paths are the same length); the
+static gates pass; `-check=templates` over the 103 sources, all compiling: 7,512 function templates, **334 read**
+(330 before), 70 in text alone, 0 in shape; `self-compile.cmd` 103 of 103.
+`tests/names.sh` on that box against its clang: 883 passed, 0 failed; `tests/overload.sh`: 46 agreed with clang,
+0 differed (m8d ran neither). **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1
+rows and Compiler++'s units; the flag-against-no-flag measure on Linux; no `tests/cases` program was added. src/
+lines: 94,712 before, 94,737 after.
+
+**What the next lane takes** (commit 3 still open, then 4): the expression of dependent type - `ParserDependent`
+noting syntax and handing the ordinary reader a node back - for member access, the operators (with `pointerAdd`
+and `usualArithmetic`, the last size askers), dependent calls and casts; a function state that writes no table in
+place of the taking-out above; then the three parameter kinds. Commit 2's remainder is untouched: a member
+template's and a class member's signature, and the dump's line for a pattern.
