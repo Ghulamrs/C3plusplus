@@ -231,13 +231,7 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
     }
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     cur = layoutSsaLocals(fn, f, cur);
-    for (std::size_t a = 0; a < f.frame.size(); a++) {
-        if (ssaAllocaSlot_[a] != 0) continue;
-        const Type *t = ssaTypes_->type(f.frame[a].type);
-        const int align = f.frame[a].align > 0 ? f.frame[a].align : t->align(target_);
-        cur = roundUp(cur + t->size(target_), std::max(align, 1));
-        ssaAllocaSlot_[a] = cur;
-    }
+    cur = layoutSsaTemps(f, cur);
     // A call's copied arguments live from their copy to the call, both written at the call: every call's lie in the same bytes.
     ssaArgCopy_.assign(f.operands.size(), 0);
     int top = cur;
@@ -302,6 +296,158 @@ int Tms6747::layoutSsaLocals(const Function &fn, const ir::Function &f, int cur)
         }
         cur = top;
         i = j;
+    }
+    return cur;
+}
+
+// An Itanium name of a destructor: _ZN, the nested names by length, then D1Ev or D2Ev.
+static bool c6xDestructorName(const std::string &s) {
+    if (s.compare(0, 3, "_ZN") != 0) return false;
+    std::size_t p = 3;
+    while (p < s.size() && s[p] >= '1' && s[p] <= '9') {
+        std::size_t len = 0;
+        for (; p < s.size() && s[p] >= '0' && s[p] <= '9'; p++) len = len * 10 + static_cast<std::size_t>(s[p] - '0');
+        p += len;
+    }
+    return p < s.size() && (s.compare(p, std::string::npos, "D1Ev") == 0 || s.compare(p, std::string::npos, "D2Ev") == 0);
+}
+
+// The objects that are no local (temporaries, an inlined callee's), by liveness: two never live together lie in the same bytes.
+// One is live from a touch of its address until its own class's destructor is called on it; one whose address never leaves the
+// function's own loads, stores and copies, only up to its last touch. Past 256 of them, or with one alone, each has its own bytes.
+int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
+    std::vector<std::size_t> todo;
+    std::vector<int> idx(f.frame.size(), -1);
+    for (std::size_t a = 0; a < f.frame.size(); a++)
+        if (ssaAllocaSlot_[a] == 0) { idx[a] = static_cast<int>(todo.size()); todo.push_back(a); }
+    const std::size_t m = todo.size(), nb = f.blockArena.size();
+    std::vector<int> size(m, 0), align(m, 1);
+    for (std::size_t x = 0; x < m; x++) {
+        const Type *t = ssaTypes_->type(f.frame[todo[x]].type);
+        size[x] = t->size(target_);
+        align[x] = std::max(f.frame[todo[x]].align > 0 ? f.frame[todo[x]].align : t->align(target_), 1);
+    }
+    if (m < 2 || m > 256) {
+        for (std::size_t x = 0; x < m; x++) { cur = roundUp(cur + size[x], align[x]); ssaAllocaSlot_[todo[x]] = cur; }
+        return cur;
+    }
+    // The object a value is an address in: an alloca's, or a gep or a cast from one.
+    std::vector<int> root(f.values.size(), -1);
+    for (bool more = true; more; ) {
+        more = false;
+        for (ir::BlockId b : f.blocks)
+            for (ir::InstId id : f.block(b).insts) {
+                const ir::Inst &i = f.inst(id);
+                if (!i.result.valid() || root[i.result.v] >= 0) continue;
+                int r = -1;
+                if (i.op == ir::Op::Alloca) r = idx[static_cast<std::size_t>(i.k)];
+                else if ((i.op == ir::Op::Gep || i.op == ir::Op::Bitcast) && i.count > 0) r = root[f.operand(i, 0).v];
+                if (r >= 0) { root[i.result.v] = r; more = true; }
+            }
+    }
+    // An instruction's touches, and the one it destroys (-1: none); an address used any other way has left (`away`).
+    std::vector<char> away(m, 0);
+    const auto touches = [&](const ir::Inst &i, std::vector<int> &t) -> int {
+        t.clear();
+        int ends = -1;
+        const bool call = i.op == ir::Op::Call || i.op == ir::Op::Invoke;
+        if (i.op == ir::Op::Alloca) return ends;
+        for (std::uint32_t k = 0; k < i.count; k++) {
+            const ir::ValueId v = f.operand(i, k);
+            const int r = v.valid() ? root[v.v] : -1;
+            if (r < 0) continue;
+            if (k == 0 && (i.op == ir::Op::Gep || i.op == ir::Op::Bitcast)) continue;
+            t.push_back(r);
+            if (i.op == ir::Op::Load || i.op == ir::Op::Memset || i.op == ir::Op::Memcpy || i.op == ir::Op::Store) {
+                if (k == 0 || (k == 1 && i.op == ir::Op::Memcpy)) continue;
+            } else if (call && k == 0) {
+                const ir::CallInfo &c = f.calls[i.call];
+                const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+                const Type *own = ssaTypes_->type(f.frame[todo[static_cast<std::size_t>(r)]].type);
+                if (c.hasThis && !ps.empty() && ps[0]->isPointer() && ps[0]->pointee() == own && own->isStructOrUnion() &&
+                    f.inst(f.value(v).def).op == ir::Op::Alloca && c6xDestructorName(c.symbol)) { ends = r; continue; }
+            }
+            away[static_cast<std::size_t>(r)] = 1;
+        }
+        for (const ir::Succ &sc : i.succ)
+            for (std::uint32_t k = 0; k < sc.count; k++) {
+                const ir::ValueId v = f.operands[sc.first + k];
+                if (v.valid() && root[v.v] >= 0) { t.push_back(root[v.v]); away[static_cast<std::size_t>(root[v.v])] = 1; }
+            }
+        if (call && f.calls[i.call].resultAlloca >= 0 && idx[static_cast<std::size_t>(f.calls[i.call].resultAlloca)] >= 0) {
+            t.push_back(idx[static_cast<std::size_t>(f.calls[i.call].resultAlloca)]);
+            away[static_cast<std::size_t>(t.back())] = 1;
+        }
+        return ends;
+    };
+    // Per block: what it starts (gen), what it ends (cut), each object's last touch in it; then begun-before and touched-after.
+    std::vector<std::vector<char> > gen(nb, std::vector<char>(m, 0)), cut(gen), in(gen), ahead(gen);
+    std::vector<std::vector<int> > last(nb, std::vector<int>(m, -1));
+    std::vector<int> t;
+    const auto instAt = [&](const ir::Block &blk, std::size_t k) { return k < blk.insts.size() ? blk.insts[k] : blk.term; };
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            if (!instAt(blk, k).valid()) continue;
+            const int ends = touches(f.inst(instAt(blk, k)), t);
+            for (int x : t) { gen[b.v][static_cast<std::size_t>(x)] = 1; cut[b.v][static_cast<std::size_t>(x)] = 0; last[b.v][static_cast<std::size_t>(x)] = static_cast<int>(k); }
+            if (ends >= 0) { gen[b.v][static_cast<std::size_t>(ends)] = 0; cut[b.v][static_cast<std::size_t>(ends)] = 1; }
+        }
+    }
+    for (bool more = true; more; ) {
+        more = false;
+        for (ir::BlockId b : f.blocks) {
+            const ir::Block &blk = f.block(b);
+            if (!blk.term.valid()) continue;
+            for (const ir::Succ &sc : f.inst(blk.term).succ)
+                for (std::size_t x = 0; x < m; x++) {
+                    const char out = gen[b.v][x] || (in[b.v][x] && !cut[b.v][x]);
+                    if (out && !in[sc.block.v][x]) { in[sc.block.v][x] = 1; more = true; }
+                    const char later = last[sc.block.v][x] >= 0 || ahead[sc.block.v][x];
+                    if (later && !ahead[b.v][x]) { ahead[b.v][x] = 1; more = true; }
+                }
+        }
+    }
+    // Two objects meet where one is touched while the other is live, or both are live into a block.
+    std::vector<char> meet(m * m, 0);
+    std::vector<char> on(m, 0);
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        std::vector<char> begun = in[b.v];
+        const auto live = [&](std::size_t x, std::size_t k) {
+            return begun[x] && (away[x] || last[b.v][x] >= static_cast<int>(k) || ahead[b.v][x]);
+        };
+        for (std::size_t x = 0; x < m; x++) on[x] = live(x, 0);
+        for (std::size_t x = 0; x < m; x++)
+            for (std::size_t y = x + 1; on[x] && y < m; y++) if (on[y]) meet[x * m + y] = meet[y * m + x] = 1;
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            if (!instAt(blk, k).valid()) continue;
+            const int ends = touches(f.inst(instAt(blk, k)), t);
+            for (int x : t) begun[static_cast<std::size_t>(x)] = 2;        // touched here: live through this instruction
+            for (int x : t)
+                for (std::size_t y = 0; y < m; y++)
+                    if (y != static_cast<std::size_t>(x) && (begun[y] == 2 || live(y, k))) meet[static_cast<std::size_t>(x) * m + y] = meet[y * m + static_cast<std::size_t>(x)] = 1;
+            for (int x : t) begun[static_cast<std::size_t>(x)] = 1;
+            if (ends >= 0) begun[static_cast<std::size_t>(ends)] = 0;
+        }
+    }
+    // In frame order, each into the first group of bytes none of whose objects it meets; a group is its largest object's bytes.
+    std::vector<std::vector<std::size_t> > groups;
+    for (std::size_t x = 0; x < m; x++) {
+        std::size_t g = 0;
+        for (; g < groups.size(); g++) {
+            bool free = true;
+            for (std::size_t y = 0; free && y < groups[g].size(); y++) free = !meet[x * m + groups[g][y]];
+            if (free) break;
+        }
+        if (g == groups.size()) groups.push_back(std::vector<std::size_t>());
+        groups[g].push_back(x);
+    }
+    for (std::size_t g = 0; g < groups.size(); g++) {
+        int bytes = 0, to = 1;
+        for (std::size_t y = 0; y < groups[g].size(); y++) { bytes = std::max(bytes, size[groups[g][y]]); to = std::max(to, align[groups[g][y]]); }
+        cur = roundUp(cur + bytes, to);
+        for (std::size_t y = 0; y < groups[g].size(); y++) ssaAllocaSlot_[todo[groups[g][y]]] = cur;
     }
     return cur;
 }

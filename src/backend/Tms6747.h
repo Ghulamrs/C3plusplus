@@ -286,6 +286,7 @@ private:
     const Type *ssaType(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
     int layoutSsa(const Function &fn, const ir::Function &f);
     int layoutSsaLocals(const Function &fn, const ir::Function &f, int cur);
+    int layoutSsaTemps(const ir::Function &f, int cur);
     void selectBody(const Function &fn, const ir::Function &f);
     void selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId next);
     std::string ssaMem(int off, int size);                 // the frame word `off` above the saves, as an operand
