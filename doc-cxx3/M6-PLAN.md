@@ -2950,3 +2950,69 @@ ledger cases alone: the brief's "below W6's" is not met, and is the coordinator'
 **Owed to the wave gate:** SIM=0 over the suite, asm6x, identical.sh ARCHS=tms6747, ti-link, the census on the Windows cl
 build, cl6x's `-S` of a class argument's copy, the two ledger cases' frame slots (or their acceptance - the user's), and
 the reasons left above.
+
+### M6a.2 FS: frame slots shared by scope on the C6000 selector - lane fs, 2026-11-18
+
+Branch m6-fslots from m6a2-w7 5150c8bb: a5b021e7 (locals, argument copies, the case), ec041621 (temporaries). src/ 94,978 ->
+95,180 lines. The owed round of W1, W3, W4, W4b and W7: `layoutSsa` gave every alloca its own bytes, where the walker's frame was
+the parser's - and the parser lays sibling scopes' locals over one another. Three parts, all in the frame's layout
+(C6xSelect.cpp); no instruction's text changes but its frame operand.
+
+- **A local lies where the parser laid it** (`layoutSsaLocals`). `ir::AllocaInfo::serial` is the parser's serial of the local
+  (`Lowering::localAlloca` writes it from the var's record; the inliner clears it on a callee's objects). The selector finds
+  the `Local` of that serial and keeps the parser's distances inside every group of locals whose bytes the parser overlapped,
+  packing the groups from the frame's cursor: the sharing is the parser's own fact, the one the walker ran on, not a second
+  computation of scopes. A serial on two objects, a size the parser did not lay, a parameter, a static, or an alignment the
+  group cannot keep leaves the object its own bytes.
+- **Every call's copied arguments in the same bytes**: a class argument over 8 bytes is copied and consumed inside its call's
+  own text, so no two calls' copies are live together.
+- **The objects that are no local - temporaries, an inlined callee's - share by liveness** (`layoutSsaTemps`; the IR has no
+  lifetime marks). An object is live from a touch of its address (a load, store, memcpy or memset through it, a call it is
+  handed to, the call it comes back from) on; one whose address never leaves those loads, stores and copies is live only up to
+  its last touch. One whose address has left stays live to the function's end, **except past a call of its own class's
+  destructor on the object itself** (the Itanium name read: _ZN, names by length, D1Ev or D2Ev; `this` the alloca, its pointee
+  the alloca's type), until it is touched again. Two objects never live together, and never one touched while the other is
+  live, take one group of bytes, in frame order, so a function with nothing to share keeps its text. Past 256 such objects each
+  keeps its own. **The rule's edge, said plainly:** a program that destroys a local by an explicit destructor call and then
+  reaches its bytes only through a pointer it stored elsewhere (no touch by name) would find them shared; the suite has none.
+  An inlined destructor is no call, so at -O2 such a temporary stays live to the end (c6x-class-values -O2 is unmoved for it).
+
+Not done: the -O0 "word per value" half (a value's word shared by liveness) - the selector reads a fused or remade value's
+operands at its user, so the live range is not the IR's; left for a round that has the selector's own use points.
+
+**Case** tests/cases/c6x-frame-sharing (clang's .expected, the Windows box's clang, the same three lines as g++'s): a ledger
+class of 60 bytes in sibling blocks, nested blocks, a loop body, both arms of an `if`, a copy beside its source, a by-value
+argument, and across a `try`, its handler and the block after. `blocks`' frame at -O2 864 -> 352 bytes, `thrown`'s 320 -> 120;
+LEDGER live, double, phantom, over, lost 0; right at -O0, -O1, -O2 SIM=0 and SIM=1 and by the walker (Linux).
+
+**Gate (coding lane):** g++ -Werror (Linux) and cl /W4 /WX (Windows, work\fsb) clean on ec041621; **tests/tms6747.sh SIM=1** on
+the final tree, Linux, all six shards (a shard runs in ~35 s there; 4-6 run in a second tree ~/fs0 holding the same cxx3):
+-O2 834 passed / 0 failed, -O0 834 / 0 - every ledger case's line among them - and -O1 834 / 0;
+Windows shards 4-6/6 (work\fsb, the cl build) at -O2 410 / 0 and at -O0 410 / 0; walked
+-O2 47 (baseline 47), -O0 34 (W7's 34): not raised; c6x-declines 0; tools/exclusions, the comment cap and the memory gate hold;
+self-compile of C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp at -O0 and -O2 6 / 0 (Linux). The first Windows build (work\fs) was
+capped at 9 minutes on the shared box and not retried; the final tree's (work\fsb) built in about 7.
+**Cycles** (tools/c6x-cycles --check, six shards from Linux; nothing accepted or written by the lane): **-O2 732 better, 10
+equal, 73 worse of which 17 unowned (W7 20), total 149,298,753 - 267,873 below W7's 149,566,626**; against W7 case by case 61
+better, 734 equal, 35 worse: array-loop-throw -103,671, try-body-local -61,968, lifetime-ledger 137,777 -> 116,814 (below its
+116,875 of before W7), ssa-ctor-delegate -20,524, goto-out-of-handler -11,639, complete-object-builder -10,377; the worst worse
+map-set-node-stability +2,017 (7,422,610 -> 7,424,627 with the same packets, from the temporaries' part; its cause not
+read), array-loop-local +108, the rest under 22 each. c6x-class-values -O2 stays 105,790: its
+copies' destructors are inlined, so the liveness rule keeps them apart - still owed. **-O0 605 better, 7 equal, 202 worse of
+which 44 unowned (W7 47), total 320,763,325 - 674,972 below W7's 321,438,297**; against W7 63 better, 737 equal, 30 worse:
+try-body-local -226,026, local-in-handler -113,607, lifetime-ledger 495,979 -> 419,855, ssa-ctor-delegate -74,436,
+goto-out-of-handler -41,371, vector-erase-destroys -40,227, c6x-class-values 380,355 -> 342,604. **Three ledger cases are worse
+than W7 at -O0**: ssa-reference-conditional-converted +40,301, constructor-unwinds-parts +37,755, lambda-deduction-temporaries
++10,245 (this one from the locals' part alone) - each about one more full `lfFind` scan (~37,900 cycles at -O0): the ledger
+keys a row by address and class name, and an address now shared by objects of two classes is a new row for each; read from
+the size of the step, not profiled. They are the coordinator's to judge under the cycle standing rule.
+**Stale accepted lines** (the tool's STALE list; the coordinator takes them out): -O2 static-local-braced-list,
+deduce-through-function-type, array-loop-throw, lambda-reads-static-local, ssa-ctor-delegate, member-pointer-models,
+call-nullptr-static-ssa, member-template-body-unchosen, try-body-local; -O0 lambda-reads-static-local, ssa-ctor-delegate,
+alias-declaration, by-value, overload-by-parameter, member-pointer-global, member-pointer-models, derived-to-base-copy,
+lambda-class-scope-names, by-value-destructor, try-body-local, operator-delete-virtual, template-class,
+member-pointer-overload-by-type, member-struct-return, class-temporary, namespace-relative-sibling.
+**Owed to the wave gate:** SIM=0 over the suite, -O1, the walker's legs, asm6x, identical.sh ARCHS=tms6747 (frame operands
+move in every selected function with locals in sibling scopes), ti-link, run.sh and winpass on the other targets (Ir.h,
+Lowering.cpp and SsaInline.cpp carry the serial; no other backend reads it), ssa.sh, the census on the Windows cl build, the
+three worse ledger cases' judgement, c6x-class-values -O2, and the "word per value" half.
