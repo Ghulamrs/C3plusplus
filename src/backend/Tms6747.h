@@ -312,6 +312,8 @@ private:
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
     bool ssaDeadClassLoad(const ir::Function &f, ir::ValueId v, int uses) const;     // a class read nothing uses
+    bool ssaPairPastSixth(const ir::Function &f, const ir::Inst &i) const;       // a call's 64-bit argument in A10-B12
+    bool ssaArrayDecay(const ir::Function &f, const ir::Inst &i) const;          // an array read, its address
     void ssaClassResult(const Type *t, bool built);     // a class result from its address in A4 (W3), unless built in place
     int ssaAlign(const ir::Function &f, ir::ValueId p) const;    // what a block op may assume of p (W5)
     void ssaFill(int size, const char *to, int align);         // memset to zero (W5)

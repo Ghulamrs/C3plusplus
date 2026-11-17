@@ -6,6 +6,8 @@
 #include "../../optimizer/DivMagic.h"
 #include "../../sema/ConstArith.h"
 
+#include <cstring>
+
 namespace ir {
 
 namespace {
@@ -78,7 +80,9 @@ struct Divider {
         unsigned long long M = 0;
         int s = 0;
         const bool power = (d & (d - 1)) == 0;
-        if (d < 2 || d >= (1ULL << (bits - 1)) || (!sign && !power && !opt::unsignedMagic(d, M, s, bits))) {
+        // The C6000 has no 64x64 high product: cl6x 7.4.4 -O2 calls __c6xabi_divlli and the rest for x / 10LL (measured).
+        const bool noHigh = bits == 64 && !power && std::strcmp(target.name(), "tms6747") == 0;
+        if (noHigh || d < 2 || d >= (1ULL << (bits - 1)) || (!sign && !power && !opt::unsignedMagic(d, M, s, bits))) {
             log.divLeft++;
             return false;
         }

@@ -75,23 +75,24 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     if (fn.params().size() != f.params.size()) return "parameters differ";
     for (std::size_t n = 0; n < fn.params().size(); n++) {
         const Type *p = fn.params()[n].type;
-        // A 64-bit parameter (W4) arrives in a pair; past the sixth the pair's high register is a home (A11, B11, A13, B13).
-        if (!p->isStructOrUnion()) { if (accessSize(p) > 4 && n + (hidden ? 1 : 0) >= 6) return "64-bit parameter past the sixth"; continue; }
+        if (!p->isStructOrUnion()) continue;
         if (!ssaTypes_->type(f.values[f.params[n].v].type)->isPointer()) return "class parameter of another shape";
     }
-    std::vector<int> used(f.values.size(), 0);
+    std::vector<int> used(f.values.size(), 0), decays(f.values.size(), 0);
     for (ir::BlockId b : f.blocks)
         for (std::size_t k = 0; k <= f.block(b).insts.size(); k++) {
             const ir::InstId id = k < f.block(b).insts.size() ? f.block(b).insts[k] : f.block(b).term;
             if (!id.valid()) continue;
             const ir::Inst &i = f.inst(id);
             for (std::uint32_t n = 0; n < i.count; n++) used[f.operand(i, n).v]++;
+            if (i.op == ir::Op::Bitcast && ssaType(f, i.result)->isPointer()) decays[f.operand(i, 0).v]++;
             for (const ir::Succ &s : i.succ) for (std::uint32_t a = 0; a < s.count; a++) used[f.arg(s, a).v]++;
         }
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
         if (t->isVoid() || ssaDeadClassLoad(f, ir::ValueId(static_cast<std::uint32_t>(v)), used[v])) continue;
+        if (t->isArray() && f.values[v].def.valid() && ssaArrayDecay(f, f.inst(f.values[v].def)) && decays[v] == used[v]) continue;
         if (t->isStructOrUnion() || t->isArray() || t->isFunction()) return "aggregate value";
         if (t->size(target_) > 8) return "a value past 64 bits";
     }
@@ -135,7 +136,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 const ir::CallInfo &c = f.calls[i.call];
                 if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "landing pads";
                 const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;     // a call through a value: its first operand
-                if (c.variadic && (c.hasThis || c.namedArgs < 0 || c.namedArgs > abi_.intCount)) return "variadic call";
+                if (c.variadic && (c.namedArgs < 0 || c.namedArgs > abi_.intCount)) return "variadic call";
                 // A class result (W3) comes back into the call's frame object, or into this function's own result (c.sret).
                 const Type *cr = ssaTypes_->type(c.signature)->returns();
                 if (cr->isStructOrUnion() ? c.variadic || (c.sret ? !(f.sret.valid() && hiddenInA4(cr)) : c.resultAlloca < 0)
@@ -148,12 +149,7 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                     // One whose copy or destruction is a call (W7): the lowering's copy in this frame, its address a word.
                     if (c.variadic || n >= count || !(ssaCopiedArg(ps[n]) || inPair(ps[n]) || hiddenInA4(ps[n])))
                         return "class argument of another shape";
-                    if (inPairWide(ps[n]) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 }
-                // A 64-bit argument (W4) goes in its register's pair, not past the sixth; a variadic call's lie in its area.
-                const std::uint32_t named = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
-                for (std::uint32_t n = 0; n < named; n++)
-                    if (ssaWideV(f, f.operand(i, n + base)) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 break;
             }
             default:
@@ -169,6 +165,23 @@ bool Tms6747::ssaDeadClassLoad(const ir::Function &f, ir::ValueId v, int uses) c
     if (uses != 0 || !f.value(v).def.valid() || !ssaType(f, v)->isStructOrUnion()) return false;
     const ir::Inst &d = f.inst(f.value(v).def);
     return d.op == ir::Op::Load && !d.isVolatile;
+}
+
+// An array read whose every use is its decay to a pointer (W8: `std::forward<const char (&)[6]>(a)` decayed): its address.
+bool Tms6747::ssaArrayDecay(const ir::Function &f, const ir::Inst &i) const {
+    return i.op == ir::Op::Load && !i.isVolatile && i.result.valid() && ssaType(f, i.result)->isArray();
+}
+
+// A 64-bit argument in the seventh register or later (W8): its pair's high register is A11, B11, A13 or B13, saved ones.
+bool Tms6747::ssaPairPastSixth(const ir::Function &f, const ir::Inst &i) const {
+    const ir::CallInfo &c = f.calls[i.call];
+    const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;
+    const Type *sig = ssaTypes_->type(c.signature);
+    const std::uint32_t hid = hiddenInA4(sig->returns()) ? 1 : 0;
+    const std::uint32_t named = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
+    for (std::uint32_t n = 0; n < named; n++)
+        if (n + hid >= 6 && (ssaWideV(f, f.operand(i, n + base)) || (n < sig->params().size() && inPairWide(sig->params()[n])))) return true;
+    return false;
 }
 
 // A class result from its address in A4, as visit(Return): the pair, or a copy through A3's pointer where the caller gave
@@ -341,7 +354,7 @@ int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
                 if (!i.result.valid() || root[i.result.v] >= 0) continue;
                 int r = -1;
                 if (i.op == ir::Op::Alloca) r = idx[static_cast<std::size_t>(i.k)];
-                else if ((i.op == ir::Op::Gep || i.op == ir::Op::Bitcast) && i.count > 0) r = root[f.operand(i, 0).v];
+                else if ((i.op == ir::Op::Gep || i.op == ir::Op::Bitcast || ssaArrayDecay(f, i)) && i.count > 0) r = root[f.operand(i, 0).v];
                 if (r >= 0) { root[i.result.v] = r; more = true; }
             }
     }
@@ -356,7 +369,7 @@ int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
             const ir::ValueId v = f.operand(i, k);
             const int r = v.valid() ? root[v.v] : -1;
             if (r < 0) continue;
-            if (k == 0 && (i.op == ir::Op::Gep || i.op == ir::Op::Bitcast)) continue;
+            if (k == 0 && (i.op == ir::Op::Gep || i.op == ir::Op::Bitcast || ssaArrayDecay(f, i))) continue;
             t.push_back(r);
             if (i.op == ir::Op::Load || i.op == ir::Op::Memset || i.op == ir::Op::Memcpy || i.op == ir::Op::Store) {
                 if (k == 0 || (k == 1 && i.op == ir::Op::Memcpy)) continue;
@@ -621,7 +634,11 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<long long> weight(nv, 0);
     std::vector<char> hot(nv, 0);       // a constant or an address a loop reads where no instruction can hold it
     std::vector<char> kept2(nv, 0);     // read by other than a call's argument, or by a call deeper in loops than its definition
-    bool wideCall = fn.params().size() + sretShift_ > 6;
+    bool wideCall = fn.params().size() + sretShift_ > 6, pairPast = false;
+    for (std::size_t n = 0; n < fn.params().size(); n++) {
+        const Type *p = fn.params()[n].type;
+        pairPast = pairPast || (n + sretShift_ >= 6 && (p->isStructOrUnion() ? inPairWide(p) : accessSize(p) > 4));
+    }
     // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
     std::vector<std::size_t> index(nb, 0), reach(ssaOrder_.size(), 0);
     std::vector<int> depth(ssaOrder_.size(), 0);
@@ -657,6 +674,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             if (callsOut(i.op)) calls.push_back(at);
             if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && i.count - (f.calls[i.call].symbol.empty() ? 1 : 0) +
                 (hiddenInA4(ssaTypes_->type(f.calls[i.call].signature)->returns()) ? 1 : 0) > 6) wideCall = true;
+            if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && ssaPairPastSixth(f, i)) pairPast = true;
         }
         last[id] = at;
         at += 2;
@@ -766,8 +784,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
                 partner[q.v].push_back(a.v);
             }
     }
-    // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it.
-    const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept;
+    // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it;
+    // one with a 64-bit one there all eight saved registers.
+    const unsigned kept = mode <= 0 || pairPast ? 0u : wideCall ? kKept & ~0x55u : kKept;
     const bool sides = optimize_ != 0 && std::getenv("CXX1_C6X_NOSIDES") == nullptr;
     const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) & (anyPair ? ~kPairs : ~0u) : 0u;
     const unsigned pairs = mode >= 2 ? kPairLow & (sides ? kScratch : kScratchA) : 0u;
@@ -1277,7 +1296,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     };
     if (ssaWideInst(f, i)) return;
     if (i.op == ir::Op::Load && rt->isStructOrUnion()) return;     // a dead class read (ssaDeadClassLoad)
-    switch (i.op) {
+    switch (ssaArrayDecay(f, i) ? ir::Op::Bitcast : i.op) {     // an array read is its address (ssaArrayDecay)
     case ir::Op::IConst: case ir::Op::Addr:
         if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
         return;
@@ -1485,6 +1504,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             }
         }
         if (inRegs + hid > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
+        if (ssaPairPastSixth(f, i)) usesSavedPairRegs_ = true;     // and A11, B11, A13, B13
         if (base != 0) ssaLoad(f, f.operand(i, 0), "B1");    // through A3 at most, before A3 is the result's address
         if (cr->isStructOrUnion() && !inPair(cr)) into(hid ? "A4" : "A3");
         call(base != 0 ? "B1" : c6x::symbolOperand(c.symbol));
