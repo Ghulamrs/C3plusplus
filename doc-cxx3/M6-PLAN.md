@@ -3195,7 +3195,8 @@ census 2 / 2; c6x-declines 0; exclusions 554 outside() sites (the base's), 0 unc
 reasons; the comment cap and the memory gate hold; self-compile of C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0.
 **Windows (work\r1x), on 3c6f6414 - the tree before the last commit** (86d02a63 folds refusal sites, restores one order, shortens the case):
 full clean cl /W4 /WX build clean; SIM=1 shards 4-6 -O2 424 passed, 1 failed - c6x-lowering-refusals on vm6747 ("an exception
-specification that allows types, which this line never writes"), the reason its throw lists came out.
+specification that allows types, which this line never writes"), the reason its throw lists came out; -O0 4/6 138 / 0, 5/6 still running at the hour, 6/6 not started (work\r1x-stop). A side compile of the
+final Lowering.cpp and BuilderCopy.cpp with cl (work\r1x-o2) wrote no object in 13 minutes - a `cmd /K` left waiting, stopped by its PID, not retried.
 **Owed to the wave gate:** the cl build and Windows shards 4-6 on 86d02a63; winpass on the 13 newly compiled cases (never run on
 x86_64-windows); names.sh on them (their constructors are inline); SIM=0, -O1, the walker's legs, asm6x, ti-link; ssa.sh; make test.
 
