@@ -330,3 +330,64 @@ src/ lines: 94,348 before, 94,424 after.
 **Asked of the user (Q8)**: M8.1's row is five commits, and commits 3 and 4 are each more than a lane-hour (the
 dependent read of a body is the pattern read grown from signatures to statements). In order, one lane after another
 on `ParserTemplate.cpp` - the recommended option, taken unless told otherwise - or 3 and 4 as two lanes at once?
+
+**M8.1, commits 2 and 3, 2026-11-17** (lane m8d, branch `m8-d` from `7ac21eef` - m8-b `0c6336ce` merged with main
+`f20e46ca`; one lane-hour; code `4c45208e`, both steps in the one commit the hour held, gated once). **Commit 2, the
+signature at the declaration**: `readTemplateDeclaration`, when `templatedName` asks (`noteSignature_`), keeps what
+it read as a `function` node over one `var` a parameter, each spelling its type, on `TemplateDecl::signature`;
+`syntax::Node` has a `pattern` mark and `Tree::markPattern` sets it **with `dead`**, so every reader that passes a
+dead node by - `roots()`, `adopt`, the dump, the Typer's census - passes a pattern by with no edit of its own, and
+only the count reads it. Not done of the row's text: `-dump=syntax` does not show the node (it would re-record
+`tests/syntax` by hand; it goes with commit 5, which shows each body once), and a member template's and a class
+member's signature are not kept (commit 4's doors). The count gains `declared=` (replays of a function template
+whose signature was kept) and `signature=` (those whose leading `var`s are as many as the kept ones). **Commit 3, the
+body at the declaration**, from `boxkit/m8b-read.patch`: under `-check=templates` alone, at the unit's end,
+`Templates::readDeclarationsOnce` reads each defined function template from `afterParams` by `topLevel` under a
+`Trial`, parameters bound to themselves, and holds the tree against the first replay's. What m8b's patch died on is
+mended three ways, each reached only under that read: `Type::size` and `align` refuse a dependent type by name (a
+`SubstitutionFailure`, `Type::nameDependentSizes`, thread-local) where the target printed and ended the unit;
+`Parser::patternBody_` gives a dependent local or parameter no slot and asks no alignment; and a pattern the mangler
+refuses takes a placeholder symbol (`Linkage::functionSymbol`). **0 units die** on either box (m8b: 97). It is still
+the patch's shape and not the row's: the read is at the unit's end and not in `templateDeclaration`, and it writes
+the tables a definition writes (the function is popped from `program.functions`; `lookup_.functions_`, the string
+pool and the static locals keep what it left) - so it stays behind the flag, and commit 3 is **not closed**.
+
+| corpus, box | function templates defined | read | not read | read: text alone / shape / same | read, never replayed | `declared=` | `signature=` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `tests/cases`, Linux (875 units, Itanium names) | 3,477 | **750** | 2,727 | 33 / 1 / 0 | 716 | 825 | 796 |
+| `tests/cases`, Windows (880 units, Microsoft names) | 3,478 | **77** | 3,401 | 17 / 1 / 0 | 59 | 826 | 797 |
+| the self-host, Windows, 103 of 103 compile under the flag | 7,512 | **330** | 7,182 | 68 / 0 / 0 | 262 | 5,029 | 5,007 |
+
+**Not read, by reason** (`tests/cases`, Linux; a quoted name is taken out so one reason is one line): 1,270 the size
+of a dependent type (asked somewhere other than a local's slot - the callers were not located in this hour, and the
+refusal names none: the next lane's first job); 747 "has no member" (a member access through a
+dependent object); 177 a cast of a reference to another type; 138 a parameter pack, 41 a non-type parameter, 11 a
+template template parameter (the three kinds the read does not bind); 136 a compound assignment and 68 + 36 + 21 + 2
++ 2 + 1 an operator over a dependent operand; 62 a static member or enumerator of a dependent class; 9 a call no
+function takes; 4 a signature's own refusal; 2 undeclared names. On Windows 738 more stop at "no Microsoft linkage
+name yet": a call in the body with a dependent argument instantiates the callee, and `Parser::instantiate` asks the
+Microsoft mangler for a name over `T` (Itanium spells one, which is why Linux reads ten times as many). The walls in
+order, then: dependent calls (no instantiation in a pattern - the 738), the size askers, dependent member access, the operators - `ParserDependent`'s
+reader for each - and the three parameter kinds. `same` is 0 because a pattern's `var` spells `T` where a replay
+spells `int`: text alone is the agreement a single tree can have, and the one shape is a pack's.
+
+**Gates** at `4c45208e`, one tree, each box built from clean (REF from `git archive 7ac21eef` in its own tree,
+Linux `~/m8dref`, Windows `work\m8dref`). Linux (g++ `-Werror` clean): `tools/identical.sh` REF against NEW for
+tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,298 compared, 0 differ**; `run.sh` 1232 passed, 0 failed;
+`typed.sh` 875 passed, 0 failed, 1 not for this host (untyped by kind as before: other=38 name=8); `tests/subst.sh
+bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52 - m8b's numbers; the two `.templates` records
+re-recorded with the new line and keys); self-compile stage 0 103 of 103; exclusions 129 sites, 0 uncited, 0 stale
+(24 citations re-pointed by `boxkit/m8d-repoint.py`); comment cap 0; memory gate held; ast-residue +0 on all seven;
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean, `work\m8d`): every case's `-S` text and
+diagnostics NEW against REF at -O0 and -O2 for x86_64-windows `-masm=masm` and `-masm=gnu`, x86_64-linux,
+arm64-darwin and tms6747 (`boxkit/m8d-win.sh same`), 1,238 cases, 12,380 comparisons - **12,368 the same, 12
+differ**, the same twelve as m8b's (the `#error` caret of `posix-headers` and `windows-h-layout` under a tree path
+three letters shorter); the static gates pass; `-check=templates` as tabled; `self-compile.cmd` 103 of 103. **Not
+run**: `tests/subst.sh`'s four stand-in steps, `names.sh`, `overload.sh`, `syntax.sh`, winpass, the -O1 rows and
+Compiler++'s units; no `tests/cases` program was added. src/ lines: 94,585 before, 94,712 after.
+
+**What the next lane takes** (commit 3 still open, then 4): move the read from the unit's end into
+`templateDeclaration` with a function state that writes no table; no instantiation from a pattern body (the
+Microsoft 738); find the size askers behind 1,270; then `ParserDependent`'s reader for member access and the
+operators. Commit 2's remainder: the signature of a member template and of a class template's member, and the
+dump's line for a pattern.
