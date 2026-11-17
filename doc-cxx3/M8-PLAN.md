@@ -600,3 +600,88 @@ cost with the flag always on not measured. **What the next lane takes**: the fun
 read into a `Program` and tables of its own, so the four take-outs go), a class specialization seated as a
 function's is, the `->template` read and `T{}`'s cast, the signature's expression as syntax (eight shapes, with
 commit 2's remainder), then the 99.
+
+**M8.1, commit 3: a pattern read into a program of its own, 2026-11-18** (lane m8h, branch `m8-d` from
+`4285d86e`; one lane-hour; code `eb7d4031`). **Lane m8g's Windows chain, read first, all passed** on its final
+tree: `self-compile.cmd` 103 of 103, `tests/names.sh` 883 passed 0 failed, `tests/overload.sh` 46 agreed with
+clang 0 differed, the self-host under `-check=templates` 103 of 103 with 7,323 of 7,512 function templates read
+(189 not: 105 a dependent size, 50 a value with no address to bind, 32 + 1 undeclared, 1 no such call).
+**(1) The function state, in part.** `Templates::readDeclaration` reads the pattern into a `Program` of its own
+(`Parser::unit_` holds the unit's meanwhile): the pattern's `Function`, its static locals and its string literals
+are never in the unit's program - nothing is popped or cut back, and a read that fails leaves none of them (m8g's
+"whatever a failed read left"). A pattern's string labels come off a count of their own (`Parser::stringLabel`),
+so the unit's `.L.str.N` are numbered as with no read whatever a replay inside the read emits. What the read
+asks to be replayed writes the unit's program (`Parser::ReplayUses`, the same three doors, now switching
+`current_` as well as the marks). **What (1) still does not hold**: the pattern's `Signature` is still entered
+and taken out (its entry in `lookup_.functions_` stays, dead; its overload-set entries are erased by a walk of
+the whole index, once a template - the registrations are in six places and no one door), its syntax is still
+written and killed (the check needs it; M8.2 keeps it), and three things are still made *early*: a class
+specialization a non-dependent use in a body instantiates, an asked function specialization's `Signature`
+(seated where asked, by m8g), a constexpr member replayed for a constant. **(2) Three of the eleven shapes
+mended**: `p->template pick<5>(1)` - `dependentPostfix` honours `template` after `.`/`->` on a dependent object
+([temp.names]/4) and skips the arguments, where it read `(p->pick < 5) > 1`; `T{}` and `T{x}` of a dependent
+type are noted as the cast a scalar's are (`bracedValueInit`), where the list door noted the bare name. All
+three now differ from their replay in text alone. **The eight left are the signature's** (six of
+`template-sfinae-misc`, `g7`, `length`): `ParserDependent`'s reader notes no syntax of its own - commit 2's
+remainder, not started. **(3) The 99, one reason examined**: the dependent size (27; 8 of 8 sampled by
+backtrace) is one asker - a *function parameter pack* in the pattern: `packParameter` gives the declared name
+the type `packExpansion(T)`, and `Parser::declare` asks its alignment (`Parser.cpp:840`). Letting it through is
+not the mend: the body's `rest...` and `sizeof...(rest)` then need a pack bound under the written name, and a
+pack of one member would fold `sizeof...` to 1 - a wrong read where there is now none. Not mended; the other 72
+not touched.
+
+| corpus, box | function templates defined | read | not read | read: text alone / shape / same | read, never replayed |
+| --- | --- | --- | --- | --- | --- |
+| `tests/cases`, Linux and Windows, before (`4285d86e`) | 3,478 | 3,379 | 99 | 452 / 11 / 14 | 2,902 |
+| `tests/cases`, Linux and Windows, after (`eb7d4031`; the same count on both) | 3,478 | 3,379 | 99 | **455 / 8** / 14 | 2,902 |
+
+**Not read, by reason, after**: as before (27 a dependent size - 26 on Linux; 21 pack-pattern forms; 14 + 6
+undeclared names; 9 + 8 signature forms; 7 an incomplete type; 2 a literal operator over a pack; 2 + 1 + 1 + 1 +
+1). 0 units die (899 files print the count on Linux, 880 on Windows, as before).
+
+**(4) The read's cost, always on** - the self-host's 103 sources compiled one at a time on Linux, user + sys
+summed, without the flag and with `-check=templates` (which is the read at every function template's
+declaration, the replays held against it, and the report): at REF `4285d86e` 177.53 s against 178.59 s; at `eb7d4031`, two rounds, 172.19 and 186.64 s
+against 195.15 and 184.07 s - the box was shared, and its own spread (172 to 187 s with no flag) is wider than
+the difference. The least of five, alternated, on one source each: `ParserExpr.cpp` 6.98 s against 6.93 s,
+`Templates.cpp` 5.47 s against 5.61 s. **The read costs under 3% of the self-host's compile time, and this
+method cannot say how far under.** **And the measurement found what the cases had not: with the flag, 8 of the
+self-host's 103 sources' `-S` differ from no flag** (`MirAlloc`, `MirWebs`, `OptAlign`, `OptDead`, `OptHoist`,
+`OptLoops`, `OptValues`, `X86_64Linux`; 1,634 to 3,712 lines each) - at REF and at `eb7d4031` alike, so it is
+m8g's tree's and not this hour's. Nothing is lost or added: `std::vector<bool>`'s constructor, destructor,
+`push_back`, `pop_back`, `back` and one `std::move` are emitted at another place - the class specialization a
+pattern's body names is made at the read, and its members' replays stand where the read made it
+(`boxkit/m8h-selfdiff.sh`; `Driver`'s two lines are `__TIME__`, different with no flag twice).
+
+**Gates** at `eb7d4031`, one tree on each box, each built from clean; REF built fresh from `4285d86e` in its own
+kept tree (Linux `~/m8hr`, Windows `work\m8hr` from `git archive`; NEW `~/m8hn`, `work\m8hn`). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,298 compared, 0 differ**; the flag against no flag, `-S` of every case, **1,238 the same, 0 differ**
+(also with item 1 alone, before the two shape mends); `run.sh` 1232 passed, 0 failed; `typed.sh` 875 passed, 0
+failed, 1 not for this host (other=38 name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 /
+682 / 1,004 / 52; no record re-recorded); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale (12
+citations re-pointed); comment cap 0; memory gate held; ast-residue +0 on all seven; `ide/generate.py --check`
+up to date. Windows (cl /W4 /WX clean): every case's `-S` text and
+diagnostics NEW against REF at -O0 and -O2 for x86_64-windows `-masm=masm` and `-masm=gnu`, x86_64-linux,
+arm64-darwin and tms6747, 1,238 cases, **12,380 the same, 0 differ**; the flag against no flag **1,238 the
+same, 0 differ**; the static gates pass; `tests/names.sh` 883 passed, 0 failed; `tests/overload.sh` 46 agreed
+with clang, 0 differed; `-check=templates` reads the same 3,379 of 3,478 (880 files print the count).
+**Not finished inside the hour on Windows** (the box was shared): `self-compile.cmd` and the self-host's count,
+still running at the stop - they land in `boxkit/m8h-win-selfc.out` and `boxkit/m8h-win-names.out`, the
+coordinator's to read before this is merged. **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
+Compiler++'s units; no `tests/cases` program was added (the three mended shapes are their own cases' counts).
+src/ lines: 94,863 before, 94,873 after.
+
+**Whether commit 3 can drop the flag: no - the flag was not dropped.** The brief's condition is that (1) holds,
+and it holds for the program's three tables only. And the output is **not** identical: 0 of 1,238
+cases differ with the read on, on both boxes, but 8 of the self-host's 103 sources do (above) - m8g's "a class
+specialization made earlier than with no read", now shown by a `-S`. Beside it: with the read always on every
+unit would carry one dead `Signature` a function template, and a pattern the read does not understand costs a
+caught failure, which must stay the *read's* and never the program's (99 here, 189 in the self-host; none kills
+a unit today). The cost is not what stands in the way. **What the next lane takes**: a class
+specialization seated where the program first asks, as `madeWhereAsked` seats a function's (the door is
+`instantiateClass`'s `findTypedef(tag)` return; the test is `boxkit/m8h-selfdiff.sh` at 0 of 8, then the
+self-host's `-S` with the flag against without as a standing gate beside the cases'); the `Signature` not
+entered for a pattern (one door for the six registrations, then no erase); then the flag can go as its own commit. After that the
+signature's expression as syntax (eight shapes, with commit 2's remainder), a function parameter pack in a
+pattern (27, with the 21 pack-pattern forms beside it), then the rest of the 99.
