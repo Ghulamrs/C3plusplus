@@ -1,4 +1,4 @@
 # tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
-# 7c5a6e45 (M6a.2 W5: memcpy, memset and class arguments selected), Linux box, g++ build, CENSUS_SOURCES=0, 1,240 cases; M6a.2 is done when both read 0.
--O0 374
--O2 389
+# 5c377a8a (M6a.2 W6: calls through a value selected), Linux box, g++ build, CENSUS_SOURCES=0, 1,241 cases; M6a.2 is done when both read 0.
+-O0 138
+-O2 109
