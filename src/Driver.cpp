@@ -1622,10 +1622,10 @@ bool Driver::compile(const Job &job) {
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-        // Where the generator selects, a function outside the lowering is an error naming it: there is no other path.
-        for (const std::string &o : selects ? outside : std::vector<std::string>())
+        // Where the generator selects, a function outside the lowering is an error naming it: the C6000 too (M6d).
+        for (const std::string &o : selects || c6x ? outside : std::vector<std::string>())
             std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), o.c_str());
-        if (selects && !outside.empty()) return false;
+        if ((selects || c6x) && !outside.empty()) return false;
     }
 
     bool ok = true;

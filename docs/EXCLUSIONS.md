@@ -557,7 +557,7 @@ commit; and `make test` fails until both are true.
 ## The SSA lowering's limits: C++11, owed (2026-11-13)
 
 Since M3b.7 deleted the walker, a function the SSA lowering (`src/ir/`) does not build is a compile error on
-both x86 targets, and on arm64-darwin since M5.3 deleted its walker (`ssaChoose` in A64Select.cpp; its own
+both x86 targets, on the C6000 since M6d (the walker is no second path for a refused function), and on arm64-darwin since M5.3 deleted its walker (`ssaChoose` in A64Select.cpp; its own
 `unsupported()` sites are counted by `tools/exclusions --arm64`): "is outside the SSA lowering: <reason>". Each reason a valid C++11 program can meet is raised
 by `outside(...)` and is **C++11, owed** - a defect, not a choice. Each is listed below by its message text
 rather than its line, because the lowering's lines move every round; `tools/exclusions --check` reads this
