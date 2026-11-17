@@ -10,7 +10,7 @@
 # the Linux box builds it in ~/<name> and runs its chain detached, two steps at once, each box job through ~/slot
 # (the first free of two locks, -j2/JOBS=2 each; installed from SLOT below when missing) under the 25-minute cap; the Windows box builds it in <work>\<name> (tools/windows/winbuild.sh) and the Mac in
 # $WAVEGATE_MAC/<name>, one Mac job at a time at -j2. `-n` names steps this wave does not owe, with the reason the
-# report prints; a group name (tms, wtms, winpass, fixed, mac, windows, linux) stands for its steps. `-b` keeps the
+# report prints; a group name (tms, winpass, fixed, mac, windows, linux) stands for its steps. `-b` keeps the
 # run to some boxes - the others' steps are NOT RUN and want a reason like any other. `-r` runs nothing: the report
 # again from the verdicts a run left in $WAVEGATE_OUT/<name>. `-k` keeps those verdicts and runs only the steps that
 # have none yet (a chain cut by the box, or a step added), in the trees already built.
@@ -23,7 +23,7 @@
 # `-B step=box` (or WAVEGATE_BOXES) overrides a row for one run. `-t` ships that commit's tree, not HEAD's;
 # `-p` prints each box's list and runs nothing. WAVEGATE_HALVES=1 with `-b <box>` (and -k) runs that box's half alone.
 # A verdict is FAIL when its box's disk is above 70% (the user's limit) as it is written.
-# tms<L>/wtms<L>: tests/tms6747.sh at -O<L> on the selector / the walker (CXX1_C6X_WALKER=1), six shards, SIM=0;
+# tms<L>: tests/tms6747.sh at -O<L>, six shards, SIM=0 (the walker and its wtms legs went at M6d);
 # -O1 is R107's leg. **The wave's base (`-w <commit>`, main at the wave's start)** is built by `build` beside the
 # gated tree, on Linux: identical (tms6747), identlnx, identwin, identa64 are tools/identical.sh at -O0, -O1, -O2
 # against it, and emit is tests/emit.sh --o2 against a golden the base records in the same run (none is a FAIL).
@@ -53,7 +53,7 @@ BOXTAB="build=linux static=linux gdb=linux run1=linux run2=linux maketest=linux 
  selfc=linux fixed0=linux fixed2=linux identical=linux identlnx=linux identwin=linux identa64=linux emit=linux
  wbuild=windows winpass0=windows winpass1=windows winpass2=windows cdb=windows wselfc=windows names=windows
  overload=windows winstruct=windows release=windows wfixed0=windows wfixed2=windows
- tms0=split tms1=split tms2=split wtms0=split wtms1=split wtms2=split sim=split
+ tms0=split tms1=split tms2=split sim=split
  census=idle declines=idle asm0=idle asm1=idle asm2=idle cycles=idle
  mbuild=mac mrun0=mac mrun2=mac lldb=mac baselines=report"
 # the judges' files: one changed at the Mac's HEAD after the gated commit fails `baselines` (N2)
@@ -74,10 +74,10 @@ while :; do
 done'
 # steps that write one folder of the tree (tests/out-run, out-tms6747, out-asm6x, winout) never overlap; winpass*,
 # cdb and wfixed* share winout-tools (each winpass job and wfixed rebuild its masm and LINK, cdb links with it)
-fam() { case $1 in run1|run2|maketest) echo run;; ssa1|ssa2) echo ssa;; tms*|wtms*|sim*) echo tms;; asm*) echo asm;;
+fam() { case $1 in run1|run2|maketest) echo run;; ssa1|ssa2) echo ssa;; tms*|sim*) echo tms;; asm*) echo asm;;
     winpass*|cdb|wfixed*) echo wintools;; *) echo "$1";; esac; }
 # a step that relinks its tree's compiler runs alone on its box: wselfc and wfixed* call msvc\build.cmd, which writes
-# cxx3-msvc.exe under every step running it (w21g: wtms2's "Device or resource busy"); Linux's checks make -q instead
+# cxx3-msvc.exe under every step running it (w21g: "Device or resource busy"); Linux's checks make -q instead
 alone() { case $1 in wselfc|wfixed*) return 0;; esac; return 1; }
 # pool <cap> <run> <width> [<more>] <step>...: each step in the background as `<run> <step> <w>` while the widths in
 # flight fit in <cap> and no step of its family runs; `<width> <step> <free> <left>` prints w (empty: not ready yet);
@@ -128,7 +128,7 @@ if [ "${1:-}" = --box ]; then
     suite() { s=$1; pat=$2; shift 2; job 1500 "$@" > "$LOG-$s.log" 2>&1; rc=$?
         d=$(grep -a "$pat" "$LOG-$s.log" | tail -1 | cut -c1-200)
         [ $rc -eq 0 ] && [ -n "$d" ] && verdict "$s" PASS "$d" || verdict "$s" FAIL "rc $rc$(capnote $rc); ${d:-no count line}; $LOG-$s.log"; }
-    # tms6747.sh, shards $5 (a-b) of NSHARD: $1 the verdict's name, $2 flags, $3 SIM, $4 the walker's switch or nothing
+    # tms6747.sh, shards $5 (a-b) of NSHARD: $1 the verdict's name, $2 flags, $3 SIM, $4 an environment setting or nothing
     NSHARD=6
     tms() { s=$1; p=0; f=0; bad=; r=$5; [ "${s%@*}" = tms2 ] && : > "$LOG-cycles.txt"
         for h in $(seq "${r%-*}" "${r#*-}"); do
@@ -139,7 +139,7 @@ if [ "${1:-}" = --box ]; then
             p=$((p + $6)); f=$((f + $7)); [ $rc -eq 0 ] || bad="$bad shard $h: rc $rc$(capnote $rc);"
             [ "${s%@*}" = tms2 ] && cat tests/out-tms6747/cycles.txt >> "$LOG-cycles.txt"
         done
-        d="tms6747.sh ${2:--O0}${4:+ walker} SIM=$3 shards $r/$NSHARD: $p passed, $f failed"
+        d="tms6747.sh ${2:--O0} SIM=$3 shards $r/$NSHARD: $p passed, $f failed"
         [ -z "$bad" ] && [ $f -eq 0 ] && verdict "$s" PASS "$d" || verdict "$s" FAIL "$d;$bad $LOG-$s-*.log"; }
     # the fixed point at $2: stages "0 1", 2, 3 as box jobs, a cut stage resumed twice
     fixed() { s=$1; o=$HOME/$N-$s; : > "$LOG-$s.log"
@@ -196,7 +196,6 @@ if [ "${1:-}" = --box ]; then
         run2) suite run2 '^run.sh: ' env CXX1="./cxx3.exe -O2" sh tests/run.sh ;;     # N3: x86_64-linux code at -O2
         ssa1|ssa2) suite "$s" '^ssa.sh: [0-9]* passed' env SSA_LEVEL=${s#ssa} JOBS=2 CXX1=./cxx3.exe sh tests/ssa.sh ;;
         tms0*) tms "$s" "" 0 "" "$R" ;;   tms1*) tms "$s" -O1 0 "" "$R" ;;   tms2*) tms "$s" -O2 0 "" "$R" ;;
-        wtms0*) tms "$s" "" 0 CXX1_C6X_WALKER=1 "$R" ;;   wtms1*) tms "$s" -O1 0 CXX1_C6X_WALKER=1 "$R" ;;   wtms2*) tms "$s" -O2 0 CXX1_C6X_WALKER=1 "$R" ;;
         sim*) if [ -x "$SIM6747" ]; then tms "$s" -O2 1 "" "$R"; else verdict "$s" "NOT RUN" "sim6747 is not built on this box ($SIM6747)"; fi ;;
         cycles) if [ ! -f tools/c6x-cycles ]; then verdict cycles "NOT RUN" "tools/c6x-cycles is not in this tree (R106)"
             elif [ ! -s "$LOG-cycles-joined.txt" ]; then verdict cycles "NOT RUN" "no joined cycles.txt came from tms2's shards"
@@ -287,7 +286,7 @@ done
 for o in $OVER; do case ${o#*=} in linux|windows|mac|split|idle) ;; *) echo "wave-gate: -B $o: a box is linux, windows, mac, split or idle" >&2; exit 2;; esac; done
 boxof() { b=; for r in $BOXTAB $OVER; do [ "${r%%=*}" = "$1" ] && b=${r#*=}; done; echo "$b"; }   # the last row for a step wins
 STEPS="$ALL$ASKED"
-group() { case $1 in tms) echo "tms0 tms1 tms2";; wtms) echo "wtms0 wtms1 wtms2";; winpass) echo "winpass0 winpass1 winpass2";;
+group() { case $1 in tms) echo "tms0 tms1 tms2";; winpass) echo "winpass0 winpass1 winpass2";;
     fixed) echo "fixed0 fixed2 wfixed0 wfixed2";; linux|windows|mac|split|idle) for s in $STEPS; do [ "$(boxof $s)" = $1 ] && printf '%s ' $s; done;;
     *) echo "$1";; esac; }
 if [ -f "$WHY.g" ]; then while IFS="$(printf '\t')" read -r g r; do for g1 in $(echo "$g" | tr ',' ' '); do for s in $(group "$g1"); do
@@ -463,7 +462,7 @@ mac_leg() {
 if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
     has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 1500)"
     has windows && echo "wave-gate: windows: wbuild alone, then steps at once within WINLANES=${WINLANES:-10} at /affinity 3FF - wide $(( ${WINLANES:-10} / 2 )) lanes (the last one all that is free), names/overload/winstruct/cdb/cycles/declines/release 2; cdb and wfixed after a winpass"
-    echo "wave-gate: never together, one tree folder each: run1+run2+maketest, ssa1+ssa2, tms*/wtms*/sim, asm*, winpass*+cdb+wfixed* (winout-tools)"
+    echo "wave-gate: never together, one tree folder each: run1+run2+maketest, ssa1+ssa2, tms*/sim, asm*, winpass*+cdb+wfixed* (winout-tools)"
     echo "wave-gate: alone on its box (relinks cxx3-msvc.exe): wselfc, wfixed0, wfixed2; linux selfc, fixed*, maketest FAIL unless make -q cxx3.exe holds"
     echo "wave-gate: idle steps, to the first box free: $(group idle)"; exit 0; fi
 if [ -z "$REPORT" ]; then

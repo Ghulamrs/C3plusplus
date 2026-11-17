@@ -54,15 +54,11 @@ bool smallConst(const ir::Function &f, ir::ValueId v, long long lo, long long hi
 
 }   // namespace
 
-// `f`, the IR's function of `fn`, where its body is inside the subset; otherwise null, and the walker's, the reason named.
-const ir::Function *Tms6747::ssaChoose(const Function &fn, const ir::Function &f) {
-    // CXX1_C6X_WALKER: the walker all, uncounted (the gate's wtms legs).
-    if (std::getenv("CXX1_C6X_WALKER") != nullptr) return nullptr;
+// A body outside the selector's subset is refused by name, its reason said: the C6000 has no second path (M6d).
+void Tms6747::ssaChoose(const Function &fn, const ir::Function &f) {
     const std::string why = ssaOutside(fn, f);
-    if (why.empty()) { ssaSelected_++; return &f; }
-    ssaWalked_++;
-    if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "c6x-walker %s: %s\n", f.symbol.c_str(), why.c_str());
-    return nullptr;
+    if (why.empty()) { ssaSelected_++; return; }
+    unsupported((f.symbol + ", outside the C6000 selector (" + why + "),").c_str());
 }
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
@@ -1143,7 +1139,6 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     hasCall_ = false;
     usesSavedArgRegs_ = false;
     usesSavedPairRegs_ = false;
-    callCount_ = 0;
     const std::string head = out_.str();        // the stream holds the body alone; what stood before it goes back first
     out_.str(std::string());
     ssaMir_.clear();
@@ -1551,7 +1546,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Ret:
         if (i.count == 1) ssaPair(f, f.operand(i, 0), "A4");
-        if (i.count == 1) ssaClassResult(functionOf_->returns(), f.sret.valid());
+        if (i.count == 1) ssaClassResult(returns_, f.sret.valid());
         jump(returnLabel_);
         writeLater();
         return;

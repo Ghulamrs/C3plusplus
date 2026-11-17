@@ -1612,7 +1612,7 @@ bool Driver::compile(const Job &job) {
                      job.input.c_str(), optimize_);
     }
     // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 and arm64 the only thing selected.
-    // tms6747 selects a function its selector's subset holds, the walker the rest (M6a); its shell reads the IR's function (M6d).
+    // tms6747 selects every function too, or refuses it by name (M6d: no walker); its shell reads the IR's function.
     const bool c6x = targetIsTi();
     if (selects || c6x || dumpSsa_ || checkSsa_) {
         std::string dumped;

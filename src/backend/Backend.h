@@ -17,7 +17,7 @@ namespace masm { struct Instruction; }
 
 namespace ir { struct Module; }
 
-// **The generator**, as the driver drives it; Regions and AstCodeGen (Walker.h) extend it in one chain (M3b.7 round 4 F).
+// **The generator**, as the driver drives it; Regions extends it in one chain (M3b.7 round 4 F).
 class CodeGen {
 public:
     virtual ~CodeGen() = default;
