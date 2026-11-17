@@ -465,8 +465,12 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
     const std::size_t mark = p_.syntaxTree_.size(), resume = p_.at_;
-    const std::size_t hadSignatures = p_.lookup_.functions_.size();
     {
+        // The read's own layer: its signature, its typedefs and a function specialization it asks for are found in it, and go with it.
+        Lookup::Layer layer = p_.lookup_.pushLayer();
+        const std::size_t hadSpecializations = specializations_.size();
+        const std::map<std::string, std::size_t> hadMemberTemplates = memberTemplateMade_;
+        const std::map<std::string, std::vector<Owed> > hadOwed = owedBodies_;
         // The pattern is no function: what its read writes - definition, static locals, literals - is a program of its own.
         Program pattern;
         Program *const into = p_.current_, *const wasUnit = p_.unit_;
@@ -497,11 +501,10 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         p_.namespaceStack_ = wasStack;
         p_.restoreFunctionState(outer);
         p_.at_ = resume;
-        // Its signature leaves every overload set.
-        for (std::unordered_map<std::string, std::vector<std::size_t> >::iterator s = p_.lookup_.functionIndex_.begin(); s != p_.lookup_.functionIndex_.end(); ++s)
-            for (std::size_t q = s->second.size(); q-- > 0;)
-                if (s->second[q] >= hadSignatures && !p_.lookup_.functions_[s->second[q]].fromTemplate && Parser::localOf(p_.lookup_.functions_[s->second[q]].name) == decl.name)
-                    s->second.erase(s->second.begin() + static_cast<long>(q));
+        p_.lookup_.popLayer(layer);
+        specializations_.erase(specializations_.begin() + static_cast<long>(hadSpecializations), specializations_.end());
+        memberTemplateMade_ = hadMemberTemplates;
+        owedBodies_ = hadOwed;
         p_.syntaxTree_.kill(mark);
     }
     syntax::NodeId read;
@@ -520,22 +523,6 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         return;
     }
     declRead_.push_back(read);
-}
-
-// Its place among the replays is the program's first ask, as with no read: the read's record stays, emptied.
-void Templates::madeWhereAsked(const std::string &key, std::size_t pos) {
-    const std::map<std::string, std::size_t>::iterator asked = askedByPattern_.find(key);
-    if (asked == askedByPattern_.end()) return;
-    const std::size_t at = asked->second;
-    askedByPattern_.erase(asked);
-    if (specializations_[at].emitted) return;
-    Specialization sp = specializations_[at];
-    specializations_[at].emitted = true;
-    specializations_[at].name.clear();
-    specializations_[at].key.clear();
-    sp.pos = pos;
-    sp.depth = p_.instantiationDepth_ + 1;
-    specializations_.push_back(sp);
 }
 
 void Templates::holdDeclarations() {
@@ -1666,10 +1653,9 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
         return shallow;
     }
 
-    if (const Type *had = p_.lookup_.findTypedef(tag)) {
-        if (!p_.patternUses_) madeWhereAsked(tag, pos);
-        return had;
-    }
+    if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
+    // A class cannot be unmade when the read's layer goes: one the program has not asked for is substitution's to make (M8.2).
+    if (p_.patternUses_) throw SubstitutionFailure("a class specialization the program has not asked for yet");
     const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
@@ -1791,7 +1777,6 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // Its member bodies, replayed later, ask from one deeper than the body that asked for the class.
     sp.depth = p_.instantiationDepth_ + 1;
     refuseInstantiationDepth(decl.name, sp.depth, pos);
-    if (replayed.was) askedByPattern_[tag] = specializations_.size();
     specializations_.push_back(sp);
     return made;
 }
@@ -1812,6 +1797,8 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const Parser::ReplayUses replayed(&p_);
     for (std::size_t i = 0; i < binding.size(); i++)     // over a pattern's parameter, it is the pattern's still
         if (binding[i] != nullptr && p_.dependentType(binding[i])) p_.patternUses_ = replayed.was;
+    // Its body is replayed into the unit at once, which no layer takes back.
+    if (replayed.was && !p_.patternUses_) throw SubstitutionFailure("a member template specialization the program has not asked for yet");
     if (!mt.defined && mt.declaredAt == 0)
         p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' is declared but "
                        "not defined, so there is nothing to instantiate");

@@ -46,6 +46,15 @@ public:
     // Every prefix `a::b::` becomes with inline components taken out: `lib::v2::`'s member is `lib::`'s.
     std::vector<std::string> inlineAliasPrefixes(const std::string &prefix) const;
     TableSizes tableSizes() const;
+    // M8.1: a pattern's read looks up in a layer of its own - the tables as they stood, put back whole when it ends.
+    struct Layer {
+        TableSizes sizes;
+        std::unordered_map<std::string, std::vector<std::size_t> > functionIndex;
+        std::unordered_map<std::string, std::size_t> globalIndex, typedefIndex, enumIndex;
+        std::vector<std::string> usingNamespaces;
+    };
+    Layer pushLayer() const;
+    void popLayer(Layer &was);
     void aliasInlineMembers(const TableSizes &before);
     void aliasTypeKey(const std::string &key, std::size_t index);
     void aliasFunctionKey(const std::string &key, std::size_t index);

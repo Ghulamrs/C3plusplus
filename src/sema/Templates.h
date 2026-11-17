@@ -159,9 +159,6 @@ public:
     std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
 
     std::vector<Specialization> specializations_;
-    // M8.1: a function specialization a pattern's own tokens asked for, by key: made where the program first asks for it.
-    std::map<std::string, std::size_t> askedByPattern_;
-    void madeWhereAsked(const std::string &key, std::size_t pos);
 
     // **The census of the doors** (M8.0): what each instantiation was, counted where it is made; CXX1_TEMPLATE_CENSUS prints it.
     enum Door { FunctionBody, ClassBody, MemberBody, MemberTemplate, DependentBase, SfinaeTrial, SfinaeFailed, AliasId,

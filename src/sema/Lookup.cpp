@@ -584,6 +584,22 @@ TableSizes Lookup::tableSizes() const {
     return TableSizes{ functions_.size(), globals_.size(), typedefs_.size(), enums_.size() };
 }
 
+Lookup::Layer Lookup::pushLayer() const {
+    return Layer{ tableSizes(), functionIndex_, globalIndex_, typedefIndex_, enumIndex_, usingNamespaces_ };
+}
+
+void Lookup::popLayer(Layer &was) {
+    functions_.erase(functions_.begin() + static_cast<long>(was.sizes.functions), functions_.end());
+    globals_.erase(globals_.begin() + static_cast<long>(was.sizes.globals), globals_.end());
+    typedefs_.erase(typedefs_.begin() + static_cast<long>(was.sizes.typedefs), typedefs_.end());
+    enums_.erase(enums_.begin() + static_cast<long>(was.sizes.enums), enums_.end());
+    functionIndex_.swap(was.functionIndex);
+    globalIndex_.swap(was.globalIndex);
+    typedefIndex_.swap(was.typedefIndex);
+    enumIndex_.swap(was.enumIndex);
+    usingNamespaces_.swap(was.usingNamespaces);
+}
+
 bool Lookup::sameTypedef(std::size_t a, std::size_t b) const { return typedefs_[a].type == typedefs_[b].type; }
 
 }   // namespace sema
