@@ -230,13 +230,17 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
         ssaValueSlot_[v] = cur;
     }
     ssaAllocaSlot_.assign(f.frame.size(), 0);
+    cur = layoutSsaLocals(fn, f, cur);
     for (std::size_t a = 0; a < f.frame.size(); a++) {
+        if (ssaAllocaSlot_[a] != 0) continue;
         const Type *t = ssaTypes_->type(f.frame[a].type);
         const int align = f.frame[a].align > 0 ? f.frame[a].align : t->align(target_);
         cur = roundUp(cur + t->size(target_), std::max(align, 1));
         ssaAllocaSlot_[a] = cur;
     }
+    // A call's copied arguments live from their copy to the call, both written at the call: every call's lie in the same bytes.
     ssaArgCopy_.assign(f.operands.size(), 0);
+    int top = cur;
     for (ir::BlockId b : f.blocks) {
         const ir::Block &blk = f.block(b);
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
@@ -245,14 +249,61 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
             const ir::Inst &i = f.inst(id);
             const std::vector<const Type *> &ps = ssaTypes_->type(f.calls[i.call].signature)->params();
             const std::uint32_t base = f.calls[i.call].symbol.empty() ? 1u : 0u;     // past a callee value
+            int at = cur;
             for (std::size_t n = 0; n < ps.size() && n + base < i.count; n++) {
                 if (!ssaCopiedArg(ps[n])) continue;
-                cur = roundUp(cur + ps[n]->size(target_), std::max(ps[n]->align(target_), 4));
-                ssaArgCopy_[i.first + base + n] = cur;
+                at = roundUp(at + ps[n]->size(target_), std::max(ps[n]->align(target_), 4));
+                ssaArgCopy_[i.first + base + n] = at;
             }
+            top = std::max(top, at);
         }
     }
-    return roundUp(cur, 8);
+    return roundUp(top, 8);
+}
+
+// **Frame slots shared by scope**: a local's object (AllocaInfo::serial) keeps the parser's distance from every local whose
+// bytes the parser overlapped with it - sibling scopes' objects, as the walker's frame had them. Groups are packed from `cur`;
+// a serial on two objects, a size the parser did not lay, or an alignment the group cannot keep leaves the object its own bytes.
+int Tms6747::layoutSsaLocals(const Function &fn, const ir::Function &f, int cur) {
+    std::map<int, int> uses;
+    for (std::size_t a = 0; a < f.frame.size(); a++) uses[f.frame[a].serial]++;
+    std::vector<std::pair<int, std::size_t> > objs;          // (the parser's low end, the object)
+    std::vector<int> key(f.frame.size(), 0), align(f.frame.size(), 1);
+    for (std::size_t a = 0; a < f.frame.size(); a++) {
+        if (f.frame[a].serial <= 0 || uses[f.frame[a].serial] != 1) continue;
+        const Type *t = ssaTypes_->type(f.frame[a].type);
+        const int size = t->size(target_);
+        for (const Local &l : fn.locals()) {
+            if (l.serial != f.frame[a].serial) continue;
+            if (l.isParam || !l.staticName.empty() || l.type == nullptr || size == 0 || l.type->size(target_) != size || l.offset < size) break;
+            key[a] = l.offset;
+            align[a] = std::max(f.frame[a].align > 0 ? f.frame[a].align : t->align(target_), 1);
+            objs.push_back(std::make_pair(l.offset - size, a));
+            break;
+        }
+    }
+    std::sort(objs.begin(), objs.end());
+    for (std::size_t i = 0; i < objs.size(); ) {
+        std::size_t j = i, lead = objs[i].second;
+        int high = key[lead];
+        for (; j < objs.size() && (j == i || objs[j].first < high); j++) {
+            high = std::max(high, key[objs[j].second]);
+            if (align[objs[j].second] > align[lead]) lead = objs[j].second;
+        }
+        // The group moves by `by`, the least step at or past `cur` that keeps its most aligned object aligned.
+        const int A = align[lead], need = cur - objs[i].first;
+        const int by = need + ((-(need + key[lead])) % A + A) % A;
+        int top = cur;
+        for (std::size_t k = i; k < j; k++) {
+            const std::size_t a = objs[k].second;
+            if ((key[a] + by) % align[a] != 0) continue;
+            ssaAllocaSlot_[a] = key[a] + by;
+            top = std::max(top, key[a] + by);
+        }
+        cur = top;
+        i = j;
+    }
+    return cur;
 }
 
 std::string Tms6747::ssaMem(int off, int size) {

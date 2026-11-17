@@ -81,7 +81,8 @@ struct Inst {
 // `funclet`: the Microsoft pad - a handler's, or a cleanup's - whose funclet this block is emitted inside, 0 for the body's own (M3-IR 3.6).
 struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId term; bool pad; std::uint32_t funclet; Block() : pad(false), funclet(0) {} };
 
-struct AllocaInfo { TypeId type; int align; std::string name; AllocaInfo() : align(0) {} };
+// `serial`: the parser's serial of the local this object is (Local::serial), -1 for a temporary or an inlined callee's object.
+struct AllocaInfo { TypeId type; int align; std::string name; int serial; AllocaInfo() : align(0), serial(-1) {} };
 
 struct Function {
     std::string symbol, displayName;

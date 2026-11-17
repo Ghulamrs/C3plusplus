@@ -7081,6 +7081,7 @@ void Lowering::msCleanupRet(const Pad &p) {
 // the frame to it, as for its own slots. A local with no serial, where the function has such a local, is refused.
 ValueId Lowering::localAlloca(sema::TypedId var, TypeId slotType) {
     const ValueId slot = entryAlloca(slotType, text(var));
+    F().frame.back().serial = tree_.resolution(var).serial;
     if (localAligns_.empty()) return slot;
     const sema::Resolution &r = tree_.resolution(var);
     if (r.serial < 0) outside("a local with alignas beside one the parser gave no serial");
