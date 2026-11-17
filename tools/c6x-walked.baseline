@@ -1,4 +1,4 @@
 # tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
-# 63b1959f (M6a.2 W8: the last reasons but R1's - 64-bit arguments past the sixth, an array read that decays, a member's variadic call, a 64-bit divide by a constant), Linux box, g++ build, CENSUS_SOURCES=0, 1,244 cases; the 24 left are R1's (outside the SSA lowering). M6a.2 is done when both read 0.
--O0 24
--O2 24
+# 86d02a63 (M6a.2 R1: the lowering's refusals lowered), Linux box, g++ build, CENSUS_SOURCES=0, 1,245 cases; the 2 left are outside the SSA lowering: a static local built with default arguments (lowering-static-local-default-arguments) and a class with a destructor returned from a derived temporary (lowering-return-derived-temporary-destructor). M6a.2 is done when both read 0.
+-O0 2
+-O2 2
