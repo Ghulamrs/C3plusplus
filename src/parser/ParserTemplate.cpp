@@ -1247,8 +1247,10 @@ Parser::instantiate(const TemplateDecl &decl,
     // And which template: two differing only in `decltype(...)` returns were one key, the first.
     key += "@" + std::to_string(decl.afterParams);
 
-    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key))
+    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) {
+        if (!patternUses_) tmpl_.madeWhereAsked(key, pos);
         return lookup_.functions_[(*had)[0]];
+    }
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
     // as a reference to itself - a type parameter as Kind::TemplateParam, a
@@ -1289,6 +1291,7 @@ Parser::instantiate(const TemplateDecl &decl,
     sp.depth = instantiationDepth_ + 1;
     tmpl_.refuseInstantiationDepth(decl.name, sp.depth, pos);
     tmpl_.specializations_.push_back(sp);
+    if (patternUses_) tmpl_.askedByPattern_[key] = tmpl_.specializations_.size() - 1;
 
     // **Under two keys, on purpose.** "twice<int>" is what the replayed definition
     // declares and what a repeat of the same arguments finds; "twice" is what
@@ -1846,7 +1849,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     // Written out rather than deduced, so no ranking chose it and nothing else
     // will mark it - a specialization is defined only where it was chosen.
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
-        if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = true; break; }
+        if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = !patternUses_ || lookup_.functions_[i].used; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
     // Its syntax is a call of the name as written, the arguments after it (M2.12l).

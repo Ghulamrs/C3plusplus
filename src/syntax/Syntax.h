@@ -83,6 +83,7 @@ public:
     // Every live root, in creation order.
     std::vector<NodeId> roots() const;
     void dump(std::string &out, const Source &src) const;
+    std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
 private:
     void dumpNode(std::string &out, NodeId id) const;
     std::vector<Node> nodes_;

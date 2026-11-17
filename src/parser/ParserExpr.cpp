@@ -3515,7 +3515,7 @@ ExprPtr Parser::unaryNode() {
                                                (s->access == Access::Private ? "private" : "protected"));
                             const std::size_t namePos = peek().pos;
                             at_ += q + 1;
-                            if (unevaluated_ == 0) usedStaticMembers_.insert(s->symbol);
+                            if (unevaluated_ == 0 && !patternUses_) usedStaticMembers_.insert(s->symbol);
                             Var *sv = Var::global(cls->tag() + "::" + s->name);
                             sv->setSymbol(s->symbol);
                             ExprPtr object(sv);

@@ -226,6 +226,13 @@ private:
     bool patternOnly_ = false;
     // M8.1: a function template's body is being read at its declaration - a dependent local takes no slot, a pattern no linker name.
     bool patternBody_ = false;
+    // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
+    bool patternUses_ = false;
+    struct ReplayUses {
+        Parser *p; bool was;
+        explicit ReplayUses(Parser *parser) : p(parser), was(parser->patternUses_) { p->patternUses_ = false; }
+        ~ReplayUses() { p->patternUses_ = was; }
+    };
     // templatedName asks readTemplateDeclaration to keep the signature it reads as syntax, and takes it from here.
     bool noteSignature_ = false;
     syntax::NodeId patternSignature_;

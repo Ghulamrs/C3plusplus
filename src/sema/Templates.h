@@ -159,6 +159,9 @@ public:
     std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
 
     std::vector<Specialization> specializations_;
+    // M8.1: a function specialization a pattern's own tokens asked for, by key: made where the program first asks for it.
+    std::map<std::string, std::size_t> askedByPattern_;
+    void madeWhereAsked(const std::string &key, std::size_t pos);
 
     // **The census of the doors** (M8.0): what each instantiation was, counted where it is made; CXX1_TEMPLATE_CENSUS prints it.
     enum Door { FunctionBody, ClassBody, MemberBody, MemberTemplate, DependentBase, SfinaeTrial, SfinaeFailed, AliasId,
@@ -193,6 +196,7 @@ private:
     // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
     long declTally_[5] = {};
     std::set<std::uint32_t> declShapes_;
+    std::vector<std::string> declShapeTrees_;     // each shape's two trees: the read's, then the first replay's
     std::map<std::string, int> declUnread_;
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;

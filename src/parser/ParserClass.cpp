@@ -834,7 +834,7 @@ void Parser::markSymbolUsed(const std::string &symbol) {
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
         if (lookup_.functions_[i].symbol == symbol) {
             refuseDeleted(lookup_.functions_[i], at_ + 1 < tokens_.size() ? peek().pos : lookup_.functions_[i].pos);
-            lookup_.functions_[i].used = true;
+            if (!patternUses_) lookup_.functions_[i].used = true;
             return;
         }
 }
@@ -848,6 +848,7 @@ void Parser::markUsed(const Signature *f) {
 // [temp.inst]: a candidate made for ranking uses nothing until it is chosen - clang declares such a
 // specialization and never instantiates its body - so while one's body is read, its uses are its own.
 void Parser::noteUsed(std::size_t i) {
+    if (patternUses_) return;
     if (candidateUses_ != nullptr) { candidateUses_->push_back(i); return; }
     lookup_.functions_[i].used = true;
     std::vector<std::size_t> later;

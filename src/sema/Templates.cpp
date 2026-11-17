@@ -462,9 +462,6 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
     std::string why;
     std::vector<const Type *> binding;
     for (std::size_t i = 0; i < decl.params.size(); i++) {
-        if (decl.params[i].isPack) why = "a parameter pack";
-        else if (decl.params[i].isTemplate) why = "a template template parameter";
-        else if (decl.params[i].type != nullptr) why = "a non-type parameter";
         binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
     const std::size_t mark = p_.syntaxTree_.size(), had = p_.current_->functions.size(), resume = p_.at_;
@@ -474,14 +471,14 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
     if (why.empty()) {
         const Parser::FunctionState outer = p_.captureFunctionState();
         const std::vector<std::string> wasStack = p_.namespaceStack_;
-        const bool wasBody = p_.patternBody_;
+        const bool wasBody = p_.patternBody_, wasUses = p_.patternUses_;
         std::vector<Shadow> undo;
         p_.clearFunctionState();
         Type::nameDependentSizes(true);
         try {
             Parser::Trial trial(&p_);
             bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
-            p_.patternOnly_ = p_.patternBody_ = true;
+            p_.patternOnly_ = p_.patternBody_ = p_.patternUses_ = true;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
             p_.at_ = decl.afterParams;
             p_.topLevel(*p_.current_);
@@ -490,6 +487,7 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         }
         Type::nameDependentSizes(wasBody);
         p_.patternBody_ = wasBody;
+        p_.patternUses_ = wasUses;
         unbindTemplateParameters(undo);
         p_.namespaceStack_ = wasStack;
         p_.restoreFunctionState(outer);
@@ -525,6 +523,22 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
     declRead_.push_back(read);
 }
 
+// Its place among the replays is the program's first ask, as with no read: the read's record stays, emptied.
+void Templates::madeWhereAsked(const std::string &key, std::size_t pos) {
+    const std::map<std::string, std::size_t>::iterator asked = askedByPattern_.find(key);
+    if (asked == askedByPattern_.end()) return;
+    const std::size_t at = asked->second;
+    askedByPattern_.erase(asked);
+    if (specializations_[at].emitted) return;
+    Specialization sp = specializations_[at];
+    specializations_[at].emitted = true;
+    specializations_[at].name.clear();
+    specializations_[at].key.clear();
+    sp.pos = pos;
+    sp.depth = p_.instantiationDepth_ + 1;
+    specializations_.push_back(sp);
+}
+
 void Templates::holdDeclarations() {
     for (std::size_t i = 0; i < declRead_.size(); i++) {
         declTally_[0]++;
@@ -533,7 +547,8 @@ void Templates::holdDeclarations() {
         else {
             const int d = p_.syntaxTree_.differs(held->second, declRead_[i]);
             declTally_[1 + d]++;
-            if (d == 2) declShapes_.insert(p_.syntaxTree_.node(declRead_[i]).loc);
+            if (d == 2 && declShapes_.insert(p_.syntaxTree_.node(declRead_[i]).loc).second)
+                declShapeTrees_.push_back("read " + p_.syntaxTree_.spelled(declRead_[i]) + "\n-check=templates declaration shape: replayed " + p_.syntaxTree_.spelled(held->second));
         }
     }
 }
@@ -552,6 +567,7 @@ std::string Templates::bodiesReport() const {
            " shape=" + std::to_string(declTally_[3]) + " unreplayed=" + std::to_string(declTally_[4]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = declShapes_.begin(); i != declShapes_.end(); ++i)
         out += "-check=templates declaration shape: " + p_.src_.where(*i) + "\n";
+    for (std::size_t i = 0; i < declShapeTrees_.size(); i++) out += "-check=templates declaration shape: " + declShapeTrees_[i] + "\n";
     for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i)
         out += "-check=templates unread (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
@@ -1652,6 +1668,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     }
 
     if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
+    const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
     // it changes is which tokens get replayed and with which parameters bound. The
@@ -1789,6 +1806,9 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const std::string made = key + "@" + std::to_string(mt.declaredAt != 0 ? mt.declaredAt : mt.afterParams);
     if (memberTemplateMade_.count(made) != 0) return &p_.lookup_.functions_[memberTemplateMade_[made]];
     const std::size_t before = p_.lookup_.functions_.size();
+    const Parser::ReplayUses replayed(&p_);
+    for (std::size_t i = 0; i < binding.size(); i++)     // over a pattern's parameter, it is the pattern's still
+        if (binding[i] != nullptr && p_.dependentType(binding[i])) p_.patternUses_ = replayed.was;
     if (!mt.defined && mt.declaredAt == 0)
         p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' is declared but "
                        "not defined, so there is nothing to instantiate");
