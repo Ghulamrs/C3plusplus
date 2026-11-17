@@ -742,6 +742,75 @@ kept tree (Linux `~/m8ir`, Windows `work\m8ir` from `git archive`; NEW `~/m8in`,
 this host (other=38 name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52;
 no record re-recorded); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale (no citation moved);
 comment cap 0; memory gate held; ast-residue +0 on all seven; `ide/generate.py --check` up to date.
-WINGATES **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
+Windows (cl /W4 /WX clean; from lane m8i's handover, which this entry was committed without): the
+self-host's `-S` with the flag against without 102 the same and `Driver`; cases with the flag 1,238 / 0; static
+gates rc 0; names.sh 883 / 0; overload.sh 46 / 0; the five spellings against REF 5,780 the same, 0 differ (cases
+1-578, `work\m8in`) and 6,588 the same with 12 caret-column rows (cases 579 on, `work\m8in2`, a tree name one
+longer); self-compile.cmd not run (run by lane m8j at `c3cbb3c4`: 103 of 103). **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
 Compiler++'s units; no `tests/cases` program was added (the gate for this commit is the self-host comparison,
 which no case showed). src/ lines: 94,873 before, 94,877 after.
+
+**M8.1, commit 3 closed: the read's own `Lookup` layer, and the flag dropped, 2026-11-18** (lane m8j, branch `m8-d`
+from `c3cbb3c4`; code `fcb6f5bc` the layer, `5d7f9c47` the temporaries' counter, `142889e4` the constexpr door,
+`241cd65b` the flag). **The
+layer**: `sema::Lookup::Layer` is the tables as they stood - the four sizes, the four indexes (the overload sets
+as resolution reads them, objects, type names, enumerators) and the open `using namespace`s; `pushLayer` takes
+it when `Templates::readDeclaration` starts and `popLayer` puts it back whole when the read ends, so whatever
+the read entered - the pattern's own `Signature`, the bound parameters' and the body's typedefs, a local
+enumeration, an overload-set key rewritten in passing - is found inside the read and is not there after.
+`specializations_`, `memberTemplateMade_` and `owedBodies_` go back with it: **a function specialization the
+read asks for is made in the layer (its `Signature` where resolution ranks it) and gone after**, and the program's
+own ask makes it where it asks, as with no read - so `askedByPattern_` and `madeWhereAsked` (m8h's and m8i's
+seating) are deleted. **What a layer cannot take back is refused in the read, by name**: a class specialization
+the program has not made yet (its `Type` is completed in place and its members' bodies are the unit's) and a
+member-template specialization over no pattern parameter and a class template's constexpr member a constant
+asks for (`Constexpr::instantiateForConstant`) - the body of each is replayed into the unit at once. Each is a
+`SubstitutionFailure` of the read's, "... the program has not asked for yet", M8.2's to make by substitution.
+The count of reads did not move: `tests/cases` 3,379 of 3,478 and the self-host 7,323 of 7,512 (189 unread), as
+at `c3cbb3c4`, and no unread reason over the cases names a refusal of these. **What the layer held when it was
+dropped** (`boxkit/m8j-made.sh`, at `fcb6f5bc`): over the cases one read made a function specialization in it
+(`block-scope-typedef`) and none a class; over the self-host no read made any.
+
+**What a read leaves in the unit's tables**, by `boxkit/m8j-left-full.diff` (m8i's measure, after the pop;
+Linux `~/m8jx`):
+
+| corpus (reads) | `functions_` | overload-set entries | specializations | `globals_` | `typedefs_` | `enums_` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `tests/cases` (3,506), before | 3,467 | 3 | 1 | - | 4,509 | 52 |
+| `tests/cases` (3,506), after | 0 | 0 | 0 | 0 | 0 | 0 |
+| the self-host (7,512), before | 9,082 | 1,656 | 144 | - | 11,964 | 0 |
+| the self-host (7,512), after | 0 | 0 | 0 | 0 | 0 | 0 |
+
+(The layer the read drops held 3,467 overload-set keys and 100 type-name keys of its own over the cases, 6,940
+and 206 over the self-host.) **One thing the tables did not show, found by `identical.sh` on the flag-dropped
+tree**: the read advanced `refTemps_`, the unit's count of named temporaries, so a `$chain` / `$endcatch` label
+on tms6747 was one higher in `constructor-unwinds` and `function-try-block-constructor` (4 rows of 5,298; the
+same at `c3cbb3c4` with the flag - m8i's flag-against-no-flag check ran the host's target alone). The read
+now puts the count back (`5d7f9c47`).
+
+**The flag is dropped** (`241cd65b`): `readDeclaration` runs in every compile; `-check=templates` is the
+comparison alone (`holdBodies`, `holdDeclarations`, the report). With the flag against without at `fcb6f5bc`:
+`tests/cases` 1,238 the same, 0 differ, and the self-host 102 of 103 the same with `Driver` differing in its
+`__TIME__` string (2 lines), on Linux and on Windows. The read's cost, three self-host sources on Linux, REF
+against the flag-dropped tree: ParserExpr 7.51 s -> 7.38 s, Templates 7.29 s -> 7.11 s, Driver 10.99 s ->
+11.86 s (noise; 0.3 MB more at the peak). The layer is a copy of the four indexes a read - a journal of what
+the read wrote is the cheaper form, owed if a unit ever shows the copy.
+
+**Gates** on the final tree (`241cd65b`), each box built from clean; REF built fresh from `c3cbb3c4` in its own
+kept tree (Linux `~/m8jr`, Windows `work\m8jr`; NEW `~/m8jk`, `work\m8jk`, names of one length). Linux (g++ `-Werror`
+clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2, **5,298
+compared, 0 differ**; the self-host's `-S`, REF against NEW with no flag, 102 of 103 the same and `Driver` in
+its `__TIME__` string (2 lines); `run.sh` 1232 passed, 0 failed; `typed.sh` 875 passed, 0 failed, 1 not for this
+host (other=38 name=8); `tests/subst.sh bodies` 0 failed (5,119 over 875 units, 3,381 / 682 / 1,004 / 52; no
+record re-recorded); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale; comment cap 0; memory gate
+held; ast-residue +0 on all seven; `ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean): the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (2 lines);
+static gates rc 0; `names.sh` 883 passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five
+spellings at -O0 and -O2 against REF, **9,919 the same, 0 differ** of 12,380 when the hour ended (the step
+was stopped there by its PID - the rest is the wave gate's); `tools\windows\self-compile.cmd`, alone in a tree
+of its own each time: `c3cbb3c4` 103 of 103 (owed by lane m8i), the final tree `241cd65b` **103 of 103**. With
+the flag against without at `fcb6f5bc` on Windows: cases 1,238 / 0, the self-host 102 and `Driver`.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+no `tests/cases` program was added (the gates are the self-host and `identical.sh`, which found the label).
+**Not done**: the signature's expression reader (eight shapes), not started; commit 4 not started.
+src/ lines: 94,877 before, 94,886 after.
