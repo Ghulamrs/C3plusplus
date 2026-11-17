@@ -30,6 +30,7 @@ std::string Linkage::functionSymbol(const std::string &name, const Type *returns
     bool ok = p_.target_.microsoftNames()
             ? microsoftFunctionName(name, manglingType(fn), internal, &out, &why)
             : itaniumFunctionName(name, fn, internal, &out, &why);
+    if (!ok && p_.patternBody_) return "$pattern$" + name;      // read, never emitted: it is given no name to hold
     if (!ok)
         p_.src_.fail(pos, "'" + name + "' cannot be given a name the linker can "
                        "hold: " + why);

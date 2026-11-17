@@ -1,4 +1,6 @@
--check=templates: bodies=12 held=5 same=3 text=0 shape=4
+-check=templates: bodies=12 held=5 same=3 text=0 shape=4 declared=10 signature=5
 -check=templates shape: tests/cases/template-variadic.cpp:27:37
 -check=templates shape: tests/cases/template-variadic.cpp:31:28
 -check=templates shape: tests/cases/template-variadic.cpp:38:37
+-check=templates declarations: functions=4 read=0 unread=4 same=0 text=0 shape=0 unreplayed=0
+-check=templates unread (4): a parameter pack

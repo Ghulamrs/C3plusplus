@@ -168,6 +168,8 @@ public:
     // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read of the same body.
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);
+    // Each function template's definition read once in pattern mode at the unit's end, and held against its first replay.
+    void readDeclarationsOnce();
     std::string bodiesReport() const;
     // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
     bool substitute_ = false, substituteDebug_ = false;
@@ -184,7 +186,11 @@ private:
     std::map<std::uint32_t, syntax::NodeId> bodyOnce_;
     std::vector<char> bodySeen_;
     long bodyTally_[4] = {};
+    long signatureTally_[2] = {};       // replays of a function template whose signature was kept, and those whose parameters agree
     std::set<std::uint32_t> bodyShapes_;
+    // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
+    long declTally_[5] = {};
+    std::map<std::string, int> declUnread_;
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.

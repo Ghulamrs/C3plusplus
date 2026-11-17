@@ -2259,6 +2259,7 @@ Program Parser::parse() {
         classes_.defineImplicitFunctions();
         if (program.functions.size() == had) break;
     }
+    tmpl_.readDeclarationsOnce();     // -check=templates alone: M8.1's read, measured before it is trusted
     if (std::getenv("CXX1_TEMPLATE_CENSUS") != nullptr) std::fprintf(stderr, "%s\n", tmpl_.censusLine().c_str());
     classes_.pruneExternalVtables(program);
     pruneUnchosenCandidates(program);

@@ -74,6 +74,7 @@ NodeId Tree::add(Kind kind, const std::string &text, std::size_t pos, const std:
     n.loc = static_cast<std::uint32_t>(pos);
     n.hasParent = false;
     n.dead = false;
+    n.pattern = false;
     n.member = 0;
     for (std::size_t i = 0; i < children.size(); i++) {
         if (!children[i].valid()) continue;     // an operand the grammar did not record is left out
@@ -147,6 +148,11 @@ void Tree::markMember(std::size_t from, std::size_t m) {
 void Tree::revive(NodeId id) {
     nodes_[id.v].dead = false;
     for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) revive(children_[nodes_[id.v].first + i]);
+}
+
+void Tree::markPattern(NodeId id) {
+    nodes_[id.v].dead = nodes_[id.v].pattern = true;
+    for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) markPattern(children_[nodes_[id.v].first + i]);
 }
 
 int Tree::differs(NodeId a, NodeId b) const {

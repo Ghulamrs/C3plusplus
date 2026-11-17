@@ -50,6 +50,7 @@ struct Node {
     std::uint32_t loc;      // the source offset, Source's position cut to 32 bits
     bool hasParent;
     bool dead;              // made by a trial that rewound: its tokens are read again, and these nodes are not the tree's
+    bool pattern;           // a template's signature kept at its declaration (M8.1): dead to every reader of the tree, and held
     std::uint32_t member;   // 1 + the pack member a pattern's copy was read for, 0 outside an expansion
 };
 
@@ -74,6 +75,8 @@ public:
     void release(NodeId id) { nodes_[id.v].hasParent = false; }
     // A subtree a kill took that is the tree's after all: a lambda's replayed body made inside a discarded reading.
     void revive(NodeId id);
+    // A subtree read with a template's parameters standing for themselves: kept for the count, and no root of the tree.
+    void markPattern(NodeId id);
     // Two subtrees held against each other (M8.1): 0 the same, 1 a text differs under the same kinds, 2 a kind or a count.
     int differs(NodeId a, NodeId b) const;
     // Every live root - a node no other node holds - in creation order, as an S-expression a line.

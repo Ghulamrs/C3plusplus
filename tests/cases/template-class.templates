@@ -1,1 +1,3 @@
--check=templates: bodies=12 held=9 same=2 text=1 shape=0
+-check=templates: bodies=12 held=9 same=2 text=1 shape=0 declared=1 signature=1
+-check=templates declarations: functions=1 read=0 unread=1 same=0 text=0 shape=0 unreplayed=0
+-check=templates unread (1): '' has no member ''

@@ -196,6 +196,8 @@ std::string Parser::templatedName(const std::vector<TemplateParam> &params,
     for (std::size_t i = 0; i < params.size(); i++)
         binding[i] = types_.templateParam(static_cast<int>(i));
     std::string name;
+    patternSignature_ = syntax::NodeId();
+    noteSignature_ = true;
     const Type *fn = readTemplateDeclaration(scratch, binding, values, &name, qualifier, nullptr,
                                              construction);
     if (name.empty())
@@ -257,6 +259,8 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
                                             const Packs *packs,
                                             bool *construction) {
     const std::size_t resume = at_;
+    const bool noteSignature = noteSignature_;
+    noteSignature_ = false;      // this read's alone: a signature read inside it is another template's
     const KeepCallArgs keepArgs(this);
     // **Put back even if this throws.** Forming a signature is what a trial runs,
     // and a failed one must leave the parameter names unbound for the next
@@ -359,6 +363,13 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
                          "and only function templates are supported yet");
     }
 
+    if (noteSignature && d.type->kind() == Kind::Function) {
+        std::vector<syntax::NodeId> parts;
+        for (std::size_t i = 0; i < d.type->params().size(); i++)
+            parts.push_back(syntaxTree_.add(syntax::Kind::Var, d.type->params()[i]->describe(), d.pos));
+        patternSignature_ = syntaxTree_.add(syntax::Kind::Function, d.name, d.pos, parts);
+        syntaxTree_.markPattern(patternSignature_);
+    }
     patternOnly_ = wasPattern;
     at_ = resume;
     *name = d.name;
@@ -557,6 +568,7 @@ bool Parser::templateDeclaration() {
     bool constructs = false;
     const Type *fnPattern = nullptr;
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
+    if (!decl.isClass) decl.signature = patternSignature_;
     if (decl.isClass) refuseAfterPack(decl.params);
     else              tmpl_.requireDeducibleAfterPack(decl, fnPattern);
     if (!decl.isClass && !literalSuffix(decl.name).empty())

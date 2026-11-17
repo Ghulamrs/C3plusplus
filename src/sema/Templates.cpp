@@ -440,6 +440,15 @@ void Templates::holdBodies(std::size_t mark) {
         }
         if (!body) continue;
         bodySeen_[i] = 1;
+        // The signature kept at the declaration, against this replay's parameters: one `var` for one.
+        std::uint32_t vars = 0;
+        while (vars < parts && p_.syntaxTree_.node(p_.syntaxTree_.child(id, vars)).kind == syntax::Kind::Var) vars++;
+        for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator t = fnTemplates_.begin(); t != fnTemplates_.end(); ++t)
+            for (std::size_t k = 0; k < t->second.size(); k++)
+                if (t->second[k].signature.valid() && p_.syntaxTree_.node(t->second[k].signature).loc == at) {
+                    signatureTally_[0]++;
+                    signatureTally_[1] += p_.syntaxTree_.node(t->second[k].signature).count == vars;
+                }
         const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(at);
         if (held == bodyOnce_.end()) { bodyOnce_[at] = id; bodyTally_[0]++; continue; }
         const int d = p_.syntaxTree_.differs(held->second, id);
@@ -448,12 +457,81 @@ void Templates::holdBodies(std::size_t mark) {
     }
 }
 
+void Templates::readDeclarationsOnce() {
+    if (!checkBodies_) return;
+    for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator t = fnTemplates_.begin(); t != fnTemplates_.end(); ++t)
+        for (std::size_t k = 0; k < t->second.size(); k++) {
+            const TemplateDecl decl = t->second[k];
+            std::string why;
+            std::vector<const Type *> binding;
+            for (std::size_t i = 0; i < decl.params.size(); i++) {
+                if (decl.params[i].isPack) why = "a parameter pack";
+                else if (decl.params[i].isTemplate) why = "a template template parameter";
+                else if (decl.params[i].type != nullptr) why = "a non-type parameter";
+                binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
+            }
+            const std::size_t mark = p_.syntaxTree_.size(), had = p_.current_->functions.size(), resume = p_.at_;
+            if (why.empty()) {
+                const Parser::FunctionState outer = p_.captureFunctionState();
+                const std::vector<std::string> wasStack = p_.namespaceStack_;
+                std::vector<Shadow> undo;
+                p_.clearFunctionState();
+                Type::nameDependentSizes(true);
+                try {
+                    Parser::Trial trial(&p_);
+                    bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
+                    p_.patternOnly_ = p_.patternBody_ = true;
+                    if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+                    p_.at_ = decl.afterParams;
+                    p_.topLevel(*p_.current_);
+                } catch (const SubstitutionFailure &f) {
+                    why = f.why;
+                }
+                Type::nameDependentSizes(false);
+                p_.patternBody_ = false;
+                unbindTemplateParameters(undo);
+                p_.namespaceStack_ = wasStack;
+                p_.restoreFunctionState(outer);
+                p_.at_ = resume;
+                while (p_.current_->functions.size() > had) p_.current_->functions.pop_back();
+                p_.syntaxTree_.kill(mark);
+            }
+            syntax::NodeId read;
+            for (std::size_t i = p_.syntaxTree_.size(); why.empty() && i > mark && !read.valid(); i--) {
+                const syntax::NodeId id(static_cast<std::uint32_t>(i));
+                if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
+                for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
+                    if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
+            }
+            if (why.empty() && !read.valid()) why = "the read made no function with a block";
+            if (!why.empty()) {
+                // One reason for every name: what is quoted is taken out.
+                for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
+                    why.replace(a + 1, b - a - 1, "");
+                declUnread_[why.substr(0, 100)]++;
+                continue;
+            }
+            declTally_[0]++;
+            const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(read).loc);
+            if (held == bodyOnce_.end()) declTally_[4]++;
+            else declTally_[1 + p_.syntaxTree_.differs(held->second, read)]++;
+        }
+}
+
 std::string Templates::bodiesReport() const {
     std::string out = "-check=templates: bodies=" + std::to_string(bodyTally_[0] + bodyTally_[1] + bodyTally_[2] + bodyTally_[3]) +
                       " held=" + std::to_string(bodyTally_[0]) + " same=" + std::to_string(bodyTally_[1]) +
-                      " text=" + std::to_string(bodyTally_[2]) + " shape=" + std::to_string(bodyTally_[3]) + "\n";
+                      " text=" + std::to_string(bodyTally_[2]) + " shape=" + std::to_string(bodyTally_[3]) +
+                      " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
         out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
+    long unread = 0;
+    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i) unread += i->second;
+    out += "-check=templates declarations: functions=" + std::to_string(declTally_[0] + unread) + " read=" + std::to_string(declTally_[0]) +
+           " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[1]) + " text=" + std::to_string(declTally_[2]) +
+           " shape=" + std::to_string(declTally_[3]) + " unreplayed=" + std::to_string(declTally_[4]) + "\n";
+    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i)
+        out += "-check=templates unread (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 

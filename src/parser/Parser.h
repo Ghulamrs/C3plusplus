@@ -224,6 +224,11 @@ private:
     std::vector<PendingBody> heldForSpecialization_;
     // Set while a template's declaration is read as a *pattern*, with Kind::TemplateParam in place of the arguments.
     bool patternOnly_ = false;
+    // M8.1: a function template's body is being read at its declaration - a dependent local takes no slot, a pattern no linker name.
+    bool patternBody_ = false;
+    // templatedName asks readTemplateDeclaration to keep the signature it reads as syntax, and takes it from here.
+    bool noteSignature_ = false;
+    syntax::NodeId patternSignature_;
 
     // **A trial, and everything it has to put back.** Forming a candidate's signature
     // reads tokens, pushes classes and binds parameters; if it fails half way through,
