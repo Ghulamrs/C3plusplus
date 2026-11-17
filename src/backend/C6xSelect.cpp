@@ -99,8 +99,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             }
             bool wide = ssaWideV(f, i.result);
             for (std::uint32_t n = 0; n < i.count; n++) wide = wide || ssaWideV(f, f.operand(i, n));
-            if (wide && (i.op == ir::Op::Gep || i.op == ir::Op::Switch || i.op == ir::Op::UMulH || i.op == ir::Op::SMulH || i.op == ir::Op::PtrToInt ||
-                         i.op == ir::Op::IntToPtr || i.op == ir::Op::VaStart || i.op == ir::Op::CondBr)) return "64-bit " + ir::opName(i.op);
+            if (wide && (i.op == ir::Op::Gep || i.op == ir::Op::UMulH || i.op == ir::Op::SMulH || i.op == ir::Op::VaStart || i.op == ir::Op::CondBr))
+                return "64-bit " + ir::opName(i.op);
             switch (i.op) {
             case ir::Op::IConst: case ir::Op::Null: case ir::Op::Undef: case ir::Op::Addr: case ir::Op::Alloca:
             case ir::Op::Load: case ir::Op::Store: case ir::Op::Gep:
@@ -127,13 +127,10 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 if (!c.variadic && i.count + (hiddenInA4(cr) ? 1 : 0) > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
                 for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
                     if (p->isStructOrUnion()) return "class argument";
-                // A 64-bit argument (W4) goes in its register's pair: not among a variadic call's words, nor past the sixth.
+                // A 64-bit argument (W4) goes in its register's pair, not past the sixth; a variadic call's lie in its area.
                 const std::uint32_t named = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
-                for (std::uint32_t n = 0; n < i.count; n++) {
-                    if (!ssaWideV(f, f.operand(i, n))) continue;
-                    if (n >= named) return "64-bit variadic argument";
-                    if (n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
-                }
+                for (std::uint32_t n = 0; n < named; n++)
+                    if (ssaWideV(f, f.operand(i, n)) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
                 break;
             }
             default:
@@ -678,9 +675,10 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
         out_ << (wr ? "\tXOR\tA0, A5, A5\n" : "\tXOR\tA0, A4, A4\n");
         ssaKeep(f, i.result);
         return true;
-    case ir::Op::Trunc: case ir::Op::Bitcast:
+    case ir::Op::Trunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
         if (!wa && !wr) return false;
         ssaPair(f, a, "A4");
+        if (!wa) out_ << "\tZERO\tA5\n";       // a pointer widened, as wideCast
         if (!wr) narrowInt(rt);
         ssaKeep(f, i.result);
         return true;
@@ -1004,16 +1002,26 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         if (i.op == ir::Op::Invoke) defineLabel(label("ssatry", row));
         // A variadic callee's last named argument and every one after it: a word each above the reserved word, as cl6x's -S.
         const std::uint32_t inRegs = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
-        const int area = c.variadic ? roundUp(4 + 4 * static_cast<int>(i.count - inRegs), 8) : 8;
+        // A 64-bit one (W4) lies 8-aligned in eight bytes, as stackArg places it.
+        std::vector<int> at(i.count, 0);
+        int end = 4;
+        for (std::uint32_t k = inRegs; k < i.count; k++) {
+            const int sz = ssaWideV(f, f.operand(i, k)) ? 8 : 4;
+            at[k] = roundUp(end, sz);
+            end = at[k] + sz;
+        }
+        const int area = c.variadic ? roundUp(end, 8) : 8;
         openArea(area, i.count > inRegs);
         for (std::uint32_t k = inRegs; k < i.count; k++) {
             // Through A4, A6 and A8 in turn - each an argument's register, loaded after - so two words' values are made side by side.
             const char *const turn[] = { "A4", "A6", "A8" };
-            const std::string v = ssaRead(f, f.operand(i, k), turn[(k - inRegs) % 3]);
-            const int at = 4 + 4 * static_cast<int>(k - inRegs);
-            if (at / 4 <= 31) { ssaEmit(c6x::MInst("STW", v, "*+B15(" + std::to_string(at) + ")")); continue; }
-            regAdd("B15", at, "B0");
-            ssaEmit(c6x::MInst("STW", v, "*B0"));
+            const char *t = turn[(k - inRegs) % 3];
+            const bool pair = ssaWideV(f, f.operand(i, k));
+            if (pair) ssaPair(f, f.operand(i, k), t);
+            const std::string v = pair ? pairOf(t) : ssaRead(f, f.operand(i, k), t);
+            std::string mem = "*+B15(" + std::to_string(at[k]) + ")";
+            if (at[k] / (pair ? 8 : 4) > 31) { regAdd("B15", at[k], "B0"); mem = "*B0"; }
+            if (pair) out_ << "\tSTDW\t" << v << ", " << mem << "\n"; else ssaEmit(c6x::MInst("STW", v, mem));
         }
         // A class result (W3): the pair comes back in A5:A4; else the frame object's address goes in A3, or in A4 before
         // the arguments for a class whose copy is a call.
@@ -1091,8 +1099,18 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     }
     case ir::Op::Switch: {
-        const std::string v = x(0);
+        // A 64-bit value (W4) stays in A5:A4 and each case is made in A7:A6.
+        const bool pair = ssaWideV(f, f.operand(i, 0));
+        if (pair) ssaPair(f, f.operand(i, 0), "A4");
+        const std::string v = pair ? "A4" : x(0);
         for (std::size_t k = 0; k < i.cases.size(); k++) {
+            if (pair) {
+                movImm("A6", i.cases[k] & 0xffffffffll);
+                movImm("A7", static_cast<long long>(static_cast<unsigned long long>(i.cases[k]) >> 32));
+                out_ << "\tCMPEQ\tA4, A6, A0\n\tCMPEQ\tA5, A7, A1\n\tAND\tA0, A1, A1\n";
+                ssaBranchIf(false, target(i.succ[k + 1]));
+                continue;
+            }
             movImm("A0", i.cases[k]);
             ssaEmit(c6x::MInst("CMPEQ", "A0", v, "A1"));
             ssaBranchIf(false, target(i.succ[k + 1]));

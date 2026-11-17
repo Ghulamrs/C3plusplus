@@ -48,3 +48,8 @@ tod 375
 fromif -9000
 toif -9
 sumf 195000
+kind 1 2 3 4 0
+address 0 8
+vsum 249625
+words 1 2.500 3 -0.75
+pairs 1000.0 7 8 0.0625 9

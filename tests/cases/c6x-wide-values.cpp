@@ -1,6 +1,7 @@
 // M6a.2 W4: 64-bit and floating values on the C6000 selector - a long long and a double in a register pair (A5:A4 the
 // result, each argument its register's pair), a float in one register, the C674x's own instructions and the EABI's
-// helpers for the rest. Every answer is printed as ints, so no call here passes a 64-bit value among variadic words.
+// helpers for the rest; among a variadic call's words a 64-bit one lies 8-aligned, and va_arg reads it there.
+#include <stdarg.h>
 #include <stdio.h>
 
 typedef long long i64;
@@ -58,6 +59,29 @@ float fromif(int x) { return (float)x; }
 int toif(float x) { return (int)x; }
 float sumf(int n) { float s = 0.0f; for (int k = 0; k < n; k++) s = s + 0.25f * k; return s; }
 
+int kind(i64 v) {
+    switch (v) {
+    case 5: return 1;
+    case 0x500000005LL: return 2;
+    case -1: return 3;
+    case 0x7fffffff00000000LL: return 4;
+    }
+    return 0;
+}
+i64 address(const char *p, const char *q) { return (i64)(p - q) + (i64)(p != 0); }
+double vsum(int n, ...) {
+    va_list ap;
+    va_start(ap, n);
+    double s = 0.0;
+    for (int k = 0; k < n; k++) {
+        if (k % 3 == 0) s = s + va_arg(ap, int);
+        else if (k % 3 == 1) s = s + va_arg(ap, double);
+        else s = s + (double)va_arg(ap, i64);
+    }
+    va_end(ap);
+    return s;
+}
+
 void show(const char *what, i64 v) { printf("%s %d %u\n", what, (int)(v >> 32), (unsigned)v); }
 void showd(const char *what, double v) { printf("%s %d\n", what, (int)(v * 1000.0)); }
 
@@ -113,5 +137,11 @@ int main() {
     showd("fromif", fromif(-9));
     printf("toif %d\n", toif(-9.75f));
     showd("sumf", sumf(40));
+    printf("kind %d %d %d %d %d\n", kind(5), kind(0x500000005LL), kind(-1), kind(0x7fffffff00000000LL), kind(6));
+    const char *text = "0123456789";
+    show("address", address(text + 7, text));
+    showd("vsum", vsum(6, 1, 2.5, (i64)300, -4, 0.125, (i64)-50));
+    printf("words %d %.3f %d %.2f\n", 1, 2.5, 3, -0.75);
+    printf("pairs %.1f %d %d %.4f %d\n", 1e3, 7, 8, 0.0625, 9);
     return 0;
 }
