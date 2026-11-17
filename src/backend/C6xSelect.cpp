@@ -35,6 +35,8 @@ const char *const kHome[] = { "A10", "A11", "A12", "A13", "B10", "B11", "B12", "
                               "A20", "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30", "A31",
                               "B24", "B25", "B26", "B27", "B28", "B29", "B30", "B31" };
 const unsigned kKept = 0xffu, kScratch = 0xffffff00u, kScratchA = 0xffff00u, kBside = 0xff0000f0u;
+// A 64-bit value's homes (W4): the low registers of A29:A28, A31:A30, B29:B28 and B31:B30, kept from the words where one is met.
+const unsigned kPairLow = 0x50500000u, kPairs = 0xf0f00000u;
 
 bool callsOut(ir::Op op) {     // a call, or an EABI helper: a divide, or a conversion that may be one
     return op == ir::Op::Call || op == ir::Op::Invoke || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem ||
@@ -325,6 +327,10 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
     if (loads) ssaNop(4);
     for (std::size_t m = 0; m < moves.size(); m++) {
         if (!ssaWideV(f, moves[m].second)) { ssaStore(f, moves[m].second, kStage[stage[m]]); continue; }
+        if (const char *h = ssaHomeOf(moves[m].second)) {
+            out_ << "\tMV\t" << kStage[stage[m]] << ", " << h << "\n\tMV\t" << kStage[stage[m] + 1] << ", " << pairHigh(h) << "\n";
+            continue;
+        }
         const std::string mem = ssaMem(ssaValueSlot_[moves[m].second.v], 8);
         out_ << "\tSTDW\t" << pairOf(kStage[stage[m]]) << ", " << mem << "\n";
     }
@@ -458,9 +464,12 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     for (std::size_t b = 0; b < ssaOrder_.size(); b++)
         for (std::size_t v = 1; v < nv && f.block(ssaOrder_[b]).pad; v++) unwound[v] |= (in[ssaOrder_[b].v * words + v / 64] >> (v % 64)) & 1;
     std::vector<std::size_t> order;
+    bool anyPair = false;
     for (std::size_t v = 1; v < nv; v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v]) continue;
-        if (isWide(ssaTypes_->type(f.values[v].type))) continue;      // a 64-bit value lives in the frame (W4)
+        const bool pair = isWide(ssaTypes_->type(f.values[v].type));
+        anyPair = anyPair || pair;
+        if (pair && remade(f, ir::ValueId(static_cast<std::uint32_t>(v)))) continue;      // a 64-bit constant is made at each use (W4)
         // A remade value a loop reads keeps a register where one is free, and no weight: any other value takes it back.
         hot[v] = hot[v] && hoists(f, ir::ValueId(static_cast<std::uint32_t>(v)));
         if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && (!hot[v] || unwound[v])) continue;
@@ -486,7 +495,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it.
     const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept;
     const bool sides = optimize_ != 0 && std::getenv("CXX1_C6X_NOSIDES") == nullptr;
-    const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) : 0u;
+    const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) & (anyPair ? ~kPairs : ~0u) : 0u;
+    const unsigned pairs = mode >= 2 ? kPairLow & (sides ? kScratch : kScratchA) : 0u;
+    const auto isPair = [&](std::size_t v) { return isWide(ssaTypes_->type(f.values[v].type)); };
     ssaSides_ = sides;
     std::vector<int> arrives(nv, -1);
     for (std::size_t i = 0; i < f.params.size(); i++) arrives[f.params[i].v] = static_cast<int>(i);
@@ -506,11 +517,14 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
         for (std::uint32_t n = 0; n < d.count; n++) { const int s = file(f.operand(d, n)); if (s == 1) b++; else if (s == 0) a++; }
         return b > a ? kBside : ~kBside;
     };
-    unsigned freeNow = kept | scratch, taken = 0;
+    unsigned freeNow = kept | scratch, taken = 0, freePairs = kPairLow;
+    std::vector<std::pair<int, int> > pairEnds;       // each 64-bit home taken: where its value ends, and the pair
     std::vector<std::size_t> active;
     int turn = 0, turnBlock = -1;       // the rest rotate within a block, so an unrolled body's turns use different registers
     for (std::size_t n = 0; n < order.size(); n++) {
         const std::size_t v = order[n];
+        for (std::size_t a = 0; a < pairEnds.size(); )
+            if (pairEnds[a].first <= start[v]) { freePairs |= 1u << pairEnds[a].second; pairEnds.erase(pairEnds.begin() + static_cast<std::ptrdiff_t>(a)); } else a++;
         for (std::size_t a = 0; a < active.size(); )
             if (end[active[a]] <= start[v]) {
                 freeNow |= 1u << (ssaHome_[active[a]] - 1);
@@ -518,6 +532,19 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             } else a++;
         bool crosses = false;
         for (std::size_t c = 0; c < calls.size() && !crosses; c++) crosses = calls[c] > start[v] && calls[c] < end[v];
+        // A 64-bit value (W4): a free pair that no call crosses, its partner's first; else its eight bytes of the frame.
+        if (isPair(v)) {
+            const unsigned open = crosses ? 0u : freePairs & pairs;
+            int r = -1;
+            for (std::size_t q = 0; q < partner[v].size() && r < 0; q++)
+                if (ssaHome_[partner[v][q]] != 0 && ((open >> (ssaHome_[partner[v][q]] - 1)) & 1) != 0) r = ssaHome_[partner[v][q]] - 1;
+            for (int b = 0; b < 32 && r < 0; b++) if ((open >> b) & 1) r = b;
+            if (r < 0) continue;
+            ssaHome_[v] = r + 1;
+            freePairs &= ~(1u << r);
+            pairEnds.push_back(std::make_pair(end[v], r));
+            continue;
+        }
         unsigned pick = crosses ? 0 : freeNow & scratch;
         // A value no call crosses takes a remade one's register before it takes a saved one.
         for (std::size_t a = 0; a < active.size() && pick == 0 && !hot[v] && !crosses; a++) {
@@ -593,12 +620,17 @@ void Tms6747::ssaPair(const ir::Function &f, ir::ValueId v, const char *lo) {
         movImm(hi.c_str(), static_cast<long long>(k >> 32));
         return;
     }
+    if (const char *h = ssaHomeOf(v)) {
+        if (std::string(h) != lo) out_ << "\tMV\t" << h << ", " << lo << "\n\tMV\t" << pairHigh(h) << ", " << hi << "\n";
+        return;
+    }
     const std::string m = ssaMem(ssaValueSlot_[v.v], 8);
     out_ << "\tLDDW\t" << m << ", " << pair << "\n\tNOP\t4\n";
 }
 
 void Tms6747::ssaKeep(const ir::Function &f, ir::ValueId v) {
     if (!ssaWideV(f, v)) { ssaStore(f, v, "A4"); return; }
+    if (const char *h = ssaHomeOf(v)) { out_ << "\tMV\tA4, " << h << "\n\tMV\tA5, " << pairHigh(h) << "\n"; return; }
     if (ssaValueSlot_[v.v] == 0) return;
     const std::string m = ssaMem(ssaValueSlot_[v.v], 8);
     out_ << "\tSTDW\tA5:A4, " << m << "\n";
@@ -637,6 +669,14 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Add: case ir::Op::Sub: case ir::Op::Mul: case ir::Op::SDiv: case ir::Op::UDiv: case ir::Op::SRem: case ir::Op::URem:
     case ir::Op::And: case ir::Op::Or: case ir::Op::Xor: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         if (!wr) return false;
+        long long count = 0;
+        // By a constant, at -O1 and up: the pair spliced in place, as the walker's.
+        if (optimize_ > 0 && (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) && smallConst(f, b, 0, 63, count)) {
+            ssaPair(f, a, "A4");
+            if (i.op == ir::Op::Shl) shiftPairLeft(static_cast<int>(count)); else shiftPairRight(static_cast<int>(count), i.op == ir::Op::AShr);
+            ssaKeep(f, i.result);
+            return true;
+        }
         two();
         const BinOp op = i.op == ir::Op::Add ? BinOp::Add : i.op == ir::Op::Sub ? BinOp::Sub : i.op == ir::Op::Mul ? BinOp::Mul :
                          i.op == ir::Op::SDiv || i.op == ir::Op::UDiv ? BinOp::Div : i.op == ir::Op::SRem || i.op == ir::Op::URem ? BinOp::Mod :
