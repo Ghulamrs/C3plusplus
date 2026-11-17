@@ -79,10 +79,19 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
         if (!p->isStructOrUnion()) { if (accessSize(p) > 4 && n + (hidden ? 1 : 0) >= 6) return "64-bit parameter past the sixth"; continue; }
         if (!ssaTypes_->type(f.values[f.params[n].v].type)->isPointer()) return "class parameter of another shape";
     }
+    std::vector<int> used(f.values.size(), 0);
+    for (ir::BlockId b : f.blocks)
+        for (std::size_t k = 0; k <= f.block(b).insts.size(); k++) {
+            const ir::InstId id = k < f.block(b).insts.size() ? f.block(b).insts[k] : f.block(b).term;
+            if (!id.valid()) continue;
+            const ir::Inst &i = f.inst(id);
+            for (std::uint32_t n = 0; n < i.count; n++) used[f.operand(i, n).v]++;
+            for (const ir::Succ &s : i.succ) for (std::uint32_t a = 0; a < s.count; a++) used[f.arg(s, a).v]++;
+        }
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
-        if (t->isVoid()) continue;
+        if (t->isVoid() || ssaDeadClassLoad(f, ir::ValueId(static_cast<std::uint32_t>(v)), used[v])) continue;
         if (t->isStructOrUnion() || t->isArray() || t->isFunction()) return "aggregate value";
         if (t->size(target_) > 8) return "a value past 64 bits";
     }
@@ -153,6 +162,13 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
         }
     }
     return std::string();
+}
+
+// A class read whose value nothing uses (-O0: `os.put(c);`'s reference read as an object), which the text drops (W7).
+bool Tms6747::ssaDeadClassLoad(const ir::Function &f, ir::ValueId v, int uses) const {
+    if (uses != 0 || !f.value(v).def.valid() || !ssaType(f, v)->isStructOrUnion()) return false;
+    const ir::Inst &d = f.inst(f.value(v).def);
+    return d.op == ir::Op::Load && !d.isVolatile;
 }
 
 // A class result from its address in A4, as visit(Return): the pair, or a copy through A3's pointer where the caller gave
@@ -1064,6 +1080,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         ssaLater_.clear();
     };
     if (ssaWideInst(f, i)) return;
+    if (i.op == ir::Op::Load && rt->isStructOrUnion()) return;     // a dead class read (ssaDeadClassLoad)
     switch (i.op) {
     case ir::Op::IConst: case ir::Op::Addr:
         if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
