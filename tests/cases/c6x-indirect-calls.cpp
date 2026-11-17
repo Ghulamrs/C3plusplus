@@ -18,18 +18,26 @@ void thrower(int k) { if (k > 2) throw k; }
 
 struct Shape {
     int id;
+    Shape();
     virtual int area() const { return 0; }
     virtual long long scaled(long long k) const { return k * id; }
     virtual Pair corner() const { Pair p = { id, -id }; return p; }
     int twice(int k) const { return 2 * k + id; }
-    virtual ~Shape() {}
+    virtual ~Shape();
 };
 struct Square : Shape {
     int side;
+    Square();
+    ~Square();
     int area() const { return side * side; }
     long long scaled(long long k) const { return k * side + id; }
     Pair corner() const { Pair p = { side, side }; return p; }
 };
+
+Shape::Shape() {}
+Shape::~Shape() {}
+Square::Square() {}
+Square::~Square() {}
 
 Square makeSquare(int id, int side) { Square s; s.id = id; s.side = side; return s; }
 
