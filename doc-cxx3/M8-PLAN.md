@@ -666,9 +666,8 @@ diagnostics NEW against REF at -O0 and -O2 for x86_64-windows `-masm=masm` and `
 arm64-darwin and tms6747, 1,238 cases, **12,380 the same, 0 differ**; the flag against no flag **1,238 the
 same, 0 differ**; the static gates pass; `tests/names.sh` 883 passed, 0 failed; `tests/overload.sh` 46 agreed
 with clang, 0 differed; `-check=templates` reads the same 3,379 of 3,478 (880 files print the count).
-**Not finished inside the hour on Windows** (the box was shared): `self-compile.cmd` and the self-host's count,
-still running at the stop - they land in `boxkit/m8h-win-selfc.out` and `boxkit/m8h-win-names.out`, the
-coordinator's to read before this is merged. **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
+`self-compile.cmd` 103 of 103. **Not finished inside the hour on Windows** (the box was shared): the self-host's
+count, still running at the stop - it lands in `boxkit/m8h-win-names.out`. **Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows and
 Compiler++'s units; no `tests/cases` program was added (the three mended shapes are their own cases' counts).
 src/ lines: 94,863 before, 94,873 after.
 
@@ -685,3 +684,10 @@ self-host's `-S` with the flag against without as a standing gate beside the cas
 entered for a pattern (one door for the six registrations, then no erase); then the flag can go as its own commit. After that the
 signature's expression as syntax (eight shapes, with commit 2's remainder), a function parameter pack in a
 pattern (27, with the 21 pack-pattern forms beside it), then the rest of the 99.
+
+**The class seating, tried and not committed** (`boxkit/m8h-classseat.patch` over `eb7d4031`, four lines:
+`instantiateClass` records a class the read asked for in `askedByPattern_` and calls `madeWhereAsked` at its
+`findTypedef(tag)` return). Linux only, a clean build in `~/m8hx`: **the eight self-host sources' `-S` with the
+flag against without, 8 of 8 the same**; the cases' 1,238 the same, 0 differ; read 3,379 of 3,478, shape 8, as
+before. It is not in the branch because it has no `identical.sh`, no Windows build and no gate behind it - the
+next lane applies it, gates it, and has the self-host comparison (all 103, `boxkit/m8h-cost.sh`) to hold it to.
