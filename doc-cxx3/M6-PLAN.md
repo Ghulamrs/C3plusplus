@@ -2803,6 +2803,18 @@ last read and the counter is not renamed ("no slot for ADD A23, 1, A23", CPP11_P
 counter at the loop's head (or steps it first) before C6xPipe; the 34 unowned -O2 cases by family in the list.
 **Owed to the wave gate:** as W4's entry, and ti-link on TI's own simulator for ADDU and CMPGTU's constant form.
 
+### M6a.2 W4 landed - 64-bit and floating values on the C6000 selector, 2026-11-17 (the coordinator)
+
+- Lanes w4 and w4b: walked -O0 1,756 -> 1,036, -O2 1,823 -> 1,117; cycles -O2 192,025,550 -> 191,920,912, -O0
+  397,272,350 -> 364,534,575 (against 458f8974's baseline).
+- **The user's decision**, given directly in the coordinator's session ("Yes, write them", 2026-11-17): W4's 130 worse
+  cases (34 at -O2, 96 at -O0) accepted in tests/tms6747-cycles.txt, each family named as owed (ca682b67): the loop
+  counter copied at the loop head ([P]: pipelined-data-exit +333,190, local-zero-init-large +304,422), W4's remainder
+  ([W], [V]), and "frame slots shared by scope" ([F], -O0).
+- **Gate: tools/wave-gate w4h -w f20e46ca at 936c49d0**: **43 passed, 0 failed, 4 not run** (the fixed points, not
+  owed). The first run (w4g) failed only on its 823 unnamed tms6747 differences.
+- tests/wave-expected.txt emptied (823 rows were W4's).
+
 ### M6a.2 W5: memcpy, memset and class arguments on the C6000 selector - lane w5, 2026-11-17
 
 **What goes through the selector now** (src/backend/C6xSelect.cpp 1,259 -> 1,350 lines, Tms6747.h 321 -> 325, Tms6747.cpp
