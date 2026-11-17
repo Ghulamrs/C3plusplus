@@ -173,7 +173,6 @@ function @_ZL6arraysi(%1: int) -> int static {
   %11 = iconst int, 4
   %12 = gep int *, %4, 12
   store %12, %11
-  memset %13
   %14 = gep int *, %13, 0
   store %14, %1
   %16 = gep int *, %13, 4
