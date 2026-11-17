@@ -457,65 +457,81 @@ void Templates::holdBodies(std::size_t mark) {
     }
 }
 
-void Templates::readDeclarationsOnce() {
+void Templates::readDeclaration(const TemplateDecl &decl) {
     if (!checkBodies_) return;
-    for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator t = fnTemplates_.begin(); t != fnTemplates_.end(); ++t)
-        for (std::size_t k = 0; k < t->second.size(); k++) {
-            const TemplateDecl decl = t->second[k];
-            std::string why;
-            std::vector<const Type *> binding;
-            for (std::size_t i = 0; i < decl.params.size(); i++) {
-                if (decl.params[i].isPack) why = "a parameter pack";
-                else if (decl.params[i].isTemplate) why = "a template template parameter";
-                else if (decl.params[i].type != nullptr) why = "a non-type parameter";
-                binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
-            }
-            const std::size_t mark = p_.syntaxTree_.size(), had = p_.current_->functions.size(), resume = p_.at_;
-            if (why.empty()) {
-                const Parser::FunctionState outer = p_.captureFunctionState();
-                const std::vector<std::string> wasStack = p_.namespaceStack_;
-                std::vector<Shadow> undo;
-                p_.clearFunctionState();
-                Type::nameDependentSizes(true);
-                try {
-                    Parser::Trial trial(&p_);
-                    bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
-                    p_.patternOnly_ = p_.patternBody_ = true;
-                    if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
-                    p_.at_ = decl.afterParams;
-                    p_.topLevel(*p_.current_);
-                } catch (const SubstitutionFailure &f) {
-                    why = f.why;
-                }
-                Type::nameDependentSizes(false);
-                p_.patternBody_ = false;
-                unbindTemplateParameters(undo);
-                p_.namespaceStack_ = wasStack;
-                p_.restoreFunctionState(outer);
-                p_.at_ = resume;
-                while (p_.current_->functions.size() > had) p_.current_->functions.pop_back();
-                p_.syntaxTree_.kill(mark);
-            }
-            syntax::NodeId read;
-            for (std::size_t i = p_.syntaxTree_.size(); why.empty() && i > mark && !read.valid(); i--) {
-                const syntax::NodeId id(static_cast<std::uint32_t>(i));
-                if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
-                for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
-                    if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
-            }
-            if (why.empty() && !read.valid()) why = "the read made no function with a block";
-            if (!why.empty()) {
-                // One reason for every name: what is quoted is taken out.
-                for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
-                    why.replace(a + 1, b - a - 1, "");
-                declUnread_[why.substr(0, 100)]++;
-                continue;
-            }
-            declTally_[0]++;
-            const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(read).loc);
-            if (held == bodyOnce_.end()) declTally_[4]++;
-            else declTally_[1 + p_.syntaxTree_.differs(held->second, read)]++;
+    std::string why;
+    std::vector<const Type *> binding;
+    for (std::size_t i = 0; i < decl.params.size(); i++) {
+        if (decl.params[i].isPack) why = "a parameter pack";
+        else if (decl.params[i].isTemplate) why = "a template template parameter";
+        else if (decl.params[i].type != nullptr) why = "a non-type parameter";
+        binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
+    }
+    const std::size_t mark = p_.syntaxTree_.size(), had = p_.current_->functions.size(), resume = p_.at_;
+    const std::size_t hadSignatures = p_.lookup_.functions_.size();
+    const std::size_t hadGlobals = p_.current_->globals.size(), hadStrings = p_.current_->strings.size();
+    const int stringCount = p_.strings_;
+    if (why.empty()) {
+        const Parser::FunctionState outer = p_.captureFunctionState();
+        const std::vector<std::string> wasStack = p_.namespaceStack_;
+        const bool wasBody = p_.patternBody_;
+        std::vector<Shadow> undo;
+        p_.clearFunctionState();
+        Type::nameDependentSizes(true);
+        try {
+            Parser::Trial trial(&p_);
+            bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
+            p_.patternOnly_ = p_.patternBody_ = true;
+            if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+            p_.at_ = decl.afterParams;
+            p_.topLevel(*p_.current_);
+        } catch (const SubstitutionFailure &f) {
+            why = f.why;
         }
+        Type::nameDependentSizes(wasBody);
+        p_.patternBody_ = wasBody;
+        unbindTemplateParameters(undo);
+        p_.namespaceStack_ = wasStack;
+        p_.restoreFunctionState(outer);
+        p_.at_ = resume;
+        // The pattern is no function: its definition leaves the program, and its signature every overload set.
+        if (why.empty() && p_.current_->functions.size() > had) p_.current_->functions.pop_back();
+        for (std::unordered_map<std::string, std::vector<std::size_t> >::iterator s = p_.lookup_.functionIndex_.begin(); s != p_.lookup_.functionIndex_.end(); ++s)
+            for (std::size_t q = s->second.size(); q-- > 0;)
+                if (s->second[q] >= hadSignatures && !p_.lookup_.functions_[s->second[q]].fromTemplate && Parser::localOf(p_.lookup_.functions_[s->second[q]].name) == decl.name)
+                    s->second.erase(s->second.begin() + static_cast<long>(q));
+        // Its string literals go with it, as a lambda's trial reading's do: unless the read emitted something that may name one.
+        if (p_.current_->functions.size() == had && p_.current_->globals.size() == hadGlobals) {
+            p_.current_->strings.resize(hadStrings);
+            p_.strings_ = stringCount;
+        }
+        p_.syntaxTree_.kill(mark);
+    }
+    syntax::NodeId read;
+    for (std::size_t i = p_.syntaxTree_.size(); why.empty() && i > mark && !read.valid(); i--) {
+        const syntax::NodeId id(static_cast<std::uint32_t>(i));
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
+        for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
+            if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
+    }
+    if (why.empty() && !read.valid()) why = "the read made no function with a block";
+    if (!why.empty()) {
+        // One reason for every name: what is quoted is taken out.
+        for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
+            why.replace(a + 1, b - a - 1, "");
+        declUnread_[why.substr(0, 100)]++;
+        return;
+    }
+    declRead_.push_back(read);
+}
+
+void Templates::holdDeclarations() {
+    for (std::size_t i = 0; i < declRead_.size(); i++) {
+        declTally_[0]++;
+        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(declRead_[i]).loc);
+        if (held == bodyOnce_.end()) declTally_[4]++;
+        else declTally_[1 + p_.syntaxTree_.differs(held->second, declRead_[i])]++;
+    }
 }
 
 std::string Templates::bodiesReport() const {

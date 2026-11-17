@@ -658,6 +658,7 @@ bool Parser::templateDeclaration() {
     // first; a call tries each by deduction.
     if (!decl.isClass) {
         if (decl.defined) tmpl_.fnTemplates_[decl.name].push_back(decl);
+        const bool readNow = decl.defined;
         auto it = tmpl_.templates_.find(decl.name);
         if (it == tmpl_.templates_.end()) {
             tmpl_.templates_[decl.name] = decl;
@@ -665,6 +666,7 @@ bool Parser::templateDeclaration() {
             decl.outOfLine = it->second.outOfLine;
             it->second = decl;
         }
+        if (readNow) tmpl_.readDeclaration(decl);     // -check=templates alone: M8.1's read, where the template is declared
         return true;
     }
 
@@ -1226,6 +1228,10 @@ Parser::instantiate(const TemplateDecl &decl,
     if (!decl.defined)
         src_.fail(pos, "'" + decl.name + "' is declared but never defined, so "
                        "there is nothing to instantiate");
+    // A pattern's body instantiates nothing over its own parameters: that callee is substitution's to bind (M8.2).
+    for (std::size_t i = 0; patternBody_ && i < binding.size(); i++)
+        if (binding[i] != nullptr && dependentType(binding[i]))
+            throw SubstitutionFailure("a call with a dependent argument, which would instantiate its callee");
 
     std::string name;
     const Type *fn = readTemplateDeclaration(decl, binding, values, &name,
