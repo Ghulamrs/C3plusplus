@@ -1011,10 +1011,15 @@ bool Lowering::listFits(const Type &t, std::uint32_t values) const {
 }
 
 // Such a list into `slot`: zeroed, then each value stored in its member in order - the values node `list`'s parts from `from`.
+// A list storing every member of a class with no padding leaves no byte for the zeroing to decide: none is made.
 void Lowering::listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from) {
     const std::vector<Member> &ms = t.unqualified()->members();
-    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
-    at(z).k = t.size(target_);
+    int stored = 0;
+    for (std::size_t i = 0; count(list) - from == ms.size() && i < ms.size(); i++) stored += ms[i].type->size(target_);
+    if (stored != t.size(target_)) {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+        at(z).k = t.size(target_);
+    }
     for (std::uint32_t i = from; i < count(list); i++) {
         const TypeId mt = tid(*ms[i - from].type->unqualified());
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(mt))), std::vector<ValueId>(1, slot));
