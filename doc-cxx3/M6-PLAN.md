@@ -2895,3 +2895,58 @@ w6-worse-O0.txt - 10 of the 20 at -O2 are W5's, the other 10 cases with a call t
 `called`): its loop is right and no longer than the walker's, the cost not found in the hour.
 **Owed to the wave gate:** -O1 and SIM=0 over the suite, the walker legs, asm6x, identical.sh ARCHS=tms6747, ti-link, cl6x's
 `-S` of a call through B1, the census on the Windows cl build, the causes of the unowned worse cases, and the remainder above.
+
+### M6a.2 W7: class arguments and results whose copy is a call, a dead class read, and W6's worse cases read - lane w7, 2026-11-18
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp 1,356 -> 1,382 lines, Tms6747.h +1; branch m6a2-w7 from
+a4467eb2): a class argument whose copy or destruction is a call - the lowering already builds the copy in a frame slot
+(`byValueArgument`) and guards it; the selector passes that slot's address as a word in the argument's register, as cl6x and
+the walker do. A class result with a destructor and a trivial copy, which the lowering returns as an object's address with no
+result pointer: copied through the caller's hidden pointer (A4, never null) unguarded, as visit(Return). A class read nothing
+uses (-O0's `os.put(c);`, the returned reference read as an object) is dropped instead of walking the function. At -O0 a 64-bit
+shift by a constant is spliced in place as at -O1 - the lowering reads and writes every bit-field in `unsigned long long`, and
+the variable-count sequence (two branches a shift) made ssa-bitfield-step-deref-call 2,205 cycles (W5 1,350; now 1,539).
+
+**Walked count** (tools/c6x-walked.baseline, Linux, g++ build, 1,242 cases): **-O0 137 -> 34, -O2 108 -> 47** (commits
+1fb86f07, b46345b8, e2847cb9, 24caa303, 69e4ef10; baselines 0cc71c76, ac250690). `class
+argument of another shape` and `class result of another shape` read 0. **Left, by reason** (-O0 / -O2): `outside the SSA
+lowering` 24 / 24 (R1's: boxkit/w6-outside-O2.txt); `N-bit argument past the sixth` 6 / 6 (was 5: one function had both reasons -
+small-class-args' and stack-args-nested's main, ssa-temporary-defaults-return-braces' four; a pair's high register is a home); `N-bit parameter past the sixth` 1 (stack-args-nested `mixed`); `aggregate value` 2 / 3 (an array value:
+string-literal-array-reference's `g<const char (&)[6]>`, make_shared of one in deque-both-ends; at -O2 its main too);
+`smulh` 0 / 10 and `umulh` 0 / 2 (-O2's 64-bit divide by a constant: `to_string(long long)` in seven cases, ssa-divide,
+new-delete-plain, a chrono duration_cast); `variadic call` 1 (va-arg-shapes, `hasThis`).
+
+**W6's worse cases read** (boxkit/w7-worse-O2.txt, -O0.txt; W5's, the base's and walker-all cxx3 on one case at a time): three of
+W6's four large -O2 ones are not W6's. **ssa-layout** +24,496 is W5's (W5 47,278, W6 47,289; walker-all 22,942): `hashes()`'s
+inner loop, which the walker software-pipelines and the selector unrolls by four with each `% 26` serial - the [pipeline]
+family, owed to the selector's loops reaching C6xPack's pipeliner. **hoist-invariants** +9,665: W5 46,043, W6 46,280 (main newly
+selected takes six inlined loop callees), the rest [pipeline]. **initializer-list-lowered** +9,243: W5 = W6 = 65,319, walker-all
+66,859 (W4b's 55,270 was walked main over selected callees) - W5's, with the [pipeline] loops. **complete-object-builder** is
+W6's: +10,114 at -O2 and +37,308 at -O0, all of it main's one throw (a variant without it: +519 / -384) - the [EH table] family:
+the selected main's cleanups are invokes of out-of-line destructors, each with a terminate pad and a call-site row, where the
+walker inlined them under one pad.
+
+**Case** tests/cases/c6x-class-copies (clang's .expected, the Windows box's clang): a class with a copy constructor and
+destructor and one with a copy constructor alone passed by value - first, later, beside a 64-bit and a pair argument, to a member
+function, through a pointer, a temporary in a loop - copies and destructions counted where no elision decides them; a class with
+a destructor alone returned, of one word and of three; a returned class reference dropped. 18 of 18 selected at -O0 and -O2
+(the base walks 4); right at -O0/-O1/-O2 SIM=0 and SIM=1 and by the walker (Linux).
+
+**Gate:** g++ -Werror (Linux) and cl /W4 /WX (Windows, work\w7b at 24caa303; 69e4ef10 after it changes only the case) clean;
+**tests/tms6747.sh SIM=1** on the final tree: Linux shards 1-3/6 at -O0, -O1 and -O2 421 / 0 each, the walker
+(CXX1_C6X_WALKER=1) at -O2 421 / 0; Windows shards 4-6/6 at -O2 410 / 0 on b46345b8 (the later commits change no -O2 text:
+the census and every selected function are the same at -O2) and at -O0 412 / 0 on 24caa303 (work\w7b); tools/exclusions, the comment cap
+and the memory gate hold (python3); c6x-declines 0; self-compile of C6xSelect.cpp, Tms6747.cpp and C6xPack.cpp at -O0 and -O2
+6 / 0 (Linux, final).
+**Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): **-O2 726 better, 10 equal, 79 worse of which 20 unowned,
+total 149,566,626 - 15,058 over W6's 149,551,568**: two ledger cases, lifetime-ledger +20,902 and c6x-class-values +10,263 (main
+newly selected in each, its text shorter: tests/cases/lifetime.h's `lfFind` scans all 512 rows for an address it has not seen,
+and the selected main gives each by-value copy its own frame slot where the walker reused one - the owed round "frame slots
+shared by scope"); without them -O2 falls by 16,107. **-O0 599 better, 8 equal, 207 worse of
+which 47 unowned (W6 49), total 321,438,297 - 35,019 over W6's 321,403,278**: the same two, lifetime-ledger +75,998 and
+c6x-class-values +37,253; without them -O0 falls by 78,232 (stream-number-stops -6,529, library-cppparse-pieces -4,529,
+ssa-bitfield-step-deref-call 2,205 -> 1,539). Lists: boxkit/w7-worse-O2.txt, w7-worse-O0.txt. Both totals over W6's by the
+ledger cases alone: the brief's "below W6's" is not met, and is the coordinator's to judge (cycle standing rule).
+**Owed to the wave gate:** SIM=0 over the suite, asm6x, identical.sh ARCHS=tms6747, ti-link, the census on the Windows cl
+build, cl6x's `-S` of a class argument's copy, the two ledger cases' frame slots (or their acceptance - the user's), and
+the reasons left above.
