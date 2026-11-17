@@ -2324,3 +2324,404 @@ a file the gate reads; nothing explained by hand.** QC: register-named symbols s
 - **The deliberate failure**: the same `identical` step (the box side of the script, in g1b's tree) with wave 19's
   build (`~/w19g`) as the base and nothing named: **FAIL - 21 differ, 0 named, NOT NAMED: adl-after-block-declaration
   tms6747 0, ...** (the cases and C6000 mends wave 20 made).
+## M6a.2 round W1 - landing pads through the C6000 selector, 2026-11-15 (lane w1, m6a2-w1 from wave20 79b00a6e)
+
+**What changed** (`a3134937`; src/ +53 lines, 94,324 -> 94,377; the baseline lowered in `dc878fb5`):
+- `Tms6747::ssaOutside` no longer leaves a function with Itanium pads, or a `noexcept` one, to the walker. A pad is
+  taken where it has the exception and the selector as its two parameters and a `catchpad`/`cleanuppad` first; an
+  invoke is checked as a call is. `throw(T...)` stays walked by name ("exception specification": the lowering's
+  filter has no row here) - none is left in tests/cases under that reason.
+- **An invoke is one call-site row** (`ssatry`/`ssatryend` round the call, in address order, disjoint), with its pad's
+  chain as arm64's selector reads it; `emitExceptionTable` joins no rows of a selected body (`ssaRows_`): a row is
+  one call, so TI's personality, which goes on after a cleanup from the next scope at the address that threw, finds
+  none. **The pad's entry** (`ssaland`) stores A4 and the trampoline's B4 into the block's parameters and takes B15
+  back, as `landingPad` does; nothing falls into it. **A pad that only ends the program** (a call of
+  `_ZSt9terminatev` in its block) is cl6x's terminate scope, the walker's row (`0xfffffffe`, no landing) - with an
+  honest landing vm6747 prints its own line where clang's answer has none (dtor-throws-unwinding).
+- **A value live into a pad has no register**: it stays in its word, or is made again. The scheduler's liveness
+  (C6xSched.cpp) has no edge from a call to a landing, so a register read only in a pad would be dead to it.
+- **The lowering resumes by `Target::resumeTakesException`**: `__cxa_end_cleanup()` for TI, `_Unwind_Resume(e)`
+  elsewhere (Lowering.cpp `resumeFrom`). vm6747 took `_Unwind_Resume`; TI's rts6740 on sim6747 did not (twelve
+  cases read a null control block in `__TI_Unwind_Resume`) - the judge the plan named found it.
+
+**The census** (Linux, g++ build, CENSUS_SOURCES=0, 1,232 cases): -O2 walked **3,527** (was 4,207), -O0 **3,313**
+(was 4,053); selected 7,724 and 7,938 of 11,251. "landing pads" and "exception specification" read 0 at both
+levels: of the 1,360, 680 are selected and 680 are now named by their next reason (variadic call 1,149, class
+result 493, class or 64-bit parameter 413, floating value 308, memcpy 269, ... - W2 to W6's).
+
+**Gates** (a3134937's tree). Linux: tests/tms6747.sh shards 1-3/6, SIM=1 and SIM=0, 410 passed 0 failed at each of
+-O0, -O1, -O2, and under the walker at -O2; tests/ti-link.sh 836 linked 0 failed at -O0 and at -O2; asm6x.sh 842 / 0
+at -O1 and -O2; tools/c6x-declines --check holds; identical.sh ARCHS=tms6747 against a build of 79b00a6e: 2,631
+compared, 594 differ, in 202 cases, each named in the lane's log (a case with a function newly selected);
+exclusions 129 sites 0 uncited 0 stale, comment cap 0 over, memory gate holds; g++ -Werror and cl /W4 /WX clean.
+Windows: shards 4-6/6 SIM=1 at -O0 413 passed 0 failed; the rest of the Windows half as the handover records it.
+
+**Cycles - the user's question, not accepted here.** Against 79b00a6e's own counts (Linux, vm6747, 820 cases): at
+-O2 649 equal, **147 better, 24 worse**, 192,038,836 -> 191,958,981; at -O0 640 equal, **163 better, 17 worse**,
+397,279,749 -> 395,942,111. The largest worse: -O2 array-loop-throw +72,173, constructor-unwinds +31,247,
+array-loop-local +15,141, map-set-node-stability +11,356, ssa-catch-by-value-throw-out +10,317; -O0 local-in-handler
++39,403, ssa-catch-by-value +38,366, local-try-states +38,027, ssa-catch-by-value-throw-out +37,932. The -O0 cause
+was read: a wrapped body's blocks were written in `f.blocks` order, so a selected `noexcept` or pad function jumped
+to its body and back (two `B` + `NOP 5`, 12 cycles a call; tests/cases/noexcept's `quiet`). **Mended in the lane's
+last commit**: `ssaBlockOrder` at -O0 for those functions alone - -O0 then reads 640 equal, **175 better, 5 worse**
+(397,279,749 -> 395,759,751): the four catch-by-value cases above, each still +38,000, and template-class +3. That
+commit is gated on Linux only (tms6747.sh SIM=1 -O0, all six shards, 823 passed 0 failed; comment cap, memory gate);
+it changes -O0 text alone, and the Windows build and gate above are of the commit before it. The -O2 cause and the
+four +38,000 are not read (the tables are shorter than the walker's, so it is not the scan). Two accepted lines went stale (return-self-referential,
+map-move-only-mapped: no longer worse).
+
+**What remains, by reason.** The six `.notarget` lines: handler-guards-nested now passes selected (vm6747 and
+sim6747, -O0 and -O2) and still fails under `CXX1_C6X_WALKER=1`, so its line and tests/open/walker-handler-guards-
+nested stay while the walker's leg stands; the other five still fail, their functions walked for W2-W6's reasons.
+release-check's box half and the Windows shards at -O1, -O2 and the walker: see boxkit/w1-handover.md.
+
+## M6a.2, round W2: variadic calls and variadic definitions selected - lane w2, 2026-11-15
+
+From wave20 79b00a6e, branch m6a2-w2. src/: +33 -8 in three files (C6xSelect.cpp 788 -> 806, Tms6747.cpp 2481 -> 2486,
+Tms6747.h 309 -> 311).
+
+- **The ABI, from cl6x 7.4.4's `-S`** (`-mv6740 --abi=eabi`; the source is `boxkit/w2va.c`'s shape - printf, `take(1, 2,
+  x, p, h, c)`, `only(c, x)`, `sum(int n, ...)`, `pick(const char *, short, ...)`): the named arguments before the last
+  go in the registers as ever; **the last named argument is stored at `*+SP(4)` in its own size** (`STW`, `STH` for a
+  short, `STB` for a char) **and every argument after it a word each from `*+SP(8)`**; the callee's `va_start` is the
+  address past the last named one rounded up to a word (`ADD 8, FP` after its `STW FP, *SP--(8)`), `va_arg` an
+  `ADD 4` and `LDW *-A(4)`. This is what the walker's `visit(Call)` and `vaStart_` already write.
+- **The selector** (`C6xSelect.cpp`): `ssaOutside` no longer refuses a variadic function or a call of one; a call
+  writes the last named argument and the rest as words above the reserved word (`openArea` with its stack arguments,
+  `STW v, *+B15(4 + 4k)`), then the named ones before it into the registers; `VaStart` and `VaArg` are the walker's
+  own text, split out as `Tms6747::vaStartAt` and `vaArgAt` (one implementation, the list's address in A4);
+  `VaEnd` writes nothing. A variadic function's frame link, its stack parameter and `vaStart_` were the prologue's
+  already (`emitParams`, `needFrame`).
+- **What stays walked, by name.** A call whose callee is a member (`hasThis`), has no named parameter, or has more
+  than ten keeps the reason "variadic call": **one function in tests/cases, `main` of `template-sfinae-fallback` at
+  -O2** (`f(...)`, no named parameter - cl6x's placement of that shape was not measured). A variadic call with a
+  double or a 64-bit argument is walked for W4's reasons (floating value, 64-bit value), a variadic function with a
+  handler for W1's (landing pads); neither is counted here any more.
+- **The census** (`CENSUS_SOURCES=0 tools/ssa-census -arch tms6747`, Linux, g++ build): **-O2 4,207 -> 3,383 walked
+  (7,874 of 11,257 selected, 704 of 1,233 cases), -O0 4,053 -> 3,341 (7,916 selected)**; "variadic" 16 -> 0, "variadic
+  call" 860 -> 1 at -O2 and 735 -> 0 at -O0. `tools/c6x-walked.baseline` lowered in its own commit (9f6b1c1b).
+- **The case** `tests/cases/c6x-variadic-selected` (clang's `.expected`, the Windows box's clang over cxx3's library):
+  four variadic definitions (a loop of `va_arg`, pointer and unsigned extras, `va_copy`, five named and nine extras)
+  and their callers with printf of TI's `rts6740` - a selected caller against a cl6x-built variadic callee. 6 of 6
+  functions selected at -O0 and -O2; passes at -O0, -O1, -O2 on vm6747 and sim6747 and under the walker.
+- **Cycles (`tools/c6x-cycles --check`, -O2, six shards on Linux, vm6747): NOT clean - the user's question.** 821
+  cases, 458 equal, **293 better, 64 worse of which 7 accepted, so 57 worse and unaccepted**, 6 new; the sum 192,025,049
+  -> 192,015,699. The 57 are named in `boxkit/w2-worse.txt`: array-loop-member-copy +13,809 (of 3,969,492),
+  fill-stores +8,132 (of 1,049,849), template-subst +501, divide-by-constant-signs +405, reference-collapsing +101,
+  const-overload +61, member-pointer-condition +52, forwarding-pack +43, va-arg-shapes +38, and 48 of +34 or less.
+  One cause is read (switch-condition-declaration, +5): `%2 = bitcast(addr @str)` made before an earlier call and
+  read by printf crosses that call, so `ssaAssign` gives it a saved register (A10, saved and restored) where the
+  walker remakes the address at the call. **A mend tried and withdrawn**: counting such a bitcast as remade made 129
+  cases worse (array-loop-member-copy +385,015) - a loop then rebuilds the address every turn. The larger cases'
+  causes are not read. `return-self-referential`'s accepted line is stale (no longer worse). Nothing was accepted
+  or recorded by this lane.
+- **Gate (a coding lane's; the wave gates it fully).** Linux (g++, ~/w2, the committed sources): tests/tms6747.sh
+  shards 1-3/6 at SIM=1 -O0, -O1, -O2, under the walker at -O2 and at SIM=0 -O0, -O1, -O2: 409 passed, 0 failed at
+  every leg; shards 4-6/6 there as well, every leg 415 passed, 0 failed. asm6x.sh at -O1 and -O2: 843 objects, 0
+  failed. Windows (cl /W4 /WX clean, work\w2, built at cfbf1b2f - the same sources): shards 4-6/6 at SIM=1 -O2, -O0,
+  -O1: 415 passed, 0 failed each; the walker at -O2 4/6 and 5/6 0 failed, **its 6/6 and SIM=0 -O2 4-6/6 still
+  running when the hour ended** (work\w2-gateB.log). identical.sh ARCHS=tms6747 against the base's cl build:
+  2,634 compared, 1,421 differ over 603 cases, each named in `boxkit/w2-ident.log` (a case that calls printf has a
+  newly selected function; not read one by one). tools/c6x-declines --check: baseline 0 holds. Self-compile of the
+  two changed C6x files at -O0 and -O2: 4 / 0. exclusions 0 uncited 0 stale; comment cap 0 over; memory gate
+  holds; ide/generate.py up to date. **Not done**: cl6x 8.2.2's `-S` (7.4.4 alone was asked), a cl6x-built caller
+  against a selected callee, SIM=0 at -O0/-O1 on Windows, run.sh, and the cycle question above.
+
+## M6a.2, round W2's cycles: the 57 worse cases read and three causes mended - lane w2b, 2026-11-15
+
+From m6a2-w2 055920a9, branch m6a2-w2b. src/: +35 -5 in two files (C6xSelect.cpp 806 -> 836, Tms6747.h one comment).
+Measured as W2 was: `tools/c6x-cycles --check`, -O2, six shards on Linux (g++, ~/w2b), vm6747, against
+tests/tms6747-cycles.txt (458f8974). **57 worse and unaccepted -> 37; 293 better -> 323; 448 equal; no case worse that
+W2 did not have worse; sum 192,015,699 -> 192,010,879.** Nothing accepted or recorded by this lane.
+
+- **Cause A, mended: a cast of a remade value held from its definition.** `%2 = bitcast(addr @str)` is made where
+  the argument list begins; a call between it and its own call (`printf("..", f())`) gave it a saved register, and
+  with none free a frame word. `ssaAssign` marks such a cast `ssaFused_ == 2` - every reader a call no deeper in
+  loops than the definition, or no register won - and `ssaLoad` makes its operand afresh at the reader. A loop's
+  cast keeps its register (W2's withdrawn mend remade those too: 129 worse).
+- **Cause B, mended in part: the first block's label.** `L$f$ssa1:` stood between the prologue and the text, so the
+  packer could not pair the first instructions with the frame's (+2 a `main`). It is written now only where an edge
+  reaches it or a parameter has a home. **Dropped everywhere it gave 515 better but five cases +1 to +3** (move-only,
+  raw-string-literal, return-copy-balance, return-parameter-moves, member-init-class: the parameter's move is then
+  folded away and `MVKL x, A4` can no longer pair beside the load through it) - so it stays where a parameter has
+  a home; the fold is the next thing to read (about 190 cases would gain).
+- **Cause C, mended: a variadic call's words all through A4.** They are made through A4, A6 and A8 in turn (each an
+  argument register, loaded after), so two strings' halves pair (raw-string-literal).
+- **Not W2's: template-subst +501.** The base 79b00a6e's own text measures 949 (identical text, `main` walked);
+  the rise came between 458f8974 and 79b00a6e.
+- **A mend tried and withdrawn: the word stored where it is made** (`boxkit/w2b-earlyword.patch`). A variadic call's
+  word whose value is made before an earlier call of its block was stored at once, the call's words opened there as
+  the walker opens them. It gained six of the group below (throw-class +8 -> +3, throw-class-pointer-ms +16 -> +2,
+  local-class-two-functions +8 -> +3) and made five cases newly worse - array-loop-local +31,773, ssa-for-init-object
+  +20,410, nested-handler-exits +11,208, handler-exit-end-catch +10,904, ssa-catch-by-value +10,838 - the same with
+  it kept out of loops' blocks, so the cost is elsewhere in those functions; not read. Every shard still passed.
+- **Still worse, 36 of W2's, by cause** (base against this tree, `boxkit/w2b-class.sh`; each is the user's question):
+  - *The SSA inliner's body in a newly selected caller* - a callee inlined before its own calls were folded, so the
+    caller writes more calls than the walker's one, or inlined loops whose values overflow the eight saved registers
+    into frame words: fill-stores +7,651 (three fills inlined in `main`, 2 -> 11 frame loads), array-loop-member-copy
+    +13,803 (`show` with three sums inlined, `lfReport`), reference-collapsing +95, const-overload +48,
+    forwarding-pack +39, member-template-class-pack +32, ssa-destructor-through-base +31,
+    global-scope-qualifier-expression +28 (`cc::use()` is `MVK 107` alone, three calls inside `main`),
+    ssa-functor-member +20, namespace-unnamed +19, namespace-nested-class-member-out-of-line +18,
+    member-value-init-default-argument +10, ssa-call-through-star +6, template-keyword-member +6. (fill-stores,
+    global-scope-qualifier-expression and reference-collapsing read; the rest grouped by the calls written changing.)
+    `SsaInline` is not this lane's file (the plan's inliner round).
+  - *A call's result held for a later call's word* - the walker stores it into the open outgoing words at once, the
+    selector keeps it in a saved register (a save and a restore) or a frame word until the call: member-pointer-condition
+    +50 (2 -> 14 frame loads), member-pointer-models +24, throw-class-pointer-ms +16, ssa-volatile +15, throw-class
+    +8, local-class-two-functions +8, ssa-try-catch +5, ssa-nested-braced-list +4,
+    static-array-runtime-initialiser +3, rethrow-through-handlers +3, point-of-declaration-static +3,
+    switch-condition-declaration-enum +1. (Grouped by the saved registers or frame loads rising with the calls
+    unchanged; static-array-runtime-initialiser and stdin-gets read line by line, the rest by those counts.)
+  - *A `?:` of two addresses through a block parameter* (a branch and a move where the walker wrote a predicated
+    pair), +2 or +3: stdin-gets, switch-condition-declaration, lambda-reads-static-local, template-body-namespace.
+  - *Division by a constant left to the EABI helper*: divide-by-constant-signs +30 (was +405) - nine `__c6xabi_divu`
+    and nine `__c6xabi_remu` in the selected `unsignedRow` where the walker multiplied.
+  - *Not read*: va-arg-shapes +38, mem-init-two-rules +16, ssa-pack-small-shapes +8, call-nullptr-static-ssa +6,
+    template-sfinae-fallback +3 (`main` walked in each; calls and saved registers not up).
+- **Gate at 91ea9ffc (a coding lane's; the wave gates it fully).** Linux (g++, ~/w2b): tests/tms6747.sh six shards
+  at SIM=1 -O0, -O1, -O2, under the walker at -O2 and at SIM=0 -O0, -O1, -O2 - every leg 0 failed; asm6x.sh at -O1
+  and -O2: 843 objects, 0 failed; tools/c6x-declines --check: baseline 0 holds; census -O2 walked 3,383 = the
+  baseline (this lane selects nothing new: no baseline commit); self-compile of C6xSelect.cpp at -O0 and -O2: 2 / 0;
+  identical.sh ARCHS=tms6747 against W2's build: 2,634 compared, 1,486 differ over 552 cases, named in
+  `boxkit/w2b-ident.log` (a function with a string argument or no parameter's home changes; not read one by one);
+  comment cap 0 over, memory gate holds, exclusions 0 uncited 0 stale. Windows (cl /W4 /WX clean, work\w2b): shards
+  4-6/6 at SIM=1 -O2 and under the walker at -O2, 0 failed. **Not done**: Windows at -O0/-O1 and SIM=0,
+  identical.sh and self-compile on Windows, c6x-cycles at -O0, ide/generate.py --check, run.sh.
+  `return-self-referential`'s accepted line is still stale (W2's note); the baseline file is untouched.
+- **A fourth mend, its own commit after the gate above: a cast's remade operand made in the cast's register**, not in
+  A4 and moved (C6xSelect.cpp 836 -> 838). Cycles, same measure (Linux, ~/w2b-x): **327 better, 444 equal, 37 worse and
+  unaccepted, none new**; sum 192,008,228; ssa-volatile +15 -> +6, fill-stores +7,651 -> +7,507, stdin-gets +3 -> +2
+  (the lists above carry the counts before it). Its legs: Linux SIM=1 -O0, -O1, -O2 and SIM=0 -O2 six shards and
+  asm6x -O2, comment cap, memory gate, exclusions; Windows cl clean, SIM=1 -O2 and the walker 4-6/6 - the numbers in
+  `boxkit/w2b-handover.md`'s last lines. The walker, SIM=0 -O0/-O1, identical.sh and self-compile were not re-run on it.
+
+### M6a.2 W1's slower cases, accepted - the user, 2026-11-15
+
+**The user's decision**, given directly in the coordinator's session ("Yes, write them"): W1's slower cases are accepted
+as owed - at -O2 the 23 cases tests/tms6747-cycles.txt now lists as `accepted ... (the user, M6a.2 W1)` plus
+map-set-node-stability's cap raised to 7,641,691; at -O0 the 5 such lines. template-subst is not W1's (its source was
+widened, re-recorded at f9e35d30). The two lines return-self-referential and map-move-only-mapped (the user's Q1) are
+out: both are now below their columns, and c6x-cycles fails a stale line.
+**Owed - a planned round, "frame slots shared by scope"** (after M6a.2's W1-W6, before M6d): the selector's frame
+layout gives each alloca its own word where the walker shared one between sibling scopes, which makes the lifetime
+ledger (tests/cases/lifetime.h) scan longer - the cause of every case over +1,000; with it, the two pass rules lane w1b
+named (SsaPromote keeps a handler-live local in memory; SsaInline declines a call in or near a pad) and
+map-set-node-stability's +11,356 (two __tree insertUnique calls, +5,685 each), to be diagnosed in that round.
+**The user's standing rule for cycles** (2026-11-15) is now in the cycle file's header: the coordinator may accept a
+round's worse cases itself only when the total falls at the level judged, no case is newly worse, and every worse
+case's cause is named there as owed with its round; anything else is the user's.
+
+### Wave 22's merge: M6a.2 W2 onto W1, with p7 and rh1 - lane mg22, 2026-11-15
+
+From wave22 b76b033b (g1 027251b9 + m6a2-w1c d5fa2715): `git merge m6a2-w2b`, `p7`, `rh1`, `w1-accept`. W2's four
+conflicts in C6xSelect.cpp were each one round's selection against the other's refusal; both are selected now - the
+refusal list holds neither "landing pads" nor "variadic" (W1's `throw(T...)` refusal kept by name), the op switch takes
+CatchPad/CleanupPad and VaStart/VaArg/VaEnd, a pad's landing label sits beside W2's entry label (only where reached),
+and an invoke's try label stands before W2's variadic stack words. **tests/cases/c6x-variadic-pad** holds both: a
+variadic definition with a pad and a variadic invoke, all four functions selected at -O0/-O1/-O2.
+**Walked (ssa-census -arch tms6747, CENSUS_SOURCES=0, Linux)**: -O0 3313 -> 2390, -O2 3527 -> 2442 (e573cbb9).
+**Cycles (Linux 1-3, Windows 4-6, against the file after w1-accept)**: -O2 192,025,550 -> 191,867,154, 404 better, 54
+worse (11 owed or accepted), 43 not owed: 30 W2's own (the 37 the user accepted as owed), 11 bodies with both pads and
+a variadic call (selected only on the merge; try-body-local +61,762 and ssa-ctor-delegate +20,354 the largest, both
+lifetime-ledger cases, W1's frame-slot shape by its owed reading, not diagnosed here), member-default-init and array-loop-throw past W1's caps for the same bodies.
+-O0 397,272,350 -> 385,994,327, 120 not owed (117 W2's - W2 was never measured at -O0 - and 3 both-feature bodies).
+16 W1 lines at -O2 and 2 at -O0 are stale (W2 made them equal or better). Lists: boxkit/mg22-worse-O2.txt, -O0.txt;
+the intended identical changes against g1 (1,829 tms6747 outputs, and p7's adl-block-declaration-outlives-nested on
+the three other targets) in boxkit/mg22-expected.txt. No accepted line is written here: that is the user's.
+
+
+### Lane g2 - two faults of tools/wave-gate that failed wave 21, 2026-11-15
+
+Lane g2 (Opus), branch g2 from g1 `027251b9`. Only tools/wave-gate changed; no src/ change. Wave 21's gate (`w21g`):
+41 passed, 1 failed, 5 not run.
+- **`wtms2@4-6` failed 3 cases with `./cxx3-msvc.exe: Device or resource busy`**: `wselfc` started at 22:30:20 beside
+  it in the same Windows tree, and tools/windows/self-compile.cmd calls msvc\build.cmd, which relinks cxx3-msvc.exe
+  while the walker shard runs it. Read, step by step: **wselfc** (self-compile.cmd) and **wfixed0/wfixed2**
+  (self-host.cmd's stage 0) call build.cmd - they write the compiler; **winpass*** (each wincases job's run-cases.cmd
+  `:tools`) and **wfixed*** (`run-cases.cmd :tools`) rebuild winout-tools\masm.exe and link.exe, which **cdb** links
+  with; release, names, overload, winstruct, the tms halves and the idle steps only run it. On Linux **selfc**,
+  **fixed*** (tools/self-host stage 0) and **maketest** run `make cxx3.exe`, a no-op after `build`.
+  **The mend:** `alone()` - wselfc, wfixed0, wfixed2 start only on an empty Windows pool and nothing starts beside
+  them; winpass*, cdb and wfixed* are one family (`wintools`, winout-tools); on Linux those three steps FAIL by name
+  unless `make -q cxx3.exe` holds (the relink would happen under the other slot). `-p` prints both lines.
+- **`cycles` "NOT RUN no verdict came back (no reason given)"** though cycles-joined.txt (820 lines) was written:
+  `cycles_join` counted its wait in `t`, the same variable `linux_leg` held the second claimed step in, so after its
+  four-minute wait for tms2's halves the chain ran "asm2 240" (`240 FAIL wave-gate --box knows no step 240` in the
+  box's verdicts) and cycles never ran. **The mend:** cycles_join's variables are `cj_*`; a wait past an hour is
+  `NOT RUN tms2's halves: n of w reported` written into the box's own file (`bverdict`: the Mac's poll copies the
+  box's file over its own, so a Mac-written Linux verdict went there or was lost); after every Linux chain `lost`
+  FAILs by name any step it ran that left no verdict; the report says "claimed, and no verdict came back" for an idle
+  step, and a NOT RUN the box gave is marked as the box's reason, not "no reason given".
+- **The short run, `tools/wave-gate w21g -k` against w21g's trees (wtms2@4-6, wselfc and cycles cleared):**
+  `cycles` **PASS** on Linux - 820 cases, 815 in the baseline (458f8974): 807 equal, 8 worse all owed or accepted, 5
+  new, 0 missing, 0 WORSE. The Windows half's first try lost its ssh (the box did not answer 22:43-22:49: "Connection
+  reset by peer", then "Operation timed out") - the gate wrote FAIL "no verdict came back" and "no count", never a
+  silent NOT RUN. Again, `WAVEGATE_HALVES=1 -b windows`: **wtms2@4-6 PASS 413/0 (22:50:49-22:55:41), then wselfc
+  alone, PASS 103 of 103 (22:55:45-23:03:17)** - no overlap, no "Device or resource busy". With wave 21's other
+  verdicts the gate is 44 passed, 0 failed, 4 not run (the fixed points, not owed, checked). Static gates: no src/,
+  docs/EXCLUSIONS.md or ide/ change, so tools/exclusions, make comments and tools/memory-gate are w21g's (PASS).
+
+### Wave 21 landed - the gate under the user's QA rule, 2026-11-15 (the coordinator)
+
+g1 (the mend check's N1-N5: tests/wave-expected.txt and the wave's own base build, the walked ratchet on the census's
+status, identity for x86_64-linux/-windows/arm64 back, emit's golden from the base, release a real step, the fixed
+point's owed-check), r6n (names, overload and win-structure pass on Windows with REQUIRE_ORACLE=1), r6x (two Linux slots,
+the Windows pool), g2 (wselfc and wfixed* run alone; the `wintools` family; cycles' lost verdict).
+- **Gate: tools/wave-gate w21g -w 82bd61a9 at 027251b9**, then the two failed steps rerun by the gate itself (`-k`) with
+  g2's script: **44 passed, 0 failed, 4 not run** (the fixed points, not owed by the script's check). The first run's one
+  FAIL (wtms2 at Windows 4-6/6, "Device or resource busy") was wselfc relinking the compiler beside it, and its cycles
+  step lost its verdict to a shared variable - both g2's; with them mended wtms2 passed 413/0, wselfc 103/103 alone,
+  cycles PASS (807 equal, 8 owed or accepted, 5 new, 0 worse). Landed at g2 201767ca, which changes only the gate
+  script: the recommended option, taken under the user's standing instruction (2026-11-15).
+
+### Wave 22's slower cases, accepted - the user, 2026-11-15
+
+**The user's decision**, given directly in the coordinator's session ("Yes, write them"), for the merge of M6a.2 W1 and W2
+(lane mg22): at -O2 the 30 W2 cases, at -O0 the 117 W2 cases (W2 first measured at -O0 on the merge), and the 14 bodies
+with a landing pad and a variadic call (11 at -O2, 3 at -O0; selected only once both rounds merged, cause not yet
+diagnosed) are accepted as owed; member-default-init's and array-loop-throw's W1 caps raised; 18 W1 lines now below
+their columns taken out. Owed: W2's causes D (an inliner round for newly selected callers) and E/F/G (the selector's
+next tidy round); the 14 merge bodies to the round "frame slots shared by scope", diagnosed there. Totals: -O2
+192,025,550 -> 191,867,154 (404 better), -O0 397,272,350 -> 385,994,327 (439 better). tests/wave-expected.txt holds
+mg22's 1,838 intended differences against main 006deb20's build (1,829 tms6747 outputs and p7's case on three hosts).
+
+### Resume point, 2026-11-15 ~23:45 PKT (the coordinator; the user: "Save context of all threads!")
+
+
+#### Where things stand
+- **main = m3-line = 006deb20** (wave 21: the wave gate under the user's QA rule). M5 closed; M6c closed (wave 19);
+  the M6c review's mends landed (waves 20-21); M7 closed; M8 not started on main.
+- **Wave 22 - not landed yet.** Branch `wave22`, worktree `~/cxxopt-build/w22`, head **e24b1927** = main 006deb20's
+  g1 part + M6a.2 W1 (m6a2-w1c d5fa2715) + W2 (m6a2-w2b bd64531b, the four C6xSelect conflicts resolved by lane mg22)
+  + p7 219a667c (N7, ADL state across nested parses) + rh1 826515fb (release-check hang: Git's find.exe) + w1-accept
+  bcf9f0f3 + main 006deb20 + the user's acceptance of wave 22's slower cases (161 lines, 2 caps raised, 18 stale out)
+  + tests/wave-expected.txt (1,838 rows vs 006deb20). Walked count -O0 2,390 / -O2 2,442. mg22's lane gate: every
+  C6000 shard 0 failed on both boxes; run.sh 1231/0; self-compile 103/103.
+- **The w22g gate** (`tools/wave-gate w22g -w 006deb20`, started 23:31, log `boxkit/w22g-wavegate.out`, verdicts in
+  `~/cxxopt-build/wave-gate/w22g/{linux,windows,mac}.verdicts`): at 23:45 PASS so far - build, static, gdb 5/5,
+  run1 and run2 1231/0, tms0@1-3 421/0, tms1@1-3 421/0, mac mbuild/mrun0/mrun2 1229/0/lldb 5/5, wbuild, tms0@4-6
+  407/0; still running: the other C6000 shards, winpass, cdb, wselfc, names/overload/winstruct, release, identical*,
+  emit, census, cycles, maketest, ssa1/2, subst, selfc. **Next session: read the verdict files; if the run finished
+  with 0 failed, land wave22 at e24b1927 (push to main and m3-line, then a "Wave 22 landed" entry); if it was cut or
+  failed, re-run `cd ~/cxxopt-build/w22 && sh tools/wave-gate w22g -w 006deb20` (or `-k`), land only on 0 failed.**
+
+#### Open branches (local, not pushed)
+- `wave22` e24b1927 - as above, the next landing.
+- `m6a2-w3` = e24b1927, no code: lane w3's ABI findings in `boxkit/w3-handover.md` (cl6x 7.4.4: <=4-byte trivially
+  copyable struct in A4 / one register; <=8 in a pair; 12-byte via A3, passed as the caller copy's address; a class
+  with copy ctor or dtor through a hidden first parameter in A4); its four-step plan; scripts w3-ship.sh, w3-linux.sh.
+  Check first: class-result calls are followed by a memcpy - callers freed by W3 may stay walked for W5's reason.
+- `m8-b` 0c6336ce - M8.1 commit 1 (`-check=templates` count); `m8-c` = m8-b, no code: `boxkit/m8c-handover.md`
+  (first make Target::sizeOf answer "dependent" by name, then commit 2, then commit 3 from boxkit/m8b-read.patch).
+- Merged into wave22 and kept for reference: m6a2-w1, m6a2-w1b (causes), m6a2-w1c, m6a2-w2, m6a2-w2b, p7, rh1,
+  w1-accept. Landed and done: r6a-r6i, r6w, r6x, r6n, g1, g2, mc6 (read-only), m8a.
+
+#### Owed (recorded in doc-cxx3/M6-PLAN.md's owed table and entries)
+- The round **"frame slots shared by scope"** (after M6a.2, before M6d): W1's slower cases (lifetime ledger scans),
+  SsaPromote's pad rule, SsaInline near pads, map-set-node-stability +11,356+, and the 14 pad-and-variadic bodies.
+- An **inliner round for newly selected callers** (W2's cause D) and the **selector's next tidy round** (E, F, G).
+- tests/open: names-register.txt's 5 defects ($deduced_N closures, a lifetime temporary's MS name, unwind
+  dispUnwindHelp 0, `p->~Base()` through a typedef accepted, `std::__fn_op` mangling); walker-static-reference-temporary;
+  namespace-unnamed-nested-leaks; cxx3's refusal of `C()(a,b)` in OptTable.cpp.
+- ASM6x taking cl6x's `||name||` (the user's QC: keep `A4+0`). Windows -O0 fixed point not on record.
+  A per-case walked baseline (g1). The mend check's should-fixes N6 (no gate runs a declined function), N8-N12.
+
+#### Next steps, in order (the user's path)
+1. Finish/land wave 22 under QA (above).
+2. **M6a.2 W3** (class values; a Fable lane - the hardest), then W4 (64-bit and floating), W5 (memcpy/memset),
+   W6 (indirect calls + the 24 outside the lowering) - each a coding lane, gated as a wave, walked baseline lowered.
+3. The owed rounds above as the plan orders them, then **M6d** (the walker's Ast.h nodes and the parser's building
+   half deleted; walked count 0 first).
+4. **M8.1** from m8c's note (commits 2, 3, then 4), then M8.2-M8.9.
+
+#### Standing rules (the user's)
+- **Always the recommended option** for project decisions (cycle acceptances beyond the standing rule, plan order,
+  keep-or-redo a lane, gate details): take it, record it as "the recommended option, taken under the user's standing
+  instruction (2026-11-15)", send one line. Ask first for money (AWS sizes), GitHub deletes/archives, lifting caps
+  (lanes, Fable, the Windows share, Mac use), or no clear recommendation.
+- **Cycle standing rule**: accept worse cycle cases without asking only when the total falls at the level judged, no
+  case is newly worse, and every worse case's cause is written as owed with its round. **But the permission classifier
+  refuses writing cycle acceptances that reach the coordinator through another session: put them to the user
+  directly in this session first.**
+- **QA**: a wave lands only when tools/wave-gate shows 0 failed, every expected difference named in
+  tests/wave-expected.txt (emptied when a wave lands).
+- **Caps**: 3 lanes, at most 2 Fable (Fable for the wave's hardest lane); 1 hour a lane; compile 9 min, run 3 min;
+  job 25 min (timeout 1500) - **40 min (2400) only for the wave's hardest Fable lane** (Mac: MACRUN_FABLE=1).
+  Linux (c7i.xlarge, 4 vCPU) jobs through `~/slot` (two slots, -j2 each); Windows up to 10 processors at /affinity
+  3FF, shared - never kill by name; disks below 70%. Box split: boxkit/windows-split-2026-11-15.md.
+- **No new tasks beyond the plan** ("No new tasks plz, to make the matters proceed"): no side lanes unless a planned
+  landing needs them; owed items stay owed; report landings only.
+- The user's decisions on the M6c review and after: boxkit/user-decisions-m6c-review.md.
+
+#### Lane wf22, 2026-11-17: wave 22's blocker and its two list faults (Windows only)
+- **c6x-variadic-selected on x86_64-windows** printed `1137198` for `1147066` at -O0/-O1/-O2, both spellings: `many(a,
+  b, c, d, e, ...)` read `e` as its first unnamed argument. Root: `X86_64Linux::receiveParameters` set the Microsoft
+  overflow pointer to `16 + intsUsed * 8`, which stops at the fifth named slot; now `16 + (intsUsed + stackWords) * 8`
+  (src/ 2 lines, +1 net). Not wave 22's: main 006deb20 built on the box prints the same; clang 19.1.5 there prints the
+  .expected. The case's three x86_64-windows rows are in tests/wave-expected.txt.
+- **identical's 13 unnamed rows** were the `.part` cases: the gate read `X.part.tms6747.O0` as case `X`, target
+  `part.tms6747`, which no row can name - tools/wave-gate now keeps `.part` in the case. **emit's "named and the
+  same"** was every -O0/-O1 row (emit measures -O2 alone): emit now judges its own level, and a -O2 row emit sees
+  unchanged (22, measured on Windows against main's golden: 5 cases new to the wave, 17 that differ only in
+  identical's build) is identical's to judge, not emit's FAIL. No row removed: each is one identical differs on.
+- Linux legs owed (the box is off limits): build, static, gdb, run1/2, maketest, ssa1/2, subst, selfc, identical*,
+  emit, and the C6000 shards' Linux half.
+
+### Wave 22 landed - W1, W2, p7, rh1 and wf22's varargs fix, 2026-11-17 (the coordinator)
+
+- **Gate: tools/wave-gate w22h -w 006deb20 at 8283ced0** (wave22 e24b1927 + the resume entry + wf22): **43 passed, 0
+  failed, 4 not run** (the fixed points, not owed by the script's check). The first run's one FAIL was Windows `names`
+  cut by the 25-minute cap beside other steps with no count line; rerun alone by the gate (`-k`): 882 passed, 0 failed,
+  in 4 minutes. wf22 mended the Microsoft x64 varargs overflow pointer in X86_64Linux::receiveParameters
+  (`16 + (intsUsed + stackWords)*8`; main had the bug, winpass's c6x-variadic-selected found it).
+- tests/wave-expected.txt emptied (1,841 rows were this wave's).
+
+### M6a.2 W3: class values on the C6000 selector - lane w3, 2026-11-17
+
+**What goes through the selector now** (src/backend/C6xSelect.cpp, 887 -> 934 lines; branch m6a2-w3 from e24b1927):
+a class result - a trivially copyable class of 8 bytes or less in A4 or A5:A4 (`loadPair`), a larger one copied through
+the pointer in A3 where the caller gave one (predicated at -O1 and above, branched round at -O0, as `visit(Return)`),
+a class with a copy of its own built through the hidden first parameter in A4 (`f.sret`, read from the word
+`emitFunction` keeps it in; the arguments start at B4); a class parameter - `emitParams` already writes the pair or
+copies the caller's object into the parser's slot, and the IR's pointer is that slot's address; and a class result of
+a call - the frame object's address in A3, or in A4 before the arguments, or the pair stored into it after the call,
+and `c.sret` (a call built in this function's own result) passes the kept pointer on. cl6x 7.4.4's `-S` is the oracle
+(boxkit/w3-handover.md, 2026-11-15); 8.2.2's was not run.
+
+**Walked count** (tools/c6x-walked.baseline, Windows, cl build, 1,238 cases): -O0 2,390 -> 1,756, -O2 2,442 -> 1,823.
+`class result`, `class or 64-bit parameter` (now `64-bit parameter`, W4's 163) and `class result of a call` read 0.
+**Left in W3's reasons, by name:** `class argument` 112 / 111 (-O0 / -O2) - a trivially copyable class over 8 bytes
+must be copied by the caller (cl6x passes the copy's address; the IR passes the object's own), which wants frame room
+and a selected copy, and a small one wants `loadPair` into any argument pair; `class result of another shape` 19 - a
+class with a destructor and no copy of its own: the hidden pointer is A4 but the IR returns the object's address, so
+the selector owes `visit(Return)`'s unguarded copy; `aggregate value` 41 / 3. Most callers of a class-returning
+function stay walked for `op memcpy` (330 / 372, W5's). Functions that need W4 as well are those the census names
+`floating value`, `floating or N-bit result`, `N-bit value` and `N-bit parameter`.
+
+**A scheduler fault the newly selected bodies met** (src/optimizer/C6xPack.cpp, `foldAddressing`): an `ADD R, k, T`
+was folded into a later `LDW *T` as `*+R(k)` past a load that had rewritten R - the scan let any load into R through,
+where only the folded access itself may write it. `std::map::insert` at -O2 (map-set-node-stability) read through a
+null pointer; one condition mends it.
+
+**Case** tests/cases/c6x-class-values (clang's .expected; ledger built=9 gone=9, live, double, phantom, over, lost 0).
+
+**Gate, on Windows alone** (the Linux box was out of bounds, then back with my ssh refused: every Linux leg is owed):
+cl /W4 /WX clean; the case right at -O0/-O1/-O2 on vm6747 and sim6747 and by the walker at -O2; tests/tms6747.sh SIM=1
+shards 1-6/6 at -O2 829 passed / 0 failed and at -O0 829 / 0, on the final tree; tools/exclusions, the comment cap and
+the memory gate hold, tools/c6x-declines 0, self-compile of C6xSelect.cpp and Tms6747.cpp 4 / 0 (these four before
+the scheduler's one-condition mend). **Cycles** (tools/c6x-cycles --check, nothing accepted by the lane): -O2 489
+better, 255 equal, 71 worse of which 21 unowned (+1 to +42; boxkit/w3-worse-O2.txt), total 191,867,154 ->
+191,556,159; -O0 450 better, 180 equal, 184 worse of which 75 unowned (boxkit/w3-worse-O0.txt), total 385,994,327 ->
+385,238,195. The causes are named by family, not diagnosed case by case. **Owed to the wave gate:** -O1, SIM=0 at
+every level, the walker legs, asm6x at -O1 and -O2, identical.sh ARCHS=tms6747, C6xPack.cpp's self-compile, every
+Linux leg (shards 1-3/6), cl6x 8.2.2's `-S`, and the remainder named above.
+
+### M6a.2 W3 landed - class values on the C6000 selector, 2026-11-17 (the coordinator)
+
+- **The user's decision**, given directly in the coordinator's session ("Yes, write them", 2026-11-17): W3's 96 worse
+  cases (21 at -O2, +1 to +42 each; 75 at -O0) accepted in tests/tms6747-cycles.txt, owed to the round "frame slots
+  shared by scope" (eaac4b06); totals fall at both levels. Four -O2 lines no longer worse taken out.
+- **Gate: tools/wave-gate w3h -w 91efcd2b at e425c018**, Linux legs included: **43 passed, 0 failed, 4 not run** (the
+  fixed points, not owed). The first run (w3g) failed only on its 566 unnamed tms6747 differences and the 4 stale lines.
+- tests/wave-expected.txt emptied (566 rows were W3's).

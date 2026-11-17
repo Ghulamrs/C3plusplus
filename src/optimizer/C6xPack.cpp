@@ -882,7 +882,7 @@ void foldAddressing(MStream &s, bool index) {
                 f.rw(j, r2, w2);
                 const std::string um = f.m(j);
                 const bool access = f.plain(j) && f.n(j) == 2 && (isLoad(um) || isStore(um));
-                if (has(w2, R) && !(access && isLoad(um) && f.op(j, 1) == R)) break;
+                if (has(w2, R) && !(access && isLoad(um) && f.op(j, 1) == R && f.op(j, 0) == "*" + T)) break;
                 if (!has(r2, T) && !has(w2, T)) continue;
                 if (access) {
                     const std::size_t at = isStore(um) ? 1 : 0;

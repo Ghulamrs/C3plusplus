@@ -74,6 +74,8 @@ public:
     void visit(const StrLit &) override;
     void visit(const VaStart &) override;
     void visit(const VaArg &) override;
+    void vaStartAt();                         // A4 = &ap, for the walker and the selector
+    void vaArgAt(const Type *t);
     void visit(const MemberAccess &) override;
     void visit(const Switch &) override;
     void visit(const While &) override;
@@ -275,7 +277,7 @@ private:
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;      // ssaHome_: 0, or one past the home's index
     std::vector<ir::BlockId> ssaOrder_;                            // the order the blocks are written in
-    std::vector<char> ssaFused_;                                   // a compare written by its block's branch
+    std::vector<char> ssaFused_;                                   // 1: a compare written by its branch; 2: a cast remade at its calls
     std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
     int ssaSelected_ = 0, ssaWalked_ = 0;
     const ir::Function *ssaChoose(const Function &fn);
@@ -299,10 +301,14 @@ private:
     // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
     c6x::MStream ssaMir_;
     std::string ssaHead_;       // what stood in out_ before a selected body
+    int ssaRegionAt_ = 0;       // an invoke's row, counted in address order
+    bool ssaRows_ = false;      // the rows are a selected body's: one per invoke, each whole, so none is joined to another
+    std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
     void ssaAbsorb();
     void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
     void ssaBranchIf(bool zero, const std::string &l);
     void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
+    void ssaClassResult(const Type *t);       // a class result from its address in A4 (W3)
     // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
     std::vector<char> ssaInner_;
     std::string ssaBlockLabel(ir::BlockId b) const { return label(b.v < ssaInner_.size() && ssaInner_[b.v] ? "ssain" : "ssa", static_cast<int>(b.v)); }

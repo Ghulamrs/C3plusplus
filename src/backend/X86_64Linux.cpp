@@ -1367,7 +1367,8 @@ void X86_64Linux::receiveParameters(const Function &fn) {
 
     varGp_ = plan.intsUsed * 8;
     varFp_ = 48 + plan.ssesUsed * 16;
-    varOverflow_ = abi_.positional ? 16 + plan.intsUsed * 8
+    // Microsoft: past every named slot, the four homed and those the plan put on the stack.
+    varOverflow_ = abi_.positional ? 16 + (plan.intsUsed + plan.stackWords) * 8
                                    : stackBase + plan.stackWords * 8;
 }
 

@@ -831,7 +831,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     // goes on after a cleanup from the next one at the address that threw, which pieces split around an
     // inner region would not cover - unless a pad in it jumps to another, whose resume would run it twice.
     for (const CallSite &c : callSites()) {
-        const bool pure = c.types.empty() && !c.terminate && !c.handsOver;
+        const bool pure = !ssaRows_ && c.types.empty() && !c.terminate && !c.handsOver;
         std::map<std::string, std::size_t>::const_iterator at = pure ? region.find(c.pad) : region.end();
         if (at != region.end()) { rows[at->second].end = c.end; continue; }
         if (pure) region[c.pad] = rows.size();
@@ -1921,14 +1921,19 @@ void Tms6747::visit(const StrLit &n) { genAddr(n); }  // an array: its address
 // there (8-byte ones 8-aligned, a struct through its pointer) and steps on.
 void Tms6747::visit(const VaStart &n) {
     n.list().accept(asVisitor());                 // A4 = &ap
+    vaStartAt();
+}
+void Tms6747::vaStartAt() {
     regAdd("A15", vaStart_, "A6");
     out_ << "\tSTW\tA6, *A4\n";
 }
 void Tms6747::visit(const VaArg &n) {
-    const Type *t = n.type();
+    n.list().accept(asVisitor());                 // A4 = &ap
+    vaArgAt(n.type());
+}
+void Tms6747::vaArgAt(const Type *t) {
     bool byRef = t->isStructOrUnion() && !inPair(t);
     int slot = isWide(t) || inPairWide(t) ? 8 : 4;
-    n.list().accept(asVisitor());                 // A4 = &ap
     out_ << "\tLDW\t*A4, A6\n\tNOP\t4\n";  // A6 = ap
     if (slot == 8) out_ << "\tADD\tA6, 7, A6\n\tCLR\tA6, 0, 2, A6\n";   // round up to 8: AND puts no constant second
     out_ << "\tADD\tA6, " << slot << ", A3\n\tSTW\tA3, *A4\n";   // ap += slot
@@ -2341,6 +2346,7 @@ void Tms6747::emitFunction(const Function &fn) {
     // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
     ssaPlace_.clear();
     const ir::Function *ssaFn = ssaChoose(fn);
+    ssaRows_ = ssaFn != nullptr;
     if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;
         walkBody(fn);
