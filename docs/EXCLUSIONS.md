@@ -244,7 +244,7 @@ is left:
   when it had compiled and built nothing. `src/parser/ParserType.cpp:1074`
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
-  object to be a field of. `src/parser/ParserType.cpp:2318`
+  object to be a field of. `src/parser/ParserType.cpp:2320`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2406`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2062`
@@ -258,11 +258,11 @@ is left:
 - **an attribute before a statement**, `[[x]] return 0;` - one before a
   declaration is read wherever [dcl.attr.grammar] places it, C++11's two change
   nothing and an unknown one is ignored (/5); `[[deprecated]]` is C++14.
-  `src/parser/ParserType.cpp:1893`, `src/parser/ParserType.cpp:1872`
+  `src/parser/ParserType.cpp:1895`, `src/parser/ParserType.cpp:1874`
 
 ## Conversion functions and operators
 
-- **`operator->*`** - `src/parser/ParserType.cpp:2495`
+- **`operator->*`** - `src/parser/ParserType.cpp:2499`
 - **an operator that can be named but not reached** - `operator&&`,
   `operator||` and `operator,`: refused at the declaration, because a function
   that links and can never be called is the half-built thing this project
@@ -270,7 +270,7 @@ is left:
   expression, asked of a one-line program each: `+ - * / % & | ^ << >> == != <
   <= > >=` binary, `+ - * & ! ~ ++ --` unary, `() [] = ->`, the ten compound
   assignments, and `operator new`, `operator delete` and the placement forms.
-  `src/parser/ParserType.cpp:2664`
+  `src/parser/ParserType.cpp:2668`
 
 ## Initialisation, and braces
 
@@ -442,17 +442,17 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 | refused | measured against | site |
 | --- | --- | --- |
-| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:1971` |
-| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:1936` |
+| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:1973` |
+| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:1938` |
 | a volatile member function | the cv on `this` is in the name on both ABIs | `src/parser/ParserType.cpp:1206` |
-| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:1964` |
+| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:1966` |
 
 ## Keywords the parser has no rule for
 
 Two, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
 `src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1325`,
-`src/parser/ParserType.cpp:2273`; `tests/cases/refused.cpp` holds one.
+`src/parser/ParserType.cpp:2275`; `tests/cases/refused.cpp` holds one.
 
     asm   export
 
@@ -489,13 +489,13 @@ between the two lists.**
 - **a pointer to a member of an incomplete class, on x86_64-windows** - the
   Microsoft ABI sizes one by the class's inheritance model, and an incomplete
   class takes cl's widest form. A class being defined with no base is single
-  and is taken (M1 L13). `src/parser/ParserType.cpp:2913`
+  and is taken (M1 L13). `src/parser/ParserType.cpp:2917`
 - **a `volatile` object with external linkage, on x86_64-windows** - cl
   decorates its name with the qualifier, `?g3HC` for `?g3HA`.
-  `src/parser/ParserType.cpp:1949`
+  `src/parser/ParserType.cpp:1951`
 - **`thread_local`, on tms6747** - TI's cl6x 8.2.2 does not know the word, so
   the C6000 has no thread storage to put one in (measured 2026-10-20).
-  `src/parser/ParserType.cpp:2031`, `tests/cases/thread-local.notarget`
+  `src/parser/ParserType.cpp:2033`, `tests/cases/thread-local.notarget`
 - **`alignas` past the stack's 8 on a local, on tms6747** - the C6000 backend
   builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:842`,
   `tests/cases/alignas-local.notarget`
@@ -531,7 +531,7 @@ judgement in a program. They are named here instead:
 - `src/parser/ParserType.cpp:249` - a base class that is not yet defined. An
   ordinary error: a derived object contains its base, so the base has to be
   complete.
-- `src/Mangle.cpp:869`, `src/Mangle.cpp:1500` - a type with no Itanium or
+- `src/Mangle.cpp:878`, `src/Mangle.cpp:1509` - a type with no Itanium or
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.

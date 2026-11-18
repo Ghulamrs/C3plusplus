@@ -2,4 +2,61 @@
 1 member-templates | a call with a dependent argument, which would instantiate its callee
 1 member-templates | a cast from '' to '' - the two classes are unrelated and '' has no conversion function to '', so the
 1 | a throw of a value whose type waits for the arguments
-1 | the members of a class specialization over the template's own local class
+2 | an array whose bound depends on a template parameter
+door aliases bodies=7 read=7 unread=0 shape=0
+door class-members bodies=12561 read=12561 unread=0 shape=9
+door functions bodies=3484 read=3481 unread=3 shape=52
+door member-templates bodies=497 read=494 unread=3 shape=6
+door out-of-line bodies=24 read=24 unread=0 shape=1
+door partial-members bodies=606 read=606 unread=0 shape=0
+shape chrono:37:4
+shape deduce-through-function-type.cpp:7:34
+shape direct-init-scalar.cpp:48:28
+shape forwarding-pack.cpp:15:27
+shape forwarding-pack.cpp:19:36
+shape forwarding-pack.cpp:24:27
+shape memory:98:49
+shape nontype-pack-deduction.cpp:13:26
+shape nontype-pack-deduction.cpp:16:33
+shape nontype-pack-deduction.cpp:18:37
+shape nontype-pack-expansion.cpp:20:26
+shape nontype-pack-expansion.cpp:21:26
+shape nontype-pack-expansion.cpp:23:26
+shape nontype-pack-types.cpp:10:27
+shape nontype-pack-types.cpp:11:36
+shape nontype-pack-types.cpp:12:38
+shape nontype-pack-types.cpp:13:56
+shape nontype-pack-types.cpp:15:29
+shape nontype-pack-types.cpp:16:26
+shape nontype-pack-types.cpp:19:33
+shape nontype-pack-types.cpp:9:27
+shape nontype-pack.cpp:8:26
+shape nontype-parameter-typed-int.cpp:14:46
+shape ssa-parameter-pack.cpp:10:37
+shape ssa-parameter-pack.cpp:15:28
+shape ssa-parameter-pack.cpp:19:28
+shape ssa-parameter-pack.cpp:28:28
+shape ssa-parameter-pack.cpp:7:43
+shape string-literal-array-reference.cpp:10:42
+shape template-partial-explicit-arguments.cpp:14:39
+shape template-sfinae-leading-decltype.cpp:19:38
+shape template-sfinae-misc.cpp:16:32
+shape template-sfinae-misc.cpp:17:32
+shape template-sfinae-misc.cpp:24:25
+shape template-sfinae-misc.cpp:33:25
+shape template-sfinae-misc.cpp:34:25
+shape template-sfinae-misc.cpp:35:25
+shape template-sfinae-misc.cpp:36:25
+shape template-sfinae-misc.cpp:37:25
+shape template-sfinae-misc.cpp:38:25
+shape template-sfinae-misc.cpp:39:25
+shape template-sfinae-unresolved.cpp:10:25
+shape template-sfinae-unresolved.cpp:12:25
+shape template-sfinae-unresolved.cpp:8:34
+shape template-sfinae-unresolved.cpp:9:34
+shape template-variadic.cpp:27:37
+shape template-variadic.cpp:31:28
+shape trailing-return-template-decltype.cpp:16:25
+shape trailing-return-template-decltype.cpp:17:25
+shape trailing-return-template-decltype.cpp:29:25
+shape trailing-return-template-decltype.cpp:33:25

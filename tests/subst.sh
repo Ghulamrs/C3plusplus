@@ -108,10 +108,13 @@ same)
 bodies)
     ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |
         xargs -P "$JOBS" -n 1 sh -c '( ulimit -t 20; $CXX1 -nologo -check=templates -S "$0" -o /dev/null > "$OUT/$(basename "$0" .cpp).bodies" 2> /dev/null )'
-    n=$(ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done | wc -l | tr -d ' ')
-    got=$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')
-    echo "subst.sh bodies: $got of $n cases reached the count"
-    [ "$got" -eq "$n" ] || { bad=$((bad + 1)); for b in "$OUT"/*.bodies; do grep -q '^-check=templates: bodies=' "$b" || echo "    no count: $(basename "$b" .bodies)"; done | head -10; }
+    # Every unit reaches the count but one this host's target cannot compile (its .notarget names the target).
+    case "$(uname -s)" in Linux) host=x86_64-linux ;; Darwin) host=arm64-darwin ;; *) host=x86_64-windows ;; esac
+    ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do b=${src%.cpp}; [ -f "$b.error" ] && continue
+        [ -f "$b.notarget" ] && grep -q "^$host\b" "$b.notarget" && continue; echo "$(basename "$b")"; done > "$OUT/units"
+    for b in $(cat "$OUT/units"); do grep -qs '^-check=templates: bodies=' "$OUT/$b.bodies" || echo "    no count: $b"; done > "$OUT/uncounted"
+    echo "subst.sh bodies: $(($(wc -l < "$OUT/units") - $(wc -l < "$OUT/uncounted"))) of $(wc -l < "$OUT/units" | tr -d ' ') cases this target compiles reached the count"
+    [ -s "$OUT/uncounted" ] && { head -10 "$OUT/uncounted"; bad=$((bad + 1)); }
     cat "$OUT"/*.bodies | grep '^-check=templates: bodies=' | tr ' ' '\n' | grep = | tr '=' ' ' |
         awk -v units="$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')" '{s[$1]+=$2} END {printf "subst.sh bodies: %d replayed over %d units: %d first reads, %d the same as the first, %d differ in text alone, %d differ in shape\n", s["bodies"], units, s["held"], s["same"], s["text"], s["shape"]}'
     echo "    $(cat "$OUT"/*.bodies | grep -c '^-check=templates shape: ') bodies whose replays differ in shape, in $(grep -l '^-check=templates shape: ' "$OUT"/*.bodies | wc -l | tr -d ' ') units"
