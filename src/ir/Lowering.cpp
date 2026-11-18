@@ -1314,6 +1314,7 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
     l.slot = slot;
     l.cls = c.id();
     l.dtor = dtor;
+    F().alsoNamed.push_back(dtor);      // the parser's tree destroys it on unwinding whether or not a call here can throw
     // One built in an operand that may not be evaluated carries a flag: zeroed where its full expression began, set here.
     if (canFlag()) {
         const TypeId boolT = tid(*types_.get(Kind::Bool));
