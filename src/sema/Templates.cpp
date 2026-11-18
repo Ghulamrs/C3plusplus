@@ -283,8 +283,9 @@ std::string Templates::specializationKey(const std::string &name,
         else if (!args[i].isType) key += std::to_string(args[i].value);
         // A pattern's argument is a template parameter, and describe() would
         // put a space in a tag every table is keyed by.
-        else if (args[i].type->kind() == Kind::TemplateParam)
-            key += "$T" + std::to_string(args[i].type->length());
+        else if (args[i].type->kind() == Kind::TemplateParam)      // `pair<const $T0,$T1>` is not `pair<$T0,$T1>`
+            key += std::string(args[i].type->unqualified() == args[i].type ? "" : args[i].type->isConst() ? "const " : "volatile ") +
+                   "$T" + std::to_string(args[i].type->length());
         // A template named as an argument: `Holder<Box,int>`, the name as written.
         else if (args[i].isTemplate)
             key += args[i].type->templateNamespace() + args[i].type->templateName();
@@ -545,11 +546,23 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 std::vector<Parser::PendingBody> bodies;
                 const std::string readTag = tag + "$read" + std::to_string(readSerial_++);
                 // From its head on, not from its end, so a member's declaration and its replayed definition see one class;
-                // a partial's own parameters spell the primary's key (`pair<T1, T2>` in `pair<const T1, T2>`): never one.
-                if (!partial) { readingTag_ = tag; readingRead_ = readTag; }
+                // a partial's key is its written arguments over its own parameters (`pair<const $T0,$T1>`), none past a pack.
+                std::string own = tag;
+                if (partial) {
+                    std::vector<TemplateArg> written;
+                    for (const TemplateDecl::Partial::Arg &w : decl.partials[which].args) {
+                        TemplateArg a;
+                        a.isType = w.isType; a.type = w.type; a.isParam = w.isParam;
+                        a.paramIndex = static_cast<int>(w.param); a.value = w.value;
+                        if (w.isPackExpansion) own.clear();
+                        written.push_back(a);
+                    }
+                    if (!own.empty()) own = specializationKey(decl.name, written);
+                }
+                if (!own.empty()) { readingTag_ = own; readingRead_ = readTag; }
                 const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
-                if (!partial) readPattern_[tag] = made;
+                if (!own.empty()) readPattern_[own] = made;
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
