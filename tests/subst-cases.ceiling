@@ -1,0 +1,11 @@
+4 class-members | '' is '' and this is ''
+1 class-members | the class: '' is not defined yet - a base class has to be complete, because the derived object conta
+1 class-members | the class: a using-declaration inside a class is not supported yet here - of a base's member functio
+1 class-members | the class: an array length must be positive, not 0
+1 member-templates | '' is a member function template and '' cannot be worked out from this call: '' does not give a valu
+1 member-templates | a call with a dependent argument, which would instantiate its callee
+1 member-templates | a cast from '' to '' - the two classes are unrelated and '' has no conversion function to '', so the
+1 | '' cannot name the type of this: only a fundamental type has a type_info object the standard library
+1 | '' has no static member or enumerator called ''
+1 | '' is '' and this is '' - C++ converts an integer to an enumeration only with a cast, where C does i
+1 | expected ''
