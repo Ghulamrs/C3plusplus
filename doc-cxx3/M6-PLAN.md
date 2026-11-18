@@ -3371,3 +3371,160 @@ test to its end, tms6747 SIM=0 and -O1, asm6x, ti-link, release-check, lldb/cdb,
 frame record onto `ir::Laid` (then `setFunctions`, `Backend`'s `Function` and Dwarf.h's `Local` go); `UnitData`'s `const Type *`
 onto `TypeId`; the three statement readers above onto the typed tree or the IR, then the parser's and `Classes`' building half
 and Ast.h's nodes - the part that is a design, not a deletion; the unread accessors listed above; the dead frame slots.
+
+### M6d, fourth round: x86's and arm64's frame record on ir::Laid, UnitData's types as TypeId, and the design for the three statement readers - lane m6d4, 2026-11-18
+
+From m6d-shell a2a6f501. src/ 93,261 -> 93,256 lines (-5: step 1 is +27 - the typed -g record, the order walk, two small headers - step 3 -32). REF is a2a6f501's code built on Linux (`~/m6d4-ref.exe`, m6d3's final build);
+the compares are tools/identical.sh (1,808 tms6747; 7,232 x86_64-linux, x86_64-windows and arm64-darwin) and every case's
+`-g -S` text on tms6747, x86_64-linux and arm64-darwin (boxkit/m6d4-gdiff.sh).
+
+**(1) x86's and arm64's frame record** (28037132, src/ +236 -209). `X86_64Linux::emit`, `receiveParameters`, `returnThis`, `scalarsOf`,
+the exception tables, `Arm64Darwin::emitFunction`, `ssaOutside` and both selectors' `layoutSsa` and `selectBody` take the
+`ir::Function` and read `ir::Laid`, as the C6000's shell does; `run` walks `UnitData::order` and finds each function in the
+module. `ir::Laid` gained what they asked beyond the C6000: `regSave`, `frameAlign`, `hasThis` (the parser's: a synthesised
+special's `ir::Function::hasThis` is wider, Driver.cpp), `named` (a display name was given), and a local's `align` and
+`declared`; the source position is `ir::Function::pos`, which was there. `CodeGen::setFunctions`, the generators'
+`functions_`, `ssaFunction`, the second `Function` parameter of six functions and `Backend.h`'s `class Function` are gone.
+-g reads `DwarfLocal` (Dwarf.h), built by `Regions::ssaFrameLocals` from `ir::LaidLocal`; Dwarf.h no longer includes Ast.h,
+so no file under src/backend does. Two things the backends had from Ast.h by that include moved: `enum class BinOp` to
+Operator.h (the C6000's wide and floating helpers switch on it), `make_owned` to src/Owned.h (the one `new`; the count is
+unchanged). The typed helpers (`laidType`, `laidParams`, `FrameParam`) are in the generators' headers and Backend.h, not
+Regions.*: the memory gate counts raw pointers there (89, unchanged). arm64's two refusals (a function outside the
+selector, a symbol with no body) are one site, `ssaRefuse`, so tools/exclusions' arm64 count stays 4.
+One message changed on a path no accepted unit reaches: arm64's "no SSA body" names the symbol, where it named the display name.
+
+**(2) UnitData's types** (f31af70a, src/ +24 -24). `Global::type` is a `TypeId` (the constructor still takes the parser's
+`const Type *`), `UnitData::rtti` a `std::vector<TypeId>`; the generators read them through `laidType`, the lowering through
+`T()`, the parser's prune through `types_.type`. The header holds no `Type` pointer but `Global`'s constructor parameter.
+
+**(3) The unread accessors** (259fa728, src/ -11): `Try::pointerSlot`/`selectorSlot`, `Switch::cases`/`defaultCase`,
+`Call::namedArgs`, `Postfix::increment`, `Block::scope`, `For::scope`, `Function::setBody` - Ast.h alone. Their fields,
+constructor arguments and `setScope`'s 27 calls stay: each removal moves parser lines (and EXCLUSIONS.md's citations) for
+nodes the design below deletes whole. **(3b) The landing-pad hook** (907830bd, src/ -21): `Regions::landingPad` and its three overrides, the walkers' store of the exception
+pointer and selector into the parser's pad slots, had no caller. **The slots themselves were not removed**: the pad's pointer and selector slots and
+the unwind-help word are taken by the parser's frame allocator in the order parameters, the result slot and -g's locals are
+(`ir::Laid`'s offsets); removing one is a change of layout that has to be shown identical by itself, and goes with lane S5.
+
+**Identical, by step** (Linux, against REF). Step 1 (28037132), built alone in a second tree before two edits that change no
+accepted unit's code (`laidType` made protected for MASM, arm64's refusal folded to one site): tms6747 1,808/0 differ,
+x86+arm64 7,232/0, `-g` 0 differ on tms6747, x86_64-linux and arm64-darwin once that tree's path is written as the first's
+(94, 208 and 208 texts named it in a header's file record and differed in nothing else). Step 2 has no build of its own: with
+step 3 it is the final tree (259fa728's code), measured twice, before and after those two edits: 1,808/0, 7,232/0, `-g`
+888 same/358 refused alike/0 differ (tms6747), 903/343/0 (x86_64-linux), 903/343/0 (arm64-darwin), and x86_64-windows'
+CodeView text 677 same/368 refused alike, the other 201 the same once REF's tree path is written in its backslash spelling.
+Step 3b (907830bd, the last tree): 1,808/0, 7,232/0, and `-g` 0 differ on the four targets the same way.
+
+**ast-residue** (ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, visits 0 throughout): after step 1 readers 10 -> 9 (Dwarf.h)
+and ast-lines 739 -> 733 (`BinOp`, `make_owned`); after step 2 the same; after step 3 ast-lines 722. Baseline recorded (8f292c96, with
+the ide files for Owned.h and the memory gate's `new` 1,053 -> 1,052; raw pointers 89, unchanged).
+
+#### The design: the three statement readers, before the building half
+
+`Function::body()` has three readers left besides the parser's own casts. Each decides something, so each moves first.
+
+**A. `SymbolsNamed`** - ParserClass.cpp:1859-1913, used once, :1998, by `Parser::pruneUnusedInline` (:1920-2030), called once at
+the unit's end (ParserTopLevel.cpp:2269), before the driver types or lowers anything. *Reads*: every reached body's
+`Var::symbol`, `StrLit::label`, `Call::symbol` and `Try::types` (the type_info symbols), through every node kind; beside them
+`Global::prefixWord` and the pieces' symbols, `initFunction`, the Microsoft throw records' destructors and copy constructors.
+*Decides*: which of `program.functions`, `data.globals`, `data.strings` and `data.rtti` are emitted - output. *Roots*: every
+function not held (`discardableInline_`, an inline function not from a template and not an atexit helper) and every global
+`heldGlobal` does not hold (:1938). *Replacement*: the same closure over `ir::Module` - a function's names are its
+instructions' call symbols (`ir::CallInfo::symbol`), its address-of-symbol and string operands, its pads' type_info symbols
+and its `spec` list - run by the driver, with the holding facts as records: `held` on each `UnitData::order` entry and on
+`Global`, `copied` on `StringLit` (today `copiedStrings_`), the key-function test folded into `Global::held` by the parser.
+*Two things fix its place.* (i) Today a held function nothing reaches is never typed and never lowered, so a body the
+lowering would refuse is accepted when unused; the closure must therefore drive the lowering - a worklist in
+`Driver`'s loop over `c.bodies` (Driver.cpp:1466-1525): lower the roots, read their names, lower a held function when it is
+first named - never "lower all, then drop". (ii) It reads the IR as lowered, before any SSA pass: the inliner removes calls,
+and the kept set may not depend on the level. *Oracle while both exist*: `-check=prune` computes both kept sets and fails
+on a difference, over the suite at both levels and the self-host sources; then identical.sh on four targets; then
+`SymbolsNamed` and the parser's prune are deleted in the commit that makes the driver's the only one.
+
+**B. `SlotUses`** - ParserExprNew.cpp:15-65, used once, :928, with `constructorOfSlot` (:67-85), in the `return` operand's
+third elision form (:919-945): `return T(args);` through a temporary. *Reads*: under the comma the parser itself built two
+lines earlier, `Var::isLocal`/`offset` and `Call::resultSlot`, counting the names of the temporary's slot. *Decides*:
+`pendingReturnBuilt_.form = 3` with the constructor's symbol and signature - the record the SSA lowering reads under
+"$ret:" - and rewrites the Ast body nobody reads. *Replacement*: the count is a fact of how the temporary was built, known
+where it is built: the pending temporary's record (`pendingTemps_`) keeps `builtBy` (the constructor call's `Resolved`
+index) and `plain` (nothing but that call names the slot - no zeroing step, no guard), set by the one function that
+materialises a class temporary; :928 asks the record. *Oracle*: while both exist the record's answer is compared with
+`SlotUses`' at :928 and a difference is a compiler error naming the function; 0 over the suite and the self-host, then the
+visitor, `constructorOfSlot` and the Ast rewrite (:931-937) go. Output is untouched by construction: the form is the same.
+
+**C. The constexpr body walk** - sema/Constexpr.cpp. `singleReturnValue` (:261-270; asked at ParserTopLevel.cpp:1980) walks
+`Block` to its one `Return` and hands back the operand, which `ConstexprFn::value` keeps as a `const Expr *` "owned by the
+Function in the Program" (Entities.h:427) - a pointer into a body the prune may drop. `runConstexpr` (:565-572) and
+`runConstexprEffect` (:574-600) run a constexpr constructor's lowered statements (`ConstexprCtor::body`, a `const Stmt *`,
+Entities.h:438, registered at ParserTopLevel.cpp:1971-1978, run at Constexpr.cpp:526-545) and a declared object's
+initialising statements (`foldDeclaredObject`, :634-647; asked at ParserInit.cpp:1541 and ParserStmt.cpp:20).
+*Replacement, in two parts.* (C1) The statement shapes stop being Ast shapes: "one return and nothing else" is asked of the
+syntax tree (the body's `syntax::NodeId`: a compound of one return), and `ConstexprFn` owns its operand (`ExprPtr value`,
+moved out of the `Return`); a constructor's and a declared object's steps are kept as what they are - a list of
+(member's byte offset, initialiser expression) and constructor calls - written by the parser where it builds the
+mem-initialisers (`ConstexprCtor::steps`), so `runConstexpr` walks records and no `Block`, `ExprStmt` or `Comma` of
+statements. After C1 no statement node is read by the evaluator; expressions still are. (C2) The expression evaluator
+(`fold` and its 44 other casts) moves to the typed tree as design 12.2 rows it: Sema types one full-expression on demand
+during the parse (`Typing` is run today per body by the driver, after the parse; the constant is needed inside it), from
+the `Resolved` records the parser has already written for that expression; `fold(TypedId)` mirrors `fold(const Expr &)`
+case for case; `-check=fold` runs both wherever a constant is asked and fails on a difference. C2 touches the template
+files (`Templates*`, `ParserTemplate*`, `ParserDependent*`: a replayed expression is typed again per instantiation), so it
+starts after lane m8x leaves them.
+
+**The parser's own statement casts** (six): ParserExprNew.cpp:292, :431, :1392-1399 (`ExprStmt`/`Block` of what it just
+built), ParserStmt.cpp:1473 (`Try`), :1558 (`For`), :1566 (`Case`). Each becomes a value the building function returns
+beside the node (the lane reads each; none decides output by itself).
+
+**Order, and tools/ast-residue after each** (from this round's ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, readers 9, ast-lines 722; estimates until each lane measures them):
+S1 the prune on the IR (A): node-refs about -30 (the visitor's signatures), the rest unchanged. S2 the temporary's record
+(B): node-refs about -30, node-casts -4. S3 the constexpr statements (C1) and the six casts: node-casts about -10,
+node-refs about -6. S4 **statements deleted**: the parser and `Classes` stop building `Stmt` nodes (a function keeps its
+frame record and its syntax body only), `Function::body`, the fifteen statement classes, `MsHandler` and `Try` leave Ast.h:
+StmtPtr 639 -> 0, ExprPtr about -150 (the statements' operands), ast-lines about 720 -> 450. S5 the frame without the
+nodes: the dead slots (pad pointer, selector, unwind help) and the setters only nodes had, each shown identical by itself.
+S6 on-demand typing and `-check=fold` (C2, no deletion: the residue is unchanged and the check is the deliverable). S7
+the parser's expression shape tests (about 120 casts: ParserExprCall.cpp:336-385, ParserInit.cpp:846-947,
+ParserOperator.cpp:586-671, ParserExpr.cpp:2383-2546 and :3534-3549, Parser.h:885-917, Parser.cpp:47-61) onto `Resolved`
+records and the typed node's kind, a family a lane: node-casts -> about 46. S8 **expressions deleted** in one commit, as
+M3b.7 deleted x86's path: `fold(const Expr &)`, the expression classes, `Visitor`, `ExprPtr` (2,016 -> 0), node-casts and
+node-refs 0; `Param`, `Local`, `Function` (a frame record by then) and `Program` move to a header of their own and Ast.h
+is deleted: readers 0, ast-lines 0.
+
+**What must not change.** CLAUDE.md's shapes: absolute token indices (on-demand typing keys an expression by its syntax
+node and token index; a replay re-reads by index, so nothing is renumbered); `resolveOverload` returns a `Signature` by
+value; a pointer to member function wears a struct's shape (the evaluator's leaves stay by byte offset); 
+`unqualifiedSpecifiers` answers void for `Point::Point(`; call-site rows are registered innermost-first and split, never
+sorted (the driver's prune keeps `order` as the parser wrote it and sorts nothing); a trivial special member is no
+function at all (a name with no function is not a node of the closure, as today - the closure never makes one); the parser
+numbers selectors as the table places them (`typeIndexFor` is called where it is called now, in the same order, when no
+`Try` node is built). And this round's: a held function nothing reaches is never typed, lowered or refused; the kept set
+does not depend on -O; a literal copied into an array is kept (`copiedStrings_`); the frame allocator hands out the same
+offsets in the same order whether or not a node is built for the slot; a refusal keeps its words (a refusal that moves a
+line moves its citation).
+
+**As lanes.** S1 Fable (it decides what is emitted, and moves a parser decision into the driver's lowering loop; files
+ParserClass.cpp :1856-2030, Driver.cpp, UnitData.h). S2 Opus (ParserExprNew.cpp). S3 Opus (Constexpr.*, Entities.h,
+ParserTopLevel.cpp :1960-1990, ParserInit.cpp, ParserStmt.cpp). S2 and S3 run beside S1: no file is shared. S4 Opus, two
+lanes by directory (src/parser; src/sema/Classes.*), after S1-S3. S5 Opus, after S4. S6 Fable (typing inside the parse is
+a design of its own; after m8x). S7 Opus, three lanes by file family, beside S6. S8 Opus, one lane, one commit, after S6
+and S7. Each lane's gate is this round's: identical.sh on four targets and the `-g` texts, 0 differ, against the commit
+before it; `-check=prune` and `-check=fold` are run by the wave gate over the suite and the self-host.
+
+**Gates on the final tree** (the builds, the compares and the static gates are of 907830bd; the simulator runs, cycles, census,
+declines, g-same and gdb of the commit before it, whose tms6747 and `-g` text 3b leaves the same. Linux ~/m6d4, g++ -Werror
+clean; Windows work\m6d4x, cl /W4 /WX clean - its first try refused
+`Laid::pos` for hiding `blockAt`'s parameter, C4458, which is how the duplicate of `ir::Function::pos` was found): tms6747
+SIM=1 -O2 shards 1-3 (Linux) 425/0 and 4-6 (Windows) 425/0; -O0 425/0 and 425/0; cycles over the six shards -O2 149,248,103
+and -O0 307,812,480 = the base's, 18 and 4 worse unowned as at the base (the check fails as before, nothing written); the two refused cases as their
+.error on four targets at both levels; g-same 888/0; debug.sh gdb 5/0; self-compile of C6xSelect, Tms6747, Regions,
+X86_64Linux and Arm64Darwin for tms6747 at -O0 and -O2 10/0; c6x-declines 0; exclusions 129 sites, 0 uncited, 0 stale, the
+lowering's and arm64's counts at their baselines; comment cap 0 over; memory gate and ast-residue recorded lower; ide
+--check after regeneration. **tools/wave-gate --box linux census** - its edited leg and tools/ssa-census, run for the first
+time since m6d3 changed both: PASS, `outside=0 of 102 sources and 431 C90 cases; other failures 25`, and REF's binary
+fails the same 25 files (POSIX headers and the like, refused for tms6747; other.txt is byte for byte REF's)..
+
+**Owed to the wave gate:** run.sh, winpass in
+both spellings (the MASM and COFF shells, RTTI and CodeView now read `ir::Laid`, `DwarfLocal` and `TypeId`; only the `-S`
+and `-g -S` texts were compared, on Linux), cdb and lldb, ssa.sh 1/2, names.sh, make test to its end, tms6747 SIM=0 and
+-O1, asm6x, ti-link, release-check, and the fixed point - owed by N4, a src/ file was added (Owned.h) - with target 4 on
+the Mac at the milestone's close. **Left of M6d:** lanes S1-S8 above; CLAUDE.md's "Reading this tree" still names
+`backend/Walker.h`.
