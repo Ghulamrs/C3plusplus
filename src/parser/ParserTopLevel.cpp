@@ -970,6 +970,7 @@ void Parser::topLevel(Program &program) {
         return;
     }
     const Signature *member = nullptr;
+    std::string definedSymbol;
     if (memberOf != nullptr) {
         std::string key = d.qualifier + "::" + d.name;   // "Point::~Point" too
         // **A member function template specialization declares itself here.**
@@ -1113,13 +1114,16 @@ void Parser::topLevel(Program &program) {
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.
-        currentFunction_ = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params, variadic,
+        // A read's `std::remove` beside `using ::remove;` is asked by the key declareFunction gave it.
+        const bool own = patternBody_ && absoluteName.empty() && cLinkage_ == 0 && !namespaceStack_.empty();
+        currentFunction_ = lookup_.lookupSignature(own ? namespacePrefix() + d.name
+                                                       : absoluteName.empty() ? d.name : absoluteName, params, variadic,
                                            d.pos).symbol;
+        if (own) definedSymbol = currentFunction_;
     }
     // Set for a member's body too, unlike the friend question above, because a local
     // class inside a member function is spelled by wrapping that function's name.
     // **Taken by value**: `member` points into a vector any declaration can move.
-    std::string definedSymbol;
     if (member != nullptr) {
         definedSymbol = member->symbol;
         currentFunction_ = definedSymbol;
