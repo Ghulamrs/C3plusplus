@@ -336,6 +336,21 @@ const DepExpr *Parser::depPrimary(bool angle) {
             return depNode(n);
         }
     }
+    // A read's `is_integral<T>::value`: a dependent class's member named as a value, held as an unresolved name.
+    if (patternBody_ && tok.kind == TokenKind::Ident && peekAt(1).is("<") && findTemplate(tok.text) != tmpl_.templates_.end()) {
+        const std::size_t from = at_, split = angleSplit_;
+        at_++;
+        skipTemplateArguments();
+        if (angleSplit_ == split && peek().is("::") && peekAt(1).kind == TokenKind::Ident &&
+            !peekAt(2).is("<") && !peekAt(2).is("::") && !peekAt(2).is("(")) {
+            at_ += 2;
+            n.op = DepExpr::UnresolvedName;
+            n.name = n.text = depText(from, at_);
+            return depNode(n);
+        }
+        at_ = from;
+        angleSplit_ = split;
+    }
     if (atTypeName()) {
         StorageClass sc;
         return depCast(specifiers(&sc));
@@ -378,6 +393,16 @@ const Type *Parser::dependentResult() {
     n.op = DepExpr::UnresolvedName;
     n.name = n.text = "a dependent expression";
     return types_.dependentExpr(depNode(n), false);
+}
+
+// A read's class whose base was left out (`struct D : B<T>`), or one around the body read: a name not found may be the base's.
+bool Parser::leftOutBase(const Type *cls) const {
+    if (!patternBody_) return false;
+    if (cls != nullptr) return cls->unqualified()->dependentBase();
+    if (currentClass_ != nullptr && currentClass_->unqualified()->dependentBase()) return true;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i] != nullptr && classStack_[i]->unqualified()->dependentBase()) return true;
+    return false;
 }
 
 // One postfix step on an object of dependent type, its tokens alone: a subscript, a member's name, `++`.

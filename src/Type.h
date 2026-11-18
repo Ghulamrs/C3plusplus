@@ -260,8 +260,9 @@ public:
         ~DependentLayout();
         bool met() const;
     };
-    void setDependentLayout() { dependentLayout_ = true; }
+    void setDependentLayout(bool base) { dependentLayout_ = true; dependentBase_ = base; }
     bool dependentLayout() const { return dependentLayout_; }
+    bool dependentBase() const { return dependentBase_; }     // a base was among what it left out
     bool isSigned(const Target &t) const;
 
     int rank() const;
@@ -646,6 +647,7 @@ private:
     int align_ = 1;
     bool complete_ = false;
     bool dependentLayout_ = false;
+    bool dependentBase_ = false;
 };
 
 class TypeTable {

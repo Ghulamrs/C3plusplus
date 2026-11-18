@@ -2069,13 +2069,19 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
     if (consume("=")) {
-        if (!d.type->isConst() || !d.type->isInteger())
+        // A read's `static const T value = v;`: the type is dependent, so the value is - read and folded to nothing.
+        if (patternBody_ && d.type->isConst() && dependentType(d.type)) {
+            conditional();
+            s.folded = true;
+        } else if (!d.type->isConst() || !d.type->isInteger())
             src_.fail(d.pos, "'" + cls + "::" + d.name + "' is initialised "
                              "inside the class, and only a 'static const' of "
                              "integer type may be - write the value on the "
                              "definition outside the class instead");
-        s.folded = true;
-        s.value = constantExpression("a static member's value");
+        if (!s.folded) {
+            s.folded = true;
+            s.value = constantExpression("a static member's value");
+        }
     } else if (d.type->isArray() && d.type->length() < 0) {
         src_.fail(d.pos, "'" + cls + "::" + d.name + "' has no length, and a "
                          "static member cannot take one from its definition - "

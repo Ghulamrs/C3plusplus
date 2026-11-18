@@ -2247,6 +2247,10 @@ ExprPtr Parser::primaryNode(Program *program) {
                               "of '" + cls->tag() + "' and needs an object here - only "
                               "sizeof and decltype may name it with none");
                 }
+                if (leftOutBase(cls)) {
+                    at_ += k + 2;
+                    return zeroOf(dependentResult());
+                }
                 src_.fail(peekAt(k + 1).pos, "'" + cls->tag() + "' has no member called '" +
                                          member + "'");
             }
@@ -2268,6 +2272,7 @@ ExprPtr Parser::primaryNode(Program *program) {
                                       static_cast<long long>(bare.size()) + 1));
             return n;
         }
+        if (leftOutBase(nullptr)) return zeroOf(dependentResult());
         src_.fail(pos, "'" + name + "' was not declared");
     }
 
@@ -3160,6 +3165,7 @@ ExprPtr Parser::postfix() {
                 continue;
             }
             const Member *m = in->findMember(name);
+            if (!m && leftOutBase(in)) { n = zeroOf(dependentResult()); continue; }
             if (!m) src_.fail(pos, "'" + in->describe() + "' has no member '" + name + "'");
             if (m->ambiguous) refuseAmbiguousMember(in, *m, pos);
             checkAccessible(obj, *m, pos);
@@ -3250,6 +3256,7 @@ ExprPtr Parser::postfix() {
                 continue;
             }
             const Member *m = in->findMember(name);
+            if (!m && leftOutBase(in)) { n = zeroOf(dependentResult()); continue; }
             if (!m) src_.fail(pos, "'" + in->describe() + "' has no member '" + name + "'");
             if (m->ambiguous) refuseAmbiguousMember(in, *m, pos);
             checkAccessible(obj, *m, pos);

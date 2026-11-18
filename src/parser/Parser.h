@@ -1665,6 +1665,7 @@ private:
     bool dependentOperand(const Type *t, bool pointers = true) const;
     const Type *dependentResult();
     bool dependentPostfix(const Type *object, PostfixStep &step);
+    bool leftOutBase(const Type *cls) const;
     bool argsDependent_ = false;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;
