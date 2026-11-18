@@ -1424,9 +1424,11 @@ private:
     // **What a class with constructors is initialised from** - `(args)`,
     // `= expr`, `{}`, `= {}`, or a braced list for an initializer_list
     // constructor - shared by every storage duration, so it is written once.
+    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
+    struct Effect { ExprPtr expr; int guard; };
     struct CtorInit {
         std::vector<ExprPtr> args;
-        std::vector<StmtPtr> ilSetup;
+        std::vector<Effect> ilSetup;
         bool copyInit = false;
         bool valueInit = false;
         bool listInit = false;
@@ -2023,10 +2025,9 @@ private:
     // The index in pendingTemps_ of the temporary a bound address names, or -1.
     int pendingTemporaryOf(const Expr &e) const;
     void flushTemporaries(std::vector<StmtPtr> &into);
-    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
-    struct Effect { ExprPtr expr; int guard; };
     void temporaryEffects(std::vector<Effect> &into);
     StmtPtr effectStatement(Effect x);
+    void appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into);
     std::vector<Effect> throwEffects(ExprPtr value, std::size_t pos);
     std::vector<Effect> microsoftThrow(ExprPtr value, std::size_t pos);
     ExprPtr completeCall(const std::string &name, const std::string &symbol,
@@ -2200,9 +2201,9 @@ private:
     bool needsConstruction(const Type *t) const;
     void noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed);
     void noteListBuilt(std::uint32_t key, const ListBuilt &record);
-    ListBuilt emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in, std::vector<StmtPtr> &out);
+    ListBuilt emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in, std::vector<Effect> &out);
     void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
-                       std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);
+                       std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<Effect> &out);
 
     // **[dcl.init]/8: `T()` on a class with no user-provided constructor is
     // value-initialisation, which zeroes it.** `initZero` says the same in statements;
@@ -2271,27 +2272,27 @@ private:
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);
 
     void initStore(const std::string &name, std::vector<InitStep> &path,
-                   ExprPtr value, std::size_t pos, std::vector<StmtPtr> &out);
+                   ExprPtr value, std::size_t pos, std::vector<Effect> &out);
     void initZero(const std::string &name, std::vector<InitStep> &path,
-                  const Type *type, std::size_t pos, std::vector<StmtPtr> &out);
-    bool zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<StmtPtr> &out);
+                  const Type *type, std::size_t pos, std::vector<Effect> &out);
+    bool zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<Effect> &out);
     void emitString(const std::string &name, std::vector<InitStep> &path,
                     const Type *type, const StrLit *s, std::size_t pos,
-                    std::vector<StmtPtr> &out);
+                    std::vector<Effect> &out);
     void emitFill(const std::string &name, std::vector<InitStep> &path,
-                  const Type *type, InitCursor &c, std::vector<StmtPtr> &out);
+                  const Type *type, InitCursor &c, std::vector<Effect> &out);
     void emitAggregate(const std::string &name, std::vector<InitStep> &path,
                        const Type *type, InitCursor &c, std::size_t pos,
-                       std::vector<StmtPtr> &out);
+                       std::vector<Effect> &out);
     // **List-initialisation of a class with an initializer_list constructor.**
     const Signature *initializerListConstructor(const Type *cls,
                                                 const Type **ilType);
     ExprPtr buildInitializerList(const Type *ilType, Init &in, std::size_t pos,
-                                 std::vector<StmtPtr> &into, bool flush = true);
+                                 std::vector<Effect> &into, bool flush = true);
     int ilTemps_ = 0;
 
     void emitInit(const std::string &name, std::vector<InitStep> &path,
-                  const Type *type, Init &in, std::vector<StmtPtr> &out);
+                  const Type *type, Init &in, std::vector<Effect> &out);
     // [dcl.init.list]/7: a value inside braces may not narrow. Asked of every
     // scalar a braced list reaches, for a local and at file scope alike.
     void checkNarrowing(const Type *to, const Expr &value, std::size_t pos,

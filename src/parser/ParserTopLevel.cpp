@@ -1468,10 +1468,12 @@ void Parser::topLevel(Program &program) {
                     const MemberRoot *was = memberRoot_;
                     memberRoot_ = &root;
                     std::vector<InitStep> path;
-                    std::vector<StmtPtr> laid;
+                    std::vector<Effect> laid;
                     emitString(std::string(), path, m->type, str, epos, laid);
                     memberRoot_ = was;
-                    memberInits.push_back(oneStatement(std::move(laid)));
+                    std::vector<StmtPtr> steps;
+                    appendEffects(laid, steps);
+                    memberInits.push_back(oneStatement(std::move(steps)));
                     continue;
                 }
                 found->second[0] = std::move(in.value);

@@ -312,8 +312,7 @@ StmtPtr Parser::declarationBody() {
 
             // The backing array and the list object, before the constructor
             // that reads them - a list-init only.
-            for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
-                inits.push_back(std::move(ci.ilSetup[z]));
+            appendEffects(ci.ilSetup, inits);
             const std::size_t builtFrom = inits.size();
 
             // **Copy elision, in the one case worth having it**: where the initialiser is a call
@@ -538,7 +537,9 @@ StmtPtr Parser::declarationBody() {
             if (dynamic.value != nullptr || dynamic.isList) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;
-                emitInit(d.name, path, d.type, dynamic, body);
+                std::vector<Effect> laid;
+                emitInit(d.name, path, d.type, dynamic, laid);
+                appendEffects(laid, body);
                 flushTemporaries(body);
                 inits.push_back(guardOnce(symbol, std::move(body)));
             }
@@ -612,7 +613,9 @@ StmtPtr Parser::declarationBody() {
             // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
             const bool outerZero = blockZero_;
             blockZero_ = !quals.isConstexpr;
-            const ListBuilt made = emitRecordedInit(d.name, path, d.type, in, inits);
+            std::vector<Effect> laid;
+            const ListBuilt made = emitRecordedInit(d.name, path, d.type, in, laid);
+            appendEffects(laid, inits);
             blockZero_ = outerZero;
             const Local *rl = lookup_.findLocal(d.name);
             if (made.members && rl != nullptr && listBySerial_.count(rl->serial) == 0) listBySerial_[rl->serial] = made;
@@ -796,7 +799,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     // **A braced list as the range is an `initializer_list`** - [stmt.ranged] binds the range
     // to `auto &&`, which for braces deduces one; it is then walked as any class range is (F27d).
     const std::size_t aliveBefore = alive_.size();
-    std::vector<StmtPtr> listSetup;
+    std::vector<Effect> listSetup;
     ExprPtr range;
     const bool braced = peek().is("{");
     pendingRangeCalls_ = RangeCalls();
@@ -825,7 +828,8 @@ StmtPtr Parser::rangeForStatement(int scope) {
     // **The two ends of the loop, and the only thing the two kinds of range
     // disagree about.**
     const Type *elemPtr = nullptr;
-    std::vector<StmtPtr> setup = std::move(listSetup);  // a braced range's backing array and list
+    std::vector<StmtPtr> setup;
+    appendEffects(listSetup, setup);                  // a braced range's backing array and list
     int bSlot = 0, eSlot = 0;
     std::string bName, eName;
     const std::size_t aliveMark = aliveBefore;

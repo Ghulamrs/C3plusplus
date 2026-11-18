@@ -1039,7 +1039,7 @@ Parser::initializerListConstructor(const Type *cls, const Type **ilType) {
 // it**, [dcl.init.list]/5. The array holds the elements; the list is `{
 // &array[0], count }` - the pointer and count <initializer_list> lays out.
 ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
-                                     std::size_t pos, std::vector<StmtPtr> &into, bool flush) {
+                                     std::size_t pos, std::vector<Effect> &into, bool flush) {
     const Type *elem = ilType->templateArgs().empty()
                          ? types_.get(Kind::Int)
                          : ilType->templateArgs()[0].type;
@@ -1083,10 +1083,10 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             all.push_back(std::move(addr));
             all.push_back(std::move(list));
             std::vector<const Type *> ps{ elemPtr, innerParam };
-            into.push_back(StmtPtr(new ExprStmt(
+            into.push_back(Effect{
                 completeCall(plainElem->tag(), sym, nullptr,
                              types_.get(Kind::Void), ps, false, pos,
-                             std::move(all)))));
+                             std::move(all)), 0 });
         }
     } else if (plainElem->isStructOrUnion() && hasConstructors(plainElem->tag())) {
         // [dcl.init.list]/5: each element is copy-initialised from its initialiser, by a constructor.
@@ -1122,9 +1122,9 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                 made.symbol = ctor.symbol;
                 made.signature = types_.functionType(types_.get(Kind::Void), ps, ctor.variadic);
                 record.elems.push_back(made);
-                into.push_back(StmtPtr(new ExprStmt(
+                into.push_back(Effect{
                     completeCall(plainElem->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps,
-                                 ctor.variadic, pos, std::move(all)))));
+                                 ctor.variadic, pos, std::move(all)), 0 });
                 continue;
             }
             ExprPtr value = std::move(in.items[i].value);
@@ -1139,7 +1139,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             if (use == nullptr) {
                 ExprPtr slot(new Unary('*', std::move(addr))); slot->setType(plainElem);
                 ExprPtr store(new Assign(std::move(slot), std::move(value))); store->setType(plainElem);
-                into.push_back(StmtPtr(new ExprStmt(std::move(store))));
+                into.push_back(Effect{ std::move(store), 0 });
                 made.bytes = true;
                 record.elems.push_back(made);
                 continue;
@@ -1152,12 +1152,12 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             made.symbol = use->symbol;
             made.signature = types_.functionType(types_.get(Kind::Void), ps, false);
             record.elems.push_back(made);
-            into.push_back(StmtPtr(new ExprStmt(
+            into.push_back(Effect{
                 completeCall(plainElem->tag(), use->symbol, nullptr,
-                             types_.get(Kind::Void), ps, false, pos, std::move(all)))));
+                             types_.get(Kind::Void), ps, false, pos, std::move(all)), 0 });
         }
         // In an expression the elements' temporaries wait for its end, [class.temporary]/4 (M1).
-        if (flush) flushTemporaries(into);
+        if (flush) temporaryEffects(into);
         if (destructorOf(plainElem) != nullptr) {
             Alive whole{ bk, bkOff, plainElem };
             whole.count = n;
@@ -1187,7 +1187,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
     fdst->setType(fm->type);
     ExprPtr fst(new Assign(std::move(fdst), convert(std::move(first), fm->type)));
     fst->setType(fm->type);
-    into.push_back(StmtPtr(new ExprStmt(std::move(fst))));
+    into.push_back(Effect{ std::move(fst), 0 });
 
     // count_ = n
     ExprPtr ilB(Var::local(ilName, ilOff)); ilB->setType(ilType);
@@ -1196,7 +1196,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
     ExprPtr cnt(new Num(n)); cnt->setType(cm->type);
     ExprPtr cst(new Assign(std::move(cdst), std::move(cnt)));
     cst->setType(cm->type);
-    into.push_back(StmtPtr(new ExprStmt(std::move(cst))));
+    into.push_back(Effect{ std::move(cst), 0 });
 
     ExprPtr result(Var::local(ilName, ilOff));
     result->setType(ilType);
@@ -2789,7 +2789,9 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
             const MemberRoot *was = memberRoot_;
             memberRoot_ = &root;
             std::vector<InitStep> path;
-            emitInit(std::string(), path, m.type, in, all);
+            std::vector<Effect> laid;
+            emitInit(std::string(), path, m.type, in, laid);
+            appendEffects(laid, all);
             memberRoot_ = was;
         }
         locals_.swap(outer);

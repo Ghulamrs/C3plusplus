@@ -282,7 +282,12 @@ ExprPtr Parser::finishCall(const std::string &name, const std::string &symbol,
 void Parser::flushTemporaries(std::vector<StmtPtr> &into) {
     std::vector<Effect> steps;
     temporaryEffects(steps);
-    for (Effect &x : steps) into.push_back(effectStatement(std::move(x)));
+    appendEffects(steps, into);
+}
+
+void Parser::appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into) {
+    for (Effect &x : made) into.push_back(effectStatement(std::move(x)));
+    made.clear();
 }
 
 void Parser::temporaryEffects(std::vector<Effect> &into) {

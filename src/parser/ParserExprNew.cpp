@@ -198,10 +198,10 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     return constructTemporary(plain, ctor, std::move(args), zeroFirst, pos, written);
 }
 
-// The backing array and the list object are statements; an expression carries them
+// The backing array and the list object are effects; an expression carries them
 // as a comma chain in front of the list, the shape `Row({1, 2})` already used.
 ExprPtr Parser::initializerListExpr(const Type *ilType, Init &in, std::size_t pos) {
-    std::vector<StmtPtr> setup;
+    std::vector<Effect> setup;
     const std::size_t aliveFrom = alive_.size();
     ExprPtr list = buildInitializerList(ilType, in, pos, setup, false);
     // **The backing array is a temporary of this full expression**, [dcl.init.list]/6: destroyed at its end
@@ -210,16 +210,12 @@ ExprPtr Parser::initializerListExpr(const Type *ilType, Init &in, std::size_t po
         Temporary t{ alive_[a].offset, alive_[a].cls, guardFlag() };
         t.count = alive_[a].count;
         pendingTemps_.push_back(t);
-        setup.push_back(StmtPtr(make_owned<ExprStmt>(setGuard(t.flag, 1))));
+        setup.push_back(Effect{ setGuard(t.flag, 1), 0 });
     }
     alive_.resize(aliveFrom);
     ExprPtr chain;
     for (std::size_t i = 0; i < setup.size(); i++) {
-        ExprStmt *one = dynamic_cast<ExprStmt *>(setup[i].get());
-        if (one == nullptr)
-            src_.fail(pos, "this braced list needs setup an expression cannot carry - "
-                           "name a variable and initialise it with the braces instead");
-        ExprPtr e = one->release();
+        ExprPtr e = std::move(setup[i].expr);      // unguarded: the list is built with flush false
         const Type *t = e->type();
         if (chain == nullptr) { chain = std::move(e); continue; }
         ExprPtr joined(new Comma(std::move(chain), std::move(e)));
@@ -343,22 +339,18 @@ ExprPtr Parser::scalarFromList(const Type *to, Init &in, std::size_t pos) {
     return convert(std::move(v), types_.withoutConst(to));
 }
 
-// The object is a hidden local of this frame, built by the statements `emitInit` writes
+// The object is a hidden local of this frame, built by the effects `emitInit` writes
 // for a declaration, chained in front of its address; destroyed with the full expression.
 ExprPtr Parser::aggregateTemporary(const Type *plain, Init &in, std::size_t pos) {
     const std::string name = "$list" + std::to_string(listTemps_++);
     const int off = declare(name, plain, pos);
-    std::vector<StmtPtr> stmts;
+    std::vector<Effect> stmts;
     std::vector<InitStep> path;
     const ListBuilt built = emitRecordedInit(name, path, plain, in, stmts);
     if (built.members || listsAt_.count(static_cast<std::uint32_t>(in.pos)) != 0) noteListBuilt(static_cast<std::uint32_t>(in.pos), built);
     ExprPtr chain;
     for (std::size_t i = 0; i < stmts.size(); i++) {
-        ExprStmt *one = dynamic_cast<ExprStmt *>(stmts[i].get());
-        if (one == nullptr)
-            src_.fail(pos, "'" + plain->describe() + "{...}' needs setup an expression cannot "
-                           "carry - name a variable and initialise it with the braces instead");
-        ExprPtr e = one->release();
+        ExprPtr e = std::move(stmts[i].expr);      // emitInit's steps are never guarded
         const Type *t = e->type();
         if (chain == nullptr) { chain = std::move(e); continue; }
         ExprPtr joined(new Comma(std::move(chain), std::move(e)));

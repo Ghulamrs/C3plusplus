@@ -222,7 +222,7 @@ bool Parser::needsConstruction(const Type *t) const {
 // [dcl.init.aggr]/2: copy-initialised from its value, or value-initialised where the list ends.
 void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
                            std::vector<ExprPtr> args, bool valueInit, std::size_t pos,
-                           std::vector<StmtPtr> &out) {
+                           std::vector<Effect> &out) {
     const Type *cls = type->unqualified();
     if (args.size() == 1 && args[0]->type() != nullptr && args[0]->type()->unqualified() == cls &&
         !cls->nonTrivialCopy()) {
@@ -257,12 +257,12 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
             seq->setType(types_.get(Kind::Void));
             call = std::move(seq);
         }
-    out.push_back(StmtPtr(new ExprStmt(std::move(call))));
+    out.push_back(Effect{ std::move(call), 0 });
 }
 
 // emitInit, and - for an aggregate whose members' classes have constructors - what built each, as noteAggregateMember records it.
 Parser::ListBuilt Parser::emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in,
-                                           std::vector<StmtPtr> &out) {
+                                           std::vector<Effect> &out) {
     const Type *leaf = type;
     while (leaf->isArray()) leaf = leaf->pointee();
     const ListBuilt outerRecord = aggregateRecord_;
@@ -310,18 +310,18 @@ void Parser::noteAggregateMember(const Type *cls, const Signature *ctor, std::si
 
 void Parser::initStore(const std::string &name, std::vector<InitStep> &path,
                        ExprPtr value, std::size_t pos,
-                       std::vector<StmtPtr> &out) {
+                       std::vector<Effect> &out) {
     ExprPtr target = targetFor(name, path);
     const Type *to = target->type();
     checkAssignable(*value, to, pos, "'" + name + "'");
     ExprPtr a(new Assign(std::move(target), convert(std::move(value), to)));
     a->setType(to);
-    out.push_back(StmtPtr(new ExprStmt(std::move(a))));
+    out.push_back(Effect{ std::move(a), 0 });
 }
 
 void Parser::initZero(const std::string &name, std::vector<InitStep> &path,
                       const Type *type, std::size_t pos,
-                      std::vector<StmtPtr> &out) {
+                      std::vector<Effect> &out) {
     if (zeroRun(name, path, type, 1, out)) return;
     if (type->isArray()) {
         const Type *elem = type->pointee();
@@ -359,7 +359,7 @@ void Parser::initZero(const std::string &name, std::vector<InitStep> &path,
 
 // [dcl.init.aggr]/8 for n objects of `type` from the path's on, in a local's list: past 64 bytes with nothing to
 // construct, one memset of their bytes, as a member's `= {}` (ParserClass.cpp) and `new T[n]()` are; else false.
-bool Parser::zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<StmtPtr> &out) {
+bool Parser::zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<Effect> &out) {
     const long long bytes = n * type->size(target_);
     if (!blockZero_ || bytes <= 64 || needsConstruction(type) || type->isReference()) return false;
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
@@ -380,13 +380,13 @@ bool Parser::zeroRun(const std::string &name, std::vector<InitStep> &path, const
     fill->setSymbol("memset");
     ExprPtr filled(std::move(fill));
     filled->setType(voidPtr);
-    out.push_back(make_owned<ExprStmt>(std::move(filled)));
+    out.push_back(Effect{ std::move(filled), 0 });
     return true;
 }
 
 void Parser::emitString(const std::string &name, std::vector<InitStep> &path,
                         const Type *type, const StrLit *s, std::size_t pos,
-                        std::vector<StmtPtr> &out) {
+                        std::vector<Effect> &out) {
     long long len = type->length();
     const std::string &text = s->text();
     requireStringFits(type, s, pos);
@@ -406,7 +406,7 @@ void Parser::emitString(const std::string &name, std::vector<InitStep> &path,
 
 void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
                       const Type *type, InitCursor &c,
-                      std::vector<StmtPtr> &out) {
+                      std::vector<Effect> &out) {
     if (c.done()) return;
     Init &item = c.cur();
 
@@ -451,7 +451,7 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
         field->setType(held);
         ExprPtr bind(new Assign(std::move(field), bindReference(type, std::move(item.value), item.pos, "'" + name + "'")));
         bind->setType(held);
-        out.push_back(StmtPtr(new ExprStmt(std::move(bind))));
+        out.push_back(Effect{ std::move(bind), 0 });
         return;
     }
     checkNarrowing(type, *item.value, item.pos, "'" + name + "'");
@@ -460,7 +460,7 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
 
 void Parser::emitAggregate(const std::string &name, std::vector<InitStep> &path,
                            const Type *type, InitCursor &c, std::size_t pos,
-                           std::vector<StmtPtr> &out) {
+                           std::vector<Effect> &out) {
     if (type->isArray()) {
         const Type *elem = type->pointee();
         for (long long i = 0; i < type->length(); i++) {
@@ -493,7 +493,7 @@ void Parser::emitAggregate(const std::string &name, std::vector<InitStep> &path,
 }
 
 void Parser::emitInit(const std::string &name, std::vector<InitStep> &path,
-                      const Type *type, Init &in, std::vector<StmtPtr> &out) {
+                      const Type *type, Init &in, std::vector<Effect> &out) {
     // Value-initialisation, which for everything that reaches here is zeroing:
     // a class with a constructor to run never does, the declaration parser
     // takes that shape before an `Init` is built for it.
@@ -1294,8 +1294,7 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
     record.listOf = ci.ilType;
     if (ci.ilType != nullptr) record.elements = listsAt_[ci.ilPos];     // empty for a list of scalars
     record.copied = ci.trivialCopy;
-    for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
-        out.push_back(std::move(ci.ilSetup[z]));
+    appendEffects(ci.ilSetup, out);
     if (ci.trivialCopy) {
         ExprPtr store(new Assign(objectAt(d, symbol, 0), std::move(ci.args[0])));
         store->setType(d.type);
@@ -1612,7 +1611,9 @@ bool Parser::classLeavesFold(Init &in) {
 void Parser::dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in) {
     const FunctionState outer = enterInitFunction();
     std::vector<InitStep> path;
-    const ListBuilt made = emitRecordedInit(name, path, type, in, initSink());
+    std::vector<Effect> laid;
+    const ListBuilt made = emitRecordedInit(name, path, type, in, laid);
+    appendEffects(laid, initSink());
     if (made.members) staticGuards_[symbol].elements = made;     // for the SSA builder (M3b.3)
     flushTemporaries(initSink());
     leaveInitFunction(outer, symbol);
