@@ -2293,3 +2293,11 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
   that differs in 22 other units; the 58th unit is Tms6747.cpp, which main's sources (Tms6747.h without Walker.h, with
   Regions.h) now make replay `map<..., class>::operator[]`. A read cannot know V's kind, so it is not mended here; the
   record stays at m8-e's 57 and subst.sh self fails by that line alone, owed to the coordinator's ruling.
+- **Re-recorded** (0b995713, then 31a53fc2 re-pointing 3 Templates.cpp citations): self floors fell door by door by the
+  bodies main's sources removed - functions 108 removed, floor 7510 -> 7403 (107: the mend reads one more), class-members
+  520 and 520, member-templates 20 and 20, partial-members 30 and 30; unread 27 -> 26; function-door shape place
+  Ast.h:131:20 -> Owned.h:8:20; class-members shape kept at 57. Cases floors up, the new case's two shape places added.
+- **Gates at 31a53fc2**: identical.sh against REF 66f06d01 - Linux four targets 9,110 compared, 0 differ; Windows five
+  spellings 12,530, 0 differ (the new case the same on both). Linux run 1247/0, typed 903/0; Windows names 911/0, overload
+  46/0. subst.sh bodies self: Linux 1 failed, the class-members shape 58 alone; Windows 6 failed - that line and the five
+  `.templates` records, which differ from cxx3-msvc's output by CR alone (as at m8z5). Static gates rc 0 on both boxes.
