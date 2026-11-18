@@ -2277,3 +2277,19 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
   Owned.h after optimizer/Optimizer.h - a pack parameter named `args` is unread there, one named `a` is read) and
   class-members shape 57 -> 58 (not yet placed); the function door's shape place moved Ast.h:131:20 -> Owned.h:8:20.
   Owed by M8's next lane before the gate.
+
+### subst.sh self made to hold after the merge with main, 2026-11-18 (lane m8g1)
+
+- **The unread that rose, 27 -> 28, and the one before it** (7b84327e): `packParameter` (ParserClass.cpp) records an
+  instantiation's function parameter pack under its written name in `packs_`, and nothing undoes it. A later read of a
+  template whose own pack has that name found the stale binding in `packPatternEnd`/`bindPatternMember`, renamed it
+  `args$0` and refused "'args$0' was not declared" - Owned.h's `make_owned` after `std::function`'s `operator()(Args...
+  args)` in X86_64Linux.cpp, and (m8-e's one) `<memory>`'s `make_shared` in OptJumps.cpp. A parameter named `a` met no
+  stale name. Mend in the read: `Templates::readDeclaration` saves `packs_`, clears it for the read and restores it, so
+  nothing outside a read changes. Case template-read-pack-name (clang -std=c++11 on Windows: `3 2`; cxx3 the same on both
+  boxes) with its `.templates` record: 3 functions read of 3, where the unmended tree read 2.
+- **The class-members shape 57 -> 58, named**: the body is `include/map:92:8`, `map::operator[]` - its read holds `V()`
+  as a cast over a dependent V, its replay for a class V as a class temporary (`(call (name "V"))`). It is the same body
+  that differs in 22 other units; the 58th unit is Tms6747.cpp, which main's sources (Tms6747.h without Walker.h, with
+  Regions.h) now make replay `map<..., class>::operator[]`. A read cannot know V's kind, so it is not mended here; the
+  record stays at m8-e's 57 and subst.sh self fails by that line alone, owed to the coordinator's ruling.
