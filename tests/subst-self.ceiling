@@ -1,10 +1,9 @@
 25 member-templates | '' has no '' and '', as members or as functions found by argument-dependent lookup, so a range-based
 1 | '' needs a pointer to a struct or union, not ''
-1 | '' was not declared
-door class-members bodies=35148 read=35148 unread=0 shape=57
-door functions bodies=7512 read=7510 unread=2 shape=7
-door member-templates bodies=1535 read=1510 unread=25 shape=3
-door partial-members bodies=1796 read=1796 unread=0 shape=5
-shape Ast.h:131:20
+door class-members bodies=34628 read=34628 unread=0 shape=57
+door functions bodies=7404 read=7403 unread=1 shape=7
+door member-templates bodies=1515 read=1490 unread=25 shape=3
+door partial-members bodies=1766 read=1766 unread=0 shape=5
+shape Owned.h:8:20
 shape chrono:37:4
 shape memory:98:49
