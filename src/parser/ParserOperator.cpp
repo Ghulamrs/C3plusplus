@@ -1285,7 +1285,8 @@ ExprPtr Parser::expr() {
         const syntax::NodeId l = syn(n);
         ExprPtr right = decay(assign());
         const syntax::NodeId rs = syn(right);
-        const Type *t = right->type();
+        // [temp.dep.expr]/1: a dependent left operand may find an `operator,` for its type, so the whole waits.
+        const Type *t = dependentOperand(n->type()) ? dependentResult() : right->type();
         ExprPtr c(new Comma(std::move(n), std::move(right)));
         c->setType(t);
         n = note(std::move(c), syntax::Kind::Comma, ",", pos, {l, rs});
