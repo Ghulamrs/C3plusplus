@@ -935,6 +935,7 @@ void Lowering::aggregateMember(ValueId at0, const Type &mt, const std::vector<se
                                     ct.params()[1]->pointee()->unqualified() == mt.unqualified());
     if (copied && aggGuards_ && mt.hasDestructor() && destroyedTemporary(args[0]) && tree_.node(args[0]).type->unqualified() == mt.unqualified()) {
         constructHere(args[0], at0, mt);     // [dcl.init]/17: `M(...)` built in the member, no temporary left to outlive it
+        if (!e.bytes) F().alsoNamed.push_back(e.symbol);    // the move the parser's tree makes of that temporary: named, not called
     } else if (e.bytes) {     // an object of its class, or a temporary of it (`{ V(1), 2 }`): its bytes
         copyObject(at0, classValue(args[0], mt).v, mt);
     } else {
@@ -4395,6 +4396,14 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Conditional: {
         if (!isLvalueNode(id) && !constApartClasses(id)) outside("a conditional that is no lvalue");
+        // The parser's tree copies each such arm into a temporary it destroys: the copy and the destructor named, not called.
+        for (std::uint32_t arm = 1; constApartClasses(id) && arm <= 2; arm++) {
+            std::string copy, dtor = destructor_ ? destructor_(tree_.node(child(id, arm)).type->unqualified()->id()) : std::string();
+            TypeId sig;
+            bool elided = false;
+            if (argumentCopy_ && argumentCopy_(tree_.node(child(id, arm)).syntax, copy, sig, elided) && !copy.empty()) F().alsoNamed.push_back(copy);
+            if (!dtor.empty()) F().alsoNamed.push_back(dtor);
+        }
         const Val c = truth(expr(child(id, 0)));
         const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
         condbr(c.v, a, b);
