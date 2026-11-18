@@ -25,7 +25,7 @@ struct Global {
     // The linker's name for it, which differs from 'name' only where the
     // platform ABI mangles a variable - Microsoft does, Itanium does not.
     std::string symbol;
-    const Type *type;
+    TypeId type;
     std::vector<GlobalPiece> init;
     bool hasInit;
     bool isStatic;
@@ -48,7 +48,7 @@ struct Global {
            const Type *type = nullptr, std::vector<GlobalPiece> init = std::vector<GlobalPiece>(),
            bool hasInit = false, bool isStatic = false, bool isConst = false,
            std::string prefixWord = std::string(), bool isInline = false)
-        : name(std::move(name)), symbol(std::move(symbol)), type(type), init(std::move(init)),
+        : name(std::move(name)), symbol(std::move(symbol)), type(TypeTable::id(type)), init(std::move(init)),
           hasInit(hasInit), isStatic(isStatic), isConst(isConst),
           prefixWord(std::move(prefixWord)), isInline(isInline) {}
 };
@@ -77,7 +77,7 @@ struct UnitData {
     // **The Microsoft ThrowInfo chains**, one per type thrown or caught, finished by the parser.
     std::vector<MicrosoftThrow> msThrows;
     // **The classes wanting a Microsoft run-time description**, five each.
-    std::vector<const Type *> rtti;
+    std::vector<TypeId> rtti;
     // **The function that runs before main** - [basic.start.init]/2.
     std::string initFunction;
     // Whether it names __dso_handle, which ELF wants declared hidden.

@@ -1146,8 +1146,8 @@ void Classes::emitVtable(const Type *cls, const std::string &tag,
             locatorWord = names.locator;
             bool had = false;
             for (std::size_t i = 0; i < p_.current_->module.data.rtti.size(); i++)
-                if (p_.current_->module.data.rtti[i] == cls) had = true;
-            if (!had) p_.current_->module.data.rtti.push_back(cls);
+                if (p_.current_->module.data.rtti[i] == TypeTable::id(cls)) had = true;
+            if (!had) p_.current_->module.data.rtti.push_back(TypeTable::id(cls));
         }
     }
 

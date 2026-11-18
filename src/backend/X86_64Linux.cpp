@@ -1557,7 +1557,7 @@ void X86_64Linux::emitCoffClassRtti(const UnitData &data) {
     // even when nothing in this file names it.
     std::vector<const Type *> all;
     for (std::size_t i = 0; i < data.rtti.size(); i++)
-        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
+        for (const Type *k = laidType(data.rtti[i]); k != nullptr; k = k->base()) {
             bool had = false;
             for (std::size_t j = 0; j < all.size(); j++) if (all[j] == k) had = true;
             if (!had) all.push_back(k);
@@ -1626,7 +1626,7 @@ void X86_64Linux::emitCoffClassRtti(const UnitData &data) {
 }
 
 void X86_64Linux::emitGlobal(const Global &g, Segment seg) {
-    int size = g.type->size(target_);
+    int size = laidType(g.type)->size(target_);
     if (!g.isStatic) a_->globl(g.symbol);
     if (g.isInline) a_->weakDefinition(g.symbol);
 
@@ -1634,7 +1634,7 @@ void X86_64Linux::emitGlobal(const Global &g, Segment seg) {
         a_->objectType(g.symbol);
         a_->objectSize(g.symbol, size);
     }
-    a_->align(g.align > objectAlign(g.type, target_) ? g.align : objectAlign(g.type, target_));
+    a_->align(g.align > objectAlign(laidType(g.type), target_) ? g.align : objectAlign(laidType(g.type), target_));
     // The word in front, where there is one: laid down after the alignment so
     // that it is the label - not the block - that ends up aligned, which is
     // what makes `vftable - 8` the locator the runtime reads.
@@ -1849,7 +1849,7 @@ void X86_64Linux::run(const ir::Module &module) {
             DwarfGlobal dg;
             dg.name = g.name;
             dg.symbol = g.symbol;
-            dg.type = g.type;
+            dg.type = laidType(g.type);
             dg.external = !g.isStatic;
             dwarfGlobals_.push_back(dg);
         }

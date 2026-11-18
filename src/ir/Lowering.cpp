@@ -4949,7 +4949,7 @@ bool Lowering::anonymousUnionMember(sema::TypedId id) const {
         return false;
     if (r.symbol.empty()) return r.owner.valid() && T(r.owner).kind() == Kind::Union && T(r.owner).findMember(text(id)) != nullptr;
     for (const ::Global &g : module_.data.globals)
-        if (g.symbol == r.symbol) return !g.isThreadLocal && g.type->kind() == Kind::Union && g.type->findMember(text(id)) != nullptr;
+        if (g.symbol == r.symbol) return !g.isThreadLocal && T(g.type).kind() == Kind::Union && T(g.type).findMember(text(id)) != nullptr;
     return false;
 }
 

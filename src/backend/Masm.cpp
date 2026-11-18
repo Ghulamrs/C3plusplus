@@ -1098,7 +1098,7 @@ void MasmCodeGen::emitClassRtti(const UnitData &data) {
     // even when nothing in this file names it.
     std::vector<const Type *> all;
     for (std::size_t i = 0; i < data.rtti.size(); i++)
-        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
+        for (const Type *k = laidType(data.rtti[i]); k != nullptr; k = k->base()) {
             bool had = false;
             for (std::size_t j = 0; j < all.size(); j++) if (all[j] == k) had = true;
             if (!had) all.push_back(k);
@@ -1229,7 +1229,7 @@ void MasmCodeGen::run(const ir::Module &module) {
     // EXTERN for each name a call mentions, and these are mentioned by the `lea` in front of every
     // __RTDynamicCast while being laid down a few lines above it.
     for (std::size_t i = 0; i < data.rtti.size(); i++)
-        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
+        for (const Type *k = laidType(data.rtti[i]); k != nullptr; k = k->base()) {
             MicrosoftRtti n;
             std::string why;
             if (!microsoftClassRttiNames(k, &n, &why)) break;

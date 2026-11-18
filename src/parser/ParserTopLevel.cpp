@@ -700,7 +700,7 @@ void Parser::topLevel(Program &program) {
                     } else {
                         for (Global &g : program.module.data.globals)
                             if (g.name == d.name) {
-                                g.type = both;
+                                g.type = TypeTable::id(both);
                                 if (hasInit) { g.init = pieces; g.hasInit = true; }
                                 break;
                             }

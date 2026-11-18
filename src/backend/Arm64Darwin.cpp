@@ -468,8 +468,8 @@ static int p2AlignOf(int bytes) {
 }
 
 void Arm64Darwin::emitGlobal(const Global &g, Segment seg) {
-    int size = g.type->size(target_);
-    int p2 = p2AlignOf(g.align > objectAlign(g.type, target_) ? g.align : objectAlign(g.type, target_));
+    int size = laidType(g.type)->size(target_);
+    int p2 = p2AlignOf(g.align > objectAlign(laidType(g.type), target_) ? g.align : objectAlign(laidType(g.type), target_));
     if (!g.isStatic) out_ << "  .globl _" << g.symbol << "\n";
     // A writable weak object is one object across the program - a template's
     // static member - so it may not be hidden per unit; clang writes
@@ -866,7 +866,7 @@ void Arm64Darwin::run(const ir::Module &module) {
             DwarfGlobal dg;
             dg.name = g.name;
             dg.symbol = g.symbol;
-            dg.type = g.type;
+            dg.type = laidType(g.type);
             dg.external = !g.isStatic;
             dwarfGlobals_.push_back(dg);
         }

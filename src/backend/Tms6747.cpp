@@ -753,9 +753,9 @@ void Tms6747::vaArgAt(const Type *t) {
 // TI's .long is 32 bits too, so a 64-bit piece is two words, low first), a
 // .word of a symbol with its addend for a relocated piece, .space for a gap.
 void Tms6747::emitGlobal(const Global &g, Segment seg) {
-    int size = g.type->size(target_);
+    int size = laidType(g.type)->size(target_);
     // The type's own alignment: lifting a 16-byte object to 16 is x86's rule.
-    int align = g.align > g.type->align(target_) ? g.align : g.type->align(target_);
+    int align = g.align > laidType(g.type)->align(target_) ? g.align : laidType(g.type)->align(target_);
     // An inline object - a vtable, a typeinfo, a template's static member -
     // is one object however many units define it: `.weak` in place of
     // `.global`, and zero-filled ones in .data by .space, not the .bss form.
@@ -769,7 +769,7 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
     // **A scalar goes where TI's code can reach it through DP**: `.neardata`
     // or `.rodata`, as cl6x places every scalar; an aggregate stays in
     // `.data`/`.const`, which TI reaches by absolute address (measured).
-    const bool scalar = !g.type->isStructOrUnion() && !g.type->isArray();
+    const bool scalar = !laidType(g.type)->isStructOrUnion() && !laidType(g.type)->isArray();
     if (scalar) out_ << (seg == Segment::Const || seg == Segment::ConstRelocated ? "\t.sect\t\".rodata\"\n" : "\t.sect\t\".neardata\", RW\n");
     else if (seg == Segment::Bss) out_ << "\t.data\n";
     else out_ << (seg == Segment::Data ? "\t.data\n" : "\t.sect\t\".const\"\n");

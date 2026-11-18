@@ -2017,14 +2017,14 @@ void Parser::pruneUnusedInline(Program &program) {
         if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
     program.module.data.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
-    std::vector<const Type *> rtti;
-    for (const Type *cls : program.module.data.rtti) {
-        MicrosoftRtti n;
-        std::string why;
+    std::vector<TypeId> rtti;
+    for (const TypeId id : program.module.data.rtti) {
+        const Type *cls = types_.type(id);
+        MicrosoftRtti n; std::string why;
         if (!microsoftClassRttiNames(cls, &n, &why) || everyName.count(n.locator) ||
             everyName.count(n.descriptor) || everyName.count(n.baseDescriptor) ||
             everyName.count(n.array) || everyName.count(n.hierarchy))
-            rtti.push_back(cls);
+            rtti.push_back(id);
     }
     program.module.data.rtti.swap(rtti);
 }
