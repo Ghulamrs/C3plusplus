@@ -3976,3 +3976,39 @@ return and nothing else" asked of the syntax tree is S4's: it changes what is ac
   unnamed differences mended above.
 - tests/wave-expected.txt emptied (236 rows were this wave's). CLAUDE.md's "Reading this tree": every target goes through a
   selector, no backend walks Ast.h.
+
+### M6d S3, third round: a `throw`'s builders return effect expressions, and what S4 inherits - lane m6d-s3c, 2026-11-18
+
+From main 95e06424. src/ 93,572 -> 93,572 lines. REF is 95e06424 built from clean in the lane's own Linux tree
+(`~/m6d-s3c-ref.exe`, one baked include path, so no path is normalised); the compares are S2's (tools/identical.sh; every
+case's `-g -S` text).
+
+**(1) A `throw`'s steps as effects** (7beb08f2, src/ +62 -62). `throwEffects` (Itanium) and `microsoftThrow` return the
+steps as `Parser::Effect` - an expression, and the guard flag a temporary's destruction runs under (0: none);
+`throwStatement` makes the block of them, `throwExpression` the comma chain, refusing a guarded step by the message it
+gave. `flushTemporaries` is `temporaryEffects` plus `effectStatement`, the one place the guarded `If` is built.
+`statementsAsExpression` and its three casts are gone (ParserExprNew.cpp:1327-1334 at 95e06424, the third of the six the
+design named). EXCLUSIONS.md: four citations re-pointed.
+**ast-residue** (measured on Linux, against 95e06424's tree: ExprPtr 2,012, StmtPtr 635, node-casts 158, node-refs 357,
+ast-lines 717 - the recorded baseline still held d9abd80c's ast-lines 722): StmtPtr 625, node-casts 155, node-refs 353,
+ExprPtr 2,012, readers 9, ast-lines 717; baseline recorded.
+**Shown** against REF: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and arm64-darwin 7,232/0; `-g` 888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike).
+
+**Not done, and why: the other two casts and `ConstexprCtor`'s steps are S4's.** `initializerListExpr` (:217) and
+`aggregateTemporary` (:356) cast what `buildInitializerList` and `emitRecordedInit` wrote, and both write through
+`emitInit` (`buildInitializerList` for an aggregate element, ParserClass.cpp:1168) - 42 statement pushes in
+ParserInit.cpp and ParserClass.cpp, among them loops and blocks of `constructObject`; `runConstexpr`'s two casts read
+`assemble`'s constructor body and `buildStaticConstruction`'s statements, the same builders. Turning each into effects
+beside the node is S4's work in substance: S4 stops those builders making statement nodes at all, so each returns its
+effects (or a loop's record) by then anyway, and doing it here first would write every push site twice.
+**The held patch** (boxkit/m6d-s3b-constexpr-operand.patch, `ConstexprFn::value` an `ExprPtr`): its ownership is still
+needed - once S4 deletes `Return`, nothing else holds the operand - but not as the patch is: `Return::takeValue` and
+`singleReturn` walk nodes S4 deletes. S4's `return` builder hands the operand to `ConstexprFn` directly; the one ExprPtr
+word lands in the commit that removes about 150, so no separate decision on ExprPtr 2,013 is left.
+
+**Gates on the final tree** (7beb08f2): Linux g++ -Werror clean; Windows work\m6d-s3cx cl /W4 /WX clean, a full build in
+1 min 10 s with the tar, started first and alone (of the tree before a comment-only amend); run.sh 1,240 passed, 0 failed;
+tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at -O2 425/0, -O0 425/0; self-compile of
+ParserExprNew.cpp and ParserExprCall.cpp: x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both
+alike (stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate, ide --check pass;
+ast-residue lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
