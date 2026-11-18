@@ -3751,3 +3751,56 @@ itself - `tools/prune-check` named it as refused.
 **Left of S1:** the decision on the typed check's census, then the deletions as one commit of identical output and the
 dead output with its differences named case by case. **Owed to the wave gate:** winpass in both spellings, ssa.sh,
 typed.sh, names.sh, make test to its end, and `tools/prune-check` as a row.
+
+### M6d S1, fourth round: the typed check after the prune, the parser's closure deleted, and the dead output - lane m6d-s1d, 2026-11-18
+
+From 9a8a4d17. src/ 93,430 -> 93,426 (daf94a96) -> 93,284 (db9c5d1f) -> 93,256 (the dead output). REF is 9a8a4d17's code
+built in its own tree on Linux (`~/m6d-s1d-ref`, `~/m6d-s1d-ref.exe`); the compares are tools/identical.sh (1,808
+tms6747; 7,232 on x86_64-linux, x86_64-windows and arm64-darwin; with `TYPED=1` on the first commit, 2,712 and 9,944)
+and every case's `-g -S` text on four targets (boxkit/m6d-s1d-gdiff3.sh). **S1 is done: one prune, the driver's.**
+
+**(1) The typed check and dump after the driver's prune** (daf94a96, src/ -4; Driver.cpp, Typing.cpp/h), the
+coordinator's decision. `-check=typed` and `-dump=typed` are read after `lowerSsa`, so they count the list the IR's
+closure kept; `Typer::census` loses `whole` and is again the census of the list it is given. **tests/typed.sh's counts are
+unchanged** (11,547 functions, 10,443 bodies, 1,104 compiler-written; 256,621 nodes, 46 untyped; 896 passed). Identical:
+tms6747 2,712/0 (the typed leg included); the three others 9,944 with **2 differ, both `-dump=typed` of a unit the
+lowering refuses on x86_64-windows** (lowering-named-return-in-handler, lowering-return-destructor-in-handler): no prune is
+taken where a function is outside, so the dump now lists the two unused inline constructors the parser's closure had
+dropped. The compile is refused either way and no assembly differs; a refused unit's dump counts the whole list.
+`-g` 0 differ on four targets (888/903/903/878 same).
+
+**(2) The parser's closure deleted** (db9c5d1f, src/ -142; ParserClass.cpp, Driver.cpp, UnitData.h, Parser.h,
+ParserTopLevel.cpp). `SymbolsNamed`, the closure of `Parser::pruneUnusedInline` and `UnitData::dropped` go, and
+`-check=prune` (the comparison of the two closures) and `tools/prune-check` with them: there is nothing left to compare.
+What the parser writes is the holding records alone, `Parser::recordHeld` (`UnitData::held`, `Global::held`,
+`StringLit::copied`); `pruneUnit` keeps what the closure reached. Three citations of ParserClass.cpp in docs/EXCLUSIONS.md
+re-pointed (128 lines up). Identical: tms6747 1,808/0, the three others 7,232/0; `-g` 0 differ on four targets; typed.sh
+unchanged. The row `prune` owed to tools/wave-gate by the third round is owed no longer.
+
+**(3) The dead output** (src/ -28; Lowering.cpp, Ir.h, Driver.cpp). `ir::Function::alsoNamed` goes - the names the
+parser's tree called and the lowering does not, kept for the prune alone - and Lowering.cpp is again what it was before
+776655d3. **Every difference is a function no longer emitted, none added**, three cases of tests/cases on every target:
+- *conditional-const-prvalue-assign*: the anonymous `Value`'s move constructor (C1 and C2) - a conditional's prvalue arm
+  is the result, the move elided ([class.copy]/31).
+- *ssa-lambda-locals*: `R`'s move constructor (C1 and C2) - elided the same way.
+- *range-for-braced-list*: `std::initializer_list<T>::begin` and `end` for `P`, `char`, `double` and `int` - the
+  lowering walks a braced range's backing array and calls neither.
+g++ -O0 (Linux, `-nostdinc++ -isystem include`) defines neither move constructor and does define the eight `begin`/`end`:
+its code calls them, the IR's does not. Identical: tms6747 1,808 with 6 differ (the three cases at -O0 and -O2), the three
+others 7,232 with 24 (the three cases, eight outputs each); `-g` 3 differ on each of the four targets, the same three;
+typed.sh 11,547 -> 11,537 functions (10,443 -> 10,435 bodies, 1,104 -> 1,102 compiler-written; nodes 256,621 -> 256,581),
+the same three cases. The other `alsoNamed` sites (a virtual call's function, a guarded object's destructor, an aggregate
+member's move, a const-apart conditional's arms) changed nothing in tests/cases; what they change in the compiler's own
+sources is not measured - the comparison that found them is deleted.
+
+**ast-residue** (Linux): (1) unchanged (ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, visits 0, readers 9,
+ast-lines 722); (2) and (3) ExprPtr 2,015, StmtPtr 637, node-refs 389, the rest unchanged - lower than the baseline, which
+only the coordinator re-records. (The Windows run of the tool counts 0 under src/parser: its paths.)
+
+**Gates** (coding lane). g++ -Werror clean at each build; cl /W4 /WX clean, a full build of the final tree started alone,
+10:45:47-10:52:15 (6 min 28 s with the copy). Static gates on each commit (Linux): exclusions 0 uncited, 0 stale;
+comment cap 0 over; memory gate rc 0; ide --check up to date. On the final tree (`~/m6d-s1d3`, `work\m6d-s1dx`): run.sh
+1,240 passed, 0 failed; tms6747 SIM=1 -O2 shards 1-3 (Linux) 425/0 and 4-6 (Windows) 425/0, -O0 425/0 and 425/0;
+self-compile of Driver.cpp, Lowering.cpp, ParserClass.cpp and Typing.cpp for x86_64-linux and tms6747 at -O0 and -O2 12/4 -
+the four are REF's (Driver.cpp's `<unistd.h>` `#error` and ParserClass.cpp's `constructObject` on tms6747). **Owed to the wave gate:** winpass in both spellings, ssa.sh, names.sh, make test to its end, the self-host
+(its output changes by what (3) drops), and tests/typed.sh's numbers as (3) leaves them.
