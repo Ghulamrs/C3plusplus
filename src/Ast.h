@@ -385,8 +385,7 @@ private:
 class Return final : public Stmt {
 public:
     explicit Return(ExprPtr value) : value_(std::move(value)) {}
-    bool hasValue() const { return value_ != nullptr; }
-    const Expr &value() const { return *value_; }
+    ExprPtr takeValue() { return std::move(value_); }   // null for `return;`
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr value_;
@@ -396,6 +395,7 @@ class Block final : public Stmt {
 public:
     explicit Block(std::vector<StmtPtr> body) : body_(std::move(body)) {}
     const std::vector<StmtPtr> &body() const { return body_; }
+    std::vector<StmtPtr> &body() { return body_; }
     // For the one block that is filled in after it is placed.
     void append(StmtPtr s) { body_.push_back(std::move(s)); }
 

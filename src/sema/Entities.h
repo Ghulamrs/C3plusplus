@@ -424,7 +424,7 @@ struct Init {
 // C++11 lets the body be one return statement, which makes evaluating a call an
 // expression fold. The function is still compiled and callable at run time.
 struct ConstexprFn {
-    const Expr *value = nullptr;   // owned by the Function in the Program
+    ExprPtr value;                 // moved out of the body's one `return`
     std::vector<int> slots;        // parameter frame slots, in order
     std::size_t pos = 0;
 };
