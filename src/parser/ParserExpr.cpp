@@ -1932,10 +1932,11 @@ ExprPtr Parser::primaryNode(Program *program) {
         const Type *held = l != nullptr ? l->type : (g != nullptr ? g->type : nullptr);
         // A name that holds something callable rather than naming a function:
         // a function pointer, or an object whose `(` is [over.call].
-        auto callable = [](const Type *t) {
+        // In a read, one of dependent type too (`F f; f();`): which call it is is substitution's.
+        auto callable = [this](const Type *t) {
             if (t != nullptr && t->isReference()) t = t->referent();
             return t != nullptr && (t->isFunctionPointer() || t->isFunction() ||
-                                    t->unqualified()->isStructOrUnion());
+                                    t->unqualified()->isStructOrUnion() || (patternBody_ && dependentType(t)));
         };
         bool callsThroughObject = callable(held);
         // **A data member holding something callable, called by its bare name**: [class.mfct.non-static]
