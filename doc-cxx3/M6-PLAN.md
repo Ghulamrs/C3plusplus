@@ -4383,3 +4383,39 @@ recorded lower with (2).
 **Not done, and why.** Left of S4: `ExprStmt`, `Block`, `Function::body` and `StmtPtr` - every deleted class became
 a `Block` of `ExprStmt`s, so they go together, last; `MsHandler` (still filled for noteMsCatch, its `body` now read by
 nothing) goes with them. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, ninth lane: `MsHandler`'s body and the statement nodes' unread members, and the two files S4's close needs - lane m6d-s4i, 2026-11-19
+
+Brief boxkit/brief-m6d-s4i.txt; from 2e6d91b7 on branch m6d-s4b; REF built from 2e6d91b7 on Linux (`~/m6d-s4i-ref.exe`);
+the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) `MsHandler`'s body** (7073006b, src/ 93,480 -> 93,480). Nothing read it: the handler's statements are kept in a
+local of the catch loop beside `mh`, for the same scope, so every expression lives as long as it did. `MsHandler`
+itself stays - noteMsCatch reads its descriptor, byReference and constPointer for an unnamed catch's record.
+**ast-residue**: ExprPtr 2,012, StmtPtr 477, node-casts 149, node-refs 325, readers 9, ast-lines 535 -> 534 (two citations it moved left stale, re-pointed in (2)). **Shown** against REF: identical tms6747 1,824 compared, 0 differ; run.sh 1,250 passed, 0 failed; x86, arm64 and -g still running at hand-back.
+
+**(2) What nothing read of the statement nodes** (c3512c4c, src/ 93,480 -> 93,465): `Stmt::pos` and its six writers,
+`ExprStmt::expr` and `release`, `Block::body`, and `Function::body()`; the body the Function holds stays, read by
+nothing, because it owns the expressions `ConstexprFn::value` and `ConstexprCtor::steps` point into. `Stmt::syntax`
+stays: noteStmt's caller reads it (ParserStmt.cpp's `noted->syntax()`, eight records keyed by the statement's node,
+and the condition declaration's `setup.back()->syntax()`) - its comment said nothing read it. **ast-residue**: ExprPtr 2,012, StmtPtr 477, node-casts 149, node-refs 325, readers 9, ast-lines 534 -> 526, recorded; 7 citations re-pointed, exclusions 0 uncited 0 stale.
+**Shown** against REF: identical tms6747 1,824 compared, 0 differ; x86, arm64, -g, run.sh and the self-compile still running at hand-back.
+
+**Gates on the final tree** (c3512c4c): g++ -Werror clean (each step built on Linux); cl /W4 /WX clean - a full build found ParserStmt.cpp's while-branch `pos` unused once its setPos went (fixed), then a delta of the final tree in 1 min 26 s (work\m6d-s4iy); comment cap, memory gate, ide --check pass; tests/tms6747.sh SIM=1 shards 4-6 at -O2 and -O0 on Windows running at hand-back (boxkit/m6d-s4i-winrest.out); Linux shards 1-3 not run by this lane.
+
+**Not done, and why - stopped, as the brief says, on two of lane m8h1's files.** `ExprStmt`, `Block`, `StmtPtr` and
+the body cannot leave Ast.h without editing `src/parser/ParserExprCall.cpp` (:282-325, `flushTemporaries`,
+`appendEffects` and `effectStatement`, which build `ExprStmt`s and `Block`s) and `src/parser/ParserExprNew.cpp`
+(:1421-1427, `throwStatement`) - ParserExpr* is m8h1's on branch m8-g. A shim that kept the classes for those two
+files alone, or a second copy of the four functions under new names, would hide the agreement this step exists to
+remove. **What the close is, for the lane after m8h1 lands**: the expressions still have to be owned as long as they
+are now (ConstexprFn and ConstexprCtor point into them), so
+`StmtPtr` becomes a value that owns them and is no node - `Kept` in Ast.h, a handle on a heap record of the
+expressions and the kept parts (the heap record so a goto's cleanups, filled by resolveGotos after the jump is
+placed, stay addressable), null where a `StmtPtr` was null; `StmtPtr(new ExprStmt(e))` is `Kept(std::move(e))`,
+`StmtPtr(new Block(v))` is `Kept(std::move(v))`, `setScope` goes (no reader), and `Stmt::syntax`'s readers take
+the id noteParts returns. About 480 sites over ParserStmt, ParserClass, Parser.h, ParserInit, Classes.cpp,
+ParserTopLevel and the two files above - mechanical, one commit. **What tools/ast-residue reads now**: StmtPtr
+477 (not 0), ast-lines 526. **S5 starts with** S4's close above, then the design's S5: the frame without the
+nodes - the dead slots (pad pointer, selector, unwind help) and the setters only nodes had, each shown identical by
+itself. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
