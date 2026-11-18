@@ -60,7 +60,7 @@ void Classes::checkOverrideReturn(const VSlot &s, const Type *returns, const std
 
 // **The vbtable pointer, which only the Microsoft ABI has.**
 void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
-                        int thisSlot, std::vector<StmtPtr> &into,
+                        int thisSlot, std::vector<Effect> &into,
                         std::vector<VptrStore> *record) {
     const std::vector<Type::VbPtr> &ptrs = memberOf->vbptrs();
     const Type *charPtr = p_.types_.pointerTo(p_.types_.get(Kind::Char));
@@ -103,7 +103,7 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
         there->setType(charPtr);
         ExprPtr store(new Assign(std::move(there), std::move(value)));
         store->setType(charPtr);
-        into.push_back(StmtPtr(new ExprStmt(std::move(store))));
+        into.push_back(Effect{ std::move(store), 0 });
         // The same store as a record for the SSA lowering (M3b.2): the table's address into the word `vbp` from `this`.
         if (record != nullptr) record->push_back(VptrStore{ vbp, symbol, 0, false, false, 0, 0, 0 });
     }
@@ -112,10 +112,10 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
 // **Setting the vptr, for whoever is building the object**, pulled out of the
 // constructor path when implicit constructors arrived. Itanium's whole walk
 // is ParserVtable.cpp's; Microsoft has one table, and no header before it.
-std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
-                                        const Type *memberOf, int thisSlot,
-                                        std::vector<VptrStore> *record) {
-    std::vector<StmtPtr> withVptr;
+std::vector<Effect> Classes::storeVptrs(const std::string &cls,
+                                       const Type *memberOf, int thisSlot,
+                                       std::vector<VptrStore> *record) {
+    std::vector<Effect> withVptr;
     if (!p_.target_.microsoftNames())
         return itaniumVptrStores(cls, memberOf, thisSlot, record);
     // **Microsoft has two pointers and a class can want either alone.**
@@ -147,7 +147,7 @@ std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
     ExprPtr store(new Assign(std::move(where), std::move(asVoid)));
     store->setType(entry);
 
-    withVptr.push_back(StmtPtr(new ExprStmt(std::move(store))));
+    withVptr.push_back(Effect{ std::move(store), 0 });
     if (record != nullptr) record->push_back(VptrStore{ 0, table, 0, false, false, 0, 0, 0 });
     return withVptr;
 }
@@ -1960,9 +1960,8 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
     if (type->hasVptr()) {
         std::vector<sema::VptrStore> &stores = p_.vptrStores_[symbol];     // recorded for the SSA builder (M3b.3)
         stores.clear();
-        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot, &stores);
-        for (std::size_t i = 0; i < vp.size(); i++)
-            body.push_back(std::move(vp[i]));
+        std::vector<Effect> vp = storeVptrs(cls, type, thisSlot, &stores);
+        p_.appendEffects(vp, body);
     }
 
     // The members, in declaration order, each by the one rule that applies to it: the
@@ -2194,9 +2193,8 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
     if (!assigning && (type->polymorphic() || (type->hasVirtualBase() && !p_.target_.microsoftNames()))) {
         std::vector<sema::VptrStore> &stores = p_.vptrStores_[symbol];     // recorded for the SSA builder (M3b.3)
         stores.clear();
-        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot, &stores);
-        for (std::size_t i = 0; i < vp.size(); i++)
-            body.push_back(std::move(vp[i]));
+        std::vector<Effect> vp = storeVptrs(cls, type, thisSlot, &stores);
+        p_.appendEffects(vp, body);
     }
 
     const std::vector<Member> &ms = type->members();
@@ -3113,11 +3111,11 @@ void Classes::vptrSites(const Type *x, int xAt, bool morally, const Type *vbase,
 // **The stores themselves.** A C2 or D2 of a class with virtual bases takes its
 // own vptr and every one below a virtual base from its VTT, those tables
 // depending on the complete object; every other vptr is the class's own group's.
-std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
-                                               const Type *memberOf,
-                                               int thisSlot,
-                                               std::vector<VptrStore> *record) {
-    std::vector<StmtPtr> out;
+std::vector<Effect> Classes::itaniumVptrStores(const std::string &cls,
+                                              const Type *memberOf,
+                                              int thisSlot,
+                                              std::vector<VptrStore> *record) {
+    std::vector<Effect> out;
     const Type *plain = memberOf->unqualified();
     const std::string table = plain->tag() == cls ? vtableSymbol(plain, false)
                                                    : vtableSymbol(cls, false);
@@ -3209,7 +3207,7 @@ std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
         there->setType(word);
         ExprPtr store(new Assign(std::move(there), std::move(value)));
         store->setType(word);
-        out.push_back(StmtPtr(new ExprStmt(std::move(store))));
+        out.push_back(Effect{ std::move(store), 0 });
         // The same store as a record for the SSA lowering (M3b.2), the symbol left empty where no constant names it.
         if (record != nullptr) {
             const bool constant = !fromVtt && !s.morallyVirtual;

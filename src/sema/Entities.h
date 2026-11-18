@@ -436,6 +436,8 @@ struct ConstexprFn {
 struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
 typedef std::map<int, ConstLeaf> ConstObject;
 typedef std::shared_ptr<ConstObject> ConstObjectPtr;
+// One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
+struct Effect { ExprPtr expr; int guard; };
 // A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
 struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
 

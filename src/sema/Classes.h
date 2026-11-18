@@ -109,9 +109,9 @@ public:
     // The vptrs a constructor or destructor of `cls` stores, the whole
     // object's - its own, every non-primary base's at any depth, every
     // virtual base's - and where each comes from.
-    std::vector<StmtPtr> itaniumVptrStores(const std::string &cls,
-                                           const Type *memberOf, int thisSlot,
-                                           std::vector<VptrStore> *record);
+    std::vector<Effect> itaniumVptrStores(const std::string &cls,
+                                          const Type *memberOf, int thisSlot,
+                                          std::vector<VptrStore> *record);
     // The _ZTI a throw or a catch names, emitting one for a class on the way.
     // Answers empty and fills `why` where this compiler cannot describe it.
     std::string emitPointerTypeInfo(const Type *ptr, std::size_t pos,
@@ -151,14 +151,14 @@ public:
     static bool memberFromBase(const Type *cls, const Member &m);
     // **Would default-initialising this leave anything uninitialised?**
     bool constDefaultInitialisable(const Type *t) const;
-    // The statements that set an object's vptrs - the primary one and any a
+    // The stores that set an object's vptrs - the primary one and any a
     // polymorphic second base needs. Every constructor emits these, written
     // or implicit, which is why they live in one place.
-    std::vector<StmtPtr> storeVptrs(const std::string &cls, const Type *memberOf,
-                                    int thisSlot, std::vector<VptrStore> *record = nullptr);
+    std::vector<Effect> storeVptrs(const std::string &cls, const Type *memberOf,
+                                   int thisSlot, std::vector<VptrStore> *record = nullptr);
     // And the vbtable pointer beside them, Microsoft only.
     void storeVbptr(const std::string &cls, const Type *memberOf, int thisSlot,
-                    std::vector<StmtPtr> &into, std::vector<VptrStore> *record = nullptr);
+                    std::vector<Effect> &into, std::vector<VptrStore> *record = nullptr);
     // A thunk: the entry a secondary table holds for a function this class
     // overrides. It moves `this` back to the complete object and calls the
     // real one. Named for the offset it undoes - _ZThn16_N1C1gEv.

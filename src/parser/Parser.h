@@ -1410,8 +1410,7 @@ private:
                          std::size_t to = static_cast<std::size_t>(-1));
     // `valueInit` is the `{}` half of [dcl.init]/8: the object is zeroed before
     // the constructor runs, and only where nobody wrote that constructor.
-    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
-    struct Effect { ExprPtr expr; int guard; };
+    typedef sema::Effect Effect;
     Effect constructLocal(const Declared &d, int offset,
                           std::vector<ExprPtr> args, bool copyInit = false,
                           bool valueInit = false);

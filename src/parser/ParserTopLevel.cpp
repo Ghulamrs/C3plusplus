@@ -1708,7 +1708,9 @@ void Parser::topLevel(Program &program) {
              d.name == "~" + localOf(d.qualifier))) {
             std::vector<sema::VptrStore> &stores = vptrStores_[currentFunction_];
             stores.clear();
-            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
+            std::vector<Effect> vp = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
+            std::vector<StmtPtr> withVptr;
+            appendEffects(vp, withVptr);
             withVptr.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withVptr)));
         }

@@ -241,10 +241,12 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
         return out;
 
     std::vector<StmtPtr> inside;
+    std::vector<Effect> vbp;
     std::vector<sema::VptrStore> *stores = record ? &msVbptrs_[currentFunction_] : nullptr;
     std::vector<std::string> *order = record ? &msVbaseOrder_[currentFunction_] : nullptr;
     if (record) { stores->clear(); order->clear(); }
-    classes_.storeVbptr(cls, type, thisSlot, inside, stores);
+    classes_.storeVbptr(cls, type, thisSlot, vbp, stores);
+    appendEffects(vbp, inside);
     std::vector<int> builtBase;
     std::vector<StmtPtr> built = virtualBaseCalls(type, thisSlot, true, pos,
                                                   srcSlot, moving, vbaseArgs, &builtBase, order);
