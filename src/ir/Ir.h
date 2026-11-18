@@ -128,6 +128,8 @@ struct Function {
     BlockId entry;
     std::vector<BlockId> blocks;
     std::vector<std::string> spec;
+    // What the parser's tree calls here and this body does not (M6d S1): named for the prune alone, until that dead output goes.
+    std::vector<std::string> alsoNamed;
     std::string synthesised;
     int frameAlign;
     std::size_t pos;

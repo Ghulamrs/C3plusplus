@@ -2220,13 +2220,17 @@ Lowering::Val Lowering::conditionalArm(sema::TypedId arm, const Type &cls) {
     // A converted arm is the result itself, made by its constructor under the arm's flag ([class.temporary]/3).
     if (convertedArm(arm, cls) && convertedTemporary(arm, cls, true, made)) return Val(made, tid(cls));
     const Val o = classObject(arm);
-    if (!isLvalueNode(arm)) return o;
-    const Type &c = *T(o.type).unqualified();
-    const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
-    const ValueId copy = entryAlloca(tid(c), "$cond");
     std::string symbol;
     TypeId sig;
     bool elided = false;
+    // A prvalue arm's object is the result: the move the parser's tree makes of it is named, not called ([class.copy]/31).
+    if (!isLvalueNode(arm)) {
+        if (argumentCopy_ && argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided)) F().alsoNamed.push_back(symbol);
+        return o;
+    }
+    const Type &c = *T(o.type).unqualified();
+    const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
+    const ValueId copy = entryAlloca(tid(c), "$cond");
     if (!c.nonTrivialCopy()) {
         copyObject(copy, o.v, c);
     } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
@@ -3238,6 +3242,11 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (rt.isStructOrUnion() && copiedReturn(rt) && listBuilt_ && listBuilt_(tree_.node(id).syntax, lb) && lb.members) {
             std::vector<sema::TypedId> parts;
             for (std::uint32_t i = 0; i < n; i++) parts.push_back(child(id, i));
+            // Built in the caller's object: the move of a temporary the parser's tree makes is named, not called.
+            int form = 0;
+            std::string moved;
+            TypeId sig;
+            if (returnBuilt_ && returnBuilt_(tree_.node(id).syntax, form, moved, sig) && form == 4) F().alsoNamed.push_back(moved);
             openFull();
             aggregateBuilt(sret_, *rt.unqualified(), parts, lb);
             closeFull();
@@ -3710,6 +3719,9 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     Val first;
     ValueId past;
     if (braced) {
+        // The backing array is walked itself: the list's `begin` and `end` the parser's tree calls are named, not called.
+        F().alsoNamed.push_back(rb.symbol);
+        F().alsoNamed.push_back(re.symbol);
         first = bracedRange(range, *elem.unqualified(), iter, scope);
         const InstId e = add(Op::Gep, iter, std::vector<ValueId>(1, first.v));
         at(e).k = static_cast<long long>(count(range)) * elem.size(target_);

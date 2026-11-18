@@ -1357,18 +1357,20 @@ bool Driver::parseArguments(int argc, char **argv) {
 }
 
 // A function's names in the IR: its calls' symbols, its addr operands, its pads' type_info chains and its spec list.
-static void namesOf(const ir::Function &f, std::vector<std::string> &out) {
+static void namesOf(const ir::Function &f, bool microsoft, std::vector<std::string> &out) {
     for (std::size_t c = 1; c < f.calls.size(); c++) out.push_back(f.calls[c].symbol);
     for (std::size_t i = 1; i < f.insts.size(); i++) {
         out.push_back(f.insts[i].sym);
-        out.insert(out.end(), f.insts[i].syms.begin(), f.insts[i].syms.end());
+        // A Microsoft pad's descriptor is the throw list's to lay down (UnitData::msThrows), not a name of its class's records.
+        if (!microsoft) out.insert(out.end(), f.insts[i].syms.begin(), f.insts[i].syms.end());
     }
     out.insert(out.end(), f.spec.begin(), f.spec.end());
+    out.insert(out.end(), f.alsoNamed.begin(), f.alsoNamed.end());
 }
 
 // **-check=prune** (M6d S1): the prune's closure taken over the IR as lowered, from the unit's holding records, against
 // what the parser's prune kept and dropped. Equal kept sets: everything kept is reached, nothing dropped is named.
-static void checkPrune(const ir::Module &m, const TypeTable &types, std::vector<std::string> &faults) {
+static void checkPrune(const ir::Module &m, const TypeTable &types, bool microsoft, std::vector<std::string> &faults) {
     const UnitData &d = m.data;
     const std::set<std::string> held(d.held.begin(), d.held.end());
     // Nothing held, nothing pruned: the parser's prune leaves such a unit whole, its unread literals too.
@@ -1406,7 +1408,7 @@ static void checkPrune(const ir::Module &m, const TypeTable &types, std::vector<
         if (work.empty()) break;
         const std::size_t i = work.back();
         work.pop_back();
-        if (i < nf) { namesOf(m.functions[i], named); continue; }
+        if (i < nf) { namesOf(m.functions[i], microsoft, named); continue; }
         named.push_back(d.globals[i - nf].prefixWord);
         for (const GlobalPiece &p : d.globals[i - nf].init) named.push_back(p.symbol);
     }
@@ -1604,7 +1606,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     // Taken before any pass: the inliner removes calls, and the kept set may not depend on the level.
-    if (checkPruneAsked && outside.empty()) checkPrune(into, types, outside);
+    if (checkPruneAsked && outside.empty()) checkPrune(into, types, target.microsoftNames(), outside);
     std::string out;
     const int failed = report ? ir::verify(into, types, out) : 0;
     ir::PassLog log(report, dumpAfter);
