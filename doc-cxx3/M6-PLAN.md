@@ -3528,3 +3528,41 @@ and `-g -S` texts were compared, on Linux), cdb and lldb, ssa.sh 1/2, names.sh, 
 -O1, asm6x, ti-link, release-check, and the fixed point - owed by N4, a src/ file was added (Owned.h) - with target 4 on
 the Mac at the milestone's close. **Left of M6d:** lanes S1-S8 above; CLAUDE.md's "Reading this tree" still names
 `backend/Walker.h`.
+
+### M6d S2: the temporary's record, and `SlotUses` deleted - lane m6d-s2, 2026-11-18
+
+From m6d-shell f21d290d (907830bd's code). src/ 93,256 -> 93,188 lines (-68: step 1 +32, step 2 -100). Design B of the
+fourth round, as written: REF is 907830bd's Linux build (`~/m6d-s2-ref.exe`, m6d4's last), the compares those of m6d4
+(tools/identical.sh, 1,808 tms6747 and 7,232 x86_64-linux, x86_64-windows and arm64-darwin at -O0 and -O2; every case's
+`-g -S` text on tms6747, x86_64-linux and arm64-darwin, REF's tree path written as the lane's).
+
+**(1) The record and its oracle** (e7ebb71a, src/ +32). `Parser::Temporary` gained `builtBy` (the constructor call's
+`Resolved` index) and `plain` (nothing but that call names the slot), set by `constructTemporary` - the one function that
+materialises a class temporary with a constructor; `plain` is false where `T()`'s zeroing went in front of the call.
+`checkSlotRecord`, at the third form, failed the compile with an internal error naming the function on any difference
+from `SlotUses`' walk: the form, the constructor's index, and the `$ret:` defaults' nodes. 0 differences: identical.sh
+1,808/0 and 7,232/0, `-g` 888/903/903 same and 0 differ (as REF:
+358/343/343 refused alike), and every unit of src/ (102) compiled for x86_64-linux with 0 refused. The design's "no zeroing step, no guard" is
+"no zeroing step" alone: a guard is set in another slot, and a pending temporary always has one.
+**(2) The record asked** (41fc32b3, src/ +19 -119). The third form reads the pending temporary at the slot and asks `plain`;
+`SlotUses`, `constructorOfSlot`, the rewrite of the Ast body (the constructor's `this` and the comma's answer made `.sret`)
+and the oracle are gone. `return {}`'s defaults go under `$ret:` from the temporary's own defaults node
+(`temporaryDefaults_`, which `constructTemporary` makes from the same arguments) where `noteEntryDefaults` read them off
+the call: the same nodes, the oracle compared them. docs/EXCLUSIONS.md's seven ParserExprNew.cpp citations re-pointed in the
+commit after (-75 and -72 lines), with the residue's baseline and this entry.
+
+**ast-residue** (from ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, readers 9, ast-lines 722): after step 1
+node-refs 415 (the oracle's `const Call *`), the rest unchanged; after step 2 ExprPtr 2,013,
+StmtPtr 637, node-casts 161, node-refs 382 (the visitor's signatures and `constructorOfSlot`'s four casts), readers 9,
+ast-lines 722; baseline recorded. The memory gate's counts are unchanged (new 1,052, raw pointers 89).
+
+**Gates on the final tree** (41fc32b3 with the citations; Linux ~/m6d-s2 g++ -Werror clean; Windows work\m6d-s2x cl /W4 /WX
+clean, a full build of step 1 in 3 min 5 s, the delta of step 2 in 2 min 16 s, each started first and alone): identical
+1,808/0 and 7,232/0; `-g` 888/903/903 same, 0 differ, and x86_64-windows' CodeView text 677 same, 368 refused alike, the
+other 201 the same once REF's tree path is written in its backslash spelling, as m6d4 found; run.sh 1,240 passed, 0
+failed; tests/tms6747.sh SIM=1 -O2 shards 1-3 (Linux) 425/0 and 4-6 (Windows) 425/0, -O0 425/0 and 425/0; every src/
+unit (102) compiled for x86_64-linux, 0 refused; self-compile for tms6747: Parser.cpp at -O0 and -O2, and ParserExprNew.cpp
+refused by REF and the lane alike (`Parser::buildInto`, stack arguments outside the C6000 selector); exclusions 0 uncited,
+0 stale; comment cap 0 over; memory gate held; ast-residue lower, recorded; ide --check up to date.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test to its end, `-check=prune` (S1's)
+beside this. **Left of S2:** nothing; the design's B is done. Lanes S1, S3-S8 remain as the fourth round wrote them.

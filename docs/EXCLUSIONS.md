@@ -108,7 +108,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:485`, `src/parser/ParserExprNew.cpp:511` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:485`, `src/parser/ParserExprNew.cpp:436` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:89` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:291` |
 
@@ -334,11 +334,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1784`
+  `src/parser/ParserExprNew.cpp:1712`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1727`
+  `src/parser/ParserExprNew.cpp:1655`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1754`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1682`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -355,10 +355,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1174`, `src/parser/ParserExprNew.cpp:1171`
+  every target. `src/parser/ParserExprNew.cpp:1102`, `src/parser/ParserExprNew.cpp:1099`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1273`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1201`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1703`
 - **throwing a pointer to a function** - it has no `type_info`; the message
