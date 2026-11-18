@@ -935,7 +935,6 @@ void Lowering::aggregateMember(ValueId at0, const Type &mt, const std::vector<se
                                     ct.params()[1]->pointee()->unqualified() == mt.unqualified());
     if (copied && aggGuards_ && mt.hasDestructor() && destroyedTemporary(args[0]) && tree_.node(args[0]).type->unqualified() == mt.unqualified()) {
         constructHere(args[0], at0, mt);     // [dcl.init]/17: `M(...)` built in the member, no temporary left to outlive it
-        if (!e.bytes) F().alsoNamed.push_back(e.symbol);    // the move the parser's tree makes of that temporary: named, not called
     } else if (e.bytes) {     // an object of its class, or a temporary of it (`{ V(1), 2 }`): its bytes
         copyObject(at0, classValue(args[0], mt).v, mt);
     } else {
@@ -1315,7 +1314,6 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
     l.slot = slot;
     l.cls = c.id();
     l.dtor = dtor;
-    F().alsoNamed.push_back(dtor);      // the parser's tree destroys it on unwinding whether or not a call here can throw
     // One built in an operand that may not be evaluated carries a flag: zeroed where its full expression began, set here.
     if (canFlag()) {
         const TypeId boolT = tid(*types_.get(Kind::Bool));
@@ -2222,17 +2220,13 @@ Lowering::Val Lowering::conditionalArm(sema::TypedId arm, const Type &cls) {
     // A converted arm is the result itself, made by its constructor under the arm's flag ([class.temporary]/3).
     if (convertedArm(arm, cls) && convertedTemporary(arm, cls, true, made)) return Val(made, tid(cls));
     const Val o = classObject(arm);
-    std::string symbol;
-    TypeId sig;
-    bool elided = false;
-    // A prvalue arm's object is the result: the move the parser's tree makes of it is named, not called ([class.copy]/31).
-    if (!isLvalueNode(arm)) {
-        if (argumentCopy_ && argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided)) F().alsoNamed.push_back(symbol);
-        return o;
-    }
+    if (!isLvalueNode(arm)) return o;
     const Type &c = *T(o.type).unqualified();
     const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
     const ValueId copy = entryAlloca(tid(c), "$cond");
+    std::string symbol;
+    TypeId sig;
+    bool elided = false;
     if (!c.nonTrivialCopy()) {
         copyObject(copy, o.v, c);
     } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
@@ -3244,11 +3238,6 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (rt.isStructOrUnion() && copiedReturn(rt) && listBuilt_ && listBuilt_(tree_.node(id).syntax, lb) && lb.members) {
             std::vector<sema::TypedId> parts;
             for (std::uint32_t i = 0; i < n; i++) parts.push_back(child(id, i));
-            // Built in the caller's object: the move of a temporary the parser's tree makes is named, not called.
-            int form = 0;
-            std::string moved;
-            TypeId sig;
-            if (returnBuilt_ && returnBuilt_(tree_.node(id).syntax, form, moved, sig) && form == 4) F().alsoNamed.push_back(moved);
             openFull();
             aggregateBuilt(sret_, *rt.unqualified(), parts, lb);
             closeFull();
@@ -3721,9 +3710,6 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     Val first;
     ValueId past;
     if (braced) {
-        // The backing array is walked itself: the list's `begin` and `end` the parser's tree calls are named, not called.
-        F().alsoNamed.push_back(rb.symbol);
-        F().alsoNamed.push_back(re.symbol);
         first = bracedRange(range, *elem.unqualified(), iter, scope);
         const InstId e = add(Op::Gep, iter, std::vector<ValueId>(1, first.v));
         at(e).k = static_cast<long long>(count(range)) * elem.size(target_);
@@ -4396,14 +4382,6 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Conditional: {
         if (!isLvalueNode(id) && !constApartClasses(id)) outside("a conditional that is no lvalue");
-        // The parser's tree copies each such arm into a temporary it destroys: the copy and the destructor named, not called.
-        for (std::uint32_t arm = 1; constApartClasses(id) && arm <= 2; arm++) {
-            std::string copy, dtor = destructor_ ? destructor_(tree_.node(child(id, arm)).type->unqualified()->id()) : std::string();
-            TypeId sig;
-            bool elided = false;
-            if (argumentCopy_ && argumentCopy_(tree_.node(child(id, arm)).syntax, copy, sig, elided) && !copy.empty()) F().alsoNamed.push_back(copy);
-            if (!dtor.empty()) F().alsoNamed.push_back(dtor);
-        }
         const Val c = truth(expr(child(id, 0)));
         const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
         condbr(c.v, a, b);
@@ -5757,7 +5735,6 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj.v))));
         if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 0));
         ops.insert(ops.begin(), virtualCallee(ops[0], called.type, called.vslot));
-        F().alsoNamed.push_back(called.symbol);
         CallInfo info;
         info.signature = called.type;
         info.namedArgs = static_cast<int>(ft.params().size());
@@ -5929,7 +5906,6 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         ops.push_back(result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, object.v))));
         if (r.indirect) {
             ops.insert(ops.begin(), virtualCallee(ops[0], r.type, r.vslot));
-            F().alsoNamed.push_back(info.symbol);      // the slot is read: the function the parser's tree calls is named alone
             info.symbol.clear();
         }
     } else if (direct || staticThrough) {
@@ -6951,7 +6927,6 @@ Lowering::Val Lowering::deleteDestroying(sema::TypedId id, const sema::NewFacts 
     if (f.dslot >= 0) {
         if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 1));
         ops.insert(ops.begin(), virtualCallee(ops[0], f.dtorSig, f.dslot));
-        F().alsoNamed.push_back(info.symbol);
         info.symbol.clear();
     }
     if (ops.size() != ft.params().size() + (info.symbol.empty() ? 1 : 0)) outside("a destructor of another shape");

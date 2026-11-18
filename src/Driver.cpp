@@ -1360,7 +1360,6 @@ static void namesOf(const ir::Function &f, bool microsoft, std::vector<std::stri
         if (!microsoft) out.insert(out.end(), f.insts[i].syms.begin(), f.insts[i].syms.end());
     }
     out.insert(out.end(), f.spec.begin(), f.spec.end());
-    out.insert(out.end(), f.alsoNamed.begin(), f.alsoNamed.end());
 }
 
 // **The prune** (M6d S1): the unit's closure over the IR as lowered, from its holding records. A held function or
