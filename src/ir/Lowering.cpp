@@ -3014,7 +3014,7 @@ void Lowering::stmt(sema::TypedId id) {
     if (s.kind != syntax::Kind::Block && !label) mark(id);
     switch (s.kind) {
     case syntax::Kind::Block: block(id); return;
-    case syntax::Kind::Null: return;
+    case syntax::Kind::Null: case syntax::Kind::Typedef: return;
     case syntax::Kind::DeclStmt: declaration(id); return;
     case syntax::Kind::ExprStmt:
         if (n != 1) outside("an expression statement of " + std::to_string(n) + " parts");

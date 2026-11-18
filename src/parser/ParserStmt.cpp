@@ -88,7 +88,9 @@ StmtPtr Parser::declaration() {
     attributedDeclarationAhead();  // `[[x]] n = 2;` reaches here, atDeclarationStart taking any `[[`
     StmtPtr s = declarationBody();
     if (s) s->setPos(pos);
-    return noteStmt(std::move(s), syntax::Kind::DeclStmt, "", pos, mark, pos);
+    const syntax::Kind kind = typedefDeclared_ ? syntax::Kind::Typedef : syntax::Kind::DeclStmt;
+    typedefDeclared_ = false;
+    return noteStmt(std::move(s), kind, "", pos, mark, pos);
 }
 
 StmtPtr Parser::declarationBody() {
@@ -114,6 +116,7 @@ StmtPtr Parser::declarationBody() {
     }
 
     if (sc == StorageTypedef) {
+        typedefDeclared_ = !definesType(specStart);
         do {
             Declared td = declarator(base);
             refuseThreadLocalHere(quals.isThreadLocal, td.pos);
@@ -1520,6 +1523,13 @@ StmtPtr Parser::block(bool functionTry) {
     return noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
 }
 
+// [dcl.constexpr]/3's "do not define classes or enumerations": a brace among the tokens read since `from`.
+bool Parser::definesType(std::size_t from) const {
+    for (std::size_t i = from; i < at_; i++)
+        if (tokens_[i].is("{")) return true;
+    return false;
+}
+
 // **The syntax of a statement** (M2 step 2): its kind is what its first tokens say, its parts what its parse recorded.
 syntax::Kind Parser::statementKindAhead(std::string *text) const {
     static const struct { const char *word; syntax::Kind kind; } kWords[] = {
@@ -1545,10 +1555,12 @@ StmtPtr Parser::statement(bool *madeTry) {
     const Nesting deep(this, pos, "statement");
     const std::size_t mark = syntaxTree_.size();
     std::string text;
-    const syntax::Kind kind = statementKindAhead(&text);
+    syntax::Kind kind = statementKindAhead(&text);
     const bool throws = peek().is("throw");
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
+    if (typedefDeclared_) kind = syntax::Kind::Typedef;
+    typedefDeclared_ = false;
     if (madeTry != nullptr) *madeTry = kind == syntax::Kind::Try && builtTry_;
     const int builtFor = kind == syntax::Kind::For ? builtForParts_ : -1;
     const bool builtCase = (kind == syntax::Kind::Case || kind == syntax::Kind::Default) && builtCase_.id >= 0;
@@ -2204,7 +2216,8 @@ StmtPtr Parser::statementBody() {
     // **The using-*declaration* is refused inside a block**, where the one at namespace scope is
     // not: a name declared here lasts to the end of the block and takes part in overload resolution
     // against the locals beside it, and neither is what the alias at namespace scope does.
-    if (aliasDeclaration("")) return StmtPtr(new Block({}));
+    const std::size_t aliasAt = at_;
+    if (aliasDeclaration("")) { typedefDeclared_ = !definesType(aliasAt); return StmtPtr(new Block({})); }
     if (peek().is("using"))
         src_.fail(peek().pos, "a using-declaration inside a block is not "
                               "supported yet - it declares a name for the rest "

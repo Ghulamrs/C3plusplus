@@ -825,6 +825,7 @@ private:
     ExprPtr noteKeywordForm(syntax::Kind kind, KeywordForm f);
     // The statement kind the tokens ahead begin, and its text - a label's name; Other for a block, which records itself.
     syntax::Kind statementKindAhead(std::string *text) const;
+    bool definesType(std::size_t from) const;
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
@@ -868,6 +869,7 @@ private:
     std::string defaultsOwner_;     // the function whose call applyDefaults is completing, while currentFunction_ is hidden
     // The position of the braces `return { ... };` built its value from, for the return's node to take their record.
     std::size_t pendingReturnBraces_ = 0;
+    bool typedefDeclared_ = false;       // the declaration just read was a typedef or an alias defining no type: its node's kind
     std::string pendingReturnEmpty_;     // "$ret:" and the return's position while `return {}` is read (M3b.7)
     // The constructor a braced list made a temporary through (listTemporaryFrom), by its braces' position - the `{}`
     // node's, which the typer reads where a node has no record of its own; empty where a replay built it otherwise.

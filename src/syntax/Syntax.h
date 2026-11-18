@@ -23,6 +23,7 @@ enum class Kind : std::uint8_t {
     // statements
     Block, ExprStmt, DeclStmt, Return, If, While, Do, For, Switch, Case, Default,
     Break, Continue, Goto, Label, Try, Catch, Null,
+    Typedef,    // a typedef or alias-declaration in a block that defines no class or enumeration
     // declarations
     Var, Function,
     MemInit     // a constructor's mem-initialiser: its text the member or base it names, its parts the arguments

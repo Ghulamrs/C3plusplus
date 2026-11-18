@@ -49,6 +49,7 @@ const char *kindName(Kind k) {
         case Kind::Try: return "try";
         case Kind::Catch: return "catch";
         case Kind::Null: return "null";
+        case Kind::Typedef: return "typedef";
         case Kind::Var: return "var";
         case Kind::Function: return "function";
         case Kind::MemInit: return "meminit";
