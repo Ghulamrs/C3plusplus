@@ -1123,3 +1123,77 @@ and `T::f` over a type parameter (40 / 27, the roots above); the class's incompl
 these 2 arguments (68); a door for member templates - not started; the out-of-line door's 14; the last
 dependent sizes; and the Windows class doors' Microsoft name for a read's class.
 src/ lines: 95,381 before, 95,421 after.
+
+**M8.1, commit 4, fifth step: a read's class named for Microsoft, two holds and the pair constructors, 2026-11-18**
+(lane m8o, branch `m8-e` from `8120dc24`; one lane-hour; code `0a837e09`). Still under `-check=templates` for the
+class doors; the replay is what emits. **Four mends**, each in a read only (`patternBody_`). (1) *A read's class
+has no Microsoft name*: `C<$T0>$read<n>`'s members, static members and the special members the compiler writes
+(`Linkage::memberSymbol`, `staticMemberSymbol`, five sites in `Classes.cpp` through `readName`) take a `$pattern$`
+name where the Microsoft mangler has none, as `functionSymbol` already did - one name per signature (`fn->describe()`),
+so overloads stay apart and a definition still finds its declaration. (2) *`order::less` over a dependent class*
+(`__tree_order<..., C>`, shallow, no members) and (3) *`KeyOf::get` over a type parameter*: `primaryNode`'s `S::x`
+over a scope `dependentType` answers for is held as a dependent value (`waits`). (4) *`<utility>`'s pair
+constructors*: the class door registered its class for `C<$T0>` (`readPattern_`) only after the class's body was
+read, so a member declared `pair(const pair<const T1, T2> &)` met the shallow pattern class and its replayed
+definition the read's class - "declares no member with these parameters"; the class is now found from its head on
+(`readingTag_` / `readingRead_`, the read's tag looked up while its body is read). And a partial's read registered
+nothing that is its own: its key was spelled from its own parameters (`pair<$T0,$T1>` for `pair<const T1, T2>`) - the
+primary's key - so the partial's `pair<T1, T2>` became the partial; a partial now registers no key.
+
+**Read / not read by door**, before `8120dc24` (Linux: m8n's after, the same sources; Windows: `work\m8nn`'s count
+summed by door, and the self-host measured in `work\m8or` here), after `0a837e09` (Linux `~/m8on`, `boxkit/m8o-count.sh`,
+`m8o-self.sh`; Windows `work\m8on`, `m8o-win.sh bodies` / `self` and `m8o-wsum2.sh`):
+
+| door | Linux cases before / after: bodies / read / unread | Linux self-host before / after | Windows cases before / after | Windows self-host before / after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,389 / 89; 3,478 / 3,395 / 83 | 7,512 / 7,324 / 188; 7,512 / 7,325 / 187 | 3,478 / 3,389 / 89; 3,478 / 3,395 / 83 | 7,512 / 7,324 / 188; 7,512 / 7,325 / 187 |
+| class members | 12,044 / 11,699 / 345; 12,041 / 11,805 / 236 | 29,679 / 28,104 / 1,575; 29,678 / 28,692 / 986 | 935 / 15 / 920; 934 / 434 / 500 | 3,481 / 0 / 3,481; 3,551 / 1,989 / 1,562 |
+| out-of-line members | 22 / 8 / 14; 22 / 8 / 14 | 0 | 22 / 0 / 22; 22 / 1 / 21 | 0 |
+| partial specializations' members | 607 / 526 / 81; 607 / 585 / 22 | 1,796 / 1,587 / 209; 1,796 / 1,688 / 108 | 245 / 1 / 244; 259 / 179 / 80 | 493 / 0 / 493; 493 / 292 / 201 |
+| alias type-ids | 7 / 7 / 0 | 0 | 7 / 7 / 0 | 0 |
+
+(Windows reaches the count in 881 of 1,239 cases, Linux in 900; a class refused whole counts once, so Windows'
+`bodies` is a floor far below Linux's while most classes are refused.) **Gone** (Linux cases): has no member called
+(40), was not declared (27), declares no member with these parameters (59 + 59 in partials); the self-host's has no
+member (352) and was not declared (311) likewise. **Not read, by reason, after** (Linux cases): the class: an
+incomplete type (69); no function called takes these 2 arguments (68); needs a complete type (24, 4 before - bodies
+that now reach further); the size of a dependent type (16 + 16, and 25 the function door); an incomplete type in a
+body (16); declared twice (11). The self-host: needs a complete type (266), an incomplete type (223), declared twice
+(127), no function takes 2 arguments (102). **Windows, still a Microsoft name** (cases): 410 class members, 77
+partials and 7 out-of-line refused as "this type has no Microsoft linkage name" - two sites (1)'s mend did not reach,
+a constructor written in the class (`ParserClass.cpp`, `'C::C'`) and a member template (`ParserTopLevel.cpp`);
+the self-host 1,440 class members and 201 partials the same way.
+**A patch measured and not committed** (`boxkit/m8o-name.patch`, two lines: those two sites take the same
+`$pattern$` name in a read; its Windows build, `work\m8ox` beside the gate chain on the shared box, passed the
+driver's nine-minute cap and ended on the box, the executable made): the Windows cases then read **exactly as
+Linux's** - class members 12,041 / 11,805 / 236, partials 607 / 585 / 22, out-of-line 22 / 8 / 14, the function
+door 3,478 / 3,395 / 83, and the same reasons at the top (69, 68, 24, 16 + 16). Not gated (the gates were already
+running on `0a837e09`); the next lane's first step, with the whole gate - the member-template line is the
+function door's too.
+
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8o-count.sh`; its "1" is the script's
+own slot line), 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` on Linux (diff opened: one `.byte` line of the time), 102 of 103 and `Driver` on Windows (diff opened: one `DB` line of the time, `11:06:17` against `11:07:00`).
+
+**Gates** on the final code (`0a837e09`), each box built from clean; REF built fresh from `8120dc24` in its own
+kept tree (Linux `~/m8or`, Windows `work\m8or`; NEW `~/m8og`, `work\m8on`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2,
+**5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (2 lines,
+its `__TIME__` `.byte` line - the script removes the files, so this diff was not opened; the flag's was);
+`tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh` 876 passed, 0 failed,
+1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap
+0, memory gate rc 0, ast-residue +0, `ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, 103 sources, 0 warnings, its log read whole): static gates rc 0 (`work\m8on`); the
+self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` line); `names.sh` 884 passed, 0 failed;
+`overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **12,390 the same,
+0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own
+(`work\m8os`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; no
+`tests/cases` program was added. **What the lane did wrong**: two `grep`s on the Mac (text scans: one over
+`src/sema/Classes.cpp` for its first lines, one over this entry's own placeholders) - every other search ran on the
+Linux box.
+
+**Left of commit 4**: the Windows class doors' last Microsoft names (the patch above); the class's incomplete type
+(69); no function takes these 2 arguments (68); needs a complete type (24 / 266); a door for member templates - not
+started; the out-of-line door's 14; the last dependent sizes; a partial's own key (`pair<const $T0,$T1>`) for its
+`C<T>`, which is registered for no partial now.
+src/ lines: 95,421 before, 95,446 after.
