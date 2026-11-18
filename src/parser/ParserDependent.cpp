@@ -296,8 +296,8 @@ const DepExpr *Parser::depPrimary(bool angle) {
             const Type *t = lookup_.findTypedef(name);
             if (t != nullptr && t->kind() == Kind::TemplateParam) {
                 if (peekAt(1).is("::")) {
-                    if (peekAt(2).kind != TokenKind::Ident || peekAt(3).is("::") ||
-                        peekAt(3).is("<"))
+                    // `T::num < x` is less-than: with no `template` before it, `num` names no template ([temp.names]/4).
+                    if (peekAt(2).kind != TokenKind::Ident || peekAt(3).is("::"))
                         depRefuse(pos, "a qualified name other than 'T::name'");
                     n.op = DepExpr::QualifiedParamName;
                     n.type = t;
