@@ -2116,3 +2116,51 @@ landed (OptPipeline's), and OptJumps' `make_shared` read; (3) the cases' five: t
 dependent argument (with item 3), the dependent throw, the local class (dependent by design); (4) Fable's reading of
 the dependent-name marking; (5) `template` as payload and the member name's mark; (6)
 `tests/open/template-dependent-static-call`, M3's file.
+
+## M8.1: lane 3 landed - a class made below a read seats its implicit members where the program asks (lane m8z5, 2026-11-18)
+
+Branch `m8-e` from `4263ed20`: `81ea4832` (lane 3, m8z4's `boxkit/m8z4-lane3.patch` with the fault mended) and this
+entry. src/ 95,704 -> 95,849 lines (+156 -11 over nine files; the mend itself 25 lines in `Templates.h`,
+`Templates.cpp`, `Classes.cpp`).
+
+**What m8z4's 14 were: order, not bodies.** Measured on Linux (`~/m8z5a`, the patch as m8z4 left it, against REF
+`~/m8z5r` = `4263ed20`): Optimizer, OptJumps and OptValues emit the same symbol set as REF (566, 374, 455 symbols, the
+sorted lists identical); each diff is one block moved - `pair<const string,int>`'s `D1 D2 C1(&&) C2(&&)` and
+`map<string,int>`'s with it (173 or 224 lines, so 346 or 448 changed), or `opt::MOperand::MOperand()` (132), or
+`Str::Str()` (49). `Classes::defineImplicitFunctions` defines the used implicit members in the order of
+`lookup_.functions_`, and a class `makeWanted` makes at the read declares its specials there, ahead of everything the
+program declares between the read and its own first ask; the seat log moved the specialization, never the functions.
+**The mend**: `makeClass` notes the range of functions its making declared beside its seat; `asked` gives each of
+them the seat `functions_.size()` at the program's ask; `Templates::seatedOrder` puts a seated function just ahead of
+the first function declared after its ask, and `defineImplicitFunctions` walks that order (then what the pass itself
+declares, in index order, as before). Nothing is owed that REF did not owe: the four units read 0 lines against REF.
+
+**The Linux-only 25** (`'' was not declared - a prototype must come first`, `OptCore.h:301`, `FlowOf<Entry>::
+dominators`): a `[&]` closure called inside a class template's member whose nested class holds the parameter. A probe
+(`boxkit/m8z5-p1.cpp`, variants p2-p4) is unread on Linux with the call and with `Block` holding `E`; read with either
+taken away (`return 0;` for the call, `struct B { int idom; };`). Not mended this lane, nor why Windows reads it.
+
+**H2, set aside** as `boxkit/m8z5-h2.patch`: `dependentType` takes a struct or enumeration under a read's tag
+(`$read$f::L`, `C<$T0>$read3::D`) as dependent, a read function's own enumeration gets a tag of the read's
+(`$read$f::E`: REF refuses `read-dependent-local` with "'E' is defined twice" - the read and the replay shared one
+interned type), and a function read's array bound over a parameter is refused by name ("an array whose bound depends
+on a template parameter"), never folded with 0. Three cases with clang's answer (`read-dependent-member` 223,
+`-local` 222, `-bound` "307 507"). Its Windows build passed 9 minutes under the gate's load and was not retried: no
+gate has seen it.
+
+**Unread by door and reason** (the ceilings, re-recorded on Linux `~/m8z5f` with `SUBST_RECORD=1`, the same as
+m8z4's measure of the patch): before (`4263ed20`) cases 10 in 7, self 67 in 5; after cases 5 in 5, self 52 in 4 -
+class-members 25 "'' was not declared - a prototype must come first" (the 25 above), member-templates 25 "over the
+template's own local class", 1 "'' needs a pointer to a struct or union", 1 "'' was not declared".
+
+**Gates** (REF `4263ed20` built fresh and alone on each box, `~/m8z5r` / `work\m8z5r`, NEW `~/m8z5f` / `work\m8z5f`):
+**the self-host's `-S`, REF against NEW, 102 of 103 the same on Linux and on Windows, the one Driver's `__TIME__`**;
+Linux - `identical.sh` 8,860 compared / 0 differ (four targets, -O0 and -O2), run 1235/0, typed 878/0, selfc
+103/103, syntax 4/0, subst 0 failed (bodies: 5126 replayed over 878 units, 52 differ in shape), the flag 0 differ,
+open 1 (as before), static gates rc 0 each (exclusions 0 uncited 0 stale and 0 re-pointed, comments, memory,
+ast-residue, ide); Windows - five spellings 12,410 / 0 differ (6,200 + 6,210), the flag 1241/0, names 886/0, overload 46/0,
+typed 859/0, cl /W4 /WX clean, static rc 0 each, subst: ceilings cases 5 in 5, self 27 in 3 (Linux 52 in 4: the 25,
+a host difference), 4 `.templates` records failing as at m8z4, m8z3 and m8z2 (host).
+
+**Next**: (1) the 25 (the probe above); (2) H2 from `boxkit/m8z5-h2.patch`, built and gated; (3) the review's H1 and M3
+(a floor on `read`, every case unit counted); (4) `boxkit/m8z4-singles.patch`; (5) the cases' five and the review's M1-M7.
