@@ -4426,3 +4426,29 @@ ParserTopLevel and the two files above - mechanical, one commit. **What tools/as
 477 (not 0), ast-lines 526. **S5 starts with** S4's close above, then the design's S5: the frame without the
 nodes - the dead slots (pad pointer, selector, unwind help) and the setters only nodes had, each shown identical by
 itself. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+**M6d's wave merged with main, 2026-11-19 (lane mw12).** `git merge origin/main` (b582a877: M8.1 commits 1-5, H1, the
+review's H2 and M items, the CRLF compare) into m6d-w at 95a40efb: merge 73cb592c, EXCLUSIONS re-pointed 832950f3. Two
+conflicts: `Parser::throwStatement` - M6d made it a wrapper over `throwEffects`, main put its SubstitutionFailure for a
+thrown value of a dependent type at its head; the check goes at `throwEffects`' head, so a throw expression and a throw
+statement both take it. docs/EXCLUSIONS.md - 13 hunks of line numbers alone: M6d's side, then 22 citations re-pointed by
+tools/exclusions on Linux (0 uncited, 0 stale). The 13 src files both sides changed merged without a fault. src/ 93,466
+(m6d-w) and 94,287 (main) -> 94,181. g++ -Werror and cl /W4 /WX (alone, first) clean.
+**The check, against REF = main b582a877.** identical.sh on Linux, four targets at -O0 and -O2: 9240 compared, 76
+differ, all M6d's own cases (constexpr-body-alias, -null-after, -null-before, -static-assert, -typedef 10 each,
+-noexcept-call 6, converting-constructor-class-parameter and -default-argument 10 each). Windows, five spellings with
+diagnostics: 12584 same, 106 differ - those, constexpr-body-nested-refused and constexpr-constructor-out-of-line-refused
+10 each, and constexpr-function-body 10 (its diagnostic gains clang's reason, "(variable declaration in a constexpr
+function is a C++14 extension)", from S4d 26a14a80; the .error still matches). Self-host -S: REF cannot compile
+ParserClass.cpp and ParserStmt.cpp (`loopStatement(StmtPtr, Effect, Effect, StmtPtr)` - a class parameter by value,
+which is M6d's converting-constructor-class-parameter), 99 more same and Driver's `__TIME__`, both boxes; against
+m6d-w's own 95a40efb, 101 of 102 same and Driver's `__TIME__`.
+**Suites.** Linux run 1263/0, typed 916/0, syntax 5/0, tms6747 SIM=1 -O2 shards 1-3 435/0; Windows names 924/0,
+overload 46/0, typed 897/0, syntax 5/0, tms6747 SIM=1 -O2 shards 4-6 435/0. Static gates rc 0 on both boxes;
+ast-residue ExprPtr 2012, StmtPtr 477, node-casts 149, node-refs 325, visits 0, readers 9, ast-lines 526 - each at or
+below main's (2012/635/158/357/0/9/717). **Owed:** subst.sh self fails - door functions shape 8 over a record of 7,
+member-templates 4 over 3: make_owned's recorded Owned.h:8:20 shape in more units, because M6d's sources call
+make_owned more (the new cxx3 over main's sources holds 7 and 3); the ceilings are not re-recorded, which would raise
+them. Windows run.sh compares the program's CRLF output as is (m8h1's owed fault): with diff's
+--strip-trailing-cr, 1232 passed, 31 failed, the same 31 as REF's 1222/31 (x86_64-windows refusals such as
+alignas-local-unwind's over-aligned local beside a try).
