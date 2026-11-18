@@ -1452,3 +1452,60 @@ what is owed is the sites in a read's body that ask - a local's slot, `sizeof(T)
 "dependent" without the size; then not declared (19 / 65), a specialization not asked for (15 / 94), the member
 templates' own 59 / 146, the out-of-line door's last one (a pack, `Ns...` alone).
 src/ lines: 95,467 before, 95,548 after.
+
+**M8.1, commit 4, tenth step: m8s's owed gates, and the dependent sizes found at one site, 2026-11-18**
+(lane m8t, branch `m8-e` from `a655d85a`; code `7e11157a`, `a8915e8d`, `6edec0f1`, `0e86e621`, `763f1661`). Still under
+`-check=templates`; the replay is what emits. **m8s's owed gates on `80d93293`** (its sources are `a655d85a`'s; REF
+trees Linux `~/m8tr`, Windows `work\m8tr`, each built alone): `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed,
+0 failed; self-compile stage 0 103 of 103 (130 s); Windows built under the cap (cl /W4 /WX clean, about 3 minutes) and
+its five spellings at -O0 and -O2 against `a71bb801` (`work\m8sn`, read only) **12,390 the same, 0 differ** (6,200 and
+6,190).
+
+**Where the size was asked.** `gdb` with `catch throw` over seven cases (`boxkit/m8t-bt.sh`) put every "the size of a
+dependent type" at one site: `Parser::allocateFrameSlot` asking `objectAlign` of a pack parameter's type (`Ts...
+rest`, `Kind::PackExpansion`), which `dependentType` does not answer, from `declare` in a function's parameter list -
+in the function door's reads and in member-template and member bodies replayed by a class's read. m8s's stride probe
+moved nothing because the pointer sites are not reached first. **Three steps.** `7e11157a`: `Parser::slotless` - a
+read's type that is dependent or a pack's expansion - at the four frame-slot sites (`allocateFrameSlot`, `declare`'s
+alignment and its debug record, `leaveScope`); the cases' dependent sizes 104 to 1, the self-host's 410 to 0.
+`a8915e8d`: a read's object of dependent type called by its name (`F f; f();`, a member `comp_(a, b)`) is a call
+through it, where it went to overload resolution as "'f' was not declared". `6edec0f1`: a read's `V<I>::f(x)` over a
+dependent class is dependent ([temp.dep.type]), where the read's `V<$P0>` had no member under its tag ("has no static
+member function"). `0e86e621`: three citations `a8915e8d`'s line moved, re-pointed.
+
+**Read / not read, before (`a655d85a`) and after (`0e86e621`)**, Linux; Windows reads door by door as Linux on
+`a8915e8d`. The cases: functions 3,478 / 3,402 / 76 to 3,478 / 3,414 / 64; class members 12,574 / 12,525 / 49 to
+12,574 / 12,533 / 41; out-of-line 22 / 21 / 1 unchanged; partials 607 / 586 / 21 to 607 / 587 / 20; member templates
+497 / 438 / 59 to 497 / 447 / 50; **unread 206 to 176**. The self-host: functions 7,512 / 7,325 / 187 unchanged; class
+members 34,925 / 34,757 / 168 to 34,925 / 34,758 / 167; partials 1,796 / 1,688 / 108 unchanged; member templates
+1,510 / 1,364 / 146 to 1,510 / 1,397 / 113; **unread 609 to 575**. The dependent sizes did not become reads: behind the
+slot each met the next wall, **a pattern over a parameter pack in a read** (`std::forward<Args>(args)...`;
+`ParserTemplate.cpp`'s `bindPatternMember`, which refuses a pack that stands for itself): about 100 in the cases, 409 in
+the self-host. Then a specialization not asked for (15 / 94), a local name in a signature's expression (9 in the
+cases), not declared (5 / 32), a value with no address (26 in the self-host), a dependent base in a mem-initialiser
+("neither a member nor a direct base", 6 / 12).
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ (Linux `~/m8tn` on `0e86e621`; Windows
+`work\m8tn` on `a8915e8d`); the self-host 102 of 103 and `Driver`, its `__TIME__` line (Windows `a8915e8d`).
+
+**Gates.** REF `a655d85a` built fresh and alone (Linux `~/m8tr`, Windows `work\m8tr`). Linux `~/m8tn` on `0e86e621`
+(g++ `-Werror` clean): exclusions rc 0, comment cap rc 0, memory gate rc 0, ast-residue rc 0 (+0), `ide/generate.py`
+rc 0 - each its own exit code; `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and
+x86_64-windows at -O0 and -O2, **8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0
+failed; self-compile stage 0 103 of 103 (126 s); `subst.sh bodies` 0 failed (5,120 over 876 units) once `763f1661` re-recorded `template-variadic.templates` (the old record failed: its three reads' reason moved from the size to the pack); the self-host's `-S` REF against NEW 102 and `Driver`. Windows `work\m8tn` on `a8915e8d` (cl /W4 /WX clean):
+five spellings against REF **12,390 the same, 0 differ** (6,200 and 6,190). Windows `work\m8tf` on `0e86e621` (cl /W4
+/WX clean, built alone): the static gates each rc 0 by its own status; the cases and the self-host read door by door
+as Linux (176, 575); the cases' flag 1,239 the same, 0 differ; the self-host's flag 102 and `Driver`; the five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ** (6,200 and 6,190). **Two defects.** Windows'
+static step printed `tail`'s status for exclusions, so its rc 0 on `a8915e8d` hid three stale citations Linux found
+(mended by `0e86e621`; `boxkit/m8t-win4.sh` reads `PIPESTATUS`). A Linux rebuild from shipped sources kept a stale
+object (the tar kept the Mac's mtime, older than the object): its first gates were discarded and re-run from touched
+sources.
+
+**A probe, not committed** (`boxkit/m8t-pack.patch`, Linux `~/m8tp` over `0e86e621`): `bindPatternMember` reading a
+read's pattern once over the pack as itself leaves the unread counts as they are (176) and the flag 0 differ, and moves
+the wall a token on - "expected a type" (`std::forward<Args>(args)...`, the pack's name as a template argument inside
+the copied pattern; 44 + 16 + 16 + 12 in the cases) and "'args' is a parameter pack, written without the '...'" (20).
+**Left of commit 4**, and so of commit 5's condition (`unread` 0 over the cases and the self-host, identical.sh 0 - the
+second holds at every step): unread **176** in the cases and **575** in the self-host; the pack pattern in a read is
+three in five of both (about 100 and 409), then a specialization not asked for (15 / 94), the rest by reason above.
+src/ lines: 95,548 before, 95,553 after.
