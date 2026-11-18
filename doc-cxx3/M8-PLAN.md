@@ -987,3 +987,63 @@ compile's read and want the whole gate. On Linux `~/m8lx` (built clean): cases c
 `identical.sh` against REF 5,304 compared, 0 differ; the self-host's `-S` against REF 102 and `Driver`; the
 self-host's flag against no flag 102 and `Driver`;
 `typed.sh` 876 / 0; `run.sh` 1233 / 0; self-compile 103 of 103. The next lane's first step.
+
+**M8.1, commit 4, third step: the expression reader's reasons in a read's body, 2026-11-18** (lane m8m, branch
+`m8-e` from `1e5937b7`; one lane-hour; code `54dcea46`, `516d1faa`, `d5ebe843`). Still under `-check=templates`
+alone; the replay is what emits. **`54dcea46`** is m8l's measured patch as it was: a pseudo-destructor over a
+dependent type, and a member call over a dependent argument, held in a read (`516d1faa` moves its comment into
+the group above it - the comment cap said 1 over). **`d5ebe843`**, six holds, each `patternBody_` alone: a
+dependent `sizeof` is a dependent value (the signature's "in this place" refusal is the signature's again); a
+`?:` with a dependent arm is held as a dependent operator is; `new T` asks no size; a member returning its
+dependent class by value asks the ABI nothing; a pack parameter (`Args... a`) asks no alignment; and a read's
+class laid out over a dependent member (`Type::dependentLayout()`, a nested `Node` holding a `T`) is dependent
+to `dependentType`. The three size sites were found by `catch throw SubstitutionFailure` under gdb in Linux
+`~/m8mx` (`Abi::returnsIndirectly`, `newExpression`, `declare`).
+
+**Read / not read by door**, Linux, `boxkit/m8m-count.sh`, `m8m-self.sh`; before is `54dcea46` (m8l's
+`~/m8lx`, the same sources):
+
+| door | `tests/cases` before: bodies / read / unread | after | the self-host before | after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,380 / 98 | 3,478 / 3,389 / 89 | 7,512 / 7,324 / 188 | 7,512 / 7,324 / 188 |
+| class members | 12,175 / 10,026 / 2,149 | 12,208 / 11,617 / 591 | 29,421 / 24,754 / 4,667 | 29,883 / 28,002 / 1,881 |
+| out-of-line members | 22 / 8 / 14 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 607 / 442 / 165 | 607 / 526 / 81 | 1,796 / 1,389 / 407 | 1,796 / 1,587 / 209 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+**Gone** (cases, class members): the size of a dependent type 641 -> 16 (partials 16 and the function door 25
+are left), a template parameter in this place of a signature 589 -> 0, the arms of `?:` 342 -> 0; and, by
+`54dcea46` against m8l's table (`1e5937b7`), the pseudo-destructor 168 -> 0 and no function called takes these
+arguments 2,403 -> 72. **Not read, by reason,
+after** (cases): the class: "expected" a token (162); the in-class initialiser of a static member (84); the
+class: an incomplete type (69); no function called takes these 2 arguments (68); declares no member with these
+parameters (59, and 59 in partials); has no member called (40); was not declared (27); the size of a dependent
+type (16 class members, 16 partials, 25 the function door). The self-host after: has no member called (352),
+was not declared (311), an incomplete type (223), the class: "expected" (204), declared twice (127), the size of a
+dependent type (104 the function door, 96 partials).
+
+**The flag against no flag** (`-S`): the cases **0 differ** of 1,239 on both boxes; the self-host **102 of 103
+the same and `Driver`** in its `__TIME__` line alone on both (diffs opened: one `.byte` / `DB` line of the time).
+
+**Gates** on the final tree (`d5ebe843`), each box built from clean; REF built fresh from `1e5937b7` in its own
+kept tree (Linux `~/m8mr`, Windows `work\m8mr`; NEW `~/m8mf`, `work\m8mf`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (its
+`__TIME__` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52; both
+`.templates` records unchanged); `typed.sh` 876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0
+failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap 0, memory gate held, ast-residue +0,
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean, 103 sources, its log read whole): static gates
+rc 0; the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` line); `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 in the first half run again alone, and the second half's 6,190 among 6,327 the same); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8mt`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts are the measure); no `tests/cases` program was added.
+**What the lane did wrong**: a file copied into the gated Linux tree under a running gate (`54dcea46`'s
+comment fix) made the self-host step relink `cxx3.exe` beneath `identical.sh` ("Permission denied", 200
+false differences) - that run was stopped and the final tree gated from clean; and the Windows compare's two
+halves were started side by side over one log, so the first half was run again under names of its own.
+
+**Left of commit 4**: has no member / not declared through a base left out (40 / 27); the class: "expected" a
+token (162, the class door's own parse); the in-class static initialiser (84); declares no member with these
+parameters (59 + 59); a door for member templates - not started; the out-of-line door's 14; the last dependent
+sizes (an array `new T[n]`'s element, partials').
+src/ lines: 95,368 before, 95,381 after.
