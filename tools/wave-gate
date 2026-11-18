@@ -31,7 +31,7 @@
 # named one that does not differ fails as well (N2); cycles' WORSE rows are judged by the same file. A wave lands
 # only on 0 failed, every expected difference named in a file the gate reads (the user, 2026-11-15, QA). baselines: the
 # judges' files at the Mac's HEAD are the gated commit's - one changed after the run fails it. census: tools/ssa-census
-# -arch tms6747 at -O2 (outside=, walked) and -O0 (walked), its own status the verdict (N1). release:
+# -arch tms6747 at -O2 (outside=), its own status the verdict (N1; no walker to count since M6d). release:
 # tools/c6747/release-check-box.py on the Windows box (N5). ssa1/ssa2: tests/ssa.sh at SSA_LEVEL 1, 2; run2: run.sh -O2.
 # subst: tests/subst.sh, -templates=subst against off (R109). declines: tools/c6x-declines --check, the count only down (R108, Q5). asm<L>: tests/asm6x.sh at -O<L>, -O1 included. selfc: stage 0 compiles every
 # src/*.cpp. run1/winpass1: the x86 cases at -O1. cdb wants the LINK a winpass builds (winout-tools).
@@ -57,7 +57,7 @@ BOXTAB="build=linux static=linux gdb=linux run1=linux run2=linux maketest=linux 
  census=idle declines=idle asm0=idle asm1=idle asm2=idle cycles=idle
  mbuild=mac mrun0=mac mrun2=mac lldb=mac baselines=report"
 # the judges' files: one changed at the Mac's HEAD after the gated commit fails `baselines` (N2)
-BASELINES="tests/tms6747-cycles.txt tools/c6x-walked.baseline tools/c6x-declines.baseline tests/wave-expected.txt"
+BASELINES="tests/tms6747-cycles.txt tools/c6x-declines.baseline tests/wave-expected.txt"
 STEPS_asked="mfixed"; NSHARD=6; SPLIT_LINUX=1-3; SPLIT_WINDOWS=4-6
 # ~/slot on the Linux box is a copy of this text (the user, 2026-11-15: two slots on the 4 vCPU); installed when missing
 SLOT='#!/bin/sh
@@ -222,14 +222,11 @@ if [ "${1:-}" = --box ]; then
                     a=$(against "$LOG-emit.diff" tms6747 2); ok=$?
                     [ $rc -eq 0 ] && [ -n "$l" ] && [ $ok -eq 0 ] && verdict emit PASS "${l#emit.sh: } against the base's golden; $a" ||
                         verdict emit FAIL "rc $rc$(capnote $rc); ${l:-no count line}; $a; $LOG-emit.log"; fi; fi ;;
-        census) # N1: ssa-census's own status, walked at -O2 (with outside=) and at -O0, against tools/c6x-walked.baseline
+        census) # N1: ssa-census's own status and its outside= line (the walked count went with the walker, M6d)
             job 1500 env CENSUS_FLAGS=-O2 CENSUS_JOBS=$JOBS sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census" > "$LOG-census.log" 2>&1; rc=$?
-            job 1500 env CENSUS_SOURCES=0 CENSUS_FLAGS= CENSUS_JOBS=$JOBS sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census0" > "$LOG-census0.log" 2>&1; r0=$?
             o=$(grep -a '^ssa-census tms6747: outside=' "$LOG-census.log" | tail -1 | sed 's/ of .* other/; other/')
-            w=$(cat "$LOG-census.log" "$LOG-census0.log" | sed -n 's/^ssa-census tms6747 \(-O[0-9]\): walked \([0-9]*\) functions.*; baseline \(.*\)/\1 walked \2 (baseline \3)/p' | tr '\n' ';')
-            r=$(cat "$LOG-census.log" "$LOG-census0.log" | grep -a -c 'walked count rose')
-            [ $rc -eq 0 ] && [ $r0 -eq 0 ] && [ -n "$o" ] && [ "$(echo "$w" | tr -cd ';' | wc -c)" -eq 2 ] && verdict census PASS "$o; $w" ||
-                verdict census FAIL "rc $rc/$r0$(capnote $rc)$(capnote $r0); ${o:-no outside= line}; ${w:-no walked line}; $r above the baseline; $LOG-census.log" ;;
+            [ $rc -eq 0 ] && [ -n "$o" ] && verdict census PASS "$o" ||
+                verdict census FAIL "rc $rc$(capnote $rc); ${o:-no outside= line}; $LOG-census.log" ;;
         asm0) suite asm0 '^asm6x.sh: ' env CXX1_FLAGS= sh tests/asm6x.sh ;;
         asm1) suite asm1 '^asm6x.sh: ' env CXX1_FLAGS=-O1 sh tests/asm6x.sh ;;     # r6e: ssa-layout's wrong instruction was -O1's alone
         asm2) suite asm2 '^asm6x.sh: ' env CXX1_FLAGS=-O2 sh tests/asm6x.sh ;;
