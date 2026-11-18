@@ -40,10 +40,9 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
             // A read's `rest...` over its function parameter pack: one argument, as dependent as its pattern.
             const Local *own = pk == packs_.end() && patternBody_ ? lookup_.findLocal(peek().text) : nullptr;
             if (own != nullptr && own->type->kind() == Kind::PackExpansion) {
-                const std::size_t namePos = peek().pos;
-                ExprPtr one = note(objectRef(peek().text), syntax::Kind::Name, peek().text, namePos);
+                const Token named = peek();
                 at_ += 2;
-                args.push_back(std::move(one));
+                args.push_back(note(objectRef(named.text), syntax::Kind::Name, named.text, named.pos));
                 if (consume(")")) break;
                 expect(",");
                 continue;
