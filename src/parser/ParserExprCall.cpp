@@ -778,6 +778,8 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
                                const std::string &name, std::size_t pos,
                                std::vector<ExprPtr> args,
                                const Type *forceOwner) {
+    // A read's member call over a dependent argument is no call yet: which member it means is substitution's.
+    if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
     const Type *plain = cls->unqualified();
 
     // **A member function is looked for up the base chain**, unlike a data

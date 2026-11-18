@@ -2825,7 +2825,8 @@ ExprPtr Parser::explicitDestructorCall(ExprPtr &object, std::size_t pos) {
     // **[expr.pseudo]: a scalar has nothing to destroy**, and the only effect
     // is that the operand is evaluated - the pointer, or the object's address.
     if (!plain->isStructOrUnion()) {
-        if (named != plain)
+        // A read's `p->~T()` over a parameter: which type the name means is substitution's to hold.
+        if (named != plain && !(patternBody_ && (dependentType(named) || dependentType(plain))))
             src_.fail(pos, "the pseudo-destructor '~" + name + "' does not name "
                            "the type of this object, which is '" +
                            plain->describe() + "'");
