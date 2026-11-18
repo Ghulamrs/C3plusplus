@@ -1608,8 +1608,7 @@ void Parser::topLevel(Program &program) {
             // takes, so the chain is the pad itself with nothing to test.
             std::vector<std::string> types;
             types.push_back(std::string());
-            std::vector<int> indices;
-            indices.push_back(typeIndexFor(std::string()));
+            typeIndexFor(std::string());     // the catch-all takes its selector index here
 
             // `__cxa_begin_catch` first, as clang's `__clang_call_terminate` does:
             // the exception is being handled, and the runtime is told so before
@@ -1631,7 +1630,6 @@ void Parser::topLevel(Program &program) {
             guarded.push_back(std::move(body));
             Try *t = new Try(std::move(guarded), StmtPtr(padBlock), pointerSlot,
                              selectorSlot, types);
-            t->setTypeIndices(indices);
             body = StmtPtr(t);
         }
 

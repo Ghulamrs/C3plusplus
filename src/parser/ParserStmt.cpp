@@ -1873,7 +1873,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                                      false, cpos, std::move(ctorArgs)))));
                     Block *copyBlock = new Block(std::move(copying));
                     copyBlock->setScope(-1);
-                    copyBlock->setUnwindCleanup();
                     steps.push_back(StmtPtr(copyBlock));
                 } else if (caught->unqualified()->isPointer()) {
                     // **A pointer caught is the pointer __cxa_begin_catch hands back** on the Itanium
@@ -2006,8 +2005,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             StmtPtr padLabelled(new Label(endCatchLabel, unwindPad(std::move(padSteps))));
             Try *region = new Try(std::move(guarded), std::move(padLabelled),
                                   padPtr, padSel, std::vector<std::string>());
-            // **Only where the row will carry types.**
-            if (!enclosingChain.empty()) region->setAlsoCleanup();
             steps.push_back(StmtPtr(region));
         } else {
             steps.push_back(std::move(handlerBody));
@@ -2045,7 +2042,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // The runtime's scratch word, which the personality routine finds through the
         // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
         // like any other, so where it lives is decided where every local's is.
-        t->setUnwindHelpSlot(msUnwindHelp());
+        msUnwindHelp();
         std::vector<std::pair<std::string, std::string> > gotoExits;
         // A goto to a label inside this `try` statement never leaves its funclet, so it needs no exit.
         for (const std::pair<std::string, std::string> &e : msExit.gotos) {
@@ -2055,11 +2052,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         }
         if (msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty())
             return StmtPtr(t);
-        std::vector<std::string> exits;
-        for (const std::string *e : { &msExit.ret, &msExit.brk, &msExit.cont })
-            if (!e->empty()) exits.push_back(*e);
-        for (const std::pair<std::string, std::string> &e : gotoExits) exits.push_back(e.first);
-        t->setMsExits(std::move(exits));
         // **Where a handler's early exit carries on**: the funclet handed back one
         // of these labels, and the parent does here what the handler could not.
         std::vector<StmtPtr> after;
@@ -2158,8 +2150,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // **Every segment of the body carries this `try`'s catch types.**
     for (std::size_t i = 0; i < segments.size(); i++) {
         segments[i]->setTypes(types);
-        segments[i]->setTypeIndices(indices);
-        segments[i]->setAlsoCleanup();
     }
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(new Label(chainLabel, std::move(chain)));
@@ -2168,10 +2158,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     guarded.push_back(std::move(body));
     Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,
                      selectorSlot, std::move(types));
-    t->setTypeIndices(indices);
-    // The call site needs a trailing filter-0 action, or phase 2 installs no
-    // pad where no handler matched and these destructors never run.
-    if (unwindsHere) t->setAlsoCleanup();
     return StmtPtr(t);
 }
 

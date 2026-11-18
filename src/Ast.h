@@ -410,15 +410,10 @@ public:
 
     int scope() const { return scope_; }
     void setScope(int s) { scope_ = s; }
-    // **Run while an exception unwinds** - a pad's destructors and the
-    // resume - so a throw out of it is [except.terminate]'s, not a new one.
-    void setUnwindCleanup() { unwindCleanup_ = true; }
-    bool unwindCleanup() const { return unwindCleanup_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     std::vector<StmtPtr> body_;
     int scope_ = -1;
-    bool unwindCleanup_ = false;
 };
 
 class If final : public Stmt {
@@ -586,23 +581,12 @@ public:
 
     // **Null on Windows.**
     bool hasPad() const { return pad_ != nullptr; }
-    // **A `try` whose pad also unwinds this frame's objects.** Its call sites
-    // then need a trailing cleanup action, or phase 2 installs no pad where
-    // no handler matched and the destructors never run.
-    void setAlsoCleanup() { alsoCleanup_ = true; }
-    bool alsoCleanup() const { return alsoCleanup_; }
     const Stmt &pad() const { return *pad_; }
     int pointerSlot() const { return pointerSlot_; }
     int selectorSlot() const { return selectorSlot_; }
     const std::vector<std::string> &types() const { return types_; }
     // **Set late, and only for a `try` body's cleanup rows.**
     void setTypes(std::vector<std::string> t) { types_ = std::move(t); }
-
-    // **The selector index of each of those types, as the parser numbered
-    // them.** It writes `if (sel == n)` into the handler chain, so it - and
-    // not the backend - is where n comes from.
-    const std::vector<int> &typeIndices() const { return typeIndices_; }
-    void setTypeIndices(std::vector<int> ix) { typeIndices_ = std::move(ix); }
 
     const std::vector<MsHandler> &handlers() const { return handlers_; }
     void setHandlers(std::vector<MsHandler> h) { handlers_ = std::move(h); }
@@ -613,29 +597,15 @@ public:
     const Stmt *cleanup() const { return cleanup_.get(); }
     void setCleanup(StmtPtr c) { cleanup_ = std::move(c); }
 
-    // Where the runtime's four-word scratch area sits in this frame. Written
-    // as -2 on entry by the parent and read by the personality routine
-    // through the FuncInfo's dispUnwindHelp.
-    int unwindHelpSlot() const { return unwindHelpSlot_; }
-    void setUnwindHelpSlot(int s) { unwindHelpSlot_ = s; }
-    // The labels a handler funclet may hand back as where to carry on, so the
-    // flow knows the body's calls can reach them.
-    const std::vector<std::string> &msExits() const { return msExits_; }
-    void setMsExits(std::vector<std::string> e) { msExits_ = std::move(e); }
-
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     std::vector<StmtPtr> body_;
     StmtPtr pad_;
     int pointerSlot_;
     int selectorSlot_;
-    bool alsoCleanup_ = false;
-    std::vector<std::string> msExits_;
     std::vector<std::string> types_;
-    std::vector<int> typeIndices_;
     std::vector<MsHandler> handlers_;
     StmtPtr cleanup_;
-    int unwindHelpSlot_ = 0;
 };
 
 struct Local {

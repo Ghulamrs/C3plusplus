@@ -521,7 +521,7 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
     const int pointerSlot = allocateFrameSlot(voidPtr);
     const int selectorSlot = allocateFrameSlot(types_.intType());
-    const int helpSlot = msUnwindHelp();
+    msUnwindHelp();     // the runtime's scratch word keeps its slot in the frame
     functionHasPads_ = true;
 
     std::vector<StmtPtr> out;
@@ -550,7 +550,6 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
         Try *t = new Try(std::move(guarded), nullptr, pointerSlot,
                          selectorSlot, std::vector<std::string>());
         t->setCleanup(StmtPtr(b));
-        t->setUnwindHelpSlot(helpSlot);
         out.push_back(StmtPtr(t));
     }
     return out;
@@ -626,7 +625,7 @@ StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
         Try *t = new Try(std::move(body), nullptr, allocateFrameSlot(voidPtr),
                          allocateFrameSlot(types_.intType()), std::vector<std::string>());
         t->setCleanup(StmtPtr(b));
-        t->setUnwindHelpSlot(msUnwindHelp());
+        msUnwindHelp();
         return StmtPtr(t);
     }
     int targetPtr = 0, targetSel = 0;
@@ -727,7 +726,6 @@ StmtPtr Parser::unwindPad(std::vector<StmtPtr> steps) {
     steps.pop_back();
     Block *inner = new Block(std::move(steps));
     inner->setScope(-1);
-    inner->setUnwindCleanup();
     std::vector<StmtPtr> outer;
     outer.push_back(StmtPtr(inner));
     outer.push_back(std::move(last));
