@@ -67,16 +67,17 @@ bool a64Selects(ir::Op op) {
 }   // namespace
 
 // **The fallback seam**: why `f` is not selected, empty where every part of it is inside the subset.
-std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (f.params.size() != fn.params().size()) return "parameters the parser counts differently";
-    for (std::size_t i = 0; i < fn.params().size(); i++)
-        if (!a64Scalar(fn.params()[i].type, target_) && !fn.params()[i].type->isStructOrUnion() && !fn.params()[i].type->isReference())
+std::string Arm64Darwin::ssaOutside(const ir::Function &f) const {
+    const std::vector<FrameParam> ps = laidParams(f, *ssaTypes_);
+    if (f.params.size() != ps.size()) return "parameters the parser counts differently";
+    for (std::size_t i = 0; i < ps.size(); i++)
+        if (!a64Scalar(ps[i].type, target_) && !ps[i].type->isStructOrUnion() && !ps[i].type->isReference())
             return "a parameter that is no scalar, no class and no reference";
     const Type *ret = ssaTypes_->type(f.returns);
     // A reference comes back as the address it is: the operand of every `ret` is then a pointer (asked below).
     const bool address = ret != nullptr && (ret->isStructOrUnion() || ret->isReference());
     if (ret == nullptr || (!ret->isVoid() && !a64Scalar(ret, target_) && !address)) return "a result that is no scalar and no class";
-    if (ret->isStructOrUnion() && planFor(ret).byRef && fn.sretSlot() == 0) return "a class result with no pointer slot";
+    if (ret->isStructOrUnion() && planFor(ret).byRef && f.laid.sretSlot == 0) return "a class result with no pointer slot";
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
@@ -106,7 +107,7 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
             if (sig == nullptr || !sig->isFunction()) return "a call with no signature";
             const bool object = c.sret || c.resultAlloca >= 0;
             if (object != sig->returns()->isStructOrUnion()) return "a call whose class result has no object";
-            if (c.sret && fn.sretSlot() == 0) return "a call into a result pointer the function lacks";
+            if (c.sret && f.laid.sretSlot == 0) return "a call into a result pointer the function lacks";
             const std::uint32_t first = c.symbol.empty() ? 1 : 0;
             for (std::uint32_t n = first; n < i.count; n++) {
                 const std::size_t at = n - first;
@@ -123,22 +124,25 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
     return std::string();
 }
 
-// The function's SSA body where it is selected; the walker's reason on stderr under CXX1_SSA_WHY, the census's switch.
-const ir::Function &Arm64Darwin::ssaChoose(const Function &fn) {
-    const ir::FuncId id = ssa_ != nullptr ? ssa_->find(fn.symbol()) : ir::FuncId();
-    const std::string why = id.valid() ? ssaOutside(fn, ssa_->functions[id.v]) : std::string("no SSA body");
+// `f` is selected, or refused by name; the walker's reason on stderr under CXX1_SSA_WHY, the census's switch.
+void Arm64Darwin::ssaChoose(const ir::Function &f) {
+    const std::string why = ssaOutside(f);
     ssaOffered_++;
-    if (why.empty()) { ssaSelected_++; return ssa_->functions[id.v]; }
+    if (why.empty()) { ssaSelected_++; return; }
+    ssaRefuse(f.displayName, why);
+}
+
+void Arm64Darwin::ssaRefuse(const std::string &name, const std::string &why) {
     ssaCensus();
-    unsupported(("'" + fn.displayName() + "', " + why + ",").c_str());
+    unsupported(("'" + name + "', " + why + ",").c_str());
 }
 
 // The frame above the parser's parameter slots: each alloca at its alignment, then one 8-byte slot per value.
-int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
+int Arm64Darwin::layoutSsa(const ir::Function &f) {
     ssaAssign(f);
     long long cur = 0;
-    for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
-    cur = roundUp(std::max(cur, static_cast<long long>(fn.sretSlot())), 16);
+    for (const ir::LaidParam &p : f.laid.params) cur = std::max(cur, static_cast<long long>(p.offset));
+    cur = roundUp(std::max(cur, static_cast<long long>(f.laid.sretSlot)), 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
         const Type *t = ssaTypes_->type(f.frame[i].type);
@@ -932,8 +936,8 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
 }
 
 // The body: the parameters from the slots the walker's prologue filled into their values, then the blocks in order.
-void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
-    const std::vector<Param> &ps = fn.params();
+void Arm64Darwin::selectBody(const ir::Function &f) {
+    const std::vector<FrameParam> ps = laidParams(f, *ssaTypes_);
     std::vector<const Type *> ptypes;
     for (std::size_t i = 0; i < ps.size(); i++) ptypes.push_back(ps[i].type);
     const Placement plan = placeArguments(ptypes);

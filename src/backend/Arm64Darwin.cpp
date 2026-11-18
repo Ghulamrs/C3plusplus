@@ -580,57 +580,56 @@ void Arm64Darwin::emitData(const UnitData &data) {
     }
 }
 
-void Arm64Darwin::emitFunction(const Function &fn) {
+void Arm64Darwin::emitFunction(const ir::Function &fn) {
     resetLabels();
     // Labels are built from the symbol rather than the name: two overloads
     // share a name and must not share a label.
-    functionName_ = fn.symbol();
-    labelPrefix_ = "L." + fn.symbol() + ".";
-    returnLabel_ = "L.return." + fn.symbol();
+    functionName_ = fn.symbol;
+    labelPrefix_ = "L." + fn.symbol + ".";
+    returnLabel_ = "L.return." + fn.symbol;
     // Selected from SSA, the only path (M5.3): a body outside the selector's subset is refused by name.
-    const ir::Function &sf = ssaChoose(fn);
-    const bool pads = sf.landingPads;
+    ssaChoose(fn);
+    const bool pads = fn.landingPads;
 
     out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
-    if (!fn.isStatic()) out_ << "  .globl _" << fn.symbol() << "\n";
+    if (!fn.isStatic) out_ << "  .globl _" << fn.symbol << "\n";
     // **An inline definition may appear in several translation units**, so the
     // linker folds the copies rather than rejecting them. Mach-O's spelling,
     // measured from clang, keeps the `.globl` beside it.
-    if (fn.isInline())
-        out_ << "  .weak_def_can_be_hidden _" << fn.symbol() << "\n";
+    if (fn.isInline)
+        out_ << "  .weak_def_can_be_hidden _" << fn.symbol << "\n";
     out_ << "  .p2align 2\n";
-    out_ << "_" << fn.symbol() << ":\n";
+    out_ << "_" << fn.symbol << ":\n";
     // A second name for the same code - see Function::alias. It is a label at
     // the same address rather than a copy of the body.
-    if (!fn.alias().empty()) {
-        if (!fn.isStatic()) out_ << "  .globl _" << fn.alias() << "\n";
-        if (fn.isInline())
-            out_ << "  .weak_def_can_be_hidden _" << fn.alias() << "\n";
-        out_ << "_" << fn.alias() << ":\n";
+    if (!fn.laid.alias.empty()) {
+        if (!fn.isStatic) out_ << "  .globl _" << fn.laid.alias << "\n";
+        if (fn.isInline)
+            out_ << "  .weak_def_can_be_hidden _" << fn.laid.alias << "\n";
+        out_ << "_" << fn.laid.alias << ":\n";
     }
     if (const Source *src = lineSource()) {
-        Source::Place at = src->locate(fn.pos());
+        Source::Place at = src->locate(fn.pos);
         DwarfFunction d;
-        d.name = fn.displayName();
-        d.linkage = fn.symbol();
-        d.begin = "Lfunc.begin." + fn.symbol();
-        d.end = "Lfunc.end." + fn.symbol();
+        d.name = fn.displayName;
+        d.linkage = fn.symbol;
+        d.begin = "Lfunc.begin." + fn.symbol;
+        d.end = "Lfunc.end." + fn.symbol;
         d.file = at.file + 1;
         d.line = at.line;
-        d.external = !fn.isStatic();
-        d.returns = fn.returns();
-        d.locals = &fn.locals();
+        d.external = !fn.isStatic;
+        d.returns = laidType(fn.laid.returns);
         dwarfFns_.push_back(d);
-        resetBlocks(fn.blocks());
+        resetBlocks(fn.laid.blocks);
         out_ << d.begin << ":\n";
     } else if (pads) {
         // The call-site table measures from here, so the label has to exist
         // whether or not there is debug information.
-        out_ << "Lfunc.begin." << fn.symbol() << ":\n";
+        out_ << "Lfunc.begin." << fn.symbol << ":\n";
     }
     clearCallSites();
 
-    markLine(fn.pos());
+    markLine(fn.pos);
     // **Unwind data, and it is the same three lines in every function here.**
     out_ << "  .cfi_startproc\n";
     // **A function with a landing pad names its personality and its table here**,
@@ -638,7 +637,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // table itself is written after the body, once its labels exist.
     if (pads) {
         out_ << "  .cfi_personality 155, ___gxx_personality_v0\n";
-        out_ << "  .cfi_lsda 16, Lexception." << fn.symbol() << "\n";
+        out_ << "  .cfi_lsda 16, Lexception." << fn.symbol << "\n";
     }
     out_ << "  stp x29, x30, [sp, #-16]!\n";
     out_ << "  mov x29, sp\n";
@@ -649,24 +648,24 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own)
     // saves x19 under the frame record, rounds sp down after the allocation - clang's `and sp, x9,
     // #0xff..c0` - and keeps the floor in x19 for localIn; the selector gives x19 to no value then.
-    realign_ = fn.frameAlign() > 16 ? fn.frameAlign() : 0;
-    for (const Local &l : fn.locals())
-        if (l.staticName.empty() && l.type != nullptr) {
-            const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
+    realign_ = fn.laid.frameAlign > 16 ? fn.laid.frameAlign : 0;
+    for (const ir::LaidLocal &l : fn.laid.locals)
+        if (l.staticName.empty() && l.type.valid()) {
+            const int a = std::max(l.align, objectAlign(laidType(l.type), target_));
             if (a > 16 && a > realign_) realign_ = a;
         }
-    for (std::size_t i = 0; i < sf.frame.size(); i++) {
-        const int a = std::max(sf.frame[i].align, ssaTypes_->type(sf.frame[i].type)->align(target_));
+    for (std::size_t i = 0; i < fn.frame.size(); i++) {
+        const int a = std::max(fn.frame[i].align, ssaTypes_->type(fn.frame[i].type)->align(target_));
         if (a > 16 && a > realign_) realign_ = a;
     }
-    if (sf.frameAlign > 16 && sf.frameAlign > realign_) realign_ = sf.frameAlign;
+    if (fn.frameAlign > 16 && fn.frameAlign > realign_) realign_ = fn.frameAlign;
     if (realign_ > 0) {
         out_ << "  str x19, [sp, #-16]!\n";
         out_ << "  .cfi_offset w19, -32\n";
     }
     // Below the locals, room for the callee-saved registers the selector's values took (ssaSaved_).
-    const int locals = alignTo(layoutSsa(fn, sf), 16);
-    if (lineSource()) dwarfFns_.back().locals = &ssaFrameLocals(fn, sf, ssaAllocaSlot_, "a64");
+    const int locals = alignTo(layoutSsa(fn), 16);
+    if (lineSource()) dwarfFns_.back().locals = &ssaFrameLocals(fn, *ssaTypes_, ssaAllocaSlot_, "a64");
     int frame = locals + alignTo(8 * static_cast<int>(ssaSaved_.size()), 16);
     if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
     if (realign_ > 0) {
@@ -683,7 +682,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     const std::string head = out_.str();
     out_.str(std::string());
 
-    sretSlot_ = fn.sretSlot();
+    sretSlot_ = fn.laid.sretSlot;
     if (sretSlot_ != 0) {
         localIn("x9", sretSlot_);
         out_ << "  str x8, [x9]\n";
@@ -692,13 +691,13 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // **The same walk the call site made, made once.** placeArguments answers
     // where each parameter is; the base is this side's, an incoming stack
     // argument sitting above the saved frame pointer and return address.
-    const std::vector<Param> &ps = fn.params();
+    const std::vector<FrameParam> ps = laidParams(fn, *ssaTypes_);
     std::vector<const Type *> ptypes;
     ptypes.reserve(ps.size());
     for (std::size_t i = 0; i < ps.size(); i++) ptypes.push_back(ps[i].type);
     const Placement plan = placeArguments(ptypes);
     // Optimized, scalars all in registers and no -g reading the slots: the body takes each from its register.
-    ssaDirect_ = optimize_ > 0 && realign_ == 0 && lineSource() == nullptr && !fn.isVariadic();
+    ssaDirect_ = optimize_ > 0 && realign_ == 0 && lineSource() == nullptr && !fn.variadic;
     for (std::size_t i = 0; i < ps.size(); i++)
         if (ps[i].type->isStructOrUnion() || !plan.args[i].inRegister) ssaDirect_ = false;
 
@@ -754,7 +753,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     namedStackBytes_ = alignTo(plan.stackBytes, 8);
 
-    selectBody(fn, sf);
+    selectBody(fn);
     const std::vector<std::string> saved = ssaSaved_;
     const std::string body = out_.str();
     out_.str(std::string());
@@ -782,12 +781,12 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // The end label goes before .cfi_endproc and before the table, because
     // the last call-site range measures up to it.
     if (lineSource() || !callSites().empty())
-        out_ << "Lfunc.end." << fn.symbol() << ":\n";
+        out_ << "Lfunc.end." << fn.symbol << ":\n";
     // The records measure from x19, DWARF's register 19, up to the top of a realigned frame.
     if (lineSource() && realign_ > 0) { dwarfFns_.back().frameBaseReg = 19; dwarfFns_.back().frameBias = top_; }
     out_ << "  .cfi_endproc\n";
     if (!callSites().empty()) {
-        emitLsda(fn.symbol());
+        emitLsda(fn.symbol);
         out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
     }
     if (lineSource()) dwarfFns_.back().blocks = blocks();
@@ -849,7 +848,12 @@ void Arm64Darwin::run(const ir::Module &module) {
     }
 
     emitData(data);
-    for (const Function &fn : *functions_) emitFunction(fn);
+    for (const std::string &symbol : data.order) {
+        const ir::FuncId id = ssa_ != nullptr ? ssa_->find(symbol) : ir::FuncId();
+        if (id.valid()) { emitFunction(ssa_->functions[id.v]); continue; }
+        ssaOffered_++;
+        ssaRefuse(symbol, "no SSA body");
+    }
     emitTlsWrappers(data);
     // Measured from clang: the init function's address in __mod_init_func.
     if (!data.initFunction.empty())

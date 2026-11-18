@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Ast.h"
+#include "../Dialect.h"
 #include "../Type.h"
 
 #include <string>
@@ -15,6 +15,14 @@ struct DwarfBlock {
     int funclet = 0;
 };
 
+// A variable of the function, as the parser laid it (ir::LaidLocal) with its types resolved; `declared` is a reference's own type.
+struct DwarfLocal {
+    std::string name, staticName;
+    const Type *type, *declared;
+    int offset, scope;
+    bool isParam;
+};
+
 struct DwarfFunction {
     std::string name;
     std::string begin;
@@ -23,7 +31,7 @@ struct DwarfFunction {
     int line;
     bool external;
     const Type *returns;
-    const std::vector<Local> *locals;
+    const std::vector<DwarfLocal> *locals = nullptr;
 
     std::vector<DwarfBlock> blocks;
 

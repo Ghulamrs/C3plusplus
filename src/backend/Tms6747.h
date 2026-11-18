@@ -6,6 +6,7 @@
 
 #include "Backend.h"
 #include "Regions.h"
+#include "../Operator.h"
 #include "../ir/Ir.h"
 
 #include "../optimizer/C6xMir.h"

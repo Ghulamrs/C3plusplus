@@ -440,7 +440,7 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
     num(o, "  .byte", t->size(target));
 }
 
-void writeObject(std::string &o, const Local &l, Types &types,
+void writeObject(std::string &o, const DwarfLocal &l, Types &types,
                  const DwarfSpelling &sp, const DwarfFunction &f) {
     if (!l.staticName.empty()) {
 

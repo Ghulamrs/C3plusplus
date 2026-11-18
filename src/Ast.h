@@ -3,6 +3,8 @@
 #include "Dialect.h"
 #include "Type.h"
 #include "Mangle.h"
+#include "Operator.h"
+#include "Owned.h"
 #include "syntax/SyntaxId.h"
 #include "ir/Ir.h"
 
@@ -125,14 +127,6 @@ private:
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
-
-// R6.4: the one helper an owned node is made by, and so the one `new` the memory rule (R6) leaves standing.
-template <class T, class... A>
-std::unique_ptr<T> make_owned(A &&...args) { return std::unique_ptr<T>(new T(std::forward<A>(args)...)); }
-
-enum class BinOp { Add, Sub, Mul, Div, Mod, Shl, Shr,
-                   BitAnd, BitOr, BitXor,
-                   Eq, Ne, Lt, Le, Gt, Ge, LAnd, LOr };
 
 class Num final : public Expr {
 public:

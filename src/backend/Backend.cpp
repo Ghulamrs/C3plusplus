@@ -172,3 +172,9 @@ std::string backendNames() {
     }
     return all;
 }
+
+std::vector<FrameParam> laidParams(const ir::Function &f, const TypeTable &types) {
+    std::vector<FrameParam> ps;
+    for (const ir::LaidParam &p : f.laid.params) { FrameParam q; q.type = types.type(p.type); q.offset = p.offset; ps.push_back(q); }
+    return ps;
+}

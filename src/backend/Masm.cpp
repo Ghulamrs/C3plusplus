@@ -983,9 +983,9 @@ std::string MasmCodeGen::beginFunclet(std::size_t pos, int number, bool cleanup)
     return funcletSymbol_;
 }
 
-void MasmCodeGen::emitExceptionTables(const Function &fn) {
+void MasmCodeGen::emitExceptionTables(const ir::Function &fn) {
     if (msStates().empty()) {
-        if (!callSites().empty()) emitLsda(fn.symbol(), false);
+        if (!callSites().empty()) emitLsda(fn.symbol, false);
         out_ += a_->takeFunclets();
         funcletIndex_ = 0;
         return;

@@ -2,6 +2,7 @@
 #include "CodeView.h"
 
 #include "../Mangle.h"
+#include "../Owned.h"
 #include "../Source.h"
 #include "../optimizer/OptDeclines.h"
 
@@ -1092,30 +1093,24 @@ void X86_64Linux::finishChunk() {
     out_.clear();
 }
 
-void X86_64Linux::emit(const Function &fn) {
+void X86_64Linux::emit(const ir::Function &fn) {
     depth_ = 0;
     resetLabels();
     // Labels are built from the symbol rather than the name: two overloads
     // share a name and must not share a label.
-    labelPrefix_ = ".L." + fn.symbol() + ".";
-    returnLabel_ = ".L.return." + fn.symbol();
+    labelPrefix_ = ".L." + fn.symbol + ".";
+    returnLabel_ = ".L.return." + fn.symbol;
 
     // Every function is selected from SSA (M3b.7): the driver refused the unit where the lowering left one outside.
-    const ir::Function *ssaFn = ssaFunction(fn);
-    if (ssaFn == nullptr) {
-        std::fprintf(stderr, "codegen: '%s' has no SSA body to select\n", fn.symbol().c_str());
-        compileFailed();
-        return;
-    }
-    landingPads_ = ssaFn->landingPads;
+    landingPads_ = fn.landingPads;
 
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own) is
     // written past the optimizer, whose passes address the frame from rbp and take rbx, and walks no
     // callee in place; a Windows funclet reaches the frame through the establisher, so that shape is refused.
-    realign_ = fn.frameAlign() > 16 ? fn.frameAlign() : 0;
-    for (const Local &l : fn.locals())
-        if (l.staticName.empty() && l.type != nullptr) {
-            const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
+    realign_ = fn.laid.frameAlign > 16 ? fn.laid.frameAlign : 0;
+    for (const ir::LaidLocal &l : fn.laid.locals)
+        if (l.staticName.empty() && l.type.valid()) {
+            const int a = std::max(l.align, objectAlign(laidType(l.type), target_));
             if (a > 16 && a > realign_) realign_ = a;
         }
     if (realign_ > 0 && landingPads_ && usesFunclets())
@@ -1124,90 +1119,89 @@ void X86_64Linux::emit(const Function &fn) {
     if (realign_ > 0 && passesRun()) {
         optimizer_->finish();
         a_ = plain_;
-        opt::noteDecline("realigned-frame-no-optimizer", fn.symbol());
+        opt::noteDecline("realigned-frame-no-optimizer", fn.symbol);
     }
 
-    a_->functionBegin(fn.symbol(), !fn.isStatic(), fn.isInline());
+    a_->functionBegin(fn.symbol, !fn.isStatic, fn.isInline);
     if (passesRun()) {
-        optimizer_->returnsPair(!abi_.aggregatesByReference && fn.returns()->isStructOrUnion() &&
-                                fn.returns()->size(target_) > 8);
+        optimizer_->returnsPair(!abi_.aggregatesByReference && laidType(fn.laid.returns)->isStructOrUnion() &&
+                                laidType(fn.laid.returns)->size(target_) > 8);
     }
-    if (fn.isInline()) a_->weakDefinition(fn.symbol());
+    if (fn.isInline) a_->weakDefinition(fn.symbol);
     // A second name for the same code - see Function::alias. Emitted as a
     // label at the same address, which is what makes it the same function
     // rather than a second copy of it.
-    if (!fn.alias().empty()) {
-        if (!fn.isStatic()) a_->globl(fn.alias());
-        if (fn.isInline()) a_->weakDefinition(fn.alias());
-        a_->defLabel(fn.alias());
+    if (!fn.laid.alias.empty()) {
+        if (!fn.isStatic) a_->globl(fn.laid.alias);
+        if (fn.isInline) a_->weakDefinition(fn.laid.alias);
+        a_->defLabel(fn.laid.alias);
     }
     if (const Source *src = lineSource()) {
-        Source::Place at = src->locate(fn.pos());
+        Source::Place at = src->locate(fn.pos);
         DwarfFunction d;
-        d.name = fn.displayName();
-        d.begin = ".Lfunc.begin." + fn.symbol();
-        d.end = ".Lfunc.end." + fn.symbol();
+        d.name = fn.displayName;
+        d.begin = ".Lfunc.begin." + fn.symbol;
+        d.end = ".Lfunc.end." + fn.symbol;
         d.file = at.file + 1;
         d.line = at.line;
-        d.external = !fn.isStatic();
-        d.returns = fn.returns();
-        d.locals = &fn.locals();
-        d.symbol = a_->labelText(fn.symbol());
+        d.external = !fn.isStatic;
+        d.returns = laidType(fn.laid.returns);
+        d.symbol = a_->labelText(fn.symbol);
         // A display name carries its scope and arguments already - `ns::biggest<int>`, `std::basic_string<char>::size`,
         // `geo::Pair::Pair` (1.29); a function without one - a namespaced free function - is qualified from its symbol.
-        if (target_.microsoftNames() && !fn.hasDisplayName()) {
+        if (target_.microsoftNames() && !fn.laid.named) {
             const Type *self = nullptr;
-            for (const Local &l : fn.locals())
-                if (l.isParam && l.name == "this" && l.type->isPointer()) self = l.type->pointee();
-            d.name = codeViewName(fn.symbol(), fn.name(), self);
+            for (const ir::LaidLocal &l : fn.laid.locals)
+                if (l.isParam && l.name == "this" && laidType(l.type)->isPointer()) self = laidType(l.type)->pointee();
+            d.name = codeViewName(fn.symbol, fn.laid.name, self);
         }
         // The spelling's own labels round the code - see CoffSpelling's and MasmSpelling's prologue
         // and functionEnd - as each spells a name: quoted for clang, bare for masm (1.29).
-        d.prologEnd = a_->labelText("$LNprolog$" + fn.symbol());
-        d.codeEnd = a_->labelText("$LNend$" + fn.symbol());
-        d.mergeable = fn.isInline();
+        d.prologEnd = a_->labelText("$LNprolog$" + fn.symbol);
+        d.codeEnd = a_->labelText("$LNend$" + fn.symbol);
+        d.mergeable = fn.isInline;
         dwarfFnAt_ = dwarfFns_.size();
         dwarfFns_.push_back(d);
-        resetBlocks(fn.blocks());
+        resetBlocks(fn.laid.blocks);
         a_->defLabel(d.begin);
     } else if (landingPads_ && !usesFunclets()) {
         // The call-site table measures from here, whether or not there is
         // debug information. A funclet target has no call-site table and no
         // use for the label - and MASM will not take one shaped like this.
-        a_->defLabel(".Lfunc.begin." + fn.symbol());
+        a_->defLabel(".Lfunc.begin." + fn.symbol);
     }
     clearCallSites();
     clearMsTries();
 
     // A callee the SSA inliner took is the caller's allocas already: layoutSsa's frame holds it, with no reserve beside.
-    frameSize_ = layoutSsa(fn, *ssaFn);
-    if (lineSource()) dwarfFns_[dwarfFnAt_].locals = &ssaFrameLocals(fn, *ssaFn, ssaAllocaSlot_, "x86");
-    fnSymbol_ = fn.symbol();
-    fnMergeable_ = fn.isInline();
+    frameSize_ = layoutSsa(fn);
+    if (lineSource()) dwarfFns_[dwarfFnAt_].locals = &ssaFrameLocals(fn, *ssaTypes_, ssaAllocaSlot_, "x86");
+    fnSymbol_ = fn.symbol;
+    fnMergeable_ = fn.isInline;
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
-    markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
+    markLine(target_.microsoftNames() ? openingBrace(fn.pos) : fn.pos);
     if (passesRun()) {
         std::vector<opt::Local> scalars = scalarsOf(fn);
-        ssaScalars(*ssaFn, scalars);
+        ssaScalars(fn, scalars);
         optimizer_->frame(scalars);
         // Nothing below the values - no reserve, no unwind-help word, no realigned frame: finish-frame may close them up.
         if (ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
             optimizer_->valueSlots(ssaValuesFrom_, ssaValuesTo_);
     }
-    outgoing_ = abi_.shadowBytes > 0 ? ssaOutgoing(*ssaFn) : 0;
+    outgoing_ = abi_.shadowBytes > 0 ? ssaOutgoing(fn) : 0;
     tempsAllowed_ = passesRun() && !(landingPads_ && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
     // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
     top_ = frameSize_ + outgoing_;
     if (realign_ > 0) top_ = (top_ + realign_ - 1) / realign_ * realign_;
     a_->prologue(realign_ > 0 ? top_ - outgoing_ : frameSize_,
-                 landingPads_ ? ".Lexception." + fn.symbol()
+                 landingPads_ ? ".Lexception." + fn.symbol
                                      : std::string(),
                  outgoing_, realign_);
 
     receiveParameters(fn);
 
-    selectBody(fn, *ssaFn);
+    selectBody(fn);
     if (passesRun()) optimizer_->temporaries(tempHigh_);
     // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a catch it holds
     // whatever the runtime left, and adding the frame size landed on the unwind-help slot, so `ret`
@@ -1223,21 +1217,21 @@ void X86_64Linux::emit(const Function &fn) {
     a_->ins("pop", reg("%rbp"));
     // A float or double comes back in xmm0 alone, so rax and xmm1 are not read there (a void one may be a Microsoft
     // constructor, which returns `this` in rax).
-    const Kind rk = fn.returns() ? genKind(fn.returns()) : Kind::Void;
+    const Kind rk = laidType(fn.laid.returns) ? genKind(laidType(fn.laid.returns)) : Kind::Void;
     if (passesRun() && (rk == Kind::Float || rk == Kind::Double)) optimizer_->returnReads(opt::bit(opt::kXmm0));
     a_->ins("ret");
     // Before .cfi_endproc, because the last call-site range measures to it.
     if (!lineSource() && !callSites().empty() && !usesFunclets())
-        a_->defLabel(".Lfunc.end." + fn.symbol());
+        a_->defLabel(".Lfunc.end." + fn.symbol);
     // The tables are written below; tell the spelling whether there are any,
     // so its unwind info does not name a FuncInfo that never appears.
     if (target_.microsoftNames()) a_->noteHasEh(!msStates().empty());
-    a_->functionEnd(fn.symbol());
+    a_->functionEnd(fn.symbol);
     // The tables below measure slots from the frame as the passes left it.
     if (passesRun()) frameSize_ = optimizer_->frameSize();
     emitExceptionTables(fn);
     if (lineSource()) {
-        a_->defLabel(".Lfunc.end." + fn.symbol());
+        a_->defLabel(".Lfunc.end." + fn.symbol);
 
         DwarfFunction &d = dwarfFns_[dwarfFnAt_];
         d.blocks = blocks();
@@ -1257,31 +1251,31 @@ void X86_64Linux::emit(const Function &fn) {
 
     if (depth_ != 0 || tempDepth_ != 0) {
         std::fprintf(stderr, "codegen: stack depth %d and %d temporaries at the end of %s\n",
-                     depth_, tempDepth_, fn.name().c_str());
+                     depth_, tempDepth_, fn.laid.name.c_str());
         compileFailed();
     }
     finishChunk();
 }
 
 // **Parameters into their slots**, for a function emitted whole or walked in place.
-void X86_64Linux::receiveParameters(const Function &fn) {
+void X86_64Linux::receiveParameters(const ir::Function &fn) {
     // The definition side of the same rule: for a member function on the
     // Microsoft ABI the hidden return pointer arrives in the *second* integer
     // register, `this` having taken the first.
-    sretSlot_ = fn.sretSlot();
-    const bool msThisFirst = sretSlot_ != 0 && abi_.positional && fn.hasThis();
+    sretSlot_ = fn.laid.sretSlot;
+    const bool msThisFirst = sretSlot_ != 0 && abi_.positional && fn.laid.hasThis;
     if (sretSlot_ != 0)
         a_->ins("mov", reg(abi_.intRegs[msThisFirst ? 1 : 0]), local(sretSlot_));
 
-    regSave_ = fn.regSaveSlot();
-    if (fn.isVariadic() && abi_.positional) {
+    regSave_ = fn.laid.regSave;
+    if (fn.variadic && abi_.positional) {
         for (int i = 0; i < abi_.intCount; i++)
             a_->ins("mov", reg(abi_.intRegs[i]), mem((16 + i * 8), "%rbp"));
         regSave_ = 0;
     } else if (regSave_ != 0) {
         for (int i = 0; i < 6; i++)
             a_->ins("mov", reg(abi_.intRegs[i]), frameSlot(i * 8 - regSave_));
-        std::string done = ".L.novec." + fn.symbol();
+        std::string done = ".L.novec." + fn.symbol;
         a_->ins("testb", reg("%al"), reg("%al"));
         a_->ins("je", lbl(done));
         for (int i = 0; i < 8; i++)
@@ -1289,14 +1283,14 @@ void X86_64Linux::receiveParameters(const Function &fn) {
         a_->defLabel(done);
     }
 
-    const std::vector<Param> &ps = fn.params();
+    const std::vector<FrameParam> ps = laidParams(fn, *ssaTypes_);
     // **The same walk the caller made, made once.** placeArguments answers
     // where each parameter is; what is left here is reading it out of there,
     // and the base is this side's.
     std::vector<const Type *> ptypes;
     ptypes.reserve(ps.size());
     for (std::size_t i = 0; i < ps.size(); i++) ptypes.push_back(ps[i].type);
-    const Placement plan = placeArguments(ptypes, fn.hasThis(), sretSlot_ != 0);
+    const Placement plan = placeArguments(ptypes, fn.laid.hasThis, sretSlot_ != 0);
     const int stackBase = 16 + abi_.shadowBytes;
 
     bool byRef = abi_.aggregatesByReference;
@@ -1372,23 +1366,25 @@ void X86_64Linux::receiveParameters(const Function &fn) {
                                    : stackBase + plan.stackWords * 8;
 }
 
-std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn) const {
+std::vector<opt::Local> X86_64Linux::scalarsOf(const ir::Function &fn) const {
     std::vector<opt::Local> scalars;
-    for (const Local &l : fn.locals())
-        if (l.staticName.empty() && l.isParam && (l.type->isInteger() || l.type->isPointer() || l.type->isFloating()))
-            scalars.push_back(opt::Local{-static_cast<long long>(l.offset), l.type->size(target_), l.type->isFloating()});
+    for (const ir::LaidLocal &l : fn.laid.locals) {
+        const Type *t = laidType(l.type);
+        if (l.staticName.empty() && l.isParam && (t->isInteger() || t->isPointer() || t->isFloating()))
+            scalars.push_back(opt::Local{-static_cast<long long>(l.offset), t->size(target_), t->isFloating()});
+    }
     return scalars;
 }
 
 
 // **A Microsoft constructor or deleting destructor returns `this` in RAX**, and cl's callers read it - `new V(4)`
 // hands back the constructor's RAX as it stands. Measured 2026-09-17; after the return label, for every path.
-void X86_64Linux::returnThis(const Function &fn) {
-    const std::vector<Param> &ps = fn.params();
-    if (abi_.positional && fn.hasThis() && !ps.empty() &&
-        (fn.symbol().compare(0, 3, "??0") == 0 ||
-         fn.symbol().compare(0, 4, "??_G") == 0 ||
-         fn.symbol().compare(0, 4, "??_E") == 0))
+void X86_64Linux::returnThis(const ir::Function &fn) {
+    const std::vector<FrameParam> ps = laidParams(fn, *ssaTypes_);
+    if (abi_.positional && fn.laid.hasThis && !ps.empty() &&
+        (fn.symbol.compare(0, 3, "??0") == 0 ||
+         fn.symbol.compare(0, 4, "??_G") == 0 ||
+         fn.symbol.compare(0, 4, "??_E") == 0))
         a_->ins("mov", local(ps[0].offset), reg("%rax"));
 }
 
@@ -1468,7 +1464,7 @@ void X86_64Linux::closeFunclet(const std::string &resume) {
 }
 
 // **The FH3 tables for a frame that only cleans up.**
-void X86_64Linux::emitCoffEhTables(const Function &fn) {
+void X86_64Linux::emitCoffEhTables(const ir::Function &fn) {
     (void)fn;
     const std::string m = fnSymbol_;
     const std::vector<MsState> &states = msStates();
@@ -1827,7 +1823,12 @@ void X86_64Linux::run(const ir::Module &module) {
 
     emitData(data);
     finishChunk();
-    for (const Function &fn : *functions_) emit(fn);
+    for (const std::string &symbol : data.order) {
+        const ir::FuncId id = ssa_ != nullptr ? ssa_->find(symbol) : ir::FuncId();
+        if (id.valid()) { emit(ssa_->functions[id.v]); continue; }
+        std::fprintf(stderr, "codegen: '%s' has no SSA body to select\n", symbol.c_str());
+        compileFailed();
+    }
     if (!data.initFunction.empty()) {
         a_->initialiserEntry(data.initFunction, data.usesDsoHandle);
         finishChunk();

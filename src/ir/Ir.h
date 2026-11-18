@@ -92,9 +92,10 @@ struct LaidParam { TypeId type; int offset; LaidParam() : offset(0) {} };
 struct LaidLocal {
     std::string name, staticName;
     TypeId type;
-    int offset, scope, serial;
+    TypeId declared;                        // a reference's own type, for -g: `type` is the pointer it is stored as
+    int offset, scope, serial, align;       // align: the slot's, alignas included
     bool isParam;
-    LaidLocal() : offset(0), scope(0), serial(-1), isParam(false) {}
+    LaidLocal() : offset(0), scope(0), serial(-1), align(0), isParam(false) {}
 };
 struct Laid {
     std::vector<LaidParam> params;
@@ -102,10 +103,11 @@ struct Laid {
     std::vector<int> blocks;                // each lexical block's parent
     std::vector<std::size_t> blockAts;      // where each opens
     TypeId returns;                         // as declared, qualifiers kept
-    int sretSlot;
+    int sretSlot, regSave, frameAlign;      // regSave: a variadic function's register save area; frameAlign: 16, or what a local asked
     bool pads;                              // the parser's own landing pads
+    bool hasThis, named;                    // as the parser has it; named: a display name was given
     std::string alias, name;
-    Laid() : sretSlot(0), pads(false) {}
+    Laid() : sretSlot(0), regSave(0), frameAlign(16), pads(false), hasThis(false), named(false) {}
     // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
     int blockAt(std::size_t pos) const {
         int found = 0;

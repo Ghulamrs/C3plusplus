@@ -173,7 +173,7 @@ private:
     int establisherOffset(int slot) const;
 
     void storeUnwindHelp(int slot) override;
-    void emitExceptionTables(const Function &fn) override;
+    void emitExceptionTables(const ir::Function &fn) override;
 
     // -g: the variables and types as CodeView, which GRIDE's masm carries into the object
     // (writeDebug); not for ml64, which the driver refuses -g for (1.29).

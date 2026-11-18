@@ -1440,7 +1440,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         facts.returns = TypeTable::id(fn.returns());
     };
-    // The parser's frame of `fn` onto its IR function (ir::Laid), which the C6000's shell and -g's locals read.
+    // The parser's frame of `fn` onto its IR function (ir::Laid), which every generator's shell and -g's locals read.
     auto laidOf = [&into](const Function &fn, ir::FuncId id) {
         ir::Laid &d = into.functions[id.v].laid;
         for (const Param &p : fn.params()) { ir::LaidParam q; q.type = TypeTable::id(p.type); q.offset = p.offset; d.params.push_back(q); }
@@ -1448,11 +1448,13 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
             ir::LaidLocal q;
             q.name = l.name; q.staticName = l.staticName; q.type = TypeTable::id(l.type);
             q.offset = l.offset; q.scope = l.scope; q.serial = l.serial; q.isParam = l.isParam;
+            q.align = l.align; if (l.declared != nullptr) q.declared = TypeTable::id(l.declared);
             d.locals.push_back(q);
         }
         d.blocks = fn.blocks(); d.blockAts = fn.blockPositions();
         d.returns = TypeTable::id(fn.returns()); d.sretSlot = fn.sretSlot(); d.pads = fn.hasLandingPads();
         d.alias = fn.alias(); d.name = fn.name();
+        d.regSave = fn.regSaveSlot(); d.frameAlign = fn.frameAlign(); d.hasThis = fn.hasThis(); d.named = fn.hasDisplayName();
     };
     std::map<std::string, int> reasons;
     int lowered = 0;
@@ -1658,7 +1660,6 @@ bool Driver::compile(const Job &job) {
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         for (const Function &fn : program.functions) program.module.data.order.push_back(fn.symbol());
-        gen->setFunctions(&program.functions);
         gen->run(program.module);
     }
     if (dumpMir_) std::fwrite(mir.str().data(), 1, mir.str().size(), stdout);
