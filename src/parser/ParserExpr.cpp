@@ -684,6 +684,8 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         }
         ExprPtr v = decay(assign());
         operand = syn(v);
+        // A read's `T(a, b)` over its parameter is a constructor's call if `T` is a class: substitution's to say.
+        while (patternBody_ && dependentType(to) && consume(",")) decay(assign());
         if (peek().is(","))
             src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
                                   "constructor, and '" + to->describe() +
