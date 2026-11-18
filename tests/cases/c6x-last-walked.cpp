@@ -22,9 +22,10 @@ long long eighth(long long a, int b, int c, int d, int e, int f, int g, long lon
 
 struct Sum {
     int base;
-    explicit Sum(int b) : base(b) {}
+    explicit Sum(int b);
     int add(int n, ...);
 };
+Sum::Sum(int b) : base(b) {}
 int Sum::add(int n, ...) {
     va_list ap;
     va_start(ap, n);

@@ -295,14 +295,13 @@ private:
 
 class Postfix final : public Expr {
 public:
-    Postfix(ExprPtr target, bool increment, long long step)
-        : target_(std::move(target)), increment_(increment), step_(step) {}
+    Postfix(ExprPtr target, bool, long long step)
+        : target_(std::move(target)), step_(step) {}
     const Expr &target() const { return *target_; }
     long long step() const { return step_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr target_;
-    bool increment_;
     long long step_;
 };
 
@@ -481,9 +480,9 @@ private:
 class Switch final : public Stmt {
 public:
     Switch(ExprPtr cond, StmtPtr body, std::vector<const Case *> cases,
-           const Case *deflt)
+           const Case *)
         : cond_(std::move(cond)), body_(std::move(body)),
-          cases_(std::move(cases)), default_(deflt) {}
+          cases_(std::move(cases)) {}
     const Expr &cond() const { return *cond_; }
     const Stmt &body() const { return *body_; }
     void accept(Visitor &v) const override { v.visit(*this); }
@@ -491,7 +490,6 @@ private:
     ExprPtr cond_;
     StmtPtr body_;
     std::vector<const Case *> cases_;
-    const Case *default_;
 };
 
 class Goto final : public Stmt {
@@ -559,10 +557,9 @@ public:
     // The body is a *list* and not a block, because a cleanup region covers a
     // slice of an enclosing block's statements and must not open a scope of its
     // own - the objects it destroys belong to the block outside it.
-    Try(std::vector<StmtPtr> body, StmtPtr pad, int pointerSlot,
-        int selectorSlot, std::vector<std::string> types)
+    Try(std::vector<StmtPtr> body, StmtPtr pad, int, int,
+        std::vector<std::string> types)
         : body_(std::move(body)), pad_(std::move(pad)),
-          pointerSlot_(pointerSlot), selectorSlot_(selectorSlot),
           types_(std::move(types)) {}
     const std::vector<StmtPtr> &body() const { return body_; }
 
@@ -586,8 +583,6 @@ public:
 private:
     std::vector<StmtPtr> body_;
     StmtPtr pad_;
-    int pointerSlot_;
-    int selectorSlot_;
     std::vector<std::string> types_;
     std::vector<MsHandler> handlers_;
     StmtPtr cleanup_;
