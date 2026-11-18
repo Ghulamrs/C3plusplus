@@ -186,6 +186,7 @@
     <ClInclude Include="..\src\Preprocessor.h" />
     <ClInclude Include="..\src\Source.h" />
     <ClInclude Include="..\src\Type.h" />
+    <ClInclude Include="..\src\UnitData.h" />
     <ClInclude Include="..\src\Version.h" />
     <ClInclude Include="..\src\parser\Parser.h" />
     <ClInclude Include="..\src\parser\ParserInternal.h" />

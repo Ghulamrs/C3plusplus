@@ -136,6 +136,7 @@
     <ClInclude Include="..\src\Preprocessor.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Source.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Type.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\UnitData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Version.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\parser\Parser.h"><Filter>Header Files\parser</Filter></ClInclude>
     <ClInclude Include="..\src\parser\ParserInternal.h"><Filter>Header Files\parser</Filter></ClInclude>
