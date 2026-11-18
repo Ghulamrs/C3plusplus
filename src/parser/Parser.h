@@ -148,7 +148,7 @@ private:
     std::set<std::string> discardableInline_;
     // Literals a char array copies (emitString): the AST stores their bytes, the SSA lowering copies the label.
     std::set<std::string> copiedStrings_;
-    void pruneUnusedInline(Program &program);
+    void recordHeld(Program &program);
     bool isMemberTemplate(const Type *obj, const std::string &name) const {
         return obj != nullptr &&
                tmpl_.memberTemplates_.count(obj->unqualified()->tag() + "::" + name) != 0;

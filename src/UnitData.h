@@ -82,8 +82,6 @@ struct UnitData {
     std::vector<std::string> order;
     // The functions emitted only where something emitted names them (the prune): the inline ones, sorted.
     std::vector<std::string> held;
-    // What the parser's prune dropped, by symbol or label: -check=prune's other half, until the driver's is the only prune.
-    std::vector<std::string> dropped;
     // **The Microsoft ThrowInfo chains**, one per type thrown or caught, finished by the parser.
     std::vector<MicrosoftThrow> msThrows;
     // **The classes wanting a Microsoft run-time description**, five each.

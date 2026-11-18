@@ -89,9 +89,6 @@ const std::size_t kThreadFrom = 4;
 // **The line every run of this compiler prints**, and the one thing in the output that is not about the program being compiled.
 const char *Driver::bannerLine() { return CXX1_BANNER; }
 
-// -check=prune was asked: one flag of the command line, read by every job.
-static bool checkPruneAsked = false;
-
 // **The directory the running program is in.** A released compiler is unpacked
 // somewhere nobody chose at build time, so the headers it ships with cannot be
 // found by a path compiled into it - they are found *beside it*.
@@ -1151,8 +1148,6 @@ bool Driver::parseArguments(int argc, char **argv) {
             return false;
         } else if (std::strcmp(argv[i], "-check=ssa") == 0 || std::strcmp(argv[i], "--check=ssa") == 0) {
             checkSsa_ = true;
-        } else if (std::strcmp(argv[i], "-check=prune") == 0) {
-            checkPruneAsked = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1).
             const char *what = std::strchr(argv[i], '=') + 1;
@@ -1394,31 +1389,24 @@ struct Prune {
 };
 
 // What the closure did not reach leaves the unit: functions, objects, unread literals, a Microsoft class's unnamed records.
-// **-check=prune**: each kept and each dropped against what the parser's closure said (UnitData::dropped).
-static void pruneUnit(const Prune &pr, Program &program, UnitData &d, const TypeTable &types, std::vector<std::string> *faults) {
-    const std::set<std::string> parsers(d.dropped.begin(), d.dropped.end());
-    auto keep = [&](bool kept, const std::string &name) {
-        if (faults != nullptr && !name.empty() && kept == (parsers.count(name) != 0))
-            faults->push_back("-check=prune: the IR's closure " + std::string(kept ? "keeps " : "drops ") + name + ", which the parser's " + (kept ? "dropped" : "kept"));
-        return kept;
-    };
+static void pruneUnit(const Prune &pr, Program &program, UnitData &d, const TypeTable &types) {
     std::vector<Function> functions;
     for (Function &f : program.functions)
-        if (keep(pr.reached(f.symbol(), f.alias()), f.symbol())) functions.push_back(std::move(f));
+        if (pr.reached(f.symbol(), f.alias())) functions.push_back(std::move(f));
     program.functions.swap(functions);
     std::vector<Global> globals;
     for (Global &g : d.globals)
-        if (keep(!g.held || pr.every.count(g.symbol) != 0, g.symbol)) globals.push_back(std::move(g));
+        if (!g.held || pr.every.count(g.symbol) != 0) globals.push_back(std::move(g));
     d.globals.swap(globals);
     std::vector<StringLit> strings;
     for (StringLit &sl : d.strings)
-        if (keep(pr.every.count(sl.label) != 0 || sl.copied, sl.label)) strings.push_back(std::move(sl));
+        if (pr.every.count(sl.label) != 0 || sl.copied) strings.push_back(std::move(sl));
     d.strings.swap(strings);
     std::vector<TypeId> rtti;
     for (const TypeId id : d.rtti) {
         MicrosoftRtti n; std::string why;
-        if (keep(!microsoftClassRttiNames(types.type(id), &n, &why) || pr.every.count(n.locator) != 0 || pr.every.count(n.descriptor) != 0 ||
-                 pr.every.count(n.baseDescriptor) != 0 || pr.every.count(n.array) != 0 || pr.every.count(n.hierarchy) != 0, n.descriptor))
+        if (!microsoftClassRttiNames(types.type(id), &n, &why) || pr.every.count(n.locator) != 0 || pr.every.count(n.descriptor) != 0 ||
+            pr.every.count(n.baseDescriptor) != 0 || pr.every.count(n.array) != 0 || pr.every.count(n.hierarchy) != 0)
             rtti.push_back(id);
     }
     d.rtti.swap(rtti);
@@ -1658,7 +1646,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     }
     // Taken before any pass: the inliner removes calls, and the kept set may not depend on the level.
     if (outside.empty()) {
-        if (prune.any) pruneUnit(prune, program, into.data, types, checkPruneAsked ? &outside : nullptr);
+        if (prune.any) pruneUnit(prune, program, into.data, types);
         // A function a later round reached stands where the unit's order has it, as when every body was lowered in turn.
         if (placed.size() + 1 == into.functions.size()) {
             std::sort(placed.begin(), placed.end());

@@ -1853,71 +1853,10 @@ void Parser::pruneUnchosenCandidates(Program &program) {
     }
 }
 
-namespace {
-
-// Every symbol a body names: a call, and a variable or function used as a value.
-class SymbolsNamed final : public Visitor {
-public:
-    std::vector<std::string> *out;
-    explicit SymbolsNamed(std::vector<std::string> *o) : out(o) {}
-    void visit(const Num &) override {}
-    void visit(const Var &n) override { out->push_back(n.symbol()); }
-    void visit(const StrLit &e) override { out->push_back(e.label()); }
-    void visit(const Goto &) override {}
-    void visit(const Break &) override {}
-    void visit(const Continue &) override {}
-    void visit(const FuncletLeave &) override {}
-    void visit(const Call &n) override {
-        out->push_back(n.symbol());
-        if (n.callee() != nullptr) n.callee()->accept(*this);
-        for (const ExprPtr &a : n.args()) a->accept(*this);
-    }
-    void visit(const VaStart &n) override { n.list().accept(*this); }
-    void visit(const VaArg &n) override { n.list().accept(*this); }
-    void visit(const Assign &n) override { n.target().accept(*this); n.value().accept(*this); }
-    void visit(const Unary &n) override { n.operand().accept(*this); }
-    void visit(const Binary &n) override { n.lhs().accept(*this); n.rhs().accept(*this); }
-    void visit(const Postfix &n) override { n.target().accept(*this); }
-    void visit(const Cast &n) override { n.value().accept(*this); }
-    void visit(const Comma &n) override { n.left().accept(*this); n.right().accept(*this); }
-    void visit(const Conditional &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this); n.elseArm().accept(*this);
-    }
-    void visit(const MemberAccess &n) override { n.object().accept(*this); }
-    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
-    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
-    void visit(const Block &n) override { for (const StmtPtr &s : n.body()) s->accept(*this); }
-    void visit(const If &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this);
-        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
-    }
-    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
-    void visit(const For &n) override {
-        if (n.init() != nullptr) n.init()->accept(*this);
-        if (n.cond() != nullptr) n.cond()->accept(*this);
-        if (n.step() != nullptr) n.step()->accept(*this);
-        n.body().accept(*this);
-    }
-    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const Case &n) override { n.body().accept(*this); }
-    void visit(const Label &n) override { n.body().accept(*this); }
-    void visit(const Try &n) override {
-        for (const std::string &t : n.types()) out->push_back(t);
-        for (const StmtPtr &s : n.body()) s->accept(*this);
-        if (n.hasPad()) n.pad().accept(*this);
-        if (n.cleanup() != nullptr) n.cleanup()->accept(*this);
-        for (const MsHandler &h : n.handlers())
-            if (h.body != nullptr) h.body->accept(*this);
-    }
-};
-
-}
-
 // **An inline function, or a vtable group with no key function, nothing here uses is not emitted** -
-// [basic.def.odr]/3, and what clang, g++ and cl do. Reached from every function and global not held;
-// a symbol is dropped only if it was held and nothing reachable names it or its alias.
-void Parser::pruneUnusedInline(Program &program) {
+// [basic.def.odr]/3, and what clang, g++ and cl do. What may be left out is recorded here; the driver's closure over
+// the IR (M6d S1) leaves it out where no name reaches it.
+void Parser::recordHeld(Program &program) {
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
         if (lookup_.functions_[i].fromTemplate) discardableInline_.erase(lookup_.functions_[i].symbol);
     // What the compiler writes is inline by [class.copy] and [class.dtor]: reached, or not emitted.
@@ -1947,77 +1886,10 @@ void Parser::pruneUnusedInline(Program &program) {
             if (n.compare(4, k.size(), k) == 0) return false;
         return true;
     };
-    // The holding facts as the unit's records (M6d S1): what the closure below, and the driver's over the IR, start from.
     UnitData &data = program.module.data;
     data.held.assign(held.begin(), held.end());
-    bool any = !held.empty();
-    for (Global &g : data.globals) { g.held = heldGlobal(g); any = any || g.held; }
+    for (Global &g : data.globals) g.held = heldGlobal(g);
     for (StringLit &sl : data.strings) sl.copied = copiedStrings_.count(sl.label) != 0;
-    if (!any) return;
-    // A node is a function (its index) or a global (its index past the functions).
-    const std::size_t nf = program.functions.size();
-    std::map<std::string, std::size_t> bySymbol;
-    for (std::size_t i = 0; i < nf; i++) {
-        bySymbol[program.functions[i].symbol()] = i;
-        if (!program.functions[i].alias().empty()) bySymbol[program.functions[i].alias()] = i;
-    }
-    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
-        bySymbol[program.module.data.globals[i].symbol] = nf + i;
-    std::vector<bool> reached(nf + program.module.data.globals.size(), false);
-    std::set<std::string> everyName;
-    std::vector<std::string> named;
-    named.push_back(program.module.data.initFunction);
-    for (const MicrosoftThrow &t : program.module.data.msThrows) {
-        if (!t.thrown) continue;         // a type only caught needs its descriptor alone
-        named.push_back(t.destructor);
-        for (const MicrosoftThrow::Catchable &c : t.catchables) named.push_back(c.copyCtor);
-    }
-    std::vector<std::size_t> work;
-    for (std::size_t i = 0; i < nf; i++)
-        if (held.count(program.functions[i].symbol()) == 0) {
-            reached[i] = true;
-            work.push_back(i);
-        }
-    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
-        if (!program.module.data.globals[i].held) {
-            reached[nf + i] = true;
-            work.push_back(nf + i);
-        }
-    for (;;) {
-        for (const std::string &s : named) {
-            everyName.insert(s);
-            const std::map<std::string, std::size_t>::const_iterator f = bySymbol.find(s);
-            if (f != bySymbol.end() && !reached[f->second]) {
-                reached[f->second] = true;
-                work.push_back(f->second);
-            }
-        }
-        named.clear();
-        if (work.empty()) break;
-        const std::size_t i = work.back();
-        work.pop_back();
-        if (i < nf) {
-            SymbolsNamed collect(&named);
-            program.functions[i].body().accept(collect);
-        } else {
-            const Global &g = program.module.data.globals[i - nf];
-            named.push_back(g.prefixWord);
-            for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
-        }
-    }
-    // Nothing leaves here: what this closure would drop is -check=prune's other half, the driver's closure the prune.
-    for (std::size_t i = 0; i < nf; i++)
-        if (!reached[i]) data.dropped.push_back(program.functions[i].symbol());
-    for (std::size_t i = 0; i < data.globals.size(); i++)
-        if (!reached[nf + i]) data.dropped.push_back(data.globals[i].symbol);
-    for (const StringLit &sl : data.strings)
-        if (everyName.count(sl.label) == 0 && !sl.copied) data.dropped.push_back(sl.label);
-    for (const TypeId id : data.rtti) {
-        MicrosoftRtti n; std::string why;
-        if (microsoftClassRttiNames(types_.type(id), &n, &why) && !everyName.count(n.locator) && !everyName.count(n.descriptor) &&
-            !everyName.count(n.baseDescriptor) && !everyName.count(n.array) && !everyName.count(n.hierarchy))
-            data.dropped.push_back(n.descriptor);
-    }
 }
 
 // `static int total;` inside a class: one object shared by every object of the class,
