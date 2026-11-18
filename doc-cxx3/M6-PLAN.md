@@ -3566,3 +3566,53 @@ refused by REF and the lane alike (`Parser::buildInto`, stack arguments outside 
 0 stale; comment cap 0 over; memory gate held; ast-residue lower, recorded; ide --check up to date.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test to its end, `-check=prune` (S1's)
 beside this. **Left of S2:** nothing; the design's B is done. Lanes S1, S3-S8 remain as the fourth round wrote them.
+
+### M6d S3: three of the six statement casts asked of the builders, and where design C1 is wrong - lane m6d-s3, 2026-11-18
+
+From m6d-s2 6572c73c. src/ 93,188 -> 93,199 lines (+11: step 1 +33, step 2 -22). REF is 6572c73c built on Linux in the
+lane's own tree (`~/m6d-s3-ref.exe`; S2's tree, and with it REF's baked include path, had been removed from the box, so a
+REF built elsewhere refuses every case with a library header), so no path is normalised; the compares are S2's
+(tools/identical.sh, 1,808 tms6747 and 7,232 x86_64-linux, x86_64-windows and arm64-darwin; every case's `-g -S` text).
+
+**(1) The records and their oracle** (253c9246, src/ +33). The builder that makes the node says so: `tryStatement` sets
+`builtTry_` at each of its three returns (false where Microsoft's exits wrap the `try` in a block), `forStatement` sets
+`builtForParts_` to the parts on the path that returns the `for` itself and -1 on the hoisted and range paths,
+`caseLabel` sets `builtCase_` (value, default, id). `statement()` reads each only for the kind its first token named, so
+no stale value is read, and hands block() `madeTry`. `builtShapeDiffers` failed the compile with an internal error naming
+the function on any difference from the three casts. 0: identical 1,808/0 and 7,232/0, `-g` 888/903/903 same and
+x86_64-windows 878, 0 differ (as REF: 358/343/343/368 refused alike).
+**(2) The records asked** (74b64305, src/ +3 -25): block()'s `dynamic_cast<const Try *>` (ParserStmt.cpp:1473) and
+statement()'s `For` (:1558) and `Case` (:1566) casts and the oracle are gone. Identical 1,808/0 and 7,232/0; `-g` 0
+differ on four targets (x86_64-windows 878 same, 368 refused alike).
+
+**ast-residue** (from ExprPtr 2,013, StmtPtr 637, node-casts 161, node-refs 382): after step 1 StmtPtr 638, node-casts
+164, node-refs 385 (the oracle's three casts and a `StmtPtr` the range path named - moved into `rangeForStatement` before
+step 2 was measured); after step 2 ExprPtr 2,013, StmtPtr 637, node-casts 158, node-refs 381, readers 9, ast-lines 722;
+baseline recorded. The memory gate's counts are unchanged.
+
+**Where the design is wrong, met and not improvised past.** (i) *C1's `ConstexprFn` owning its operand* has to wait for
+S1's last commit: `SymbolsNamed` (the parser's prune, still the one that decides) walks every reached body, the constexpr
+function's `return` operand included, so a callee named only there would be pruned once the operand is moved out of the
+`Return`. (ii) *"One return and nothing else" asked of the syntax tree* is not the same test: `singleReturnValue` walks
+the Ast body `wrapUp` may have wrapped (a `noexcept` function whose `return` calls one that may throw
+is made a `Try` on Itanium, and refused today), and accepts
+`{ { return x; } }`, which [dcl.constexpr]/3 does not - the syntax tree answers both the other way, so the swap changes
+what is accepted and is not a step of identical output; and the operand is still the `Return`'s. Proposed: C1's first
+half moves to S4, where the `return` builder hands its operand to the `ConstexprFn` when no statement is built, the two
+acceptance differences fixed there as their own rows (a refusal stricter than the standard, an acceptance wider).
+(iii) *The constructor's and a declared object's steps* as (offset, initialiser) records written where the
+mem-initialisers are built: `assemble`, `buildStaticConstruction`, `constructObject` and `emitRecordedInit` hand back
+`StmtPtr`s (blocks, guards, Microsoft regions), so the record needs those builders to return their effect expressions
+too - the same change as the three ParserExprNew.cpp casts (:217, :356, :1320-1327 now: `initializerListExpr`,
+`aggregateTemporary`, `statementsAsExpression` turning a builder's statements into a comma chain, each with a refusal
+cited in EXCLUSIONS.md). Proposed: one lane after S1, the builders returning effects beside the node; then
+`runConstexpr`'s two casts and those three go together.
+
+**Gates on the final tree** (74b64305; Linux ~/m6d-s3 g++ -Werror clean; Windows work\m6d-s3x cl /W4 /WX clean - a full
+build of step 1 in 1 min 22 s, the delta of the first step 2 in 1 min 1 s and of the final one in 2 min 53 s, each
+started first and alone): run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at
+-O2 425/0 and 425/0, -O0 425/0 and 425/0; self-compile of ParserStmt.cpp: x86_64-linux -O2 text the same as REF's,
+tms6747 -O0 and -O2 refused by REF and the lane alike (`Parser::classRangeEnds`' lambda, stack arguments outside the C6000
+selector); exclusions, comment cap, memory gate pass; ast-residue lower, recorded; ide --check up to date.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test to its end. **Left of S3:** the
+other three casts and C1, as proposed above.
