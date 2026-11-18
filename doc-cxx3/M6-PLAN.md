@@ -4012,3 +4012,47 @@ tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at -O2 425/0, -O0 
 ParserExprNew.cpp and ParserExprCall.cpp: x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both
 alike (stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate, ide --check pass;
 ast-residue lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, first lane: emitInit's family and the constructor call return effects, and what is left of S4 - lane m6d-s4a, 2026-11-18
+
+From m6d-s3c 662c16be. src/ 93,572 -> 93,579 lines. REF is 662c16be built from clean in the lane's own Linux tree
+(`~/m6d-s4a-ref.exe`); the compares are S3c's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) emitInit's family and `buildInitializerList` write effects** (7b5f15d7, src/ 93,572 -> 93,579). The nine
+builders under `emitInit` (`initConstruct`, `initStore`, `initZero`, `zeroRun`, `emitString`, `emitFill`,
+`emitAggregate`, `emitInit`, `emitRecordedInit`) and `buildInitializerList` push `Parser::Effect`; `CtorInit::ilSetup`
+holds effects. A caller that still keeps statements makes one `ExprStmt` of each with `appendEffects` (what
+`flushTemporaries` now ends in), at the place and in the order the pushes were. `initializerListExpr`'s and
+`aggregateTemporary`'s casts are gone (the last two of the six the design named), and with them two refusals no
+program could reach: every step either read was an `ExprStmt` - `emitInit`'s are never guarded and the list is built
+with `flush` false - so acceptance is unchanged. EXCLUSIONS.md: 19 citations re-pointed (lines moved, words kept).
+**ast-residue** (Linux): ExprPtr 2,012, StmtPtr 625 -> 593, node-casts 155 -> 153, node-refs 353 -> 351, readers 9,
+ast-lines 717. **Shown** against REF: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and arm64-darwin
+7,232/0; `-g` 888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike).
+
+**(2) `constructObject` and `constructLocal` return an effect** (9ceda78c, src/ 93,579 -> 93,579). Both made one
+`ExprStmt` of the constructor call; they return `Parser::Effect`, and each of their six callers that keeps statements
+makes it one with `effectStatement`. **ast-residue**: ExprPtr 2,012, StmtPtr 593 -> 588, node-casts 153, node-refs
+351, readers 9, ast-lines 717; baseline recorded. **Shown** against REF: identical 1,808/0 and 7,232/0; `-g`
+888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike).
+
+**Not done, and why: no statement node is deleted yet.** After (1) the parser casts no statement node at all; the last
+four statement casts are the constant evaluator's (`singleReturnValue`, `runConstexpr`, Constexpr.cpp:264-274 and
+:568-575), and every statement class is still built, so none leaves Ast.h in this lane. What S4 still owes, in order:
+(a) "one return and nothing else" asked of the syntax tree with the `return` builder handing its operand to
+`ConstexprFn` - an acceptance change, its own commit, each difference named against clang (the Ast walk follows a
+chain of one-statement blocks to a `return`, so nested braces round the return, a declaration that builds no step, a
+null statement, a typedef, a `static_assert` and a body the parser wraps in a `try` each need a case measured); (b)
+`ConstexprCtor` and `foldDeclaredObject` over effects: `buildStaticConstruction`'s steps (`registerDestruction`,
+`emitDestructors`/`destroyObject` - which reaches `Classes::memberDestructor`, the other S4 lane's file) and
+`assemble`'s constructor body; (c) then `statement()` and its builders returning the syntax node instead of a
+`StmtPtr`, `Function::body` and the fifteen classes deleted - one change across ParserStmt.cpp, ParserTopLevel.cpp and
+ParserClass.cpp's synthesised bodies, after the Classes lane.
+
+**Gates on the final tree** (9ceda78c): Linux g++ -Werror clean (both steps); Windows work\m6d-s4ax cl /W4 /WX clean,
+started first and alone, 4 min 50 s for step 1 and 5 min 30 s for the final tree, each a full build with the tar;
+run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at -O2 425/0 and 425/0,
+-O0 425/0 and 425/0; self-compile of the six changed files: x86_64-linux -O2 text the same as REF's, tms6747 -O0 and
+-O2 refused by both alike (stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate,
+ide --check pass; ast-residue lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2,
+names.sh, make test.
