@@ -1978,20 +1978,8 @@ void Parser::topLevel(Program &program) {
         constant_.constexprCtors_[definedSymbol] = ctor;
         const std::size_t c1 = definedSymbol.find("C1E");
         if (c1 != std::string::npos) constant_.constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
-    } else if (constexprFunction && body != nullptr) {
-        const Expr *value = constant_.singleReturnValue(*body);
-        if (value == nullptr)
-            src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "
-                             "body has to be a single return statement and "
-                             "nothing else - that restriction is what lets its "
-                             "value be worked out while compiling");
-        ConstexprFn fn;
-        fn.value = value;
-        fn.pos = d.pos;
-        for (std::size_t i = 0; i < paramSlots.size(); i++)
-            fn.slots.push_back(paramSlots[i].offset);
-        constant_.constexprFns_[definedSymbol] = fn;
     }
+    const bool constexprBody = constexprFunction && body != nullptr && !isCtor;
     currentClass_ = nullptr;
     currentFunction_.clear();
     currentFunctionName_.clear();
@@ -2007,6 +1995,25 @@ void Parser::topLevel(Program &program) {
     if (scope != 0) scopedFunctions_[fnSyntax.v] = scope;
     if (isCtor) constructorNodes_.insert(fnSyntax.v);
     declaredReturns_[fnSyntax.v] = returnType_;
+    if (constexprBody) {
+        // The body is the definition's block; one the parser wrapped for a throw(...) list or a function try block is no one return.
+        std::uint32_t n = syntaxTree_.node(fnSyntax).count;
+        while (n > 0 && syntaxTree_.node(syntaxTree_.child(fnSyntax, n - 1)).kind != syntax::Kind::Block) n--;
+        std::string why;
+        const Expr *value = specFilter || ctorTry || functionTry || n == 0 ? nullptr
+                          : constant_.singleReturnValue(syntaxTree_.child(fnSyntax, n - 1), &why);
+        if (value == nullptr)
+            src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "
+                             "body has to be a single return statement and "
+                             "nothing else - that restriction is what lets its "
+                             "value be worked out while compiling" + (why.empty() ? "" : " (" + why + ")"));
+        ConstexprFn fn;
+        fn.value = value;
+        fn.pos = d.pos;
+        for (std::size_t i = 0; i < paramSlots.size(); i++)
+            fn.slots.push_back(paramSlots[i].offset);
+        constant_.constexprFns_[definedSymbol] = fn;
+    }
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
                                          std::move(body), frame,

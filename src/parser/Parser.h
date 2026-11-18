@@ -869,6 +869,10 @@ private:
     std::string defaultsOwner_;     // the function whose call applyDefaults is completing, while currentFunction_ is hidden
     // The position of the braces `return { ... };` built its value from, for the return's node to take their record.
     std::size_t pendingReturnBraces_ = 0;
+    // The last `return` noted with the operand its builder took plainly: what [dcl.constexpr]/3's test reads (S4).
+    struct PlainReturn { std::uint32_t node; const Expr *operand; };
+    PlainReturn plainReturn_ = PlainReturn();
+    const Expr *pendingPlainReturn_ = nullptr;
     bool typedefDeclared_ = false;       // the declaration just read was a typedef or an alias defining no type: its node's kind
     std::string pendingReturnEmpty_;     // "$ret:" and the return's position while `return {}` is read (M3b.7)
     // The constructor a braced list made a temporary through (listTemporaryFrom), by its braces' position - the `{}`

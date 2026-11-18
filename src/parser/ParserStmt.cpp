@@ -1543,7 +1543,7 @@ syntax::Kind Parser::statementKindAhead(std::string *text) const {
     };
     if (peek().is("goto")) *text = peekAt(1).text;
     for (const auto &w : kWords)
-        if (peek().is(w.word)) return w.kind;
+        if (peek().is(w.word)) { if (w.kind == syntax::Kind::DeclStmt) *text = w.word; return w.kind; }
     if (peek().kind == TokenKind::Ident && peekAt(1).is(":")) { *text = peek().text; return syntax::Kind::Label; }
     return syntax::Kind::ExprStmt;
 }
@@ -1569,6 +1569,8 @@ StmtPtr Parser::statement(bool *madeTry) {
     if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (kind == syntax::Kind::Return && pendingReturnBuilt_.form != 0) returnBuilt_[noted->syntax().v] = pendingReturnBuilt_;
+    if (kind == syntax::Kind::Return) plainReturn_ = PlainReturn{ noted->syntax().v, pendingPlainReturn_ };
+    pendingPlainReturn_ = nullptr;
     pendingReturnBuilt_ = ReturnBuilt();
     // [stmt.return]/2: the constructor `return { ... };` reached, the braces' record, under the return's own node.
     const std::map<std::uint32_t, TemporaryBuilt>::const_iterator braced =
@@ -2506,6 +2508,7 @@ StmtPtr Parser::statementBody() {
             before.push_back(StmtPtr(new Return(std::move(value))));
             return StmtPtr(new Block(std::move(before)));
         }
+        pendingPlainReturn_ = value.get();
         return StmtPtr(new Return(std::move(value)));
     }
     if (peek().is("if")) {

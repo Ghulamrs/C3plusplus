@@ -255,22 +255,30 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
     return false;
 }
 
-// **[expr.const]/3: a named integral constant is a constant expression**, which is the
-// rule that lets C++ write `const int n = 4; int a[n];`. Only integral, because that
-// is what fold() answers in. Below it: the one expression a constexpr body may be.
-const Expr *Constexpr::singleReturnValue(const Stmt &body) const {
-    const Stmt *at = &body;
-    for (;;) {
-        const Block *b = dynamic_cast<const Block *>(at);
-        if (b == nullptr) break;
-        if (b->body().size() != 1) return nullptr;
-        at = b->body()[0].get();
+// [dcl.constexpr]/3 asked of the body's syntax: one `return`, beside it only null statements, typedefs and aliases
+// defining no type, static_assert and using-directives; the operand is the one its builder took plainly.
+const Expr *Constexpr::singleReturnValue(syntax::NodeId body, std::string *why) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    if (!body.valid()) return nullptr;
+    syntax::NodeId ret;
+    for (std::uint32_t i = 0; i < st.node(body).count; i++) {
+        const syntax::NodeId c = st.child(body, i);
+        const syntax::Node &n = st.node(c);
+        if (n.kind == syntax::Kind::Return) { if (ret.valid()) return nullptr; ret = c; continue; }
+        if (n.kind == syntax::Kind::Null || n.kind == syntax::Kind::Typedef) continue;
+        if (n.kind == syntax::Kind::DeclStmt && (st.text(c) == "static_assert" || st.text(c) == "using")) continue;
+        const bool var = n.kind == syntax::Kind::DeclStmt && n.count > 0 && st.node(st.child(c, 0)).kind == syntax::Kind::Var;
+        *why = var ? "variable declaration in a constexpr function is a C++14 extension"
+                   : "use of this statement in a constexpr function is a C++14 extension";
+        return nullptr;
     }
-    const Return *r = dynamic_cast<const Return *>(at);
-    if (r == nullptr || !r->hasValue()) return nullptr;
-    return &r->value();
+    if (!ret.valid() || p_.plainReturn_.node != ret.v) return nullptr;
+    return p_.plainReturn_.operand;
 }
 
+// **[expr.const]/3: a named integral constant is a constant expression**, which is the
+// rule that lets C++ write `const int n = 4; int a[n];`. Only integral, because that
+// is what fold() answers in.
 bool Constexpr::constantInitialiser(const Type *t, const Init &in,
                                  long long *out) const {
     if (t == nullptr || !t->isConst() || !t->isInteger()) return false;
