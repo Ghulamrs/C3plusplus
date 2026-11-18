@@ -1,0 +1,38 @@
+#!/bin/sh
+# **-check=prune as one count a gate reads** (M6d S1): every source of the compiler, or every case, compiled -S with
+# -check=prune - the driver's closure over the IR against what the parser's prune kept and dropped. The recorded count
+# is 0: the last line is "prune-check: <n> units, <d> with a difference, <r> refused", and the status is 1 when d is not 0.
+#
+#   tools/prune-check [self|cases] [-arch <target>] [-O0|-O2 ...]      CXX1 (./cxx3.exe), JOBS (2), PRUNE_OUT (a directory)
+#
+# A difference is named in <out>/faults.txt as the compiler wrote it. A unit refused for another reason is counted
+# apart, what the compiler said kept as <out>/<unit>.refused, and fails nothing here: the suites that own it say so.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT" || exit 2
+if [ "${1:-}" = --one ]; then      # the per-unit job xargs runs: $2 the unit; CXX1, OUT, FLAGS and DEFS exported
+    b=$(echo "$2" | tr '/' '_')
+    if [ -n "$DEFS" ]; then
+        perl -e 'alarm shift; exec @ARGV' 170 "$CXX1" -nologo -check=prune -S $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
+            -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' "$2" -o "$OUT/$b.s" > /dev/null 2> "$OUT/$b.err"
+    else
+        perl -e 'alarm shift; exec @ARGV' 170 "$CXX1" -nologo -check=prune -S $FLAGS "$2" -o "$OUT/$b.s" > /dev/null 2> "$OUT/$b.err"
+    fi
+    r=$?; rm -f "$OUT/$b.s"
+    if grep -q -e '-check=prune:' "$OUT/$b.err"; then grep -e '-check=prune:' "$OUT/$b.err" | sed "s|^.*-check=prune: |$FLAGS $2: |" > "$OUT/$b.fault"
+    elif [ $r -ne 0 ]; then mv "$OUT/$b.err" "$OUT/$b.refused"; fi
+    rm -f "$OUT/$b.err"; exit 0
+fi
+WHAT=self; [ "${1:-}" = self ] || [ "${1:-}" = cases ] && { WHAT=$1; shift; }
+FLAGS="$*"
+CXX1=${CXX1:-$ROOT/cxx3.exe}
+OUT=${PRUNE_OUT:-$ROOT/prune-check.out}
+rm -rf "$OUT"; mkdir -p "$OUT"
+if [ "$WHAT" = self ]; then DEFS=1; UNITS=$(find src -name '*.cpp' | sort); else DEFS=; UNITS=$(ls tests/cases/*.cpp tests/c90/*.c); fi
+export CXX1 OUT FLAGS DEFS
+echo "$UNITS" | xargs -n 1 -P "${JOBS:-2}" sh "$ROOT/tools/prune-check" --one
+n=$(echo "$UNITS" | wc -l | tr -d ' ')
+d=$(ls "$OUT" | grep -c '\.fault$'); r=$(ls "$OUT" | grep -c '\.refused$')
+cat "$OUT"/*.fault > "$OUT/faults.txt" 2>/dev/null; head -8 "$OUT/faults.txt" | cut -c1-240
+echo "prune-check: $WHAT $FLAGS: $n units, $d with a difference, $r refused"
+[ "$d" -eq 0 ]
