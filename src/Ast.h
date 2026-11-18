@@ -402,7 +402,6 @@ struct MsHandler {
     int objectSize = 0;
     bool byReference = false;  // the slot takes the runtime's pointer, not a copy
     bool constPointer = false; // `catch (const T *)`: HT_IsConst, the const off the name
-    StmtPtr body;
     std::size_t pos = 0;       // where `catch` is written: the line the funclet's entry is named by under -g (1.29)
 };
 

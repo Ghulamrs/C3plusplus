@@ -1737,6 +1737,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // catch when the funclet returns - so the three Itanium calls are not here.
         if (microsoft) {
             MsHandler mh;
+            StmtPtr body;
             mh.pos = cpos;
             if (caught != nullptr) {
                 MicrosoftThrow names;
@@ -1773,21 +1774,21 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             handlerFrom_.push_back(peek().pos);
             const bool wasCtorHandler = inCtorTryHandler_;
             inCtorTryHandler_ = rethrows;
-            mh.body = block();
+            body = block();
             inCtorTryHandler_ = wasCtorHandler;
             // [except.handle]/15: a constructor's or destructor's handler that falls off its end rethrows.
             if (rethrows) {
                 mayThrow_++;
                 std::vector<StmtPtr> then;
-                then.push_back(std::move(mh.body));
+                then.push_back(std::move(body));
                 then.push_back(StmtPtr(make_owned<ExprStmt>(rethrowCall())));
-                mh.body = make_owned<Block>(std::move(then));
+                body = make_owned<Block>(std::move(then));
             }
             // Falling off the end destroys the caught object; a jump out did for itself; an exception out of
             // the handler finds it under a cleanup state of the handler's, cl's dtor funclet (M1).
             if (alive_.size() > aliveBeforeCaught) {
                 std::vector<StmtPtr> one;
-                one.push_back(std::move(mh.body));
+                one.push_back(std::move(body));
                 std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(0), alive_.size()));
                 std::vector<StmtPtr> both = wrapMsCleanups(std::move(one), built, aliveBeforeCaught, cpos,
                                                            std::vector<Temporary>());
@@ -1795,7 +1796,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                 alive_.resize(aliveBeforeCaught);
                 Block *b = new Block(std::move(both));
                 b->setScope(-1);
-                mh.body = StmtPtr(b);
+                body.reset(b);
             }
             msExit_ = wasExit;
             handlerFrom_.pop_back();
