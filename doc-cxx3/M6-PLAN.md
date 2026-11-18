@@ -4089,3 +4089,53 @@ a delta in 2 min 50 s; run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 sha
 ParserInit.cpp, ParserTopLevel.cpp): x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both alike
 (stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate, ide --check pass; ast-residue
 lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, third lane: an array member's loop and a virtual base's test as records on an effect, the static object's steps as effects, and (a) measured - lane m6d-s4c, 2026-11-18
+
+From m6d-s4b e6a79c80. src/ 93,582 -> 93,596 lines. REF is e2e57f2b built from clean in the lane's own Linux tree
+(`~/m6d-s4c-ref.exe`, as the brief asked; S4b's two steps were shown against the same REF); the compares are S4a's
+(tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) The two shapes an effect could not hold are records on it** (4cf6bcf5, src/ 93,582 -> 93,596). `sema::Effect`
+gains `loop`/`count` (`$i` over [0, count)) and `when`/`above` (only while `$vb` is above `above`), and a constructor -
+C++11 has no aggregate with default member initialisers. `effectStatement` is the one place both shapes are built
+(`eachElement`, the `If` over `$vb`), as it already was for a guard. `Classes::memberDestructor`/`memberDestructors`,
+`destroyObject`, an `emitDestructors` overload and `buildStaticConstruction` hand back effects; their callers make the
+statements with `appendEffects` where they pushed them. `foldDeclaredObject` takes the effects (one implementation,
+the statement overload gone): a guarded, looped or tested step is refused as the `If` or `For` it was, so acceptance is
+unchanged. `foldLocalObject` takes the one step or the laid effects instead of a range of `inits`.
+**ast-residue** (Linux): ExprPtr 2,012 -> 2,014, StmtPtr 564 -> 541, node-casts 153, node-refs 351 -> 350, readers 9,
+ast-lines 717. **The two ExprPtr words are `Effect`'s constructor parameter and its default** - a fall by the brief's
+rule (23 StmtPtr words for 2), said here; the baseline is not raised, so `--check` names ExprPtr until the coordinator
+rules (or S4's statement deletion takes ExprPtr down by about 150 and absorbs it).
+**Shown** against REF: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and arm64-darwin 7,232/0; `-g`
+888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike). EXCLUSIONS.md: 20 citations the step
+moved re-pointed in this entry's commit (lines moved, words kept); the final tree checks 0 uncited, 0 stale. Baseline
+lowered by hand where the count fell (StmtPtr 541, node-refs 350); ExprPtr left at 2,012.
+
+**(a) measured, not coded** (boxkit/m6d-s4c-probes/, RESULTS.txt). Eleven bodies, REF on x86_64-linux and
+x86_64-windows against clang 19.1.5 `-std=c++11 -pedantic-errors`: one wrong acceptance (`{ { return x; } }`, clang: a
+C++14 extension), six refusals stricter than [dcl.constexpr]/3 (a null statement before or after the return, a typedef,
+an alias-declaration, a `static_assert`, and on Itanium only a `noexcept` body whose return calls a constexpr function -
+wrapUp's `Try`); a block's using-declaration is refused by its own refusal; empty braces, two returns and a plain
+`noexcept` body agree. The shape to ask: today only the return builder's plain path (`return StmtPtr(new
+Return(std::move(value)))`, the last line of the `return` branch in ParserStmt.cpp) builds what `singleReturnValue`
+accepts, so the record is a pointer to that operand taken there, and the test is the body's syntax node: one `Return`
+child, the others `Null` or a permitted `DeclStmt` - but `typedef` reads as `ExprStmt` in `statementKindAhead`, so the
+typedef row needs a kind of its own first.
+
+**Gates on the final tree** (4cf6bcf5, and the entry's commit for exclusions and the baseline): Linux g++ -Werror
+clean; Windows work\m6d-s4cx cl /W4 /WX clean, a full build with the tar in about 4 min, started first and alone (the
+first try named `Effect` unqualified in an out-of-class return type; mended by amending the step before any gate ran);
+run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at -O2 425/0 and 425/0,
+-O0 425/0 and 425/0; self-compile of the seven changed files (Classes.cpp, Constexpr.cpp, ParserClass.cpp,
+ParserInit.cpp, ParserStmt.cpp, ParserTopLevel.cpp, ParserExprCall.cpp): x86_64-linux -O2 text the same as REF's,
+tms6747 -O0 and -O2 refused by both alike (stack arguments outside the C6000 selector; `std::fma` undeclared);
+exclusions 0/0 after the re-point, comment cap, memory gate, ide --check pass; ast-residue lower but for ExprPtr +2,
+above.
+
+**Not done, and why.** (a) is measured above and not coded: with step 1's gates on boxes whose slots the h1g gate shares,
+a second step and its own identical run did not fit the hour. (c) waits on (a): the constant evaluator still reads
+`assemble`'s constructor body (`ConstexprCtor::body`, `runConstexpr`'s `Block`/`ExprStmt`) and `singleReturnValue`'s
+`Block`/`Return`; no statement class leaves Ast.h in this lane. **Owed to the wave gate:** winpass in both spellings,
+ssa.sh 1/2, names.sh, make test, and the ExprPtr ruling.
