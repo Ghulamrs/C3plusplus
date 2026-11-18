@@ -2045,6 +2045,8 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         at_++;
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
+        // A read's `V<I>::f(x)`: a member of a dependent class is substitution's to find, [temp.dep.type].
+        if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());
         // **`CVector<I>::operator*(s)` in a member of CVector<4> or of a class derived from it** is
         // `Base::f(...)`: called on `this`, never dispatched, [expr.call]/1 - as for a plain base name.
         const Local *held = lookup_.findLocal("this");
