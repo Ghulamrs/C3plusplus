@@ -1300,8 +1300,8 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
         store->setType(d.type);
         out.push_back(StmtPtr(new ExprStmt(std::move(store))));
     } else {
-        out.push_back(constructObject(d, symbol, 0, std::move(ci.args),
-                                      ci.copyInit, ci.valueInit));
+        out.push_back(effectStatement(constructObject(d, symbol, 0, std::move(ci.args),
+                                                      ci.copyInit, ci.valueInit)));
     }
     flushTemporaries(out);
     if (alive_.size() > aliveFrom) {

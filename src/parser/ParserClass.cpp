@@ -11,18 +11,18 @@
 #include <climits>
 #include <cstring>
 
-StmtPtr Parser::constructLocal(const Declared &d, int offset,
-                               std::vector<ExprPtr> args, bool copyInit,
-                               bool valueInit) {
+Parser::Effect Parser::constructLocal(const Declared &d, int offset,
+                                     std::vector<ExprPtr> args, bool copyInit,
+                                     bool valueInit) {
     return constructObject(d, std::string(), offset, std::move(args), copyInit,
                            valueInit);
 }
 
 // The same construction wherever the object lives: a frame slot, or a global
 // named by `symbol` - a static local, a file-scope object, a static member.
-StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
-                                int offset, std::vector<ExprPtr> args,
-                                bool copyInit, bool valueInit, ListElement *chosen) {
+Parser::Effect Parser::constructObject(const Declared &d, const std::string &symbol,
+                                      int offset, std::vector<ExprPtr> args,
+                                      bool copyInit, bool valueInit, ListElement *chosen) {
     checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
     const std::string key = constructorKey(d.type->tag());
     const Signature &ctor = overload_.resolveOverload(key, args, d.pos);
@@ -101,7 +101,7 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
             call = std::move(seq);
         }
     }
-    return StmtPtr(new ExprStmt(std::move(call)));
+    return Effect{ std::move(call), 0 };
 }
 
 // [over.load]/2: with one parameter-type-list, either every overload has a ref-qualifier or none has.
@@ -1414,7 +1414,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                                      plain->describe() + "' taking it is 'explicit' - write '" +
                                      plain->localName() + "(...)' in the list, which asks for it by name");
             }
-            all.push_back(constructObject(one, symbol, at, std::move(e.args), copyInit, empty, &made));
+            all.push_back(effectStatement(constructObject(one, symbol, at, std::move(e.args), copyInit, empty, &made)));
         }
         record.elems.push_back(made);
         flushTemporaries(all);
@@ -1431,10 +1431,10 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             // value-initialisation zeroes first where nobody wrote the constructor: one by one
             for (long long i = firstDefault; i < total; i++) {
                 ListElement made;
-                all.push_back(constructObject(one, symbol, symbol.empty()
-                                                  ? offset - static_cast<int>(i * size)
-                                                  : static_cast<int>(i * size),
-                                              std::vector<ExprPtr>(), true, true, &made));
+                all.push_back(effectStatement(constructObject(one, symbol, symbol.empty()
+                                                                  ? offset - static_cast<int>(i * size)
+                                                                  : static_cast<int>(i * size),
+                                                              std::vector<ExprPtr>(), true, true, &made)));
                 record.tail = made.symbol;
                 record.tailSig = made.signature;
                 record.tailZeroed = made.zeroed;

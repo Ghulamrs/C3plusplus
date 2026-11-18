@@ -344,8 +344,8 @@ StmtPtr Parser::declarationBody() {
                 store->setType(d.type);
                 inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(store))));
             } else {
-                inits.push_back(constructLocal(d, off, std::move(ci.args),
-                                               ci.copyInit, ci.valueInit));
+                inits.push_back(effectStatement(constructLocal(d, off, std::move(ci.args),
+                                                               ci.copyInit, ci.valueInit)));
                 // [dcl.init.list]/5: the braces' elements, the `var` node's parts, are the list's backing array (M3b.2).
                 const Local *built = ci.ilType != nullptr ? lookup_.findLocal(d.name) : nullptr;
                 std::map<int, LocalBuilt>::iterator c = built != nullptr ? ctorBySerial_.find(built->serial) : ctorBySerial_.end();
@@ -773,8 +773,8 @@ StmtPtr Parser::initRangeLocal(const std::string &name, const Type *t, int off,
     } else if (owns && hasConstructors(t->tag())) {
         std::vector<ExprPtr> args;
         args.push_back(std::move(init));
-        out.push_back(constructLocal(Declared{ name, t, pos, 0, std::string() }, off,
-                                     std::move(args), true));
+        out.push_back(effectStatement(constructLocal(Declared{ name, t, pos, 0, std::string() }, off,
+                                                     std::move(args), true)));
     } else {
         ExprPtr target(Var::local(name, off));
         target->setType(t);
@@ -2424,7 +2424,7 @@ StmtPtr Parser::statementBody() {
                 value->setXvalue();
             std::vector<ExprPtr> one;
             one.push_back(std::move(value));
-            before.push_back(constructLocal(rv, slot, std::move(one), true));
+            before.push_back(effectStatement(constructLocal(rv, slot, std::move(one), true)));
             ExprPtr built(Var::local(rv.name, slot));
             built->setType(returnType_);
             value = std::move(built);

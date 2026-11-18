@@ -1410,22 +1410,22 @@ private:
                          std::size_t to = static_cast<std::size_t>(-1));
     // `valueInit` is the `{}` half of [dcl.init]/8: the object is zeroed before
     // the constructor runs, and only where nobody wrote that constructor.
-    StmtPtr constructLocal(const Declared &d, int offset,
-                           std::vector<ExprPtr> args, bool copyInit = false,
-                           bool valueInit = false);
+    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
+    struct Effect { ExprPtr expr; int guard; };
+    Effect constructLocal(const Declared &d, int offset,
+                          std::vector<ExprPtr> args, bool copyInit = false,
+                          bool valueInit = false);
     // The same construction into an object named by `symbol` when one is
     // given and by a frame slot otherwise - a static local, a file-scope
     // object and a static data member are the first kind.
-    StmtPtr constructObject(const Declared &d, const std::string &symbol,
-                            int offset, std::vector<ExprPtr> args,
-                            bool copyInit, bool valueInit, ListElement *chosen = nullptr);
+    Effect constructObject(const Declared &d, const std::string &symbol,
+                           int offset, std::vector<ExprPtr> args,
+                           bool copyInit, bool valueInit, ListElement *chosen = nullptr);
     ExprPtr objectAt(const Declared &d, const std::string &symbol, int offset);
 
     // **What a class with constructors is initialised from** - `(args)`,
     // `= expr`, `{}`, `= {}`, or a braced list for an initializer_list
     // constructor - shared by every storage duration, so it is written once.
-    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
-    struct Effect { ExprPtr expr; int guard; };
     struct CtorInit {
         std::vector<ExprPtr> args;
         std::vector<Effect> ilSetup;
