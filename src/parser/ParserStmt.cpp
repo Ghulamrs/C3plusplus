@@ -970,7 +970,7 @@ StmtPtr Parser::rangeForStatement() {
     Block *inside = new Block(std::move(body));
     inside->setScope(inner);
 
-    setup.push_back(loopStatement(StmtPtr(), Effect(std::move(cond)), Effect(std::move(step)), StmtPtr(inside)));
+    setup.push_back(loopStatement(StmtPtr(), std::move(cond), std::move(step), StmtPtr(inside)));
     const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray();
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
@@ -1117,7 +1117,7 @@ StmtPtr Parser::forStatement() {
     leaveScope();
     if (alive_.size() == aliveAtEntry) {
         builtForParts_ = (init != nullptr ? 1 : 0) | (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
-        return loopStatement(std::move(init), Effect(std::move(cond)), Effect(std::move(step)), std::move(body));
+        return loopStatement(std::move(init), std::move(cond), std::move(step), std::move(body));
     }
 
     // **`for (S s; ...)` destroys s when the loop is done**, the way a block destroys what it built
@@ -1126,7 +1126,7 @@ StmtPtr Parser::forStatement() {
     std::vector<StmtPtr> steps;
     const int partsAfterInit = (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
     steps.push_back(std::move(init));
-    steps.push_back(loopStatement(StmtPtr(), Effect(std::move(cond)), Effect(std::move(step)), std::move(body)));
+    steps.push_back(loopStatement(StmtPtr(), std::move(cond), std::move(step), std::move(body)));
     const std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(1), alive_.size()));
     emitDestructors(steps, aliveAtEntry, pos);
     steps = target_.microsoftNames() ? wrapMsCleanups(std::move(steps), built, aliveAtEntry, pos)
@@ -2583,7 +2583,7 @@ StmtPtr Parser::statementBody() {
         breakMarks_.pop_back();
         loopMarks_.pop_back();
         loopDepth_--;
-        StmtPtr made(loopStatement(StmtPtr(), Effect(std::move(cond)), Effect(), std::move(body)));
+        StmtPtr made(loopStatement(StmtPtr(), std::move(cond), Effect(), std::move(body)));
         if (!declares) return made;
         leaveBlock();
         leaveScope();

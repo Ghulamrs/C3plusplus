@@ -744,8 +744,8 @@ bool Typer::convertedTo(syntax::NodeId arm, const Type &c) const {
     return i->second.signature->params().size() == 2 && i->second.signature->params()[0]->pointee()->unqualified() == &c;
 }
 
-bool Typer::argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const {
-    const std::unordered_map<std::uint32_t, Parser::ArgumentCopy>::const_iterator i = p_.argumentCopies_.find(id.v);
+bool Typer::argumentCopy(syntax::NodeId id, TypeId cls, std::string &symbol, TypeId &signature, bool &elided) const {
+    const std::unordered_map<std::uint64_t, Parser::ArgumentCopy>::const_iterator i = p_.argumentCopies_.find(Parser::copyKey(id, cls));
     if (i == p_.argumentCopies_.end() || (!i->second.elided && (i->second.symbol.empty() || i->second.signature == nullptr))) return false;
     symbol = i->second.symbol;
     signature = i->second.signature != nullptr ? TypeTable::id(i->second.signature) : TypeId();

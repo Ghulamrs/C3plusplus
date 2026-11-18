@@ -1470,8 +1470,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         return typer.temporaryBuilt(id, sym, sig, zero);
     });
     lowering.setConvertedBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.convertedBuilt(id, sym, sig); });
-    lowering.setArgumentCopy([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &elided) {
-        return typer.argumentCopy(id, sym, sig, elided);
+    lowering.setArgumentCopy([&typer](syntax::NodeId id, TypeId cls, std::string &sym, TypeId &sig, bool &elided) {
+        return typer.argumentCopy(id, cls, sym, sig, elided);
     });
     lowering.setClosure([&typer](syntax::NodeId id, sema::ClosureFacts &out) { return typer.closureFacts(id, out); });
     lowering.setReturnBuilt([&typer](syntax::NodeId id, int &form, std::string &sym, TypeId &sig) {

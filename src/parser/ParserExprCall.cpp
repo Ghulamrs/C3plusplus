@@ -497,15 +497,18 @@ ExprPtr Parser::endFullExpression(ExprPtr e) {
     return e;
 }
 
-// What copied a by-value class argument, for the SSA lowering; two different answers for one node leave neither (M3b.2).
-void Parser::noteArgumentCopy(syntax::NodeId node, const std::string &symbol, const Type *signature, bool elided) {
+// What copied a by-value class argument, for the SSA lowering; two different answers for one key leave neither (M3b.2).
+void Parser::noteArgumentCopy(syntax::NodeId node, const Type *cls, const std::string &symbol, const Type *signature, bool elided) {
     if (!node.valid()) return;
     const ArgumentCopy b = { symbol, signature, elided };
-    const std::unordered_map<std::uint32_t, ArgumentCopy>::iterator had = argumentCopies_.find(node.v);
-    if (had == argumentCopies_.end()) argumentCopies_[node.v] = b;
-    else if (had->second.symbol != b.symbol || had->second.signature != b.signature || had->second.elided != b.elided) {
-        had->second.symbol.clear();
-        had->second.elided = false;
+    const std::uint64_t keys[2] = { copyKey(node, TypeId()), copyKey(node, TypeTable::id(cls)) };
+    for (std::uint64_t key : keys) {
+        const std::unordered_map<std::uint64_t, ArgumentCopy>::iterator had = argumentCopies_.find(key);
+        if (had == argumentCopies_.end()) argumentCopies_[key] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature || had->second.elided != b.elided) {
+            had->second.symbol.clear();
+            had->second.elided = false;
+        }
     }
 }
 
@@ -604,7 +607,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // argument needs, so no copy constructor runs - as clang does at -O0.
     if (Call *made = producingCall(arg.get())) {
         if (made->type() == cls && abi_.returnsIndirectly(*cls, target_, made->hasThis())) {
-            noteArgumentCopy(argNode, std::string(), nullptr, true);
+            noteArgumentCopy(argNode, cls, std::string(), nullptr, true);
             claimCallResult(*made, tmp);
             ExprPtr built(Var::local("$copy", tmp));
             built->setType(cls);
@@ -625,7 +628,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     {
         std::vector<const Type *> full(1, ptr);
         full.push_back(cc->params[0]);
-        noteArgumentCopy(argNode, cc->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
+        noteArgumentCopy(argNode, cls, cc->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
     }
 
     ExprPtr slot(Var::local("$copy", tmp));

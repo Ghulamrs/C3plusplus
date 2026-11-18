@@ -2229,7 +2229,7 @@ Lowering::Val Lowering::conditionalArm(sema::TypedId arm, const Type &cls) {
     bool elided = false;
     if (!c.nonTrivialCopy()) {
         copyObject(copy, o.v, c);
-    } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
+    } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, TypeId(), symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
                !T(sig).params()[1]->isReference() || T(sig).params()[0]->pointee()->unqualified() != &c) {
         broken("a conditional's lvalue arm whose copy the parser recorded none for");
     } else {
@@ -6454,12 +6454,14 @@ ValueId Lowering::byValueArgument(sema::TypedId an, const Type &p) {
     bool elided = false;
     // [expr.prim.lambda]/2: a lambda is a prvalue, its closure built in the parameter's copy itself.
     const bool lambda = closureBuiltNode(an) && T(TypeTable::id(tree_.node(an).type)).unqualified() == &c;
-    if (!lambda && (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, symbol, sig, elided))) {
+    if (!lambda && (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, TypeId(), symbol, sig, elided))) {
         // [over.ics.user]: the converting constructor the parser chose builds the copy, the caller destroying it - on
         // Microsoft the callee does, so it is built unguarded.
         ValueId made;
         if (convertedTemporary(an, c, !ms, made)) return made;
-        broken("a by-value argument whose copy the parser recorded none for");
+        // Where that constructor's by-value parameter copied the same node, the copy is the one of this class.
+        if (!argumentCopy_(tree_.node(an).syntax, tid(c), symbol, sig, elided))
+            broken("a by-value argument whose copy the parser recorded none for");
     }
     const std::string dtor = c.hasDestructor() && !Abi::calleeDestroys(c, target_) ? temporaryDestructor(c) : std::string();
     const ValueId copy = entryAlloca(tid(c), "$copy");

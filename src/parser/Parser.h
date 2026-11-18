@@ -892,8 +892,10 @@ private:
     std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
     // The copy materialiseCopy made of a by-value class argument, by the argument's node: the copy or move constructor's
     // symbol and type with `T *` first - or `elided`, the call producing the argument built straight into it (M3b.2).
+    // Kept by node alone and by node and class: a converting constructor's by-value parameter copies the same node.
     struct ArgumentCopy { std::string symbol; const Type *signature; bool elided; };
-    std::unordered_map<std::uint32_t, ArgumentCopy> argumentCopies_;
+    std::unordered_map<std::uint64_t, ArgumentCopy> argumentCopies_;
+    static std::uint64_t copyKey(syntax::NodeId node, TypeId cls) { return (static_cast<std::uint64_t>(node.v) << 32) | cls.v; }
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
                            std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false;
@@ -2009,7 +2011,7 @@ private:
     ExprPtr materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
                             const std::string &what,
                             std::vector<Temporary> &destroy, syntax::NodeId written);
-    void noteArgumentCopy(syntax::NodeId node, const std::string &symbol, const Type *signature, bool elided);
+    void noteArgumentCopy(syntax::NodeId node, const Type *cls, const std::string &symbol, const Type *signature, bool elided);
     std::vector<Temporary> pendingTemps_;
     // The temporaries each statement of the block being parsed made, so that the cleanup regions can name them.
     std::vector<Temporary> statementTemps_;

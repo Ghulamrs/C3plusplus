@@ -94,7 +94,7 @@ public:
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
     void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
     // The copy the parser made of a by-value class argument, by the argument's node - Sema's record, asked by the glue.
-    void setArgumentCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { argumentCopy_ = f; }
+    void setArgumentCopy(std::function<bool(syntax::NodeId, TypeId, std::string &, TypeId &, bool &)> f) { argumentCopy_ = f; }
     // A lambda's closure and its captures' members and sources - Sema's record, asked by the glue.
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
@@ -553,7 +553,7 @@ private:
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
-    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
+    std::function<bool(syntax::NodeId, TypeId, std::string &, TypeId &, bool &)> argumentCopy_;
     std::function<bool(syntax::NodeId, sema::ClosureFacts &)> closure_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based

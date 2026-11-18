@@ -765,7 +765,7 @@ ExprPtr Parser::buildInto(const Type *cls, int slot, ExprPtr value, int guard,
         // The arm's copy into the result, for the SSA lowering: the record a by-value argument's copy has (M3b.5).
         std::vector<const Type *> full(1, ptr);
         full.push_back(use->params[0]);
-        noteArgumentCopy(arm, use->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
+        noteArgumentCopy(arm, cls, use->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
         ExprPtr where(Var::local("$cond", slot));
         where->setType(cls);
         ExprPtr at(new Unary('&', std::move(where)));
