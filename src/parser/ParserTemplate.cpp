@@ -1447,11 +1447,23 @@ void Parser::bindPatternMember(std::size_t from, std::size_t end, std::size_t m,
         if (pk != packs_.end()) {
             const PackBinding &pb = pk->second;
             // **In a pattern the pack stands for itself** and has no m-th member to bind: a pattern over
-            // it in a signature is what Itanium spells `XspmlT_Li2EE`, which is not written here.
-            if (pb.standsForItself())
+            // it in a signature is what Itanium spells `XspmlT_Li2EE`, which is not written here. A read
+            // reads the pattern once, the pack's name there its own parameter, no longer a pack.
+            if (pb.standsForItself() && !patternBody_)
                 src_.fail(t.pos, "a pattern over the parameter pack '" + t.text + "' in a template's "
                                  "signature is not supported yet - '" + t.text + "...' alone is");
-            if (m < pb.names.size() && pb.names[m] == t.text + "$" + std::to_string(m)) {
+            if (pb.standsForItself()) {
+                Shadow s;
+                s.name = t.text; s.isPack = true; s.had = true; s.hadPack = pb;
+                undo->push_back(s);
+                TemplateParam p;
+                p.name = t.text;
+                if (pb.isValue) p.type = pb.valueType;
+                bound.push_back(p);
+                types.push_back(pb.types[0]);
+                values.push_back(0);
+                packs_.erase(pk);
+            } else if (m < pb.names.size() && pb.names[m] == t.text + "$" + std::to_string(m)) {
                 t.text = pb.names[m];
             } else {
                 TemplateParam p;
@@ -2146,6 +2158,8 @@ bool Parser::dependentType(const Type *t) const {
             continue;
         }
         if (t->isPointer() || t->isReference() || t->isArray()) { t = t->pointee(); continue; }
+        // A read's function parameter pack, `Args &&... args`: read in its pattern as its pattern's type.
+        if (patternBody_ && t->kind() == Kind::PackExpansion) { t = t->pointee(); continue; }
         return false;
     }
     return false;
