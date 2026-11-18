@@ -205,6 +205,7 @@ struct Cloner {
         const long long frameBase = static_cast<long long>(f.frame.size());
         const std::uint32_t callBase = static_cast<std::uint32_t>(f.calls.size()) - 1;
         f.frame.insert(f.frame.end(), g.frame.begin(), g.frame.end());
+        for (std::size_t k = static_cast<std::size_t>(frameBase); k < f.frame.size(); k++) f.frame[k].serial = -1;    // no local of this function
         for (std::size_t c = 1; c < g.calls.size(); c++) {
             f.calls.push_back(g.calls[c]);
             if (f.calls.back().resultAlloca >= 0) f.calls.back().resultAlloca += static_cast<int>(frameBase);

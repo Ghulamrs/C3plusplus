@@ -1011,10 +1011,15 @@ bool Lowering::listFits(const Type &t, std::uint32_t values) const {
 }
 
 // Such a list into `slot`: zeroed, then each value stored in its member in order - the values node `list`'s parts from `from`.
+// A list storing every member of a class with no padding leaves no byte for the zeroing to decide: none is made.
 void Lowering::listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from) {
     const std::vector<Member> &ms = t.unqualified()->members();
-    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
-    at(z).k = t.size(target_);
+    int stored = 0;
+    for (std::size_t i = 0; count(list) - from == ms.size() && i < ms.size(); i++) stored += ms[i].type->size(target_);
+    if (stored != t.size(target_)) {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+        at(z).k = t.size(target_);
+    }
     for (std::uint32_t i = from; i < count(list); i++) {
         const TypeId mt = tid(*ms[i - from].type->unqualified());
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(mt))), std::vector<ValueId>(1, slot));
@@ -1679,7 +1684,12 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
     }
 }
 
+// An empty class ([class]/4: no member, no vptr, every base empty) has no value to copy: its one byte is padding.
 void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
+    const Type &k = *t.unqualified();
+    bool empty = k.isStructOrUnion() && k.isComplete() && k.kind() != Kind::Union && k.members().empty() && !k.hasVptr();
+    for (std::size_t i = 0; empty && i < k.bases().size(); i++) empty = k.bases()[i].type->unqualified()->members().empty();
+    if (empty) return;
     std::vector<ValueId> ops;
     ops.push_back(to);
     ops.push_back(from);
@@ -5684,6 +5694,7 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
     info.hasThis = true;
     info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self));
     info.namedArgs = 1;
+    info.byName = true;
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);
@@ -7071,6 +7082,7 @@ void Lowering::msCleanupRet(const Pad &p) {
 // the frame to it, as for its own slots. A local with no serial, where the function has such a local, is refused.
 ValueId Lowering::localAlloca(sema::TypedId var, TypeId slotType) {
     const ValueId slot = entryAlloca(slotType, text(var));
+    F().frame.back().serial = tree_.resolution(var).serial;
     if (localAligns_.empty()) return slot;
     const sema::Resolution &r = tree_.resolution(var);
     if (r.serial < 0) outside("a local with alignas beside one the parser gave no serial");
