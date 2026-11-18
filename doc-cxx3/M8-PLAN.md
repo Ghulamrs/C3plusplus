@@ -1371,3 +1371,85 @@ text against REF (`~/m8ry`, `m8rf-win.sh same` with `GF=-g`). The member-templat
 dependent sizes were not started. Unread is not 0, so commit 5 waits: 191 in the cases and 589 in the self-host, of
 which "declared twice" (11 / 127) is the cv key above and the dependent sizes (25 + 16 + 16 / 104 + 96 + 96) lead.
 src/ lines: 95,452 before, 95,467 after.
+
+**M8.1, commit 4, ninth step: m8r's gates read, the cv key, the member-template door and the out-of-line 13, 2026-11-18**
+(lane m8s, branch `m8-e` from `4c042137`; code `a71bb801`, `a1617ff1`, `80d93293`). Still under `-check=templates`; the
+replay is what emits. **m8r's gates, read as they landed** (Linux on `faf61e4a` against REF `89911b67`): `identical.sh`
+tms6747, arm64-darwin, x86_64-linux at -O0 and -O2 **5,304 compared, 0 differ**; `typed.sh` 876 passed, 0 failed;
+`run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; the self-host's `-S` REF against NEW 102 and `Driver`;
+the -g text of `62a9aa96` against REF on the four targets at -O0 (`~/m8ry`), 841 of 4,420 differ, every one the tree's
+name in a `.file` line (`m8rr` against `m8ry`) but `lambda-returning-lambda`'s five, which are the owed item itself
+(`tw$2::$_0`, `tw$3::$_0` back to `tw::$_0`, `tw$2::$_0`). **Two failures, mended first**: on the final tree (`~/m8rf`,
+62a9aa96 with the cv key, shipped from the worktree) `make comments` rc 2 - `62a9aa96`'s comment in
+`ParserExprLambda.cpp` was four lines (`a1617ff1`, comment only) - and `tools/exclusions --check` **rc 1: 57 uncited,
+57 stale**, the refusal sites' lines moved under the citations by the commit-4 steps, unseen because m8q's and m8r's
+static step printed `tail`'s status (the Windows script's `exclusions rc` is `tail`'s too); re-pointed by
+`boxkit/m8s-repoint.py` (each file's stale citations paired in order with its uncited sites) on the final tree.
+**The cv key** (`a71bb801`, `boxkit/m8r-cvkey.patch` as its own commit): `Templates::specializationKey` keeps a
+template parameter's cv, and a partial's read is keyed by its written arguments. The cases' "declared twice" (11) and
+the self-host's (127) are gone, and the classes that were one key are read apart - more bodies, fewer unread.
+**The member-template door** (`80d93293`): a class template's member templates are read inside its class's read, over
+their own parameters numbered past the class's (`$T<n+i>`, so `pair<T, U>` in `template <class U>` is not
+`pair<$T0,$T0>`), and a plain class's once the class is complete (`Templates::readMemberTemplates`,
+`readMemberTemplatesOf`, the door `member-templates`); the body is replayed by `replayMemberTemplate`, the half of
+`instantiateMemberTemplate` that sets the member-template state and replays, taken out whole and called by both.
+**The out-of-line 13** had one root: the class door keyed its read `Box<$T0,0>` and `Counted<{}>` (the read's values
+and packs are empty), where the out-of-line qualifier `Box<T, N>` spells `Box<$T0,$P1>` and `Counted<Ns...>`
+`Counted<{$T0...}>`; the read is keyed as its members write it now. With it a read's `int v[N]` (an array of dependent
+length, the "has an incomplete type" 26 + 4) is laid out as nothing, as a dependent class member is (`ParserType.cpp`).
+`constructor-template.templates` (member templates 5 of 5) and `template-out-of-line.templates` (out-of-line 7 of 7)
+recorded; the two old records hold.
+
+**Read / not read by door** (bodies / read / unread). Before: m8r's after (`work\m8rn`, `~/m8qw`). The cv key: Linux
+`~/m8rw` and `~/m8rf`, Windows `work\m8sn` - **the same door by door**. The door: Linux `~/m8sm` (Windows not measured,
+below):
+
+| door | cases before | cv key | door | self-host before | cv key | door |
+| --- | --- | --- | --- | --- | --- | --- |
+| function | 3,478 / 3,402 / 76 | the same | the same | 7,512 / 7,325 / 187 | the same | the same |
+| class members | 12,237 / 12,156 / 81 | 12,565 / 12,495 / 70 | **12,574 / 12,525 / 49** | 31,158 / 30,864 / 294 | 34,924 / 34,757 / 167 | 34,925 / 34,757 / 168 |
+| out-of-line members | 22 / 9 / 13 | 22 / 9 / 13 | **22 / 21 / 1** | 0 | 0 | 0 |
+| partial specializations' members | 607 / 586 / 21 | the same | the same | 1,796 / 1,688 / 108 | the same | the same |
+| alias type-ids | 7 / 7 / 0 | the same | the same | 0 | 0 | 0 |
+| member templates | - | - | **497 / 438 / 59** | - | - | **1,510 / 1,364 / 146** |
+
+Unread: the cases **191, 180, 206** (147 in the five doors that were there), the self-host **589, 462, 609** (463 in
+the five); 103 of 103 compiled every time. **Not read, by reason, after**: the size of a dependent type leads - the
+cases 25 + 16 + 16 + 47 (member templates), the self-host 104 + 96 + 96 + 114 (410 of 609); then not declared (14 + 2
++ 3; 32 + 32 + 1), a specialization not asked for (9 + 4 + 2; 36 + 26 + 24 + 8), no static member function through a
+template-id (6 + 4 + 2 + 1 in the cases), a value with no address (26 in the self-host); the out-of-line's last one is a
+pack (`Ns...` alone).
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ (Linux `~/m8sm`; Windows `work\m8sn` on the
+cv key); the self-host 102 of 103 and `Driver`, its `__TIME__` line (Linux `~/m8sm`; Windows `work\m8sn`).
+On Windows the door's tree (`work\m8sm`) reads as Linux door by door, the cases' dependent sizes 26 to Linux's 25 (the
+`type_info` one m8p named).
+
+**Gates.** REF built fresh from `4c042137`, alone, in its own kept tree (Linux `~/m8sr`; Windows `work\m8sr`, after
+the NEW build); NEW names of one length. **The cv key, `a71bb801`** - Linux `~/m8sn` (g++ `-Werror` clean):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2, **8,840
+compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; `subst.sh bodies` 0 failed (5,119 over 876 units); the self-host's `-S` REF against NEW, and with the flag against
+without, 102 and `Driver`; memory gate rc 0, residue +0, `ide/generate.py` up to date; exclusions rc 1 and comment cap rc 2, the two
+failures above, mended by `a1617ff1` and `01c133e7`. Windows `work\m8sn` (cl /W4 /WX clean): the cases' flag 0 differ;
+the self-host's flag and REF against NEW 102 and `Driver` (`fc` opened: one `DB` line of `__TIME__`); the five
+spellings at -O0 and -O2 against REF, first half **6,200 the same, 0 differ**. **The door, `80d93293`** (Linux `~/m8sm`,
+g++ `-Werror` clean; the comment-only `a1617ff1` not in it): `tools/identical.sh` REF against NEW for tms6747,
+arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2, **8,840 compared, 0 differ** (the replay path's
+`replayMemberTemplate` is the same code moved); `subst.sh bodies` with the four records **0 failed** (5,119 over 876
+units, unchanged); the self-host's `-S` REF against NEW, and with the flag against without, 102 and `Driver`; Windows
+`work\m8sm` the cases' flag 1,239 the same, 0 differ, the self-host 103 of 103. **The final sources**
+(`01c133e7`, Linux `~/m8sf`, each gate's own exit code): exclusions rc 0 (0 uncited, 0 stale), comment cap rc 0,
+memory gate rc 0, ast-residue +0 rc 0, `ide/generate.py --check` rc 0. **A defect**: the Windows build of `work\m8sm`
+passed the 9-minute cap on the shared box (the m8sn halves beside it) and was not retried; the exe it went on to make
+(a fresh tree, /WX) gave the Windows counts.
+**Owed at the hour**: on `a71bb801` the second half of the Windows five spellings (running,
+`boxkit/m8s-win-same2.out`); on `80d93293` `typed.sh`, `run.sh`, self-compile and the Windows five spellings, for the
+wave gate.
+
+**Left of commit 4**, and so of commit 5's condition (`unread` 0 over the cases and the self-host, identical.sh 0 -
+the second holds at every step): unread **206** in the cases and **609** in the self-host. The size of a dependent
+type is half and more (104 and 410): `Type::size` already refuses it by name in a read (`nameDependentSizes`), so
+what is owed is the sites in a read's body that ask - a local's slot, `sizeof(T)`, `p + n` over `T *` - answering
+"dependent" without the size; then not declared (19 / 65), a specialization not asked for (15 / 94), the member
+templates' own 59 / 146, the out-of-line door's last one (a pack, `Ns...` alone).
+src/ lines: 95,467 before, 95,548 after.
