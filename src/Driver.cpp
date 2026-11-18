@@ -1371,6 +1371,10 @@ static void namesOf(const ir::Function &f, std::vector<std::string> &out) {
 static void checkPrune(const ir::Module &m, const TypeTable &types, std::vector<std::string> &faults) {
     const UnitData &d = m.data;
     const std::set<std::string> held(d.held.begin(), d.held.end());
+    // Nothing held, nothing pruned: the parser's prune leaves such a unit whole, its unread literals too.
+    bool any = !held.empty();
+    for (const Global &g : d.globals) any = any || g.held;
+    if (!any) return;
     const std::size_t nf = m.functions.size();
     std::map<std::string, std::size_t> bySymbol;
     for (std::size_t i = 1; i < nf; i++) {
