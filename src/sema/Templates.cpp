@@ -498,6 +498,18 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
     }
     const std::size_t mark = p_.syntaxTree_.size(), resume = p_.at_;
     bool tallied = false;
+    // What the read tallies, as it stood: a read made again (makeWanted) is counted once.
+    const bool outermost = !p_.patternUses_;
+    std::vector<std::size_t> hadRead;
+    std::vector<long> hadTally;
+    std::vector<std::map<std::string, int> > hadUnread;
+    for (int d = 0; outermost && d < ReadDoors; d++) {
+        hadRead.push_back(declRead_[d].size());
+        hadTally.push_back(declTally_[d][0]);
+        hadUnread.push_back(declUnread_[d]);
+    }
+    const std::pair<std::size_t, std::size_t> hadNotes = p_.syntaxTree_.noted();
+    if (outermost) { wanted_.clear(); held_.clear(); }
     {
         // The read's own layer: its signature, its typedefs and a function specialization it asks for are found in it, and go with it.
         Lookup::Layer layer = p_.lookup_.pushLayer();
@@ -640,6 +652,16 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         memberTemplateMade_ = hadMemberTemplates;
         owedBodies_ = hadOwed;
         p_.syntaxTree_.kill(mark);
+    }
+    if (outermost && makeWanted()) {
+        for (int d = 0; d < ReadDoors; d++) {
+            declRead_[d].resize(hadRead[static_cast<std::size_t>(d)]);
+            declTally_[d][0] = hadTally[static_cast<std::size_t>(d)];
+            declUnread_[d] = hadUnread[static_cast<std::size_t>(d)];
+        }
+        p_.syntaxTree_.forget(hadNotes);
+        readDeclaration(decl, door, which);
+        return;
     }
     const std::size_t at = door == ReadPartial ? decl.partials[which].bodyAt : door == ReadOutOfLine ? decl.outOfLine[which].start :
                            door == ReadAlias ? decl.aliasAt : decl.afterParams;
@@ -1910,9 +1932,12 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
         return shallow;
     }
 
-    if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
-    // A class cannot be unmade when the read's layer goes: one the program has not asked for is held incomplete under its tag,
-    // for the program's own ask to complete; what needs its members refuses there by name.
+    if (const Type *had = p_.lookup_.findTypedef(tag)) {
+        asked(tag, pos);
+        return had;
+    }
+    // A class cannot be unmade when the read's layer goes: one the program has not asked for is held incomplete under its tag;
+    // what needs its members refuses there by name, and the read is made again with the class made below it (makeWanted).
     if (p_.patternUses_) {
         Type *named = p_.types_.structType(Kind::Struct, tag);
         if (!named->isSpecialization()) {
@@ -1920,9 +1945,19 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
             named->setTemplateNamespace(decl.ns);
             named->noteClassKey(decl.classKey);
         }
-        if (!named->isComplete()) p_.readHeld_.insert(named);
+        if (!named->isComplete()) {
+            p_.readHeld_.insert(named);
+            if (held_.count(named) == 0) held_[named] = Held{ decl, binding, values, args, packs, pos };
+        }
         return named;
     }
+    return makeClass(decl, tag, binding, values, args, packs, pos);
+}
+
+// The class `tag` made for good: its partial chosen, its body read under the arguments, its member bodies owed.
+const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &tag, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                                 const std::vector<TemplateArg> &args, const Packs &packs, std::size_t pos) {
+    const std::size_t logFrom = seatLog_.size(), fnFrom = p_.lookup_.functions_.size();
     const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
@@ -1983,6 +2018,79 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     sp.depth = p_.instantiationDepth_ + 1;
     refuseInstantiationDepth(decl.name, sp.depth, pos);
     specializations_.push_back(sp);
+    noteMade(tag, logFrom, fnFrom);
+    return made;
+}
+
+// The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.
+std::vector<std::size_t> Templates::seatedOrder(std::size_t n) const {
+    std::vector<std::pair<std::pair<std::size_t, int>, std::size_t> > keyed;
+    for (std::size_t i = 0; i < n; i++) {
+        const std::map<std::size_t, std::size_t>::const_iterator s = fnSeat_.find(i);
+        keyed.push_back(std::make_pair(s == fnSeat_.end() ? std::make_pair(i, 1) : std::make_pair(s->second, 0), i));
+    }
+    std::sort(keyed.begin(), keyed.end());
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < keyed.size(); i++) order.push_back(keyed[i].second);
+    return order;
+}
+
+// Made while a held class is: entered in the log, and seated by its key with what its own making logged before it.
+void Templates::noteMade(const std::string &key, std::size_t from, std::size_t fnFrom) {
+    if (!making_) return;
+    const std::size_t fnTo = p_.lookup_.functions_.size();
+    seatLog_.push_back(Seat{ specializations_.size() - 1, std::string(), fnFrom > fnTo ? fnTo : fnFrom, fnTo });
+    seat_[key].assign(seatLog_.begin() + static_cast<long>(from), seatLog_.end());
+}
+
+// The program's ask for what a held class's making made: seated last, as its replay would have made it there.
+void Templates::asked(const std::string &key, std::size_t pos) {
+    if (p_.patternUses_) return;
+    const std::map<std::string, std::vector<Seat> >::iterator seated = seat_.find(key);
+    if (seated == seat_.end()) return;
+    if (making_) { seatLog_.push_back(Seat{ 0, key, 0, 0 }); return; }
+    const std::size_t at = p_.lookup_.functions_.size();
+    std::vector<Seat> log;
+    log.swap(seated->second);
+    seat_.erase(seated);
+    for (std::size_t i = 0; i < log.size(); i++) {
+        if (!log[i].key.empty()) { asked(log[i].key, pos); continue; }
+        for (std::size_t f = log[i].fnFrom; f < log[i].fnTo; f++) fnSeat_.insert(std::make_pair(f, at));
+        if (specializations_[log[i].index].emitted) continue;
+        Specialization sp = specializations_[log[i].index];
+        specializations_[log[i].index].emitted = true;
+        specializations_[log[i].index].name.clear();
+        specializations_[log[i].index].key.clear();
+        specializations_[log[i].index].bodies.clear();
+        seat_.erase(sp.key);
+        sp.pos = pos;
+        sp.depth = p_.instantiationDepth_ + 1;
+        specializations_.push_back(sp);
+    }
+}
+
+// Each class the read just ended needed the members of, made here; true if one was completed, and the read is worth making again.
+bool Templates::makeWanted() {
+    std::vector<const Type *> want;
+    want.swap(wanted_);
+    // Inside a class still being defined the class may name it, incomplete: left held, refused by name as before.
+    if (!p_.classStack_.empty() || p_.currentClass_ != nullptr) want.clear();
+    bool made = false;
+    const bool was = making_;
+    for (std::size_t i = 0; i < want.size(); i++) {
+        const std::map<const Type *, Held>::iterator h = held_.find(want[i]);
+        if (h == held_.end() || want[i]->isComplete()) continue;
+        const Held it = h->second;
+        held_.erase(h);
+        const std::string tag = specializationKey(it.decl.name, it.args);
+        if (p_.lookup_.findTypedef(tag) != nullptr) continue;
+        making_ = true;
+        makeClass(it.decl, tag, it.binding, it.values, it.args, it.packs, it.pos);
+        making_ = was;
+        made = made || want[i]->isComplete();
+    }
+    held_.clear();
+    if (!making_) seatLog_.clear();
     return made;
 }
 

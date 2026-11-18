@@ -2424,7 +2424,10 @@ void Classes::pruneExternalVtables(Program &program) {
 void Classes::defineImplicitFunctions() {
     for (bool again = true; again; ) {
         again = false;
-        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
+        // In declaration order, a class a read made (M8.1) seated where the program asked for it; then what this pass declares.
+        const std::vector<std::size_t> order = p_.tmpl_.seatedOrder(p_.lookup_.functions_.size());
+        for (std::size_t k = 0; k < order.size() || k < p_.lookup_.functions_.size(); k++) {
+            const std::size_t i = k < order.size() ? order[k] : k;
             if (!p_.lookup_.functions_[i].implicit || !p_.lookup_.functions_[i].used ||
                 p_.lookup_.functions_[i].defined)
                 continue;

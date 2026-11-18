@@ -3085,6 +3085,8 @@ ExprPtr Parser::postfix() {
                                    "on");
                 std::vector<ExprPtr> args;
                 args.push_back(std::move(index));
+                // The index is the call's one argument: a read asks of it, not of the arguments of the call read last.
+                argsDependent_ = dependentOperand(args[0]->type());
                 // The type is read out first: `n` is moved into the call, and
                 // the order the two arguments are evaluated in is not fixed.
                 const Type *objectType = n->type();

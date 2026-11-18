@@ -1251,7 +1251,11 @@ Parser::instantiate(const TemplateDecl &decl,
     // And which template: two differing only in `decltype(...)` returns were one key, the first.
     key += "@" + std::to_string(decl.afterParams);
 
-    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) return lookup_.functions_[(*had)[0]];
+    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) {
+        const std::size_t first = (*had)[0];
+        tmpl_.asked(key, pos);
+        return lookup_.functions_[first];
+    }
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
     // as a reference to itself - a type parameter as Kind::TemplateParam, a
@@ -1292,6 +1296,7 @@ Parser::instantiate(const TemplateDecl &decl,
     sp.depth = instantiationDepth_ + 1;
     tmpl_.refuseInstantiationDepth(decl.name, sp.depth, pos);
     tmpl_.specializations_.push_back(sp);
+    tmpl_.noteMade(key, tmpl_.seatLog_.size());
 
     // **Under two keys, on purpose.** "twice<int>" is what the replayed definition
     // declares and what a repeat of the same arguments finds; "twice" is what

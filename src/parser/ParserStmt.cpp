@@ -371,6 +371,8 @@ StmtPtr Parser::declarationBody() {
                 at_++;                        // the '('
                 std::vector<ExprPtr> args;
                 parseArguments(args);
+                // A read's class held incomplete has no constructors yet: made where the read stands, and the read made again.
+                if (args.size() != 1) refuseHeldClass(d.type);
                 if (args.size() != 1 && !(patternBody_ && dependentType(d.type) && !args.empty()))
                     src_.fail(d.pos, "'" + d.type->describe() + "' has no "
                                      "constructor, so '" + d.name + "(...)' can "

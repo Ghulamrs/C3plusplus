@@ -1,5 +1,4 @@
-25 class-members | the class: the members of a class specialization the program has not asked for yet
-16 class-members | the members of a class specialization the program has not asked for yet
+25 class-members | '' was not declared - a prototype must come first
+25 member-templates | the members of a class specialization over the template's own local class
 1 | '' needs a pointer to a struct or union, not ''
 1 | '' was not declared
-24 | the members of a class specialization the program has not asked for yet

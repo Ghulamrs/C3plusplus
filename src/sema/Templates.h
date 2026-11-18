@@ -161,6 +161,24 @@ public:
     std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
 
     std::vector<Specialization> specializations_;
+    // M8.1: a class a read held and then needed the members of is made where the read's declaration stands ([temp.inst]/1),
+    // and seated among the replays where the program first asks - what its making made, in the order it made it.
+    struct Held { TemplateDecl decl; std::vector<const Type *> binding; std::vector<long long> values; std::vector<TemplateArg> args; Packs packs; std::size_t pos; };
+    struct Seat { std::size_t index; std::string key; std::size_t fnFrom, fnTo; };
+    std::map<const Type *, Held> held_;
+    mutable std::vector<const Type *> wanted_;
+    std::map<std::string, std::vector<Seat> > seat_;
+    std::vector<Seat> seatLog_;
+    bool making_ = false;
+    void want(const Type *held) const { wanted_.push_back(held); }
+    bool makeWanted();
+    void asked(const std::string &key, std::size_t pos);
+    void noteMade(const std::string &key, std::size_t from, std::size_t fnFrom = static_cast<std::size_t>(-1));
+    // Each function such a class declared, seated where the program asked: the order implicit members are defined in.
+    std::map<std::size_t, std::size_t> fnSeat_;
+    std::vector<std::size_t> seatedOrder(std::size_t n) const;
+    const Type *makeClass(const TemplateDecl &decl, const std::string &tag, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                          const std::vector<TemplateArg> &args, const Packs &packs, std::size_t pos);
 
     // **The census of the doors** (M8.0): what each instantiation was, counted where it is made; CXX1_TEMPLATE_CENSUS prints it.
     enum Door { FunctionBody, ClassBody, MemberBody, MemberTemplate, DependentBase, SfinaeTrial, SfinaeFailed, AliasId,

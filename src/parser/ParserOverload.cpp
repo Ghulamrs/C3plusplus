@@ -752,9 +752,12 @@ void Parser::refuseHeldClass(const Type *a, const Type *b) const {
     const Type *both[2] = { a == nullptr || !a->isReference() ? a : a->referent(), b == nullptr || !b->isReference() ? b : b->referent() };
     if (both[0] != nullptr && both[1] != nullptr && both[0]->unqualified() == both[1]->unqualified()) return;
     for (int i = 0; i < 2; i++)
-        if (both[i] != nullptr && readHeld_.count(both[i]->unqualified()) != 0 && !both[i]->unqualified()->isComplete())
-            throw SubstitutionFailure(overReadLocal(both[i]->unqualified()) ? "the members of a class specialization over the template's own local class"
-                                                                            : "the members of a class specialization the program has not asked for yet");
+        if (both[i] != nullptr && readHeld_.count(both[i]->unqualified()) != 0 && !both[i]->unqualified()->isComplete()) {
+            // A class over the read's own local class is dependent ([temp.dep.type]): never made at the definition.
+            if (overReadLocal(both[i]->unqualified())) throw SubstitutionFailure("the members of a class specialization over the template's own local class");
+            tmpl_.want(both[i]->unqualified());
+            throw SubstitutionFailure("the members of a class specialization the program has not asked for yet");
+        }
 }
 
 void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,

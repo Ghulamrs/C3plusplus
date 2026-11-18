@@ -91,6 +91,9 @@ public:
     void noteUnread(std::size_t pos, const std::string &why) { unread_.push_back(std::make_pair(pos, why)); }
     // A template body read at its declaration (M8.1): dead to every reader, and shown once by the dump after the tree.
     void noteRead(NodeId id) { read_.push_back(id); }
+    // What both lists held, and a read made again taking its notes back to that.
+    std::pair<std::size_t, std::size_t> noted() const { return std::make_pair(read_.size(), unread_.size()); }
+    void forget(const std::pair<std::size_t, std::size_t> &n) { read_.erase(read_.begin() + static_cast<long>(n.first), read_.end()); unread_.erase(unread_.begin() + static_cast<long>(n.second), unread_.end()); }
     void mark(NodeId id, std::uint8_t marks) { nodes_[id.v].marks |= marks; }
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
 private:
