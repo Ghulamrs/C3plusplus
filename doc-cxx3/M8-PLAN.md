@@ -1273,3 +1273,62 @@ waited 18 minutes); the serial chain was split into parallel queued steps.
 the out-of-line door's 14; the last dependent sizes. Unread is not 0 on either box, so commit 5 (the read on by
 default) waits.
 src/ lines: 95,446 before, 95,448 after.
+
+**M8.1, commit 4, seventh step: m8p's two patches, gated, and the 24 `new` measured, 2026-11-18** (lane m8q, branch
+`m8-e` from `06f4b8ae`; one lane-hour; code `f7bf0691`). Still under `-check=templates`; the replay is what emits.
+`boxkit/m8p-incomplete-resize.patch` applied as its own commit (`ParserType.cpp`: a read's data member of a dependent
+class no pattern has made is laid out as nothing and marks its class's layout dependent; `Overload::rankArgument`: in
+a read a parameter over the pattern's own parameters matches any argument as a conversion), with
+`tests/cases/template-class.templates` re-recorded - its class members read 8 of 8, from 4 of 6 (the bodies gate's
+one failure on the first run, the record holding the old count; the new record is byte for byte the run's output).
+
+**Read / not read by door** (bodies / read / unread), before `06f4b8ae` (m8p's `~/m8pn`, `work\m8pn`), after
+`f7bf0691` (Linux `~/m8qn`, `boxkit/m8q-count.sh`, `m8q-self.sh`; Windows `work\m8qn`, `m8q-win.sh bodies` / `self`,
+`m8q-wsum2.sh` / `m8q-wsum3.sh`). **Linux and Windows are the same door by door**, before and after, and reason by reason but the one m8p named:
+
+| door | cases before | cases after | self-host before | self-host after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,395 / 83 | 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187 | 7,512 / 7,325 / 187 |
+| class members | 12,041 / 11,805 / 236 | **12,237 / 12,108 / 129** | 29,678 / 28,692 / 986 | **31,158 / 30,315 / 843** |
+| out-of-line members | 22 / 8 / 14 | 22 / 9 / 13 | 0 | 0 |
+| partial specializations' members | 607 / 585 / 22 | 607 / 586 / 21 | 1,796 / 1,688 / 108 | 1,796 / 1,688 / 108 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+Unread in all: the cases **355 to 246**, the self-host **1,281 to 1,138**. Gone: the class's incomplete type (69 to
+26 in the cases, 85 to 0 in the self-host), no function takes these 2 arguments (68 and 102 to 0). **Not read, by
+reason, after** - the cases: the class's incomplete type 26, needs a complete type 24, an incomplete type in a body
+24, the size of a dependent type 25 + 16 + 16 (26 on Windows: one `type_info`), not declared 14 + 2, declared twice
+11; the self-host: an incomplete type in a body 283, needs a complete type 266, declared twice 127, dependent sizes
+104 + 96 + 96, a specialization not asked for 36 + 25 + 24 + 8.
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ, on both boxes (Linux's `count.sh` "1" is
+the script's own slot line); the self-host 102 of 103 and `Driver` on both, each diff opened: one line of
+`__TIME__` (Linux `.byte`, Windows `DB` 11:59:14 against 12:00:38).
+
+**Gates** on `413e4f9d` (the code; `f7bf0691` adds the record alone and ran the bodies step), each box built from
+clean; REF built fresh from `06f4b8ae`, alone, in its own kept tree (Linux `~/m8qr`, about four minutes; Windows
+`work\m8qr`, after the NEW build, under three minutes; NEW `~/m8qn`, `work\m8qn`, names of one length). Linux (g++
+`-Werror` clean, 0 warnings): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0
+and -O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (2 lines, its
+`__TIME__`; the script removes the files, not opened); `tests/subst.sh bodies` 1 failed on the first run (`template-class`'s record, above), then, re-recorded, **0 failed** (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh` 876 passed, 0
+failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0,
+comment cap 0, memory gate rc 0, ast-residue +0, `ide/generate.py --check` up to date. Windows (cl /W4 /WX clean,
+103 sources, no warning line in either log; NEW built first and alone): static gates rc 0; the self-host's `-S`,
+REF against NEW, 102 of 103 and `Driver` (opened: one `DB` line, 12:03:36 against 12:05:04); `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF,
+**12,390 the same, 0 differ** (6,200 and 6,190); `tools\windows\self-compile.cmd` (`work\m8qs`, `413e4f9d`) **103 of 103**.
+
+**Measured and not committed** (Linux only, beside the gate): `boxkit/m8q-new.patch` (`ParserExprNew.cpp`, seven
+lines: a read's `new __tree_node<V>(v)` over a class no pattern has made reads its operands and stands as a zero
+pointer, as a read's `T(x)` over a dependent class does), `~/m8qx`: class members **12,237 / 12,132 / 105** - the 24
+"needs a complete type" gone and nothing else moved; flag 0; the self-host's class members **31,158 / 30,581 /
+577** (the 266 gone). An argument of dependent type matched as a conversion beside it (`~/m8qy`) moved nothing, and
+was dropped. With a read's local of such a class held as well (`ParserStmt.cpp`, `const_iterator i`; `~/m8qz`):
+function door 3,478 / 3,402 / 76, class members 12,237 / 12,154 / 83, two new `'delete' needs a pointer` (`delete
+at.n_` over the held local); `boxkit/m8q-held.patch` (the three: `new`, the local, `delete` of a dependent operand
+read as nothing), `~/m8qw`: the cases' function door **3,478 / 3,402 / 76**, class members **12,237 / 12,156 / 81**, nothing added; flag 0; the self-host's class members **31,158 / 30,864 / 294** (the 283 and the 266 gone; declared twice 127 and the dependent sizes lead now). Unread with it: the cases 191, the self-host 589. It is the next lane's first commit, with the whole gate (Windows not measured).
+
+**Left of commit 4**: in the cases 246 and the self-host 1,138 (191 and 589 with `m8q-held.patch`); the class's incomplete type 26;
+the dependent sizes; a partial's own key for its `C<T>`; the member-template door - not started; the out-of-line
+door's 13. Unread is not 0 on either box, so commit 5 (the read on by default) waits.
+src/ lines: 95,448 before, 95,452 after.
