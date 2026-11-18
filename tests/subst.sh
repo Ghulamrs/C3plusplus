@@ -119,7 +119,9 @@ bodies)
         awk -v units="$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')" '{s[$1]+=$2} END {printf "subst.sh bodies: %d replayed over %d units: %d first reads, %d the same as the first, %d differ in text alone, %d differ in shape\n", s["bodies"], units, s["held"], s["same"], s["text"], s["shape"]}'
     echo "    $(cat "$OUT"/*.bodies | grep -c '^-check=templates shape: ') bodies whose replays differ in shape, in $(grep -l '^-check=templates shape: ' "$OUT"/*.bodies | wc -l | tr -d ' ') units"
     for rec in tests/cases/*.templates; do base=$(basename "$rec" .templates)
-        cmp -s "$OUT/$base.bodies" "$rec" || { echo "FAIL $base: -check=templates is not the record"; diff "$OUT/$base.bodies" "$rec" | head -10; bad=$((bad + 1)); }
+        # a Windows build writes its standard output with CRLF and a checkout may give the record CRLF: compare lines
+        tr -d '\r' < "$OUT/$base.bodies" > "$OUT/$base.bodies.lf"; tr -d '\r' < "$rec" > "$OUT/$base.rec.lf"
+        cmp -s "$OUT/$base.bodies.lf" "$OUT/$base.rec.lf" || { echo "FAIL $base: -check=templates is not the record"; diff "$OUT/$base.bodies.lf" "$OUT/$base.rec.lf" | head -10; bad=$((bad + 1)); }
     done
     ceiling cases bodies ;;
 self)
