@@ -50,11 +50,12 @@ public:
         plain_ = a_;
     }
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
     void setOptimize(int level) override;
     void setMirDump(std::ostream *to, const std::string &afterPass) override { mirDump_ = to; mirDumpAfter_ = afterPass; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
+    void setFunctions(const std::vector<Function> *fns) override { functions_ = fns; }
 
 protected:
 
@@ -82,9 +83,9 @@ protected:
     int establisherOffset(int slot) const { return frameSize_ + outgoing_ - slot; }
     void emitCoffEhTables(const Function &fn);   // the FH3 tables, one state tree
     // The five objects the Microsoft ABI wants per class with a vftable.
-    void emitCoffClassRtti(const Program &program);
+    void emitCoffClassRtti(const UnitData &data);
     // The four objects a Microsoft throw is identified by, in GNU syntax.
-    void emitCoffThrowInfo(const Program &program);
+    void emitCoffThrowInfo(const UnitData &data);
     // Opens one of those records as a COMDAT of its own, public, so that the
     // linker keeps one copy where every unit that names the type wrote one.
     void coffRecord(const char *section, const std::string &label, int p2align,
@@ -202,6 +203,7 @@ private:
     void returnThis(const Function &fn);
     // **The SSA selector** (M3b.1, SsaSelect.cpp): the module -front=ssa handed over, and the frame it lays above the parser's.
     const ir::Module *ssa_ = nullptr;
+    const std::vector<Function> *functions_ = nullptr;   // the Ast.h frame records emit() still reads, in the unit's order
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
     std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
@@ -265,14 +267,14 @@ private:
     void finishChunk();
     std::string label(const char *kind, int id) const override;
     std::string userLabel(const std::string &name) const override;
-    void emitData(const Program &program);
+    void emitData(const UnitData &data);
     void emitGlobal(const Global &g, Segment seg);
     // A thread_local's address into rax: local-exec or its wrapper on ELF, cl's `_tls_index` walk on
     // COFF with the CRT's guard asked first where the object may still want initialising.
     void tlsAddress(const std::string &symbol, bool viaWrapper);
     void msTlsBlock();
     // The `_ZTW` wrappers and `_ZTH` aliases this unit defines - ELF only, as raw text after the functions.
-    void emitTlsWrappers(const Program &program);
+    void emitTlsWrappers(const UnitData &data);
     void push();
     void pop(const char *into);
     // A stack argument, on the real stack whatever the level: the call unwinds it.

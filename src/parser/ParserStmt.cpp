@@ -428,12 +428,12 @@ StmtPtr Parser::declarationBody() {
                 bindStaticReference(d, symbol, pieces, hasInit, &body, true);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
-                current_->globals.push_back(Global{ symbol, symbol,
+                current_->module.data.globals.push_back(Global{ symbol, symbol,
                                                     types_.pointerTo(d.type->referent()),
                                                     std::move(pieces), hasInit,
                                                     !sharedStaticLocal(symbol), false });
-                current_->globals.back().isInline = sharedStaticLocal(symbol);
-                current_->globals.back().isThreadLocal = quals.isThreadLocal;
+                current_->module.data.globals.back().isInline = sharedStaticLocal(symbol);
+                current_->module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!body.empty())
                     inits.push_back(guardOnce(symbol, std::move(body)));
                 continue;
@@ -527,14 +527,14 @@ StmtPtr Parser::declarationBody() {
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
             // An inline function's static local is one object for the program: external, in a
             // COMDAT, under the ABI's name (1.28, 2026-10-22, review of 1.25, item 14).
-            current_->globals.push_back(Global{ symbol, symbol, d.type,
+            current_->module.data.globals.push_back(Global{ symbol, symbol, d.type,
                                                 std::move(pieces), hasInit,
                                                 !sharedStaticLocal(symbol),
                                                 locals_[at].isConst &&
                                                     dynamic.value == nullptr && !dynamic.isList });
-            current_->globals.back().isInline = sharedStaticLocal(symbol);
-            current_->globals.back().align = quals.alignAs;
-            current_->globals.back().isThreadLocal = quals.isThreadLocal;
+            current_->module.data.globals.back().isInline = sharedStaticLocal(symbol);
+            current_->module.data.globals.back().align = quals.alignAs;
+            current_->module.data.globals.back().isThreadLocal = quals.isThreadLocal;
             if (dynamic.value != nullptr || dynamic.isList) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;

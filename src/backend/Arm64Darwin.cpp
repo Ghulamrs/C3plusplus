@@ -527,12 +527,12 @@ void Arm64Darwin::emitGlobal(const Global &g, Segment seg) {
     if (at < size) out_ << "  .space " << (size - at) << "\n";
 }
 
-void Arm64Darwin::emitData(const Program &program) {
+void Arm64Darwin::emitData(const UnitData &data) {
 
     for (int pass = 0; pass < 2; pass++) {
         bool wantWide = (pass == 1);
         bool opened = false;
-        for (const StringLit &s : program.strings) {
+        for (const StringLit &s : data.strings) {
             if ((s.width > 1) != wantWide) continue;
             if (!opened) {
                 out_ << (wantWide ? "  .section __TEXT,__const\n"
@@ -571,7 +571,7 @@ void Arm64Darwin::emitData(const Program &program) {
     };
     for (const Bucket &b : order) {
         bool opened = false;
-        for (const Global &g : program.globals) {
+        for (const Global &g : data.globals) {
             if (segmentFor(g) != b.seg) continue;
             if (!opened && b.open != nullptr) { out_ << b.open; }
             opened = true;
@@ -800,9 +800,9 @@ void Arm64Darwin::emitLoc(int file, int line, int column) {
 // **The wrappers as clang writes them on Darwin**: `_ZTW` only for the objects this unit defines
 // (a unit reaching another's calls the defining unit's), global and strong; `_ZTH` an alias of a
 // shell round `__tls_init` keeping every register but x0, x9, x16, x17 - what its callers rely on.
-void Arm64Darwin::emitTlsWrappers(const Program &program) {
+void Arm64Darwin::emitTlsWrappers(const UnitData &data) {
     bool dynamic = false;
-    for (const TlsWrapper &w : program.tlsWrappers) {
+    for (const TlsWrapper &w : data.tlsWrappers) {
         if (!w.definedHere) continue;
         if (w.dynamicInit) dynamic = true;
         const std::string name = tlsWrapperName(w.symbol);
@@ -824,18 +824,19 @@ void Arm64Darwin::emitTlsWrappers(const Program &program) {
          << ":\n  .cfi_startproc\n  sub sp, sp, #336\n  stp x29, x30, [sp, #320]\n  add x29, sp, #320\n"
             "  .cfi_def_cfa w29, 16\n  .cfi_offset w30, -8\n  .cfi_offset w29, -16\n";
     for (int i = 0; i < 20; i++) out_ << "  stp " << saved[i] << ", [sp, #" << 16 * i << "]\n";
-    out_ << "  bl _" << program.tlsInitFunction << "\n";
+    out_ << "  bl _" << data.tlsInitFunction << "\n";
     for (int i = 19; i >= 0; i--) out_ << "  ldp " << saved[i] << ", [sp, #" << 16 * i << "]\n";
     out_ << "  ldp x29, x30, [sp, #320]\n  add sp, sp, #336\n  ret\n  .cfi_endproc\n";
-    for (const TlsWrapper &w : program.tlsWrappers)
+    for (const TlsWrapper &w : data.tlsWrappers)
         if (w.definedHere && w.dynamicInit) out_ << "_" << tlsInitName(w.symbol) << " = " << fast << "\n";
 }
 
-void Arm64Darwin::run(const Program &program) {
-    dialect_ = program.dialect;
+void Arm64Darwin::run(const ir::Module &module) {
+    const UnitData &data = module.data;
+    dialect_ = data.dialect;
     definedHere_.clear();
-    for (const Global &g : program.globals)   definedHere_.insert(g.symbol);
-    for (const Function &f : program.functions) definedHere_.insert(f.symbol());
+    for (const Global &g : data.globals)   definedHere_.insert(g.symbol);
+    for (const std::string &s : data.order) definedHere_.insert(s);
 
     if (const Source *src = lineSource()) {
         const std::vector<std::string> &names = src->files();
@@ -847,15 +848,15 @@ void Arm64Darwin::run(const Program &program) {
         }
     }
 
-    emitData(program);
-    for (const Function &fn : program.functions) emitFunction(fn);
-    emitTlsWrappers(program);
+    emitData(data);
+    for (const Function &fn : *functions_) emitFunction(fn);
+    emitTlsWrappers(data);
     // Measured from clang: the init function's address in __mod_init_func.
-    if (!program.initFunction.empty())
+    if (!data.initFunction.empty())
         out_ << "  .section __DATA,__mod_init_func,mod_init_funcs\n"
-                "  .p2align 3, 0x0\n  .quad _" << program.initFunction << "\n";
+                "  .p2align 3, 0x0\n  .quad _" << data.initFunction << "\n";
     if (const Source *src = lineSource()) {
-        for (const Global &g : program.globals) {
+        for (const Global &g : data.globals) {
             // A thread_local has no address the records could hold: not described yet.
             if (g.isThreadLocal) continue;
             DwarfGlobal dg;

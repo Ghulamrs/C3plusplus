@@ -1378,12 +1378,12 @@ void Parser::finishMicrosoftThrow(MicrosoftThrow &names, bool thrown) {
             names.destructor = d->symbol;
         }
     microsoftThrowFinish(&names);
-    for (std::size_t i = 0; i < current_->msThrows.size(); i++)
-        if (current_->msThrows[i].info == names.info) {
-            current_->msThrows[i].thrown |= thrown;
+    for (std::size_t i = 0; i < current_->module.data.msThrows.size(); i++)
+        if (current_->module.data.msThrows[i].info == names.info) {
+            current_->module.data.msThrows[i].thrown |= thrown;
             return;
         }
-    current_->msThrows.push_back(names);
+    current_->module.data.msThrows.push_back(names);
 }
 
 // The statements a `throw` lowers to are a block of expression statements - stores, guard flags and

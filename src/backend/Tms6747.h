@@ -58,7 +58,7 @@ public:
     Tms6747(std::ostream &sink, const Target &target, const Abi &abi)
         : sink_(sink), target_(target), abi_(abi) {}
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void emitLoc(int file, int line, int column) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
     void vaStartAt();                         // A4 = &ap
@@ -158,7 +158,7 @@ private:
     void store(const Type *t, const std::string &mem);      // A4 -> mem
     void narrowInt(const Type *t);            // truncate A4 to t's width
     void emitGlobal(const Global &g, Segment seg);
-    void emitData(const Program &program);
+    void emitData(const UnitData &data);
     void emitParams(const ir::Function &f);
     void emitVariables(const ir::Function &f);
     void emitScope(const ir::Function &f, int scope);

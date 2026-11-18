@@ -5,6 +5,7 @@
 // same IR (design section 2). Types are TypeId handles into the front end's TypeTable (R6.3); no raw pointer here.
 
 #include "../Type.h"
+#include "../UnitData.h"
 #include "../syntax/SyntaxId.h"
 
 #include <cstddef>
@@ -146,6 +147,7 @@ struct Function {
 
 struct Module {
     std::vector<Function> functions;    // index 0 none
+    UnitData data;                      // what is laid down beside the code (UnitData.h)
     Module() { functions.push_back(Function()); }
     // The function of a symbol, or none.
     FuncId find(const std::string &symbol) const;

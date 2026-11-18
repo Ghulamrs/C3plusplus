@@ -1,4 +1,0 @@
-# tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
-# e0d4d955 (M6d, lane m6d1: a function outside the SSA lowering is an error on the C6000 too), Linux box, g++ build, CENSUS_SOURCES=0, 1,246 cases: 11,510 of 11,510 functions selected. M6a.2's census reads 0; the two functions R1 left are refused by name on every target (lowering-static-local-default-arguments, lowering-return-derived-temporary-destructor).
--O0 0
--O2 0

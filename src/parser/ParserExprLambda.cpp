@@ -124,8 +124,8 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     // the body's own brace level was seen, so one in a `try` left it void.
     const Type *found = nullptr;
     const std::size_t functionsBefore = current_->functions.size();
-    const std::size_t globalsBefore = current_->globals.size();
-    const std::size_t stringsBefore = current_->strings.size();
+    const std::size_t globalsBefore = current_->module.data.globals.size();
+    const std::size_t stringsBefore = current_->module.data.strings.size();
     const int stringCount = strings_;
     deducingReturn_ = &found;
     while (at_ < bodyTo && !peek().is("}") && peek().kind != TokenKind::End)
@@ -136,8 +136,8 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     // it emitted a function or a global (a nested closure's call operator,
     // say), which may name one; then every literal stays, as before.
     if (current_->functions.size() == functionsBefore &&
-        current_->globals.size() == globalsBefore) {
-        current_->strings.resize(stringsBefore);
+        current_->module.data.globals.size() == globalsBefore) {
+        current_->module.data.strings.resize(stringsBefore);
         strings_ = stringCount;
     }
 

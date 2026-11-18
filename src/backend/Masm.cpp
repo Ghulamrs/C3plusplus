@@ -1089,16 +1089,16 @@ std::string MasmCodeGen::record(const char *segment, int align, const std::strin
 
 // **The five objects the Microsoft ABI wants before it will answer a
 // `dynamic_cast`**, measured from clang.
-void MasmCodeGen::emitClassRtti(const Program &program) {
-    if (program.rtti.empty()) return;
+void MasmCodeGen::emitClassRtti(const UnitData &data) {
+    if (data.rtti.empty()) return;
     std::string &o = out_;
 
     // The chain of every class named, closed and deduplicated: a class's array
     // lists its bases' descriptors, so a base needs the full set of records
     // even when nothing in this file names it.
     std::vector<const Type *> all;
-    for (std::size_t i = 0; i < program.rtti.size(); i++)
-        for (const Type *k = program.rtti[i]; k != nullptr; k = k->base()) {
+    for (std::size_t i = 0; i < data.rtti.size(); i++)
+        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
             bool had = false;
             for (std::size_t j = 0; j < all.size(); j++) if (all[j] == k) had = true;
             if (!had) all.push_back(k);
@@ -1163,12 +1163,12 @@ void MasmCodeGen::emitClassRtti(const Program &program) {
     }
 }
 
-void MasmCodeGen::emitThrowInfo(const Program &program) {
-    if (program.msThrows.empty()) return;
+void MasmCodeGen::emitThrowInfo(const UnitData &data) {
+    if (data.msThrows.empty()) return;
     std::string &o = out_;
     std::set<std::string> catchables, arrays;
-    for (std::size_t i = 0; i < program.msThrows.size(); i++) {
-        const MicrosoftThrow &n = program.msThrows[i];
+    for (std::size_t i = 0; i < data.msThrows.size(); i++) {
+        const MicrosoftThrow &n = data.msThrows[i];
         for (std::size_t k = 0; k < n.catchables.size(); k++) {
             const MicrosoftThrow::Catchable &c = n.catchables[k];
             // **cl's listing writes `FLAT:` here and ml64 rejects it.** That prefix is
@@ -1216,10 +1216,11 @@ void MasmCodeGen::emitThrowInfo(const Program &program) {
 
 // The ThrowInfo names are defined in this file, so the spelling must not put
 // them in the EXTERN list it writes for everything a call mentions.
-void MasmCodeGen::run(const Program &program) {
+void MasmCodeGen::run(const ir::Module &module) {
+    const UnitData &data = module.data;
     std::vector<std::string> mine;
-    for (std::size_t i = 0; i < program.msThrows.size(); i++) {
-        const MicrosoftThrow &n = program.msThrows[i];
+    for (std::size_t i = 0; i < data.msThrows.size(); i++) {
+        const MicrosoftThrow &n = data.msThrows[i];
         if (n.thrown) mine.push_back(n.info);
         for (std::size_t k = 0; k < n.catchables.size(); k++)
             mine.push_back(n.catchables[k].descriptor);
@@ -1227,8 +1228,8 @@ void MasmCodeGen::run(const Program &program) {
     // **And every class descriptor this file defines**, for the same reason: the spelling writes an
     // EXTERN for each name a call mentions, and these are mentioned by the `lea` in front of every
     // __RTDynamicCast while being laid down a few lines above it.
-    for (std::size_t i = 0; i < program.rtti.size(); i++)
-        for (const Type *k = program.rtti[i]; k != nullptr; k = k->base()) {
+    for (std::size_t i = 0; i < data.rtti.size(); i++)
+        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
             MicrosoftRtti n;
             std::string why;
             if (!microsoftClassRttiNames(k, &n, &why)) break;
@@ -1245,21 +1246,21 @@ void MasmCodeGen::run(const Program &program) {
     // **Before the code, not after it.** The base run() flushes what it has
     // built when it finishes, so anything appended afterwards goes to a buffer
     // nobody reads.
-    if (!program.msThrows.empty() || !program.rtti.empty())
+    if (!data.msThrows.empty() || !data.rtti.empty())
         out_ += "\nEXTRN ??_7type_info@@6B@:QWORD\n";
     // **A pure virtual's slot names a routine no object file here defines.**
     // GNU as takes an undeclared symbol and leaves it to the linker; ml64 will
     // not, and answers `A2006: undefined symbol : _purecall`.
-    for (std::size_t g = 0; g < program.globals.size(); g++) {
+    for (std::size_t g = 0; g < data.globals.size(); g++) {
         bool found = false;
-        const std::vector<GlobalPiece> &pieces = program.globals[g].init;
+        const std::vector<GlobalPiece> &pieces = data.globals[g].init;
         for (std::size_t i = 0; i < pieces.size(); i++)
             if (pieces[i].symbol == "_purecall") { found = true; break; }
         if (found) { out_ += "\nEXTRN _purecall:PROC\n"; break; }
     }
-    emitClassRtti(program);
-    emitThrowInfo(program);
-    X86_64Linux::run(program);
+    emitClassRtti(data);
+    emitThrowInfo(data);
+    X86_64Linux::run(module);
 }
 
 // **A funclet's head is written when it closes**, round the body lifted out of where it was written (M3a.4); the

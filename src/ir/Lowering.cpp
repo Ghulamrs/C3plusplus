@@ -4212,11 +4212,11 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
 void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
     const std::string &label = tree_.stringLabel(lit);
     if (!tree_.node(lit).literal || label.empty()) broken("an array initialised from a string whose label was not recorded");
-    std::size_t found = program_.strings.size();
-    for (std::size_t k = 0; k < program_.strings.size(); k++)
-        if (program_.strings[k].label == label) found = k;
-    if (found == program_.strings.size()) outside("an array initialised from a string the program does not hold");
-    const StringLit &s = program_.strings[found];
+    std::size_t found = program_.module.data.strings.size();
+    for (std::size_t k = 0; k < program_.module.data.strings.size(); k++)
+        if (program_.module.data.strings[k].label == label) found = k;
+    if (found == program_.module.data.strings.size()) outside("an array initialised from a string the program does not hold");
+    const StringLit &s = program_.module.data.strings[found];
     const long long size = t.size(target_), copied = static_cast<long long>(s.bytes.size());
     if (s.width != t.pointee()->size(target_) || copied > size) outside("an array initialised from a string of another width");
     std::vector<ValueId> ops;
@@ -4949,7 +4949,7 @@ bool Lowering::anonymousUnionMember(sema::TypedId id) const {
         !r.type.valid() || T(r.type).isReference())
         return false;
     if (r.symbol.empty()) return r.owner.valid() && T(r.owner).kind() == Kind::Union && T(r.owner).findMember(text(id)) != nullptr;
-    for (const ::Global &g : program_.globals)
+    for (const ::Global &g : program_.module.data.globals)
         if (g.symbol == r.symbol) return !g.isThreadLocal && g.type->kind() == Kind::Union && g.type->findMember(text(id)) != nullptr;
     return false;
 }
@@ -5693,7 +5693,7 @@ bool Lowering::blockExtern(const sema::Resolution &r) { return r.what == sema::R
 
 // Whether the program's global of this symbol is a thread_local: a block-scope one's record is made before its mark.
 bool Lowering::threadLocalGlobal(const std::string &symbol) const {
-    for (const ::Global &g : program_.globals)
+    for (const ::Global &g : program_.module.data.globals)
         if (g.symbol == symbol) return g.isThreadLocal;
     return false;
 }

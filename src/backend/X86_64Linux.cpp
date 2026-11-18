@@ -1552,16 +1552,16 @@ void X86_64Linux::emitCoffEhTables(const Function &fn) {
 
 // **The five objects the Microsoft ABI wants per class with a vftable**, in
 // GNU spelling.
-void X86_64Linux::emitCoffClassRtti(const Program &program) {
-    if (program.rtti.empty()) return;
+void X86_64Linux::emitCoffClassRtti(const UnitData &data) {
+    if (data.rtti.empty()) return;
     std::string &o = out_;
 
     // The chain of every class named, closed and deduplicated: a class's array
     // lists its bases' descriptors, so a base needs the full set of records
     // even when nothing in this file names it.
     std::vector<const Type *> all;
-    for (std::size_t i = 0; i < program.rtti.size(); i++)
-        for (const Type *k = program.rtti[i]; k != nullptr; k = k->base()) {
+    for (std::size_t i = 0; i < data.rtti.size(); i++)
+        for (const Type *k = data.rtti[i]; k != nullptr; k = k->base()) {
             bool had = false;
             for (std::size_t j = 0; j < all.size(); j++) if (all[j] == k) had = true;
             if (!had) all.push_back(k);
@@ -1668,13 +1668,13 @@ void X86_64Linux::emitGlobal(const Global &g, Segment seg) {
     if (at < size) a_->zero((size - at));
 }
 
-void X86_64Linux::emitData(const Program &program) {
+void X86_64Linux::emitData(const UnitData &data) {
     bool rodataOpen = false;
-    if (!program.strings.empty()) {
+    if (!data.strings.empty()) {
         a_->rodataSection();
         rodataOpen = true;
 
-        for (const StringLit &s : program.strings) {
+        for (const StringLit &s : data.strings) {
             a_->defLabel(s.label);
             a_->dataBytes(s.bytes);
         }
@@ -1692,7 +1692,7 @@ void X86_64Linux::emitData(const Program &program) {
     };
     for (const Bucket &b : order) {
         bool opened = b.alreadyOpen;
-        for (const Global &g : program.globals) {
+        for (const Global &g : data.globals) {
             if (segmentFor(g) != b.seg) continue;
             if (!opened) {
                 if (b.seg == Segment::Const) a_->rodataSection();
@@ -1711,9 +1711,9 @@ void X86_64Linux::emitData(const Program &program) {
 // **The `_ZTW` wrappers, as clang writes them**: one per external thread_local defined or reached here,
 // hidden and weak in a COMDAT of its own (a `static` one's a local function); a defined object reached
 // local-exec after its `_ZTH` where __tls_init builds it, another unit's initial-exec, its `_ZTH` weak.
-void X86_64Linux::emitTlsWrappers(const Program &program) {
+void X86_64Linux::emitTlsWrappers(const UnitData &data) {
     std::string o, weak;
-    for (const TlsWrapper &w : program.tlsWrappers) {
+    for (const TlsWrapper &w : data.tlsWrappers) {
         const std::string name = tlsWrapperName(w.symbol), init = tlsInitName(w.symbol);
         if (w.internal) o += "  .text\n";
         else o += "  .section .text." + name + ",\"axG\",@progbits," + name + ",comdat\n  .hidden " + name +
@@ -1732,11 +1732,11 @@ void X86_64Linux::emitTlsWrappers(const Program &program) {
         o += "  pop %rbp\n  .cfi_def_cfa %rsp, 8\n  ret\n  .cfi_endproc\n  .size " + name + ", .-" + name + "\n";
     }
     // The `_ZTH` aliases: `__tls_init` under the name the wrappers call, global for an external object.
-    for (const TlsWrapper &w : program.tlsWrappers) {
+    for (const TlsWrapper &w : data.tlsWrappers) {
         if (!w.definedHere || !w.dynamicInit) continue;
         const std::string init = tlsInitName(w.symbol);
         if (!w.internal) o += "  .globl " + init + "\n";
-        o += "  .type " + init + ",@function\n" + init + " = " + program.tlsInitFunction + "\n";
+        o += "  .type " + init + ",@function\n" + init + " = " + data.tlsInitFunction + "\n";
     }
     out_ += o + weak;
 }
@@ -1744,13 +1744,13 @@ void X86_64Linux::emitTlsWrappers(const Program &program) {
 // The four objects a Microsoft `throw` hands the runtime, spelled for GNU-as:
 // the type descriptor, one catchable type, the array listing it, and the
 // ThrowInfo itself.
-void X86_64Linux::emitCoffThrowInfo(const Program &program) {
-    if (program.msThrows.empty()) return;
+void X86_64Linux::emitCoffThrowInfo(const UnitData &data) {
+    if (data.msThrows.empty()) return;
     std::string &o = out_;
     std::set<std::string> catchables, arrays;
 
-    for (std::size_t i = 0; i < program.msThrows.size(); i++) {
-        const MicrosoftThrow &n = program.msThrows[i];
+    for (std::size_t i = 0; i < data.msThrows.size(); i++) {
+        const MicrosoftThrow &n = data.msThrows[i];
         for (std::size_t k = 0; k < n.catchables.size(); k++) {
             const MicrosoftThrow::Catchable &c = n.catchables[k];
             if (msDescriptors_.insert(c.descriptor).second) {
@@ -1799,20 +1799,21 @@ void X86_64Linux::coffRecord(const char *section, const std::string &label,
     out_ += label + ":\n";
 }
 
-void X86_64Linux::run(const Program &program) {
-    dialect_ = program.dialect;
+void X86_64Linux::run(const ir::Module &module) {
+    const UnitData &data = module.data;
+    dialect_ = data.dialect;
     // The Microsoft RTTI records, where this generator serves that target.
     // The MASM path emits its own in the same place and for the same reason:
     // no other target has anything like them.
     if (target_.microsoftNames() && !emitsOwnRtti()) {
-        emitCoffClassRtti(program);
-        emitCoffThrowInfo(program);
+        emitCoffClassRtti(data);
+        emitCoffThrowInfo(data);
     }
 
     std::vector<std::string> defined;
-    for (const Function &fn : program.functions) defined.push_back(fn.symbol());
-    for (const Global &g : program.globals) defined.push_back(g.symbol);
-    for (const StringLit &s : program.strings) defined.push_back(s.label);
+    for (const std::string &s : data.order) defined.push_back(s);
+    for (const Global &g : data.globals) defined.push_back(g.symbol);
+    for (const StringLit &s : data.strings) defined.push_back(s.label);
     a_->predefine(defined);
     definedHere_.clear();
     definedHere_.insert(defined.begin(), defined.end());
@@ -1824,24 +1825,24 @@ void X86_64Linux::run(const Program &program) {
                                                        ? codeViewPath(compDir(), names[i]) : names[i]);
     }
 
-    emitData(program);
+    emitData(data);
     finishChunk();
-    for (const Function &fn : program.functions) emit(fn);
-    if (!program.initFunction.empty()) {
-        a_->initialiserEntry(program.initFunction, program.usesDsoHandle);
+    for (const Function &fn : *functions_) emit(fn);
+    if (!data.initFunction.empty()) {
+        a_->initialiserEntry(data.initFunction, data.usesDsoHandle);
         finishChunk();
     }
-    if (!program.tlsInitFunction.empty() && target_.microsoftNames()) {
-        a_->tlsInitialiserEntry(program.tlsInitFunction);
+    if (!data.tlsInitFunction.empty() && target_.microsoftNames()) {
+        a_->tlsInitialiserEntry(data.tlsInitFunction);
         finishChunk();
     }
-    if (!target_.microsoftNames() && !program.tlsWrappers.empty()) {
-        emitTlsWrappers(program);
+    if (!target_.microsoftNames() && !data.tlsWrappers.empty()) {
+        emitTlsWrappers(data);
         finishChunk();
     }
 
     if (lineSource() != nullptr && writesDwarf()) {
-        for (const Global &g : program.globals) {
+        for (const Global &g : data.globals) {
             // A thread_local has no address the records could hold: not described yet.
             if (g.isThreadLocal) continue;
             DwarfGlobal dg;

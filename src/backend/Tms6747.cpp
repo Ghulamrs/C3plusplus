@@ -4,7 +4,6 @@
 #include "../optimizer/DivMagic.h"
 
 #include "../Abi.h"
-#include "../Ast.h"
 #include "../Source.h"
 
 #include <cctype>
@@ -813,10 +812,10 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
 // String literals into .const as plain .byte lists - no escape syntax to
 // get wrong, and wide strings are the same form - then the globals by
 // segment, each opening the section its kind belongs in (emitGlobal).
-void Tms6747::emitData(const Program &program) {
-    bool inConst = !program.strings.empty();
+void Tms6747::emitData(const UnitData &data) {
+    bool inConst = !data.strings.empty();
     if (inConst) out_ << "\t.sect\t\".const\"\n";
-    for (const StringLit &s : program.strings) {
+    for (const StringLit &s : data.strings) {
         if (s.width > 1) out_ << "\t.align\t" << s.width << "\n";
         out_ << symName(s.label) << ":\n";
         for (std::size_t i = 0; i < s.bytes.size(); i++) {
@@ -829,7 +828,7 @@ void Tms6747::emitData(const Program &program) {
     struct Bucket { Segment seg; };
     const Bucket order[] = { { Segment::Const }, { Segment::ConstRelocated }, { Segment::Data }, { Segment::Bss } };
     for (const Bucket &b : order)
-        for (const Global &g : program.globals)
+        for (const Global &g : data.globals)
             if (segmentFor(g) == b.seg) emitGlobal(g, b.seg);   // each names its own section
 }
 
@@ -1186,17 +1185,18 @@ void Tms6747::emitFunction(const std::string &symbol) {
     out_.str(std::string());
 }
 
-void Tms6747::run(const Program &program) {
-    emitData(program);
+void Tms6747::run(const ir::Module &module) {
+    const UnitData &data = module.data;
+    emitData(data);
     file_ += out_.str();
     out_.str(std::string());
-    for (const Function &fn : program.functions) emitFunction(fn.symbol());
+    for (const std::string &s : data.order) emitFunction(s);
     emitTypes();
     // Dynamic initialisation: the init function's address in .init_array,
     // which the EABI's start-up code - and the VM6747 emulator - walk before
     // main.
-    if (!program.initFunction.empty()) {
-        out_ << "\t.sect\t\".init_array\"\n\t.align\t4\n\t.word\t" << program.initFunction << "\n";
+    if (!data.initFunction.empty()) {
+        out_ << "\t.sect\t\".init_array\"\n\t.align\t4\n\t.word\t" << data.initFunction << "\n";
         file_ += out_.str();
         out_.str(std::string());
     }

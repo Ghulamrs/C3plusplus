@@ -44,12 +44,13 @@ public:
     Arm64Darwin(std::ostream &sink, const Target &target, const Abi &abi)
         : sink_(sink), target_(target), abi_(abi) {}
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
+    void setFunctions(const std::vector<Function> *fns) override { functions_ = fns; }
 
 private:
     // The `.gcc_except_table` for the function just emitted: the call-site
@@ -60,6 +61,7 @@ private:
     // **The SSA selector** (M5.1, A64Select.cpp): every function is written from the module; one outside the subset is
     // refused by ssaChoose, naming why. A value has a register or an 8-byte slot above the parser's parameters.
     const ir::Module *ssa_ = nullptr;
+    const std::vector<Function> *functions_ = nullptr;   // the Ast.h frame records emit() still reads, in the unit's order
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
     long long ssaArgArea_ = 0;      // the frame's one area for the copies of classes a call passes by a copy's address
@@ -137,10 +139,10 @@ private:
 
     void push();
     void pop(const char *reg);
-    void emitData(const Program &program);
+    void emitData(const UnitData &data);
     void emitGlobal(const Global &g, Segment seg);
     // The `_ZTW` wrappers, `_ZTH` aliases and the register-preserving `__tls_init` this unit defines.
-    void emitTlsWrappers(const Program &program);
+    void emitTlsWrappers(const UnitData &data);
     void emitFunction(const Function &fn);
 
     struct AggPlan {

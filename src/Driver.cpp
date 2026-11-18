@@ -1657,7 +1657,9 @@ bool Driver::compile(const Job &job) {
         if (selects || c6x) gen->setSsa(&program.module, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
-        gen->run(program);
+        for (const Function &fn : program.functions) program.module.data.order.push_back(fn.symbol());
+        gen->setFunctions(&program.functions);
+        gen->run(program.module);
     }
     if (dumpMir_) std::fwrite(mir.str().data(), 1, mir.str().size(), stdout);
     std::string text = made.str();

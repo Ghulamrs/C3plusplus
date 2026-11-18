@@ -1951,7 +1951,7 @@ void Parser::pruneUnusedInline(Program &program) {
     };
     if (held.empty()) {
         bool any = false;
-        for (const Global &g : program.globals) any = any || heldGlobal(g);
+        for (const Global &g : program.module.data.globals) any = any || heldGlobal(g);
         if (!any) return;
     }
     // A node is a function (its index) or a global (its index past the functions).
@@ -1961,13 +1961,13 @@ void Parser::pruneUnusedInline(Program &program) {
         bySymbol[program.functions[i].symbol()] = i;
         if (!program.functions[i].alias().empty()) bySymbol[program.functions[i].alias()] = i;
     }
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        bySymbol[program.globals[i].symbol] = nf + i;
-    std::vector<bool> reached(nf + program.globals.size(), false);
+    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
+        bySymbol[program.module.data.globals[i].symbol] = nf + i;
+    std::vector<bool> reached(nf + program.module.data.globals.size(), false);
     std::set<std::string> everyName;
     std::vector<std::string> named;
-    named.push_back(program.initFunction);
-    for (const MicrosoftThrow &t : program.msThrows) {
+    named.push_back(program.module.data.initFunction);
+    for (const MicrosoftThrow &t : program.module.data.msThrows) {
         if (!t.thrown) continue;         // a type only caught needs its descriptor alone
         named.push_back(t.destructor);
         for (const MicrosoftThrow::Catchable &c : t.catchables) named.push_back(c.copyCtor);
@@ -1978,8 +1978,8 @@ void Parser::pruneUnusedInline(Program &program) {
             reached[i] = true;
             work.push_back(i);
         }
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        if (!heldGlobal(program.globals[i])) {
+    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
+        if (!heldGlobal(program.module.data.globals[i])) {
             reached[nf + i] = true;
             work.push_back(nf + i);
         }
@@ -2000,7 +2000,7 @@ void Parser::pruneUnusedInline(Program &program) {
             SymbolsNamed collect(&named);
             program.functions[i].body().accept(collect);
         } else {
-            const Global &g = program.globals[i - nf];
+            const Global &g = program.module.data.globals[i - nf];
             named.push_back(g.prefixWord);
             for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
         }
@@ -2010,17 +2010,17 @@ void Parser::pruneUnusedInline(Program &program) {
         if (reached[i]) kept.push_back(std::move(program.functions[i]));
     program.functions.swap(kept);
     std::vector<Global> keptGlobals;
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        if (reached[nf + i]) keptGlobals.push_back(std::move(program.globals[i]));
-    program.globals.swap(keptGlobals);
+    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
+        if (reached[nf + i]) keptGlobals.push_back(std::move(program.module.data.globals[i]));
+    program.module.data.globals.swap(keptGlobals);
     // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
     std::vector<StringLit> keptStrings;
-    for (StringLit &sl : program.strings)
+    for (StringLit &sl : program.module.data.strings)
         if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
-    program.strings.swap(keptStrings);
+    program.module.data.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<const Type *> rtti;
-    for (const Type *cls : program.rtti) {
+    for (const Type *cls : program.module.data.rtti) {
         MicrosoftRtti n;
         std::string why;
         if (!microsoftClassRttiNames(cls, &n, &why) || everyName.count(n.locator) ||
@@ -2028,7 +2028,7 @@ void Parser::pruneUnusedInline(Program &program) {
             everyName.count(n.array) || everyName.count(n.hierarchy))
             rtti.push_back(cls);
     }
-    program.rtti.swap(rtti);
+    program.module.data.rtti.swap(rtti);
 }
 
 // `static int total;` inside a class: one object shared by every object of the class,
@@ -2159,8 +2159,8 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
             constant_.refuseConstexprClassObject(full, d.pos);
         }
     }
-    current_->globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
-    current_->globals.back().isInline = true;
+    current_->module.data.globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
+    current_->module.data.globals.back().isInline = true;
 }
 
 // `int Counter::total = 0;` at file scope - the definition the declaration inside the
@@ -2195,7 +2195,7 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' was declared '" +
                          s->type->describe() + "' and this defines it as '" +
                          d.type->describe() + "'");
-    for (const Global &g : program.globals)
+    for (const Global &g : program.module.data.globals)
         if (g.symbol == s->symbol)
             src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' is defined "
                              "twice");
@@ -2221,11 +2221,11 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
             dynamicInitialise(m, s->symbol, helper, owner->isSpecialization());
             expect(";");
             // Not isConst whatever the member says: the constructor writes it.
-            program.globals.push_back(Global{ full, s->symbol, s->type,
+            program.module.data.globals.push_back(Global{ full, s->symbol, s->type,
                                               std::vector<GlobalPiece>(), false,
                                               false, false });
-            program.globals.back().isInline = owner->isSpecialization();
-            program.globals.back().isThreadLocal = threadLocal;
+            program.module.data.globals.back().isInline = owner->isSpecialization();
+            program.module.data.globals.back().isThreadLocal = threadLocal;
             if (threadLocal) tlsDynamic_.insert(s->symbol);
             return;
         }
@@ -2242,11 +2242,11 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         bindStaticReference(m, s->symbol, pieces, hasInit, &initSink());
         leaveInitFunction(outer, s->symbol);
         expect(";");
-        program.globals.push_back(Global{ m.name, s->symbol,
+        program.module.data.globals.push_back(Global{ m.name, s->symbol,
                                           types_.pointerTo(s->type->referent()),
                                           std::move(pieces), hasInit, false, false });
-        program.globals.back().isInline = owner->isSpecialization();
-        program.globals.back().isThreadLocal = threadLocal;
+        program.module.data.globals.back().isInline = owner->isSpecialization();
+        program.module.data.globals.back().isThreadLocal = threadLocal;
         if (threadLocal && !hasInit) tlsDynamic_.insert(s->symbol);
         return;
     }
@@ -2294,13 +2294,13 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
     }
     expect(";");
 
-    program.globals.push_back(Global{ d.qualifier + "::" + d.name, s->symbol,
+    program.module.data.globals.push_back(Global{ d.qualifier + "::" + d.name, s->symbol,
                                       s->type, std::move(pieces), hasInit, false,
                                       s->type->isConst() && !stored });
     // A template's static member is defined by every unit that uses it, and
     // the linker keeps one - a weak object, as its vtable is.
-    program.globals.back().isInline = owner->isSpecialization();
-    program.globals.back().isThreadLocal = threadLocal;
+    program.module.data.globals.back().isInline = owner->isSpecialization();
+    program.module.data.globals.back().isThreadLocal = threadLocal;
     if (threadLocal && stored) tlsDynamic_.insert(s->symbol);
 }
 

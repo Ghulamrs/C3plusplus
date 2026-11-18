@@ -449,11 +449,11 @@ void Parser::topLevel(Program &program) {
                 noteThreadLocal(prev != nullptr ? *prev : lookup_.globals_.back(), prev != nullptr, quals.isThreadLocal,
                                 d.name, defines ? !hasInit : true, !internal, defines, d.pos);
                 if (defines)
-                    program.globals.push_back(Global{ gname, symbol,
+                    program.module.data.globals.push_back(Global{ gname, symbol,
                                                       types_.pointerTo(d.type->referent()),
                                                       std::move(pieces), hasInit,
                                                       internal, false });
-                if (defines) program.globals.back().isThreadLocal = quals.isThreadLocal;
+                if (defines) program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!consume(",")) break;
                 inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -558,10 +558,10 @@ void Parser::topLevel(Program &program) {
                                         d.name, true, !internal, true, d.pos);
                     // Not isConst: the constructor writes it, so it cannot
                     // be laid down read-only - unless it was folded, and no constructor runs.
-                    program.globals.push_back(Global{ gname, symbol, d.type, folded,
+                    program.module.data.globals.push_back(Global{ gname, symbol, d.type, folded,
                                                       quals.isConstexpr, internal, quals.isConstexpr });
-                    program.globals.back().align = quals.alignAs;
-                    program.globals.back().isThreadLocal = quals.isThreadLocal;
+                    program.module.data.globals.back().align = quals.alignAs;
+                    program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                     if (quals.isVolatile) lookup_.globals_[lookup_.globalIndex_[gname]].isVolatile = true;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
@@ -692,13 +692,13 @@ void Parser::topLevel(Program &program) {
                 if (sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) {
                     if (!prev->emitted) {
                         prev->emitted = true;
-                        program.globals.push_back(Global{ d.name, prev->symbol,
+                        program.module.data.globals.push_back(Global{ d.name, prev->symbol,
                                                           d.type, pieces, hasInit,
                                                           internalLinkage(sc),
                                                           prev->isConst });
-                        program.globals.back().isThreadLocal = quals.isThreadLocal;
+                        program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                     } else {
-                        for (Global &g : program.globals)
+                        for (Global &g : program.module.data.globals)
                             if (g.name == d.name) {
                                 g.type = both;
                                 if (hasInit) { g.init = pieces; g.hasInit = true; }
@@ -740,11 +740,11 @@ void Parser::topLevel(Program &program) {
             const ThreadLocalObject tlo(this, quals.isThreadLocal);
             if (dynamic) dynamicInitialiseScalar(gname, symbol, d.type, dynamicScalar);
             if (definesHere) {
-                program.globals.push_back(Global{ gname, symbol, d.type,
+                program.module.data.globals.push_back(Global{ gname, symbol, d.type,
                                                   std::move(pieces), hasInit,
                                                   internal, objectIsConst && !dynamic });
-                program.globals.back().align = quals.alignAs;
-                program.globals.back().isThreadLocal = quals.isThreadLocal;
+                program.module.data.globals.back().align = quals.alignAs;
+                program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 refuseWeakAlignas(quals.alignAs, d.type, d.pos);
             }
             if (!consume(",")) break;
@@ -2269,7 +2269,7 @@ Program Parser::parse() {
         if (a != frameAligns_.end()) f.setFrameAlign(a->second);
     }
     pruneUnusedInline(program);
-    program.dialect = dialect();
+    program.module.data.dialect = dialect();
     return program;
 }
 

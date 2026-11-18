@@ -3,8 +3,8 @@
 #include "../Dialect.h"
 
 #include "../Abi.h"
-#include "../Ast.h"
 #include "../Type.h"
+#include "../ir/Ir.h"
 
 #include <iosfwd>
 #include <memory>
@@ -15,13 +15,15 @@
 class Source;
 namespace masm { struct Instruction; }
 
-namespace ir { struct Module; }
+class Function;
 
 // **The generator**, as the driver drives it; Regions extends it in one chain (M3b.7 round 4 F).
 class CodeGen {
 public:
     virtual ~CodeGen() = default;
-    virtual void run(const Program &program) = 0;
+    virtual void run(const ir::Module &module) = 0;
+    // The Ast.h frame records, for a generator whose shell still reads them (x86, arm64); the C6000 has none (M6d).
+    virtual void setFunctions(const std::vector<Function> *fns) { (void)fns; }
     // **-front=ssa** (M3b.1): a function the module holds is selected from its SSA; a generator with no selector ignores it.
     virtual void setSsa(const ir::Module *module, const TypeTable *types) { (void)module; (void)types; }
     // **The structural door** (M4.4): a spelling that hands instructions to the encoder library as data appends them here, leaving a `\001k` line in its text.
