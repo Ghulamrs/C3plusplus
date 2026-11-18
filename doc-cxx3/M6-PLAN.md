@@ -4289,3 +4289,53 @@ built - `ExprStmt` and `Block` are what every deleted class became, so they go l
 builders, an ExprPtr each) and `If` (14) are the next lane's, in the shape of (2) and (3); `Try` holds the
 Microsoft handlers and cleanup the parser hands on; and the body `Block` a `Function` holds is still read by the
 parser itself. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, seventh lane: a converting constructor with defaulted parameters, and `Return` and `If` deleted - lane m6d-s4g, 2026-11-19
+
+Brief boxkit/brief-m6d-s4g.txt; from ad482730 on branch m6d-s4b; REF built from ad482730 on Linux (`~/m6d-s4g-ref.exe`);
+the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) The refusal stricter than the standard S4f found** (8f6abc05, src/ 93,563 -> 93,575). `convertingConstructor`
+took only a constructor of exactly one parameter, so `Effect(ExprPtr e = ExprPtr(), int g = 0)` was no converting
+constructor and `loopStatement(StmtPtr(), std::move(cond), ...)` was "no function called 'Parser::loopStatement' takes
+these 4 argument(s)"; [class.conv.ctor]/1 counts a constructor callable with one argument, so the parameters past the
+first may all have defaults (`overload_.leastArguments(c) > 1` is the test now). Both conversion sites - the user
+conversion of an argument and the cast's - complete the call with `applyDefaults`; the user conversion records the
+defaults by the value's node (`"$conv:<node>"`, `noteEntryDefaults`), and the lowering's `convertedTemporary` passes
+them after the value. Case `converting-constructor-default-argument` (by value, to a const reference, copy-
+initialisation, return, cast, a move-only argument, the all-default constructor; clang 19.1.5 -std=c++11
+-pedantic-errors on Windows: `507 0 607 234 87 93 13 1 7`, and cxx3 for x86_64-windows prints the same). Six
+citations of ParserExprNew.cpp re-pointed (lines moved, words kept). **528b76ac's spelled `Effect(...)` stays**: with
+the natural spelling cxx3 now parses ParserStmt.cpp, but its lowering stops at `loopStatement`'s by-value `Effect`
+- "internal error: a by-value argument whose copy the parser recorded none for": a class with a non-trivial copy
+made from another type by a converting constructor, by value, is not recorded where `byValueArgument` looks
+(`argumentCopy_`), with one parameter as with two (REF refuses boxkit/m6d-s4g-probe/p4.cpp alike) - owed, a `broken()`
+for valid C++. **ast-residue** as the baseline: ExprPtr 2,012, StmtPtr 512, node-casts 149, node-refs 337, readers 9,
+ast-lines 581. **Shown** against REF: identical tms6747 1,822 compared, 2 differ and 7,288 compared, 8 differ - each the
+new case at both levels (REF refuses it); `-g` 894/909/909/884 same, 1 differ on each target, the new case; run.sh
+1,249 passed, 0 failed; self-compile of ParserExprNew.cpp, ParserOverload.cpp and Lowering.cpp for x86_64-linux -O2
+by REF and by (1), both compile.
+
+**(2) `Return` and `If` leave Ast.h** (src/ 93,575 -> 93,562). Nothing read either (no visitor of a statement is
+left, no cast to one): the 17 `Return` builders call `returnStatement(value)` and the 14 `If` builders
+`ifStatement(cond, then, else)`, two functions in Ast.h beside `Block` that keep what the node held in a `Block`
+(the value or condition as an `ExprStmt`, so every expression lives as long as it did; ConstexprFn's operand among
+them); the lowering reads both from the syntax tree, as it did. **ast-residue**: ExprPtr 2,012, StmtPtr 512 -> 484,
+node-casts 149, node-refs 337, readers 9, ast-lines 581 -> 568, recorded. **Shown** against REF: identical as (1),
+the new case the only differ; `-g` as (1); run.sh 1,249 passed, 0 failed; self-compile of the five changed files
+(ParserStmt, ParserClass, ParserInit, ParserExprCall, Classes) for x86_64-linux -O2 by (1) and by (2): text the same
+for each; tms6747 refused by both alike (calls outside the C6000 selector).
+
+**Gates on the final tree** (step 2): g++ -Werror clean (each step built on Linux); cl /W4 /WX clean, started first and
+alone - a full build of (1) in 49 s (work\m6d-s4gy), a delta of (1) and one of (2) about 1 min each; tests/tms6747.sh
+SIM=1 on (2), shards 1-3 on Linux at -O2 428/0 and -O0 428/0, shards 4-6 on Windows at -O2 429/0 and -O0 429/0;
+comment cap 0 over, memory gate pass, ide --check up to date, exclusions 0 uncited 0 stale after (1)'s six re-pointed;
+ast-residue at or below the baseline after each commit, recorded lower with (2).
+
+**Not done, and why.** Left of S4: `ExprStmt`, `Block`, `Try`, `Function::body` and `StmtPtr`. `Try` is built at five
+sites (ParserClass.cpp's cleanup regions, ParserTopLevel.cpp's function try, ParserStmt.cpp's `try`) and written
+late - `setHandlers`, `setCleanup`, `setTypes` through `tryBodySegments_` - though nothing reads it back: the next
+lane gives it a builder that returns its `Block` and the late writes a place of their own (or none). `ExprStmt`
+and `Block` are what every deleted class became, and `Function::body`'s `Block` is read by nothing now either, so
+they go with `StmtPtr` last. The by-value conversion the lowering stops at (1) is owed before 528b76ac's spelling
+can go. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
