@@ -2039,11 +2039,11 @@ private:
     // A jump and a label are lowered from their syntax: the parse keeps an empty block, or one holding the labelled statement.
     static StmtPtr jumpStatement(const std::string &) { return StmtPtr(new Block({})); }
     static StmtPtr labelStatement(const std::string &, StmtPtr s) { std::vector<StmtPtr> held; held.push_back(std::move(s)); return StmtPtr(new Block(std::move(held))); }
-    static StmtPtr loopStatement(StmtPtr init, ExprPtr cond, ExprPtr step, StmtPtr body) {   // a loop's parts, likewise
+    static StmtPtr loopStatement(StmtPtr init, Effect cond, Effect step, StmtPtr body) {   // a loop's parts, likewise
         std::vector<StmtPtr> parts;
         parts.push_back(std::move(init));
-        parts.push_back(StmtPtr(new ExprStmt(std::move(cond))));
-        parts.push_back(StmtPtr(new ExprStmt(std::move(step))));
+        parts.push_back(StmtPtr(new ExprStmt(std::move(cond.expr))));
+        parts.push_back(StmtPtr(new ExprStmt(std::move(step.expr))));
         parts.push_back(std::move(body));
         return StmtPtr(new Block(std::move(parts)));
     }

@@ -2583,7 +2583,7 @@ StmtPtr Parser::statementBody() {
         breakMarks_.pop_back();
         loopMarks_.pop_back();
         loopDepth_--;
-        StmtPtr made(loopStatement(StmtPtr(), std::move(cond), ExprPtr(), std::move(body)));
+        StmtPtr made(loopStatement(StmtPtr(), std::move(cond), Effect(), std::move(body)));
         if (!declares) return made;
         leaveBlock();
         leaveScope();
