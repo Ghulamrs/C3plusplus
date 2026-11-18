@@ -1,5 +1,5 @@
-16 class-members | '' is '' and this is ''
-25 class-members | the class: '' has an incomplete type
-24 | '' has an incomplete type
+25 class-members | the class: the members of a class specialization the program has not asked for yet
+16 class-members | the members of a class specialization the program has not asked for yet
 1 | '' needs a pointer to a struct or union, not ''
 1 | '' was not declared
+24 | the members of a class specialization the program has not asked for yet

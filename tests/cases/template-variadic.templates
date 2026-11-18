@@ -5,7 +5,7 @@
 -check=templates declarations: functions=4 read=4 unread=0 same=1 text=1 shape=2 unreplayed=0
 -check=templates declaration shape: tests/cases/template-variadic.cpp:27:37
 -check=templates declaration shape: tests/cases/template-variadic.cpp:31:28
--check=templates declaration shape: read (function "total" (var "template parameter first") (var "parameter pack expansion rest") (block (return (binary "+" (cast "int" (name "first")) (call (name "total") (name "rest"))))))
+-check=templates declaration shape: read (function "total" (var "template parameter first") (var "parameter pack expansion rest") (block (return (binary "+" (cast "int" (name "first" dependent)) (call (name "total" dependent) (name "rest"))))))
 -check=templates declaration shape: replayed (function "total" (var "int first") (var "int rest$0") (var "int rest$1") (block (return (binary "+" (cast "int" (name "first")) (call (name "total") (name "rest$0") (name "rest$1"))))))
 -check=templates declaration shape: read (function "howMany" (var "parameter pack expansion a") (block (return (binary "+" (binary "*" (cast "int" (sizeof "sizeof...(a)")) (int "10")) (cast "int" (sizeof "sizeof...(Ts)"))))))
 -check=templates declaration shape: replayed (function "howMany" (var "int a$0") (var "double a$1") (var "char a$2") (block (return (binary "+" (binary "*" (cast "int" (sizeof "sizeof...(a)")) (int "10")) (cast "int" (sizeof "sizeof...(Ts)"))))))
