@@ -4392,16 +4392,23 @@ the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S`
 **(1) `MsHandler`'s body** (7073006b, src/ 93,480 -> 93,480). Nothing read it: the handler's statements are kept in a
 local of the catch loop beside `mh`, for the same scope, so every expression lives as long as it did. `MsHandler`
 itself stays - noteMsCatch reads its descriptor, byReference and constPointer for an unnamed catch's record.
-**ast-residue**: ExprPtr 2,012, StmtPtr 477, node-casts 149, node-refs 325, readers 9, ast-lines 535 -> 534 (two citations it moved left stale, re-pointed in (2)). **Shown** against REF: identical tms6747 1,824 compared, 0 differ; run.sh 1,250 passed, 0 failed; x86, arm64 and -g still running at hand-back.
+**ast-residue**: ExprPtr 2,012, StmtPtr 477, node-casts 149, node-refs 325, readers 9, ast-lines 535 -> 534 (two citations it moved left stale, re-pointed in (2)). **Shown** against REF: identical tms6747 1,824 compared, 0 differ, x86_64-linux, x86_64-windows (both spellings) and arm64-darwin 7,296 compared, 0 differ; `-g -S` 896/911/911/886 same, 0 differ on each target; run.sh 1,250 passed, 0 failed.
 
 **(2) What nothing read of the statement nodes** (c3512c4c, src/ 93,480 -> 93,465): `Stmt::pos` and its six writers,
 `ExprStmt::expr` and `release`, `Block::body`, and `Function::body()`; the body the Function holds stays, read by
 nothing, because it owns the expressions `ConstexprFn::value` and `ConstexprCtor::steps` point into. `Stmt::syntax`
 stays: noteStmt's caller reads it (ParserStmt.cpp's `noted->syntax()`, eight records keyed by the statement's node,
 and the condition declaration's `setup.back()->syntax()`) - its comment said nothing read it. **ast-residue**: ExprPtr 2,012, StmtPtr 477, node-casts 149, node-refs 325, readers 9, ast-lines 534 -> 526, recorded; 7 citations re-pointed, exclusions 0 uncited 0 stale.
-**Shown** against REF: identical tms6747 1,824 compared, 0 differ; x86, arm64, -g, run.sh and the self-compile still running at hand-back.
+**Shown** against REF: identical tms6747 1,824/0 differ, but 7,296 compared 4 differ and `-g` x86_64-windows 1 differ - all goto-out-of-handler-ms, where the new tree segfaulted: (3)'s write after free; run.sh 1,250 passed, 0 failed; self-compile of Parser.cpp for x86_64-linux -O2 text the same, ParserStmt.cpp compiles (REF refuses the REF text over the new headers, as s4h found).
 
-**Gates on the final tree** (c3512c4c): g++ -Werror clean (each step built on Linux); cl /W4 /WX clean - a full build found ParserStmt.cpp's while-branch `pos` unused once its setPos went (fixed), then a delta of the final tree in 1 min 26 s (work\m6d-s4iy); comment cap, memory gate, ide --check pass; tests/tms6747.sh SIM=1 shards 4-6 at -O2 and -O0 on Windows running at hand-back (boxkit/m6d-s4i-winrest.out); Linux shards 1-3 not run by this lane.
+**(3) A Microsoft handler's statements are kept with its `try`** (963cf664, src/ 93,465 -> 93,466). resolveGotos fills a
+goto's cleanups `Block` after the jump is placed; since ecd58059 dropped the handler list that owned them, a Microsoft
+handler's block was freed when its catch's iteration ended, and a goto out of the handler wrote into it after - 2e6d91b7
+and (1) survived it by luck, (2)'s smaller `Stmt` did not. The bodies now join the `try`'s region, as an Itanium
+handler's do. 3 citations re-pointed. **ast-residue** as (2), exclusions 0/0. **Shown** against REF: identical 1,824/0
+and 7,296/0, `-g` 896/911/911/886 same, 0 differ on each target; run.sh 1,250 passed, 0 failed.
+
+**Gates on the final tree** (963cf664): g++ -Werror clean (each step built on Linux); cl /W4 /WX clean - a full build found ParserStmt.cpp's while-branch `pos` unused once its setPos went (fixed), then deltas of (2) in 1 min 26 s and of (3) in 2 min 14 s (work\m6d-s4iy); comment cap, memory gate, ide --check pass; tests/tms6747.sh SIM=1 shards 4-6 on Windows on (2)'s tree at -O2 424/0 and -O0 424/0 ((3) changes only the Microsoft path); Linux shards 1-3 not run by this lane.
 
 **Not done, and why - stopped, as the brief says, on two of lane m8h1's files.** `ExprStmt`, `Block`, `StmtPtr` and
 the body cannot leave Ast.h without editing `src/parser/ParserExprCall.cpp` (:282-325, `flushTemporaries`,
