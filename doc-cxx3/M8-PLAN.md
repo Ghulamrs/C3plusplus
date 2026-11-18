@@ -1197,3 +1197,79 @@ Linux box.
 started; the out-of-line door's 14; the last dependent sizes; a partial's own key (`pair<const $T0,$T1>`) for its
 `C<T>`, which is registered for no partial now.
 src/ lines: 95,421 before, 95,446 after.
+
+**M8.1, commit 4, sixth step: the Microsoft name at the last two sites, gated, 2026-11-18** (lane m8p, branch `m8-e`
+from `0972fdf8`; one lane-hour; code `224b8993`). Still under `-check=templates` for the class doors; the replay is
+what emits. `boxkit/m8o-name.patch` applied as its own commit: a constructor written in its class
+(`ParserClass.cpp`, `declareConstructor`) and a member template at the top level (`ParserTopLevel.cpp`) take a
+`$pattern$` name in a read where the Microsoft mangler has none, as m8o's `memberSymbol` and `functionSymbol` do.
+
+**Read / not read by door**, before `0972fdf8` (m8o's after: Linux `~/m8on`, Windows `work\m8on`), after `224b8993`
+(Linux `~/m8pn`, `boxkit/m8p-count.sh`, `m8p-self.sh`; Windows `work\m8pn`, `m8p-win.sh bodies` / `self`,
+`m8p-wsum2.sh` / `m8p-wsum3.sh`):
+
+| door | Linux cases before / after | Linux self-host before / after | Windows cases before / after | Windows self-host before / after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,395 / 83; 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187; 7,512 / 7,325 / 187 | 3,478 / 3,395 / 83; 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187; 7,512 / 7,325 / 187 |
+| class members | 12,041 / 11,805 / 236; 12,041 / 11,805 / 236 | 29,678 / 28,692 / 986; 29,678 / 28,692 / 986 | 934 / 434 / 500; 12,041 / 11,805 / 236 | 3,551 / 1,989 / 1,562; 29,678 / 28,692 / 986 |
+| out-of-line members | 22 / 8 / 14; 22 / 8 / 14 | 0 | 22 / 1 / 21; 22 / 8 / 14 | 0 |
+| partial specializations' members | 607 / 585 / 22; 607 / 585 / 22 | 1,796 / 1,688 / 108; 1,796 / 1,688 / 108 | 259 / 179 / 80; 607 / 585 / 22 | 493 / 292 / 201; 1,796 / 1,688 / 108 |
+| alias type-ids | 7 / 7 / 0 | 0 | 7 / 7 / 0 | 0 |
+
+**Windows reads as Linux does**, door by door, over the cases and the self-host: "this type has no Microsoft
+linkage name" is gone from both (410 + 77 + 7 in the cases, 1,440 + 201 in the self-host before). One reason
+differs by its count, not its door: the function door's dependent sizes, 26 on Windows against Linux's 25 and one
+`type_info` refusal (the function door is 83 unread on both). **Not read, by reason, after** (both boxes, cases):
+the class's incomplete type (69); no function called takes these 2 arguments (68); needs a complete type (24); the
+size of a dependent type (26 / 25 + 16 + 16); an incomplete type in a body (16); declared twice (11). The self-host:
+needs a complete type (266), an incomplete type (223), declared twice (127), dependent sizes (104 + 96 + 96), no
+function takes 2 arguments (102), the class's incomplete type (85).
+Linux's cases are as before, door by door and reason by reason (the patch changes only the Microsoft spelling).
+**Two patches measured and not committed** (beside the gate, on Linux only; the gate is `224b8993`'s):
+`boxkit/m8p-incomplete.patch` (`ParserType.cpp`, four lines: a read's data member of a dependent class no pattern
+has made - `C<int> c` over a template template parameter, `set`'s `__tree<...> tree_` - is laid out as nothing, as
+a dependent base is, and marks its class's layout dependent), `~/m8py`: class members **12,237 / 12,036 / 201**
+(from 236), out-of-line 22 / 9 / 13, partials 607 / 586 / 21; the class's incomplete type 69 to 26; what the classes
+now read whole meet next: an incomplete type in a body 16 to 24 (`__tree`'s `i`, a `__tree_node<$T0>`), the
+out-of-line door's "declares no member with these parameters" 3 to 9; flag against no flag 0 differ. Its self-host
+was not measured (stopped while it waited for a slot). With `boxkit/m8p-resize.patch` on top (`Overload::rankArgument`, two lines: in a read a parameter over the
+pattern's own takes any argument, ranked a conversion - the replay ranks it), `~/m8pz`: class members
+**12,237 / 12,108 / 129**, the 68 gone and none added; flag against no flag 0 differ. Both are the next lane's first
+commit, with the whole gate (`boxkit/m8p-incomplete-resize.patch` is the two together).
+**The reasons, read whole** (`boxkit/m8n-why.patch` over `224b8993`, `~/m8px`, `m8p-why.sh`): the 68 are
+`basic_string<$T0>::resize(n)`'s `resize(n, 0)` against `resize(size_type, C)` - an `int` ranked against the
+pattern's `C`; the 24 are `new __tree_node<$T0>` and `new __hash_node<$T0>` (`__tree:187`, `:194`,
+`__hash_table:87`, `:89`), a specialization no pattern has made; the body's incomplete type is a local of the same.
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8p-count.sh`; its "1" is the
+script's own slot line) and 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` on
+both (Linux: diff opened, one `.byte` line of the time; Windows: 2 lines, the files replaced by the next step before
+they were opened - REF against NEW's `Driver` diff, in the same place, was opened: one `DB` line of the time).
+
+**Gates** on `224b8993`, each box built from clean; REF built fresh from `0972fdf8` in its own kept tree (Linux
+`~/m8pr`, Windows `work\m8pr`; NEW `~/m8pn`, `work\m8pn`, names of one length). Linux (g++
+`-Werror` clean, 0 warnings): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0
+and -O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (its
+`__TIME__` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh`
+876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap 0, memory gate rc 0, ast-residue +0,
+`ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, 103 sources, 0 warnings, its log read whole; the NEW build ran first and alone, under six
+minutes): static gates rc 0 (`work\m8pn`); the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its
+`__TIME__` line); `names.sh` 884 passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five
+spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own
+(`work\m8ps`), **103 of 103**.
+**A defect, recorded and not retried**: the Windows REF build (`work\m8pr`, `0972fdf8`) passed the nine-minute cap -
+it was started beside the counts, `names.sh` and `overload.sh` on the shared box rather than alone; the driver's
+wait was ended at nine minutes and `build.cmd` ran on, its executable made at about twelve. Its log after the cap
+was not read; the REF gates above ran against that executable.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; the
+patches' self-host; no `tests/cases` program was added. **What the lane did wrong**: one Linux tree (`~/m8pn`) was
+shipped twice by two of the lane's own commands (an ssh left holding its session), and the first build failed in
+the deleted tree; a gate run started on that failure was stopped by its PIDs before it ran anything, and the tree
+was built again from clean. Linux's three slots were held by other lanes for most of the hour (the bodies step
+waited 18 minutes); the serial chain was split into parallel queued steps.
+
+**Left of commit 4**: the class's incomplete type (69 / 85; 26 with the patch); no function takes these 2 arguments (68 /
+102; 0 in the cases with the patch); needs a complete type (24 / 266); a partial's own key for its `C<T>`; the member-template door - not started;
+the out-of-line door's 14; the last dependent sizes. Unread is not 0 on either box, so commit 5 (the read on by
+default) waits.
+src/ lines: 95,446 before, 95,448 after.
