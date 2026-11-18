@@ -30,7 +30,6 @@ class ExprStmt;
 class Block;
 class Conditional;
 class Comma;
-class Try;
 
 class Visitor {
 public:
@@ -51,7 +50,6 @@ public:
     virtual void visit(const Block &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
-    virtual void visit(const Try &) = 0;
 };
 
 class Node {
@@ -384,6 +382,11 @@ inline StmtPtr ifStatement(ExprPtr cond, StmtPtr thenArm, StmtPtr elseArm) {
     if (elseArm) held.push_back(std::move(elseArm));
     return StmtPtr(new Block(std::move(held)));
 }
+// A try, a cleanup region and its pad are lowered from the syntax tree too: the statements are kept in a Block.
+inline StmtPtr tryRegion(std::vector<StmtPtr> body, StmtPtr pad) {
+    if (pad) body.push_back(std::move(pad));
+    return StmtPtr(new Block(std::move(body)));
+}
 
 struct Param {
     const Type *type;
@@ -401,42 +404,6 @@ struct MsHandler {
     bool constPointer = false; // `catch (const T *)`: HT_IsConst, the const off the name
     StmtPtr body;
     std::size_t pos = 0;       // where `catch` is written: the line the funclet's entry is named by under -g (1.29)
-};
-
-class Try final : public Stmt {
-public:
-    // The body is a *list* and not a block, because a cleanup region covers a
-    // slice of an enclosing block's statements and must not open a scope of its
-    // own - the objects it destroys belong to the block outside it.
-    Try(std::vector<StmtPtr> body, StmtPtr pad, int, int,
-        std::vector<std::string> types)
-        : body_(std::move(body)), pad_(std::move(pad)),
-          types_(std::move(types)) {}
-    const std::vector<StmtPtr> &body() const { return body_; }
-
-    // **Null on Windows.**
-    bool hasPad() const { return pad_ != nullptr; }
-    const Stmt &pad() const { return *pad_; }
-    const std::vector<std::string> &types() const { return types_; }
-    // **Set late, and only for a `try` body's cleanup rows.**
-    void setTypes(std::vector<std::string> t) { types_ = std::move(t); }
-
-    const std::vector<MsHandler> &handlers() const { return handlers_; }
-    void setHandlers(std::vector<MsHandler> h) { handlers_ = std::move(h); }
-
-    // **A cleanup region, where the Microsoft ABI wants a state rather than a
-    // handler.** Nothing is caught here, and it holds what *this* region built
-    // and no more: the runtime chains to the region before it.
-    const Stmt *cleanup() const { return cleanup_.get(); }
-    void setCleanup(StmtPtr c) { cleanup_ = std::move(c); }
-
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    std::vector<StmtPtr> body_;
-    StmtPtr pad_;
-    std::vector<std::string> types_;
-    std::vector<MsHandler> handlers_;
-    StmtPtr cleanup_;
 };
 
 struct Local {

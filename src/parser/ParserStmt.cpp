@@ -1619,8 +1619,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     const std::string wasChain = tryChainLabel_;
     const int wasPtr = tryChainPointerSlot_, wasSel = tryChainSelectorSlot_;
     const std::size_t wasAliveFrom = tryChainAliveFrom_;
-    std::vector<Try *> wasSegments;
-    wasSegments.swap(tryBodySegments_);
     // **Inside this body the innermost answer is this `try`'s own chain**, not
     // the pad of a handler this `try` happens to sit in - that one is reached
     // from the end of this chain, a step further out.
@@ -1647,9 +1645,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     handlerResumeSel_ = wasHandlerSel;
 
     // Off before the handlers: a handler's block is not inside this row.
-    std::vector<Try *> segments;
-    segments.swap(tryBodySegments_);
-    tryBodySegments_.swap(wasSegments);
     tryChainLabel_ = wasChain;
     tryChainPointerSlot_ = wasPtr;
     tryChainSelectorSlot_ = wasSel;
@@ -1666,15 +1661,12 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         StmtPtr stmt;
     };
     std::vector<Handler> handlers;
-    std::vector<MsHandler> msHandlers;
     MsExit msExit;
     std::vector<int> indices;
-    std::vector<std::string> types;
     bool sawCatchAll = false;
 
     // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
     if (!spec.empty()) {
-        types.push_back(spec);
         indices.push_back(-1);
     }
     while (spec.empty() && peek().is("catch")) {
@@ -1733,7 +1725,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             caughtName = d.name;
         }
         expect(")");
-        types.push_back(h.type);
         indices.push_back(typeIndexFor(h.type));
 
         // The handler's own scope, holding the caught object if it was named.
@@ -1815,7 +1806,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             inHandlerBody_ = wasBody;
             leaveScope();
             noteMsCatch(caught != nullptr, caughtName.empty(), mh, cpos, handlerMark);
-            msHandlers.push_back(std::move(mh));
             continue;
         }
 
@@ -2021,9 +2011,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             }
             // Behind the label a region inside this handler jumps to.
             StmtPtr padLabelled(labelStatement(endCatchLabel, unwindPad(std::move(padSteps))));
-            Try *region = new Try(std::move(guarded), std::move(padLabelled),
-                                  padPtr, padSel, std::vector<std::string>());
-            steps.push_back(StmtPtr(region));
+            steps.push_back(tryRegion(std::move(guarded), std::move(padLabelled)));
         } else {
             steps.push_back(std::move(handlerBody));
         }
@@ -2054,9 +2042,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     if (microsoft) {
         std::vector<StmtPtr> guardedMs;
         guardedMs.push_back(std::move(body));
-        Try *t = new Try(std::move(guardedMs), nullptr, pointerSlot,
-                         selectorSlot, std::move(types));
-        t->setHandlers(std::move(msHandlers));
+        StmtPtr t = tryRegion(std::move(guardedMs), StmtPtr());
         // The runtime's scratch word, which the personality routine finds through the
         // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
         // like any other, so where it lives is decided where every local's is.
@@ -2069,11 +2055,11 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             if (!inside) gotoExits.push_back(e);
         }
         builtTry_ = msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty();
-        if (builtTry_) return StmtPtr(t);
+        if (builtTry_) return t;
         // **Where a handler's early exit carries on**: the funclet handed back one
         // of these labels, and the parent does here what the handler could not.
         std::vector<StmtPtr> after;
-        after.push_back(StmtPtr(t));
+        after.push_back(std::move(t));
         std::string skip;
         after.push_back(jumpStatement(msExitLabel(skip, "skip")));
         // **Inside an enclosing handler these labels are in its funclet**, so an exit that leaves it too
@@ -2165,19 +2151,13 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                                std::move(chain));
     }
 
-    // **Every segment of the body carries this `try`'s catch types.**
-    for (std::size_t i = 0; i < segments.size(); i++) {
-        segments[i]->setTypes(types);
-    }
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(labelStatement(chainLabel, std::move(chain)));
 
     std::vector<StmtPtr> guarded;
     guarded.push_back(std::move(body));
-    Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,
-                     selectorSlot, std::move(types));
     builtTry_ = true;
-    return StmtPtr(t);
+    return tryRegion(std::move(guarded), std::move(labelled));
 }
 
 StmtPtr Parser::statementBody() {

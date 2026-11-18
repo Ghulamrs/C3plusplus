@@ -1614,14 +1614,10 @@ void Parser::topLevel(Program &program) {
             noexceptWrapped = bodyWrapped = true;
             const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
             const int pointerSlot = allocateFrameSlot(voidPtr);
-            const int selectorSlot = allocateFrameSlot(types_.intType());
+            allocateFrameSlot(types_.intType());
             functionHasPads_ = true;
 
-            // A catch-all is the empty type string, the spelling `catch (...)`
-            // takes, so the chain is the pad itself with nothing to test.
-            std::vector<std::string> types;
-            types.push_back(std::string());
-            typeIndexFor(std::string());     // the catch-all takes its selector index here
+            typeIndexFor(std::string());     // `catch (...)`, the empty type string, takes its selector index here
 
             // `__cxa_begin_catch` first, as clang's `__clang_call_terminate` does:
             // the exception is being handled, and the runtime is told so before
@@ -1636,14 +1632,9 @@ void Parser::topLevel(Program &program) {
             padSteps.push_back(StmtPtr(new ExprStmt(
                 runtimeCall("abort", types_.get(Kind::Void),
                             std::vector<ExprPtr>()))));
-            Block *padBlock = new Block(std::move(padSteps));
-            padBlock->setScope(-1);
-
             std::vector<StmtPtr> guarded;
             guarded.push_back(std::move(body));
-            Try *t = new Try(std::move(guarded), StmtPtr(padBlock), pointerSlot,
-                             selectorSlot, types);
-            body = StmtPtr(t);
+            body = tryRegion(std::move(guarded), StmtPtr(new Block(std::move(padSteps))));
         }
 
         resolveGotos();

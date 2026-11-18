@@ -508,7 +508,6 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.tryChainPointerSlot = tryChainPointerSlot_;
     s.tryChainSelectorSlot = tryChainSelectorSlot_;
     s.tryChainAliveFrom = tryChainAliveFrom_;
-    s.tryBodySegments = tryBodySegments_;
     s.handlerResumePtr = handlerResumePtr_;
     s.handlerResumeSel = handlerResumeSel_;
     s.mayThrow = mayThrow_;
@@ -595,7 +594,6 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     tryChainPointerSlot_ = s.tryChainPointerSlot;
     tryChainSelectorSlot_ = s.tryChainSelectorSlot;
     tryChainAliveFrom_ = s.tryChainAliveFrom;
-    tryBodySegments_ = s.tryBodySegments;
     handlerResumePtr_ = s.handlerResumePtr;
     handlerResumeSel_ = s.handlerResumeSel;
     mayThrow_ = s.mayThrow;
@@ -681,7 +679,6 @@ void Parser::clearFunctionState() {
     tryChainLabel_.clear();
     tryChainPointerSlot_ = tryChainSelectorSlot_ = 0;
     tryChainAliveFrom_ = 0;
-    tryBodySegments_.clear();
     handlerResumePtr_ = 0;
     handlerResumeSel_ = 0;
     mayThrow_ = 0;

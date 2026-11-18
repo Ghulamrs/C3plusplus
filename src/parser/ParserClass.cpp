@@ -521,8 +521,8 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
     std::size_t aliveAtEntry, std::size_t pos,
     const std::vector<Temporary> &temps) {
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
-    const int pointerSlot = allocateFrameSlot(voidPtr);
-    const int selectorSlot = allocateFrameSlot(types_.intType());
+    allocateFrameSlot(voidPtr);     // the exception's pointer and selector slots, unread on Microsoft
+    allocateFrameSlot(types_.intType());
     msUnwindHelp();     // the runtime's scratch word keeps its slot in the frame
     functionHasPads_ = true;
 
@@ -546,13 +546,7 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
             releaseGuarded(steps, temps[j]);
         emitDestructors(steps, k == 0 ? aliveAtEntry : built[k - 1].second,
                         pos, -1, built[k].second);
-        Block *b = new Block(std::move(steps));
-        b->setScope(-1);
-
-        Try *t = new Try(std::move(guarded), nullptr, pointerSlot,
-                         selectorSlot, std::vector<std::string>());
-        t->setCleanup(StmtPtr(b));
-        out.push_back(StmtPtr(t));
+        out.push_back(tryRegion(std::move(guarded), StmtPtr(new Block(std::move(steps)))));
     }
     return out;
 }
@@ -569,8 +563,7 @@ std::vector<StmtPtr> Parser::wrapCleanups(
     const std::string handOver = unwindTarget(&targetPtr, &targetSel);
     const bool intoTry = !handOver.empty();
     const int pointerSlot = intoTry ? targetPtr : allocateFrameSlot(voidPtr);
-    const int selectorSlot = intoTry ? targetSel
-                                     : allocateFrameSlot(types_.intType());
+    if (!intoTry) allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
 
     std::vector<StmtPtr> out;
@@ -592,18 +585,11 @@ std::vector<StmtPtr> Parser::wrapCleanups(
                 guarded.push_back(std::move(body[i]));
             if (!guarded.empty()) {
                 // **From the `try`'s entry, not this block's.**
-                Try *seg = new Try(
-                    std::move(guarded),
+                out.push_back(tryRegion(std::move(guarded),
                     cleanupPad(handOver == tryChainLabel_ && intoTry
                                    ? tryChainAliveFrom_ : aliveAtEntry,
                                built[k].second, pointerSlot,
-                               temps, pos, handOver),
-                    pointerSlot, selectorSlot, std::vector<std::string>());
-                // The types are the `try`'s and are not read yet; tryStatement
-                // patches every segment once its handlers have been.
-                if (intoTry && handOver == tryChainLabel_)
-                    tryBodySegments_.push_back(seg);
-                out.push_back(StmtPtr(seg));
+                               temps, pos, handOver)));
             }
             if (stop == to) break;
             out.push_back(std::move(body[stop]));      // the try, uncovered
@@ -622,25 +608,19 @@ StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
     std::vector<StmtPtr> steps;
     steps.push_back(std::move(onUnwind));
     if (target_.microsoftNames()) {
-        Block *b = new Block(std::move(steps));
-        b->setScope(-1);
-        Try *t = new Try(std::move(body), nullptr, allocateFrameSlot(voidPtr),
-                         allocateFrameSlot(types_.intType()), std::vector<std::string>());
-        t->setCleanup(StmtPtr(b));
+        allocateFrameSlot(voidPtr);
+        allocateFrameSlot(types_.intType());
         msUnwindHelp();
-        return StmtPtr(t);
+        return tryRegion(std::move(body), StmtPtr(new Block(std::move(steps))));
     }
     int targetPtr = 0, targetSel = 0;
     const std::string handOver = unwindTarget(&targetPtr, &targetSel);
     const bool intoTry = !handOver.empty();
     const int pointerSlot = intoTry ? targetPtr : allocateFrameSlot(voidPtr);
-    const int selectorSlot = intoTry ? targetSel : allocateFrameSlot(types_.intType());
+    if (!intoTry) allocateFrameSlot(types_.intType());
     if (intoTry) steps.push_back(jumpStatement(handOver));
     else         steps.push_back(resumeUnwinding(pointerSlot));
-    Try *seg = new Try(std::move(body), unwindPad(std::move(steps)), pointerSlot, selectorSlot,
-                       std::vector<std::string>());
-    if (intoTry && handOver == tryChainLabel_) tryBodySegments_.push_back(seg);
-    return StmtPtr(seg);
+    return tryRegion(std::move(body), unwindPad(std::move(steps)));
 }
 
 // **One temporary of a block, released on the way out of it, under its

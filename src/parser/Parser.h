@@ -1312,7 +1312,6 @@ private:
         std::string tryChainLabel;
         int tryChainPointerSlot = 0, tryChainSelectorSlot = 0;
         std::size_t tryChainAliveFrom = 0;
-        std::vector<Try *> tryBodySegments;
         int handlerResumePtr = 0, handlerResumeSel = 0;
         int mayThrow = 0;
         bool conditionDecl = false;
@@ -1929,11 +1928,8 @@ private:
     // says where its own objects start, and at which token the statement began (M1).
     std::size_t blockOwesFrom_ = 0;
     std::size_t blockStatementAt_ = static_cast<std::size_t>(-1);
-    // How much was alive when the `try` was entered. A segment's pad destroys
-    // everything the *body* built, not only what its own block did: it jumps to
-    // the chain instead of resuming, so no enclosing pad runs after it.
+    // How much was alive when the `try` was entered: a segment's pad destroys all the *body* built, then jumps to the chain.
     std::size_t tryChainAliveFrom_ = 0;
-    std::vector<Try *> tryBodySegments_;
     // 1-based, first occurrence winning, matching Walker::lsdaTable byte for byte.
     int typeIndexFor(const std::string &symbol);
     // Set where a function writes a `try`.
