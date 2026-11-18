@@ -926,3 +926,4 @@ accepted ssa-arrow-on-class-value -O2 350 accepted 2026-11-18 (the user, the M6 
 accepted unused-inline-not-emitted -O2 107 accepted 2026-11-18 (the user, the M6 wave W5-W7/FS/FS2, "Yes, write them") owed to M6b: the SSA inliner over calls through a known value (a call through a value or virtual call newly selected)
 accepted aggregate-member-from-own-class -O0 179 accepted 2026-11-18 (the user, the M6 wave W5-W7/FS/FS2, "Yes, write them") owed to M6b: an inline copy or a selected body at -O0 (lane fs2)
 accepted plain-class-local -O0 786 accepted 2026-11-18 (the user, the M6 wave W5-W7/FS/FS2, "Yes, write them") owed to M6b: an inline copy or a selected body at -O0 (lane fs2)
+accepted string-literal-array-reference -O2 96 accepted 2026-11-18 (the user, the M6 wave W8-R1-M6d, "Yes, write it") owed to M6b: the SSA inliner - main is newly selected (W8) and calls std::forward and h() out of line where the walker walked them in place
