@@ -3528,3 +3528,86 @@ and `-g -S` texts were compared, on Linux), cdb and lldb, ssa.sh 1/2, names.sh, 
 -O1, asm6x, ti-link, release-check, and the fixed point - owed by N4, a src/ file was added (Owned.h) - with target 4 on
 the Mac at the milestone's close. **Left of M6d:** lanes S1-S8 above; CLAUDE.md's "Reading this tree" still names
 `backend/Walker.h`.
+
+### M6d S1, first round: the prune's holding facts as records, `-check=prune`, and where the IR's closure is not the parser's - lane m6d-s1, 2026-11-18
+
+From m6d-shell f21d290d. src/ 93,256 -> 93,266 (step 1) -> 93,346 (step 2: +80, the check and its record, both deleted
+with the parser's prune) -> 93,350 (step 3). REF is f21d290d's code built on Linux (`~/m6d-s1-ref.exe`, m6d4's last build); the compares
+are tools/identical.sh (1,808 tms6747; 7,232 x86_64-linux, x86_64-windows and arm64-darwin) and every case's `-g -S`
+text on the four targets (boxkit/m6d-s1-gdiff.sh, the trees' paths written as one in both spellings).
+
+**(1) The holding facts as records** (f487de53, src/ +10). `UnitData::held` (the functions emitted only where named:
+`discardableInline_` less a template's, and every inline function not from a template and not an atexit helper),
+`Global::held` (the vtable-group and vftable test, the key-function test folded in) and `StringLit::copied`
+(`copiedStrings_`), written by `Parser::pruneUnusedInline` before its closure, which now reads them. `StringLit` has
+constructors, so its one aggregate site is unchanged. **The design said `held` on each `UnitData::order` entry**: `order`
+is written by the driver after the lowering (Driver.cpp, from `program.functions`) and read by three generators as
+strings, none of them S1's files, so the record is a list beside it; it becomes a field of the entry when the driver's
+prune writes `order` itself.
+
+**(2) `-check=prune`** (0dfce9cc, src/ +80; Driver.cpp `namesOf`, `checkPrune`). The closure over `ir::Module` as lowered,
+before any pass: roots are the functions not in `held` and the globals not `held`, with `initFunction` and the thrown
+Microsoft records' destructors and copy constructors; a function's names are its `calls[].symbol`, its instructions'
+`sym` and `syms` and its `spec`; a global's are its `prefixWord` and pieces. It is compared with what the parser's prune
+did, both ways: everything the parser kept must be reached (a function, a global, a literal not `copied`, a Microsoft
+class's five records), and nothing in `UnitData::dropped` (the symbols, labels and RTTI names the parser's prune dropped,
+written there) may be named. **Both halves hold exactly when the two kept sets are equal, without lowering a dropped
+function**: if the IR's closure names nothing dropped it is closed over the kept set. A difference is a compile error
+naming the symbol. The check changes nothing unless asked.
+
+**Identical, by step** (Linux, against REF). Step 1, built alone in `~/m6d-s1a`: tms6747 1,808/0 differ, the three
+others 7,232/0, `-g` 888 same/358 refused alike/0 differ (tms6747), 903/343/0 (x86_64-linux), 903/343/0 (arm64-darwin),
+x86_64-windows 677 same/368 refused alike and the other 201 the same once the tree's path is written in its backslash
+spelling. Step 2 (`~/m6d-s1`): tms6747 1,808/0, the three others 7,232/0, `-g` 888/358/0, 903/343/0, 903/343/0 and x86_64-windows
+878/368/0. Step 3 (89ae5c60, src/ +4: the check's early return) against step 2's binary, not REF: **`~/m6d4`, the tree
+REF's header paths are compiled into, was removed from the box by another hand at about 08:45**, after which REF refuses
+every case that includes a library header (a first chain against it read 186 and 1,680 "differ", each REF's refusal):
+tms6747 1,808/0, the three others 7,232/0, `-g` 888/358/0, 903/343/0, 903/343/0 and 878/368/0. **ast-residue** is unchanged by both (ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, visits 0,
+readers 9, ast-lines 722): nothing is deleted until the driver's prune is the only one.
+
+**What `-check=prune` found: the design's switch is not identical as written.** Over tests/cases (1,247 units, -O0, the
+check is taken before any pass; `~/m6d-s1-s3.exe`): 3 units differ on x86_64-linux, arm64-darwin and tms6747, 5 on
+x86_64-windows. Two kinds:
+- **A function the parser's tree calls and the IR does not** (3 units x 4 targets: the move constructor in
+  conditional-const-prvalue-assign and ssa-lambda-locals, `initializer_list<int>::begin` in range-for-braced-list).
+  Today the function is emitted and nothing in the text calls it (read in ssa-lambda-locals' x86_64-linux text:
+  `_ZN1RC1EOS_` is defined and never called). Why the lowering names no call there was not read.
+- **A Microsoft type descriptor a pad names whose class's five records the parser dropped** (2 units, x86_64-windows:
+  string-stoi, unused-vtable-not-emitted): the IR's catch pad names `??_R0...`; the parser's rule looks for the five
+  names among the Ast's and finds none. Where that descriptor is laid down from was not read.
+**The check's first form (0dfce9cc) said 10 and 12**: seven more units, each "a literal the parser kept and nothing
+names". That was the check's fault, not the design's: where nothing is held the parser's prune returns before it drops
+anything, so an unread literal (`char text[] = "abc";`) stays; step 3 makes the check return there too. **It is a rule
+the driver's prune has to keep and the design did not state: nothing held, nothing pruned.**
+So a prune over the IR emits a function fewer than today in the first kind and five records more in the second.
+**Proposed change to the design** (not taken here; the brief stops the lane at this point): the switch is two steps,
+not one. (a) *Identical first*: the lowering records the function it was handed and did not call -
+`ir::Function::alsoNamed`, the symbol of the `Resolved` call it elided or expanded - and the RTTI rule skips a
+descriptor reached only through a pad; `-check=prune` then reads 0 over the suite and the self-host, and the driver's
+worklist replaces the parser's prune with identical.sh at 0. (b) *Then the dead output goes*, by itself: `alsoNamed` is
+deleted, the 3 units' texts lose a function each, named in the commit, and run.sh shows the programs unchanged. The
+alternative - taking the smaller set in the switch itself - makes the switch's own compare meaningless on those units.
+
+**Also met, for the switch** (none decided here). The census (`Typer::census`, sema/Typing.cpp:955) builds `c.bodies`
+from the pruned `program.functions`, and `-check=typed`, `-dump=typed` and `-check=ssa`'s counts read it: with no parser
+prune they would type and count the held functions nothing reaches - Typing.cpp is not among S1's files and has to be.
+The Builder's C1 of a class with virtual bases reads its C2's typed body (`splitBodies`), which today is there because
+every body is typed before any synthesised function is built: the worklist types a C2 when its C1 is reached. And the
+worklist changes the order functions enter `ir::Module` (the inliner walks them by index): the generators emit by
+`order`, so the text should not move, and identical.sh at -O2 is what says so.
+
+**Gates** (run on step 2's tree, 0dfce9cc - Linux `~/m6d-s1`, g++ -Werror clean; Windows `work\m6d-s1x`, cl /W4 /WX
+clean, a delta build of 5 min 12 s; step 3 changes four lines inside the check, built clean by g++ and by cl in 2 min
+14 s, and was not run through the simulator): run.sh 1,240 passed, 0 failed; tms6747 SIM=1 -O2 shards 1-3 (Linux)
+425/0 and 4-6 (Windows) 425/0, -O0 425/0 and 425/0; self-compile of Driver.cpp and ParserClass.cpp for x86_64-linux at
+-O0 and -O2 4/0 - for tms6747 both are refused, as REF's binary refuses them (Driver.cpp's POSIX header;
+`Parser::constructObject`'s stack arguments); exclusions 129 sites, 0 uncited, 0 stale (three
+ParserClass.cpp citations re-pointed, +2 then +4), the lowering's 554/95 at their baselines; comment cap 0 over; memory
+gate new 1,052, raw pointers 89, unchanged; ast-residue not raised; ide --check up to date (no file added).
+
+**Left of S1:** the two causes read (why the lowering calls no constructor there; where `??_R0` is laid down from);
+step (a) above (`alsoNamed`, the pad rule) until `-check=prune` reads 0 on four targets at both levels
+and over the self-host sources; the driver's worklist over `c.bodies` and the synthesised functions, writing `order`
+with `held` on the entry; the census off the pruned list; then the commit that deletes `SymbolsNamed`, the parser's
+closure and `UnitData::dropped` (node-refs about -30); then step (b). **Owed to the wave gate:** winpass in both
+spellings, ssa.sh, names.sh, make test to its end, `-check=prune` over the self-host.
