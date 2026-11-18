@@ -119,7 +119,10 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
             auto en = p_.lookup_.enumIndex_.find(p.name);
             if (en != p_.lookup_.enumIndex_.end()) { ev.had = true; ev.was = en->second; }
             p_.lookup_.enumIndex_[p.name] = p_.lookup_.enums_.size();
-            p_.lookup_.enums_.push_back(EnumConst{ p.name, values[i] });
+            EnumConst read{ p.name, values[i] };
+            const Type *pt = Parser::paramTypeIn(p, binding);     // its declared type, as a value's below ([temp.param]/5)
+            if (pt != nullptr && pt->isInteger()) read.type = pt->unqualified();
+            p_.lookup_.enums_.push_back(read);
             p_.boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
