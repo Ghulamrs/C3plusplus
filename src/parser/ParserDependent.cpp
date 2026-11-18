@@ -412,6 +412,16 @@ const Type *Parser::dependentResult() {
     return types_.dependentExpr(depNode(n), false);
 }
 
+// An unqualified name a read finds nowhere in a class with a left-out base: not dependent ([temp.dep]/3 looks in no
+// dependent base), and held unfound so the body is not bound over it (M8rev M1).
+const Type *Parser::unfoundResult(const std::string &name) {
+    DepExpr n;
+    n.op = DepExpr::UnresolvedName;
+    n.name = name;
+    n.text = "a name not found, which a left-out base may not declare";
+    return types_.dependentExpr(depNode(n), false);
+}
+
 // A read's class whose base was left out (`struct D : B<T>`), or one around the body read: a name not found may be the base's.
 bool Parser::leftOutBase(const Type *cls) const {
     if (!patternBody_) return false;

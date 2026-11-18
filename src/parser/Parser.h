@@ -1678,6 +1678,7 @@ private:
     // An expression of dependent type in a pattern's body: what an operand is, the type its result has, one postfix step.
     bool dependentOperand(const Type *t, bool pointers = true) const;
     const Type *dependentResult();
+    const Type *unfoundResult(const std::string &name);
     bool dependentPostfix(const Type *object, PostfixStep &step);
     bool leftOutBase(const Type *cls) const;
     void refuseUntypedMember(const std::string &name, std::size_t from);

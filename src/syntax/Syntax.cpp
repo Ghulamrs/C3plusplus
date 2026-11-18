@@ -105,6 +105,7 @@ void Tree::dumpNode(std::string &out, NodeId id) const {
     if (n.text != 0) { out += ' '; quoted(out, strings_.at(n.text)); }
     if ((n.marks & Typename) != 0) out += " typename";
     if ((n.marks & Dependent) != 0) out += " dependent";
+    if ((n.marks & Unfound) != 0) out += " unfound";
     for (std::uint32_t i = 0; i < n.count; i++) {
         out += ' ';
         dumpNode(out, children_[n.first + i]);

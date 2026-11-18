@@ -1163,6 +1163,11 @@ ExprPtr Parser::primary(Program *program) {
 // M8.1 row 5: a name in a template body read at its declaration whose meaning waits for the arguments is marked so.
 void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten) {
     if (!patternBody_ || !id.valid()) return;
+    const DepExpr *e = t != nullptr ? t->dependentExpr() : nullptr;
+    if (e != nullptr && e->text == "a name not found, which a left-out base may not declare") {
+        syntaxTree_.mark(id, syntax::Unfound);
+        return;
+    }
     syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::Dependent : 0) |
                                                    (typenameWritten ? syntax::Typename : 0)));
 }
@@ -2293,7 +2298,7 @@ ExprPtr Parser::primaryNode(Program *program) {
                                       static_cast<long long>(bare.size()) + 1));
             return n;
         }
-        if (leftOutBase(nullptr)) return zeroOf(dependentResult());
+        if (leftOutBase(nullptr)) return zeroOf(unfoundResult(name));
         src_.fail(pos, "'" + name + "' was not declared");
     }
 

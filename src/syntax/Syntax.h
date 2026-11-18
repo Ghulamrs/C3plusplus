@@ -56,7 +56,7 @@ struct Node {
     std::uint8_t marks;     // a read's name (M8.1 row 5): Dependent its meaning waits for the arguments, Typename written
 };
 
-const std::uint8_t Dependent = 1, Typename = 2;
+const std::uint8_t Dependent = 1, Typename = 2, Unfound = 4;     // Unfound: no declaration, and no left-out base may give one (M8rev M1)
 
 class Tree {
 public:
