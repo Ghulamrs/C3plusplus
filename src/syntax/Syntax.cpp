@@ -76,6 +76,7 @@ NodeId Tree::add(Kind kind, const std::string &text, std::size_t pos, const std:
     n.dead = false;
     n.pattern = false;
     n.member = 0;
+    n.marks = 0;
     for (std::size_t i = 0; i < children.size(); i++) {
         if (!children[i].valid()) continue;     // an operand the grammar did not record is left out
         children_.push_back(children[i]);
@@ -102,6 +103,8 @@ void Tree::dumpNode(std::string &out, NodeId id) const {
     out += '(';
     out += kindName(n.kind);
     if (n.text != 0) { out += ' '; quoted(out, strings_.at(n.text)); }
+    if ((n.marks & Typename) != 0) out += " typename";
+    if ((n.marks & Dependent) != 0) out += " dependent";
     for (std::uint32_t i = 0; i < n.count; i++) {
         out += ' ';
         dumpNode(out, children_[n.first + i]);
@@ -181,6 +184,11 @@ void Tree::dump(std::string &out, const Source &src) const {
         out += ": ";
         dumpNode(out, NodeId(static_cast<std::uint32_t>(i)));
         out += '\n';
+    }
+    for (std::size_t i = 0; i < read_.size(); i++) {
+        out += src.where(nodes_[read_[i].v].loc) + ": (read ";
+        dumpNode(out, read_[i]);
+        out += ")\n";
     }
     for (std::size_t i = 0; i < unread_.size(); i++) {
         out += src.where(unread_[i].first) + ": (unread ";

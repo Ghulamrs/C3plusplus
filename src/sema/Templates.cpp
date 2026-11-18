@@ -479,6 +479,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
+    if (wantsBody) p_.syntaxTree_.noteRead(read);
     else declTally_[door][0]++;
 }
 

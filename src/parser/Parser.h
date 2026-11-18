@@ -827,6 +827,7 @@ private:
     // The statement kind the tokens ahead begin, and its text - a label's name; Other for a block, which records itself.
     syntax::Kind statementKindAhead(std::string *text) const;
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
+    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten);
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e && kind == syntax::Kind::Call && !defaultGroups_.empty()) {

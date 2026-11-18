@@ -53,7 +53,10 @@ struct Node {
     bool dead;              // made by a trial that rewound: its tokens are read again, and these nodes are not the tree's
     bool pattern;           // a template's signature kept at its declaration (M8.1): dead to every reader of the tree, and held
     std::uint32_t member;   // 1 + the pack member a pattern's copy was read for, 0 outside an expansion
+    std::uint8_t marks;     // a read's name (M8.1 row 5): Dependent its meaning waits for the arguments, Typename written
 };
+
+const std::uint8_t Dependent = 1, Typename = 2;
 
 class Tree {
 public:
@@ -86,11 +89,15 @@ public:
     void dump(std::string &out, const Source &src) const;
     // A template body a read declined (M8.1): the dump names it after the tree, where and why.
     void noteUnread(std::size_t pos, const std::string &why) { unread_.push_back(std::make_pair(pos, why)); }
+    // A template body read at its declaration (M8.1): dead to every reader, and shown once by the dump after the tree.
+    void noteRead(NodeId id) { read_.push_back(id); }
+    void mark(NodeId id, std::uint8_t marks) { nodes_[id.v].marks |= marks; }
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
 private:
     void dumpNode(std::string &out, NodeId id) const;
     std::vector<Node> nodes_;
     std::vector<std::pair<std::size_t, std::string> > unread_;
+    std::vector<NodeId> read_;
     std::vector<NodeId> children_;
     StringTable strings_;
 };

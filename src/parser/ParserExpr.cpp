@@ -1133,6 +1133,7 @@ ExprPtr Parser::primary(Program *program) {
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
         noteCallee(call[0], r.get());
+        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"));
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -1153,7 +1154,17 @@ ExprPtr Parser::primary(Program *program) {
         call.insert(call.end(), values.begin(), values.end());
         return note(std::move(r), syntax::Kind::Call, "{}", tokens_[k + 1].pos, call);
     }
-    return note(std::move(r), syntax::Kind::Name, name, pos);
+    const bool written = tokens_[start].is("typename");
+    r = note(std::move(r), syntax::Kind::Name, name, pos);
+    markReadName(syn(r), r ? r->type() : nullptr, written);
+    return r;
+}
+
+// M8.1 row 5: a name in a template body read at its declaration whose meaning waits for the arguments is marked so.
+void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten) {
+    if (!patternBody_ || !id.valid()) return;
+    syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::Dependent : 0) |
+                                                   (typenameWritten ? syntax::Typename : 0)));
 }
 
 // The operator a name spells after `operator`, from token k - `+`, `()`, `[]` - added to `name`; the token after it.
