@@ -2219,7 +2219,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
         n->setType(s.type);
         return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, 1, s.value, owner));
     }
-    if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
+    if (unevaluated_ == 0 && !patternUses_) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
     v->setSymbol(s.symbol);
     // Through the wrapper unless this unit has already defined it with a constant initialiser - a

@@ -1347,7 +1347,7 @@ void Parser::topLevel(Program &program) {
                                             " constructor of '" + mc->describe() +
                                             "'");
                         ctorIndex = static_cast<std::size_t>(ctor - &lookup_.functions_[0]);
-                        lookup_.functions_[ctorIndex].used = true;
+                        if (!patternUses_) lookup_.functions_[ctorIndex].used = true;
                     }
                     valueInit[entry] = ctorIndex;
                 }

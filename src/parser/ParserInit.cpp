@@ -390,7 +390,7 @@ void Parser::emitString(const std::string &name, std::vector<InitStep> &path,
     long long len = type->length();
     const std::string &text = s->text();
     requireStringFits(type, s, pos);
-    copiedStrings_.insert(s->label());
+    if (!patternUses_) copiedStrings_.insert(s->label());   // a pattern's label is a count of its own
     for (long long i = 0; i < len; i++) {
         path.push_back(InitStep{ nullptr, i });
         long long ch = i < static_cast<long long>(text.size())
