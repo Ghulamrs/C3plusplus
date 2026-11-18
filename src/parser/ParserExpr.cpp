@@ -3618,6 +3618,12 @@ ExprPtr Parser::unaryNode() {
             src_.fail(peek().pos, "'sizeof...' takes the name of a parameter "
                                   "pack");
         auto pack = packs_.find(peek().text);
+        const Local *own = pack == packs_.end() && patternBody_ ? lookup_.findLocal(peek().text) : nullptr;
+        if (own != nullptr && own->type->kind() == Kind::PackExpansion) {    // a read's `sizeof...(args)`: how many is substitution's
+            at_++;
+            expect(")");
+            return zeroOf(dependentResult());
+        }
         if (pack == packs_.end())
             src_.fail(peek().pos, "'" + peek().text + "' is not a parameter "
                                   "pack");

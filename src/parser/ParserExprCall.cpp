@@ -37,6 +37,17 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
                 expect(",");
                 continue;
             }
+            // A read's `rest...` over its function parameter pack: one argument, as dependent as its pattern.
+            const Local *own = pk == packs_.end() && patternBody_ ? lookup_.findLocal(peek().text) : nullptr;
+            if (own != nullptr && own->type->kind() == Kind::PackExpansion) {
+                const std::size_t namePos = peek().pos;
+                ExprPtr one = note(objectRef(peek().text), syntax::Kind::Name, peek().text, namePos);
+                at_ += 2;
+                args.push_back(std::move(one));
+                if (consume(")")) break;
+                expect(",");
+                continue;
+            }
             // An empty pack expands to no arguments at all.
             if (pk != packs_.end() && pk->second.types.empty()) {
                 at_ += 2;
