@@ -1722,10 +1722,8 @@ void Parser::topLevel(Program &program) {
             withMembers.push_back(std::move(body));
             // A `return` in the body comes here, so the members and bases are destroyed on that way out too.
             if (dtorExitTaken_) withMembers.push_back(make_owned<Label>(dtorExit_, make_owned<Block>(std::vector<StmtPtr>())));
-            std::vector<StmtPtr> mine =
-                classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
-            for (std::size_t i = 0; i < mine.size(); i++)
-                withMembers.push_back(std::move(mine[i]));
+            std::vector<Effect> mine = classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
+            appendEffects(mine, withMembers);
             body = StmtPtr(new Block(std::move(withMembers)));
         }
 

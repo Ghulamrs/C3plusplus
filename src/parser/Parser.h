@@ -1203,7 +1203,7 @@ private:
                                std::size_t ownFrom, const std::string &name,
                                const std::string &tag, std::size_t pos);
     ExprPtr destructorCall(ExprPtr address, const Signature &dtor, std::size_t pos);
-    void destroyObject(std::vector<StmtPtr> &into, const Alive &a, std::size_t pos);
+    void destroyObject(std::vector<Effect> &into, const Alive &a, std::size_t pos);
 
     // Objects that have been constructed and not yet destroyed, innermost last.
     std::vector<Alive> alive_;
@@ -1409,6 +1409,8 @@ private:
     void emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
                          std::size_t pos, int except = -1,
                          std::size_t to = static_cast<std::size_t>(-1));
+    void emitDestructors(std::vector<Effect> &into, std::size_t from, std::size_t pos, int except = -1,
+                         std::size_t to = static_cast<std::size_t>(-1));
     // `valueInit` is the `{}` half of [dcl.init]/8: the object is zeroed before
     // the constructor runs, and only where nobody wrote that constructor.
     Effect constructLocal(const Declared &d, int offset,
@@ -1488,9 +1490,8 @@ private:
     // The construction of a class object with static storage duration and its
     // destructor's registration, in the frame in force: [basic.start.term]
     // through __cxa_atexit, or atexit and a helper on the Microsoft ABI.
-    std::vector<StmtPtr> buildStaticConstruction(const Declared &d,
-                                                 const std::string &symbol,
-                                                 const std::string &helper);
+    std::vector<Effect> buildStaticConstruction(const Declared &d, const std::string &symbol,
+                                                const std::string &helper);
     void registerDestruction(const Declared &d, const std::string &symbol,
                              const std::string &helper,
                              std::vector<Effect> &into);
@@ -2267,7 +2268,7 @@ private:
 
     typedef sema::ConstexprSlot ConstexprSlot;
 
-    void foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from);
+    void foldLocalObject(const Declared &d, int off, const std::vector<Effect> &steps);
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);
 
     void initStore(const std::string &name, std::vector<InitStep> &path,

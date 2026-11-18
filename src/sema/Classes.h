@@ -174,11 +174,11 @@ public:
     void synthesizeDestructor(std::size_t which);
     // [class.dtor]/8's member half, shared by the destructor the compiler
     // writes and the one the program writes.
-    std::vector<StmtPtr> memberDestructors(const std::string &cls,
-                                           const Type *type, int thisSlot,
-                                           std::size_t pos);
+    std::vector<Effect> memberDestructors(const std::string &cls,
+                                          const Type *type, int thisSlot,
+                                          std::size_t pos);
     // One member's destruction, appended to `out` - nothing for a member with no destructor.
-    void memberDestructor(std::vector<StmtPtr> &out, const std::string &cls, const Type *type,
+    void memberDestructor(std::vector<Effect> &out, const std::string &cls, const Type *type,
                           int thisSlot, std::size_t n, std::size_t pos);
     // The deleting destructor, which no program writes: it runs the
     // destructor and then frees. Itanium calls it D0 and Microsoft ??_G, and

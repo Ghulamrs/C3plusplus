@@ -436,8 +436,12 @@ struct ConstexprFn {
 struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
 typedef std::map<int, ConstLeaf> ConstObject;
 typedef std::shared_ptr<ConstObject> ConstObjectPtr;
-// One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
-struct Effect { ExprPtr expr; int guard; };
+// One step a builder took, as an expression: under a nonzero `guard` (cleared after), for `$i` in
+// [0, count) when `loop` >= 0, and only while `$vb` slot `when` is above `above` when `when` >= 0.
+struct Effect {
+    ExprPtr expr; int guard; int loop; long long count; int when; long long above;
+    Effect(ExprPtr e = ExprPtr(), int g = 0) : expr(std::move(e)), guard(g), loop(-1), count(0), when(-1), above(0) {}
+};
 // A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
 struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
 

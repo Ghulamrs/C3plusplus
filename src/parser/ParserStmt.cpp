@@ -11,10 +11,8 @@
 #include <cstring>
 
 // **The initialiser inside `(...)` of a direct-initialised scalar.**
-// [dcl.constexpr]/9: a local object of class type is folded from the statements that build it at run time.
-void Parser::foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from) {
-    std::vector<const Stmt *> steps;
-    for (std::size_t k = from; k < inits.size(); k++) steps.push_back(inits[k].get());
+// [dcl.constexpr]/9: a local object of class type is folded from the steps that build it at run time.
+void Parser::foldLocalObject(const Declared &d, int off, const std::vector<Effect> &steps) {
     const std::unique_ptr<Var> self(Var::local(d.name, off));
     ConstObject value;
     if (!constant_.foldDeclaredObject(steps, *self, &value, d.pos)) constant_.refuseConstexprClassObject(d.name, d.pos);
@@ -313,7 +311,7 @@ StmtPtr Parser::declarationBody() {
             // The backing array and the list object, before the constructor
             // that reads them - a list-init only.
             appendEffects(ci.ilSetup, inits);
-            const std::size_t builtFrom = inits.size();
+            std::vector<Effect> step(1);
 
             // **Copy elision, in the one case worth having it**: where the initialiser is a call
             // already returning through a hidden pointer, the object is built straight into this
@@ -330,28 +328,28 @@ StmtPtr Parser::declarationBody() {
                     if (pendingTemps_[t].slot == lam) { pendingTemps_.erase(pendingTemps_.begin() + static_cast<long>(t)); break; }
                 locals_.back().offset = lam;
                 off = lam;
-                inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
+                step[0] = Effect(std::move(ci.args[0]));
             } else if (made != nullptr && made->type()->unqualified() == d.type->unqualified() &&
                 abi_.returnsIndirectly(*d.type, target_, made->hasThis())) {
                 claimCallResult(*made, off);
                 if (nrvo) made->setResultIndirect(true);
                 noteCallSlots(*made);
-                inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
+                step[0] = Effect(std::move(ci.args[0]));
             } else if (ci.trivialCopy) {
                 ExprPtr target(Var::local(d.name, off));
                 target->setType(d.type);
                 ExprPtr store(new Assign(std::move(target), std::move(ci.args[0])));
                 store->setType(d.type);
-                inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(store))));
+                step[0] = Effect(std::move(store));
             } else {
-                inits.push_back(effectStatement(constructLocal(d, off, std::move(ci.args),
-                                                               ci.copyInit, ci.valueInit)));
+                step[0] = constructLocal(d, off, std::move(ci.args), ci.copyInit, ci.valueInit);
                 // [dcl.init.list]/5: the braces' elements, the `var` node's parts, are the list's backing array (M3b.2).
                 const Local *built = ci.ilType != nullptr ? lookup_.findLocal(d.name) : nullptr;
                 std::map<int, LocalBuilt>::iterator c = built != nullptr ? ctorBySerial_.find(built->serial) : ctorBySerial_.end();
                 if (c != ctorBySerial_.end()) { c->second.listOf = ci.ilType; c->second.listCount = ci.ilCount; c->second.listPos = ci.ilPos; }
             }
-            if (quals.isConstexpr) foldLocalObject(d, off, inits, builtFrom);
+            if (quals.isConstexpr) foldLocalObject(d, off, step);
+            appendEffects(step, inits);
             flushTemporaries(inits);
             if (destructorOf(d.type) != nullptr)
                 alive_.push_back(Alive{ d.name, off, d.type->unqualified(), nrvo });
@@ -609,17 +607,16 @@ StmtPtr Parser::declarationBody() {
 
         if (hasInit) {
             std::vector<InitStep> path;
-            const std::size_t built = inits.size();
             // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
             const bool outerZero = blockZero_;
             blockZero_ = !quals.isConstexpr;
             std::vector<Effect> laid;
             const ListBuilt made = emitRecordedInit(d.name, path, d.type, in, laid);
-            appendEffects(laid, inits);
             blockZero_ = outerZero;
             const Local *rl = lookup_.findLocal(d.name);
             if (made.members && rl != nullptr && listBySerial_.count(rl->serial) == 0) listBySerial_[rl->serial] = made;
-            if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
+            if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, laid);
+            appendEffects(laid, inits);
         }
         flushTemporaries(inits);
     } while (!conditionDecl_ && consume(","));
@@ -1415,8 +1412,10 @@ void Parser::resolveGotos() {
             for (const Alive &b : target->alive)
                 if (b.offset == a.offset) { atLabel = true; break; }
             if (atLabel) continue;
+            std::vector<Effect> made;
             std::vector<StmtPtr> call;
-            destroyObject(call, a, g.pos);
+            destroyObject(made, a, g.pos);
+            appendEffects(made, call);
             for (std::size_t k = 0; k < call.size(); k++)
                 g.cleanups->append(std::move(call[k]));
         }

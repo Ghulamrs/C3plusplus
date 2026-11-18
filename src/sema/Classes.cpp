@@ -1358,17 +1358,17 @@ void Classes::declareImplicitDestructor(const std::string &tag, const Type *type
 
 // Its body: the members this class added, in the reverse of the order they
 // were declared, then the bases in the reverse of theirs.
-std::vector<StmtPtr> Classes::memberDestructors(const std::string &cls,
-                                               const Type *type, int thisSlot,
-                                               std::size_t pos) {
-    std::vector<StmtPtr> out;
+std::vector<Effect> Classes::memberDestructors(const std::string &cls,
+                                              const Type *type, int thisSlot,
+                                              std::size_t pos) {
+    std::vector<Effect> out;
     const std::vector<Member> &ms = type->members();
     for (std::size_t n = ms.size(); n-- > 0; )
         if (!memberFromBase(type, ms[n])) memberDestructor(out, cls, type, thisSlot, n, pos);
     return out;
 }
 
-void Classes::memberDestructor(std::vector<StmtPtr> &out, const std::string &cls, const Type *type,
+void Classes::memberDestructor(std::vector<Effect> &out, const std::string &cls, const Type *type,
                               int thisSlot, std::size_t n, std::size_t pos) {
     const std::vector<Member> &ms = type->members();
     const Type *mt = ms[n].type;
@@ -1423,10 +1423,8 @@ void Classes::memberDestructor(std::vector<StmtPtr> &out, const std::string &cls
         address->setType(p_.types_.pointerTo(elem->unqualified()));
     }
 
-    StmtPtr one(new ExprStmt(p_.destructorCall(std::move(address), *dtor, pos)));
-    out.push_back(mt->isArray()
-                   ? p_.eachElement(indexSlot, count, std::move(one))
-                   : std::move(one));
+    out.push_back(Effect(p_.destructorCall(std::move(address), *dtor, pos)));
+    if (mt->isArray()) { out.back().loop = indexSlot; out.back().count = count; }
 }
 
 void Classes::synthesizeDestructor(std::size_t which) {
@@ -1457,9 +1455,8 @@ void Classes::synthesizeDestructor(std::size_t which) {
     // half is shared with the destructor the program writes, which is where it
     // was missing.
     {
-        std::vector<StmtPtr> mine = memberDestructors(cls, type, thisSlot, pos);
-        for (std::size_t i = 0; i < mine.size(); i++)
-            body.push_back(std::move(mine[i]));
+        std::vector<Effect> mine = memberDestructors(cls, type, thisSlot, pos);
+        p_.appendEffects(mine, body);
     }
 
     for (std::size_t n = bs.size(); n-- > 0; ) {

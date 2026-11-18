@@ -1276,9 +1276,8 @@ ExprPtr Parser::objectAt(const Declared &d, const std::string &symbol, int offse
 // The construction of one object with static storage duration, in whatever
 // frame is in force, its temporaries destroyed after it, and then the
 // destructor registered - [basic.start.term], in reverse order of completion.
-std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
-                                                     const std::string &symbol,
-                                                     const std::string &helper) {
+std::vector<Parser::Effect> Parser::buildStaticConstruction(const Declared &d, const std::string &symbol,
+                                                            const std::string &helper) {
     // A braced list's backing array lives to the end of this full expression, [dcl.init.list]/6 - so inside a
     // static local's guard, not to every return of the function, built or not (M1: threadJumps' `tests` set).
     const std::size_t aliveFrom = alive_.size();
@@ -1287,30 +1286,27 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
         src_.fail(d.pos, "'" + d.name + "' is a 'std::initializer_list' with static storage made "
                          "from braces, whose array would have to be static too - that is not "
                          "supported yet; give the list automatic storage");
-    std::vector<StmtPtr> out;
+    std::vector<Effect> out;
     StaticGuard &record = staticGuards_[symbol];
     record.built = true;
     record.list = !ci.ilSetup.empty();
     record.listOf = ci.ilType;
     if (ci.ilType != nullptr) record.elements = listsAt_[ci.ilPos];     // empty for a list of scalars
     record.copied = ci.trivialCopy;
-    appendEffects(ci.ilSetup, out);
+    out.swap(ci.ilSetup);
     if (ci.trivialCopy) {
         ExprPtr store(new Assign(objectAt(d, symbol, 0), std::move(ci.args[0])));
         store->setType(d.type);
-        out.push_back(StmtPtr(new ExprStmt(std::move(store))));
+        out.push_back(Effect(std::move(store)));
     } else {
-        out.push_back(effectStatement(constructObject(d, symbol, 0, std::move(ci.args),
-                                                      ci.copyInit, ci.valueInit)));
+        out.push_back(constructObject(d, symbol, 0, std::move(ci.args), ci.copyInit, ci.valueInit));
     }
-    flushTemporaries(out);
+    temporaryEffects(out);
     if (alive_.size() > aliveFrom) {
         emitDestructors(out, aliveFrom, d.pos);
         alive_.resize(aliveFrom);
     }
-    std::vector<Effect> registered;
-    registerDestruction(d, symbol, helper, registered);
-    appendEffects(registered, out);
+    registerDestruction(d, symbol, helper, out);
     return out;
 }
 
@@ -1527,13 +1523,12 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
     const FunctionState outer = enterInitFunction();
     currentClass_ = scope;
     inStaticMember_ = scopeStatic;
-    std::vector<StmtPtr> built = d.type->isArray()
-        ? buildStaticArrayConstruction(d, symbol, helper)
-        : buildStaticConstruction(d, symbol, helper);
-    // **A `constexpr` object is folded from these statements and laid down as data**, [basic.start.init]/2.
+    std::vector<StmtPtr> built;
+    std::vector<Effect> steps;
+    if (d.type->isArray()) built = buildStaticArrayConstruction(d, symbol, helper);
+    else steps = buildStaticConstruction(d, symbol, helper);
+    // **A `constexpr` object is folded from these steps and laid down as data**, [basic.start.init]/2.
     if (folded != nullptr) {
-        std::vector<const Stmt *> steps;
-        for (const StmtPtr &b : built) steps.push_back(b.get());
         const std::unique_ptr<Var> self(Var::global(d.name));
         self->setSymbol(symbol);
         ConstObject value;
@@ -1544,6 +1539,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
         leaveInitFunction(outer);
         return;
     }
+    appendEffects(steps, built);
     if (once) {
         StmtPtr guarded = guardTemplateMember(symbol, std::move(built));
         built.clear();
@@ -1825,9 +1821,11 @@ void Parser::staticLocalWithConstructor(Declared &d,
     const bool early = initialiserNames(d.name);
     if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
     const std::size_t mine = locals_.size() - 1;
-    std::vector<StmtPtr> body = d.type->isArray()
-        ? buildStaticArrayConstruction(d, symbol, helper)
-        : buildStaticConstruction(d, symbol, helper);
+    std::vector<StmtPtr> body;
+    std::vector<Effect> steps;
+    if (d.type->isArray()) body = buildStaticArrayConstruction(d, symbol, helper);
+    else steps = buildStaticConstruction(d, symbol, helper);
+    appendEffects(steps, body);
     if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
     locals_[early ? mine : locals_.size() - 1].isConst = d.type->isConst();
     markThreadLocal(early ? mine : locals_.size() - 1, tlsObject_);

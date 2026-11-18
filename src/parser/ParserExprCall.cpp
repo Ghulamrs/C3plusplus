@@ -304,6 +304,18 @@ void Parser::temporaryEffects(std::vector<Effect> &into) {
 // **Under its guard, and cleared with it.**
 StmtPtr Parser::effectStatement(Effect x) {
     StmtPtr call(make_owned<ExprStmt>(std::move(x.expr)));
+    if (x.loop >= 0) call = eachElement(x.loop, x.count, std::move(call));
+    if (x.when >= 0) {
+        ExprPtr n(Var::local("$vb", x.when));
+        n->setType(types_.intType());
+        ExprPtr above(make_owned<Num>(x.above));
+        above->setType(types_.intType());
+        ExprPtr built(make_owned<Binary>(BinOp::Gt, std::move(n), std::move(above)));
+        built->setType(types_.intType());
+        std::vector<StmtPtr> calls;
+        calls.push_back(std::move(call));
+        call = StmtPtr(make_owned<If>(std::move(built), StmtPtr(make_owned<Block>(std::move(calls))), StmtPtr()));
+    }
     if (x.guard == 0) return call;
     ExprPtr live(Var::local("$guard", x.guard));
     live->setType(types_.intType());

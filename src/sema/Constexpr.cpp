@@ -575,6 +575,11 @@ bool Constexpr::runConstexpr(const Stmt &s, std::size_t pos) const {
     return false;
 }
 
+// A step under a guard, a loop or a `$vb` test is not one a constant expression takes.
+bool Constexpr::runConstexpr(const Effect &e, std::size_t pos) const {
+    return e.guard == 0 && e.loop < 0 && e.when < 0 && runConstexprEffect(*e.expr, pos);
+}
+
 bool Constexpr::runConstexprEffect(const Expr &e, std::size_t pos) const {
     if (const Comma *c = dynamic_cast<const Comma *>(&e))
         return runConstexprEffect(c->left(), pos) && runConstexprEffect(c->right(), pos);
@@ -633,8 +638,8 @@ bool Constexpr::runConstexprEffect(const Expr &e, std::size_t pos) const {
     return true;
 }
 
-// **The object a declaration builds**, from the statements it was lowered to.
-bool Constexpr::foldDeclaredObject(const std::vector<const Stmt *> &init, const Var &target, ConstObject *out,
+// **The object a declaration builds**, from the steps it was lowered to.
+bool Constexpr::foldDeclaredObject(const std::vector<Effect> &init, const Var &target, ConstObject *out,
                                 std::size_t pos) {
     ConstexprSlot self;
     self.offset = target.isLocal() ? target.offset() : 0;
@@ -647,7 +652,7 @@ bool Constexpr::foldDeclaredObject(const std::vector<const Stmt *> &init, const 
     frame.push_back(self);
     constexprFrames_.push_back(frame);
     bool ok = true;
-    for (const Stmt *s : init) ok = ok && runConstexpr(*s, pos);
+    for (const Effect &e : init) ok = ok && runConstexpr(e, pos);
     constexprFrames_.pop_back();
     if (ok) *out = *self.obj;
     return ok;

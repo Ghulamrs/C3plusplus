@@ -40,14 +40,15 @@ public:
     bool objectAddress(const Expr &lvalue, ConstObjectPtr *obj, int *at, std::size_t pos) const;
     bool foldLeaf(const Expr &lvalue, ConstLeaf *out, std::size_t pos) const;
     bool runConstexpr(const Stmt &s, std::size_t pos) const;
+    bool runConstexpr(const Effect &e, std::size_t pos) const;
     bool runConstexprEffect(const Expr &e, std::size_t pos) const;
     bool constructConst(const Call &c, std::size_t pos) const;
     std::string constObjectKey(const Var &v) const;
     bool instantiateForConstant(const std::string &symbol) const;
     static ConstObject subObject(const ConstObject &from, int at, int size);
     static void storeSubObject(ConstObject &into, int at, int size, const ConstObject &what);
-    // The object a declaration's own statements build, run with `target` standing for it.
-    bool foldDeclaredObject(const std::vector<const Stmt *> &init, const Var &target, ConstObject *out,
+    // The object a declaration's own steps build, run with `target` standing for it.
+    bool foldDeclaredObject(const std::vector<Effect> &init, const Var &target, ConstObject *out,
                             std::size_t pos);
     bool constObjectFromInit(const Type *t, const Init &in, int base, ConstObject *out) const;
     void constObjectPieces(const ConstObject &o, std::vector<GlobalPiece> &out);

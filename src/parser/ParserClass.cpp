@@ -738,6 +738,13 @@ StmtPtr Parser::unwindPad(std::vector<StmtPtr> steps) {
 
 void Parser::emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
                              std::size_t pos, int except, std::size_t to) {
+    std::vector<Effect> made;
+    emitDestructors(made, from, pos, except, to);
+    appendEffects(made, into);
+}
+
+void Parser::emitDestructors(std::vector<Effect> &into, std::size_t from,
+                             std::size_t pos, int except, std::size_t to) {
     if (to > alive_.size()) to = alive_.size();
     for (std::size_t i = to; i > from; i--) {
         const Alive &a = alive_[i - 1];
@@ -749,20 +756,15 @@ void Parser::emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
 // One object's destructor call, for the end of a scope and for every jump
 // that leaves one early - a goto fills these in after its label is known,
 // which is why this takes the record and not an index into alive_.
-void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
+void Parser::destroyObject(std::vector<Effect> &into, const Alive &a,
                            std::size_t pos) {
     if (a.whenSlot >= 0) {
+        // A virtual base's entry: its destructor call, only once `$vb` counts it built.
         Alive plain = a;
         plain.whenSlot = -1;
-        std::vector<StmtPtr> calls;
-        destroyObject(calls, plain, pos);
-        ExprPtr n(Var::local("$vb", a.whenSlot));
-        n->setType(types_.intType());
-        ExprPtr above(new Num(static_cast<long long>(a.whenAbove)));
-        above->setType(types_.intType());
-        ExprPtr built(new Binary(BinOp::Gt, std::move(n), std::move(above)));
-        built->setType(types_.intType());
-        into.push_back(StmtPtr(new If(std::move(built), StmtPtr(new Block(std::move(calls))), StmtPtr())));
+        destroyObject(into, plain, pos);
+        into.back().when = a.whenSlot;
+        into.back().above = a.whenAbove;
         return;
     }
     if (a.builtSlot >= 0) {
@@ -784,17 +786,16 @@ void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
         base->setType(ptr);
         ExprPtr n(Var::local("$i", a.builtSlot));
         n->setType(types_.intType());
-        into.push_back(StmtPtr(new ExprStmt(callVectorLoop(
-            vectorDestructor(a.cls, pos), a.cls, std::move(base), std::move(n), pos))));
+        into.push_back(Effect(callVectorLoop(vectorDestructor(a.cls, pos), a.cls, std::move(base), std::move(n), pos)));
         return;
     }
     if (a.owner != nullptr) {
         if (a.member >= 0)
             classes_.memberDestructor(into, a.owner->tag(), a.owner, a.offset, static_cast<std::size_t>(a.member), pos);
         else if (a.base >= 0)
-            into.push_back(effectStatement(baseDestructorCall(a.owner, static_cast<std::size_t>(a.base), a.offset, pos)));
+            into.push_back(baseDestructorCall(a.owner, static_cast<std::size_t>(a.base), a.offset, pos));
         else
-            into.push_back(effectStatement(selfDestructorCall(a.owner, a.offset, pos)));
+            into.push_back(selfDestructorCall(a.owner, a.offset, pos));
         return;
     }
     const Signature *dtor = destructorOf(a.cls);
@@ -808,8 +809,7 @@ void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
         base->setType(types_.pointerTo(a.cls));
         ExprPtr n(new Num(a.count));
         n->setType(types_.get(target_.sizeType()));
-        into.push_back(StmtPtr(new ExprStmt(callVectorLoop(
-            vectorDestructor(a.cls, pos), a.cls, std::move(base), std::move(n), pos))));
+        into.push_back(Effect(callVectorLoop(vectorDestructor(a.cls, pos), a.cls, std::move(base), std::move(n), pos)));
         return;
     }
 
@@ -825,8 +825,7 @@ void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
         addr = ExprPtr(new Unary('&', std::move(object)));
         addr->setType(types_.pointerTo(a.cls));
     }
-    into.push_back(StmtPtr(new ExprStmt(destructorCall(std::move(addr),
-                                                       *dtor, pos))));
+    into.push_back(Effect(destructorCall(std::move(addr), *dtor, pos)));
 }
 
 void Parser::markSymbolUsed(const std::string &symbol) {
