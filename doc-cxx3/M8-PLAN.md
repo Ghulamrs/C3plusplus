@@ -1432,7 +1432,7 @@ compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 f
 without, 102 and `Driver`; memory gate rc 0, residue +0, `ide/generate.py` up to date; exclusions rc 1 and comment cap rc 2, the two
 failures above, mended by `a1617ff1` and `01c133e7`. Windows `work\m8sn` (cl /W4 /WX clean): the cases' flag 0 differ;
 the self-host's flag and REF against NEW 102 and `Driver` (`fc` opened: one `DB` line of `__TIME__`); the five
-spellings at -O0 and -O2 against REF, first half **6,200 the same, 0 differ**. **The door, `80d93293`** (Linux `~/m8sm`,
+spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 and 6,190). **The door, `80d93293`** (Linux `~/m8sm`,
 g++ `-Werror` clean; the comment-only `a1617ff1` not in it): `tools/identical.sh` REF against NEW for tms6747,
 arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2, **8,840 compared, 0 differ** (the replay path's
 `replayMemberTemplate` is the same code moved); `subst.sh bodies` with the four records **0 failed** (5,119 over 876
@@ -1442,9 +1442,8 @@ units, unchanged); the self-host's `-S` REF against NEW, and with the flag again
 memory gate rc 0, ast-residue +0 rc 0, `ide/generate.py --check` rc 0. **A defect**: the Windows build of `work\m8sm`
 passed the 9-minute cap on the shared box (the m8sn halves beside it) and was not retried; the exe it went on to make
 (a fresh tree, /WX) gave the Windows counts.
-**Owed at the hour**: on `a71bb801` the second half of the Windows five spellings (running,
-`boxkit/m8s-win-same2.out`); on `80d93293` `typed.sh`, `run.sh`, self-compile and the Windows five spellings, for the
-wave gate.
+**Owed at the hour**: on `80d93293` `typed.sh`, `run.sh`, self-compile and the Windows five spellings, for the wave
+gate.
 
 **Left of commit 4**, and so of commit 5's condition (`unread` 0 over the cases and the self-host, identical.sh 0 -
 the second holds at every step): unread **206** in the cases and **609** in the self-host. The size of a dependent
