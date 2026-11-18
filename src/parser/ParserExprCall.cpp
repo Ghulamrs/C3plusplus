@@ -66,6 +66,8 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
             OverloadTarget waits(*this, nullptr, true);
             args.push_back(assign());
         } else if (!expandPackPattern(args)) args.push_back(assign());
+        // A read's `f(xs)...` over its function parameter pack: one argument, as dependent as its pattern.
+        if (patternBody_ && consume("...")) args.back()->setType(dependentResult());
         if (consume(")")) break;
         expect(",");
     }
