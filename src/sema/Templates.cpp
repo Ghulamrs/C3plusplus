@@ -543,9 +543,13 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, packs);
                 const std::string tag = specializationKey(decl.name, args);
                 std::vector<Parser::PendingBody> bodies;
-                const Type *made = readClassBody(decl, tag + "$read" + std::to_string(readSerial_++), partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
+                const std::string readTag = tag + "$read" + std::to_string(readSerial_++);
+                // From its head on, not from its end, so a member's declaration and its replayed definition see one class;
+                // a partial's own parameters spell the primary's key (`pair<T1, T2>` in `pair<const T1, T2>`): never one.
+                if (!partial) { readingTag_ = tag; readingRead_ = readTag; }
+                const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
-                readPattern_[tag] = made;
+                if (!partial) readPattern_[tag] = made;
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
@@ -571,6 +575,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
             tallied = false;
         }
         readPattern_.clear();
+        readingTag_.clear();
         // A pattern class the read was first to ask for keeps no arguments of the read's: the unit's first asker gives its own.
         for (std::size_t s = 0; s < readShallow_.size(); s++) {
             readShallow_[s]->setSpecialization(std::string(), std::vector<TemplateArg>());
@@ -1799,6 +1804,8 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     }
     const std::string tag = specializationKey(decl.name, args);
     if (p_.patternOnly_ && readPattern_.count(tag) != 0) return readPattern_[tag];     // a class door's read: the class itself
+    if (p_.patternOnly_ && !readingTag_.empty() && tag == readingTag_)                // ... and while its body is read
+        if (const Type *own = p_.lookup_.findTypedef(readingRead_)) return own;
 
     // **A pattern's `C<T>`**, the stand-in applied: a shape deduction matches and Itanium spells `T_I...E`.
     if (decl.ttParam >= 0) {

@@ -72,7 +72,9 @@ std::string Linkage::staticMemberSymbol(const std::string &cls,
                     : access == Access::Protected ? '1'
                                                   : '0';
     std::string out, why;
-    if (!microsoftStaticMemberName(cls, p_.lookup_.findTypedef(cls), name, t, code, &out, &why))
+    const bool ok = microsoftStaticMemberName(cls, p_.lookup_.findTypedef(cls), name, t, code, &out, &why);
+    if (!ok && p_.patternBody_) return "$pattern$" + cls + "::" + name;     // read, never emitted
+    if (!ok)
         p_.src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
                        "linker can hold: " + why);
     return out;
@@ -110,6 +112,8 @@ std::string Linkage::memberSymbol(const std::string &cls, const std::string &nam
                                             fn, constThis, refThis, &out, &why)
                    : itaniumMemberName(cls, p_.lookup_.findTypedef(cls), name, fn, constThis,
                                        refThis, &out, &why));
+    // Read, never emitted (a read's class over `$T0` has no Microsoft name): one name per signature, never a second.
+    if (!ok && p_.patternBody_) return "$pattern$" + cls + "::" + name + "$" + fn->describe() + (constThis ? " const" : "");
     if (!ok)
         p_.src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
                        "linker can hold: " + why);

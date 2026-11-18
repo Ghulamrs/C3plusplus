@@ -179,6 +179,7 @@ public:
                               const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
     std::map<std::string, const Type *> readPattern_;
     std::vector<Type *> readShallow_;
+    std::string readingTag_, readingRead_;      // the class door's class while its body is read: `C<$T0>` and its read's tag
     std::size_t readSerial_ = 0;
     bool classDoor_ = false;
     void holdDeclarations();

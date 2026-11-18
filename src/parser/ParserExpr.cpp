@@ -2235,7 +2235,9 @@ ExprPtr Parser::primaryNode(Program *program) {
             if (next == nullptr && cls != nullptr) break;
             cls = next;                        // a namespace leaves it null for the next step
         }
-        if (cls != nullptr && peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident)
+        if (cls != nullptr && peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident) {
+            // In a read, `order::less` over a dependent class and `KeyOf::get` over a type parameter wait for the arguments.
+            const bool waits = patternBody_ && dependentType(cls);
             if (cls->isStructOrUnion()) {
                 const std::string member = peekAt(k + 1).text;
                 if (const Member *m = cls->findMember(member)) {
@@ -2247,13 +2249,18 @@ ExprPtr Parser::primaryNode(Program *program) {
                               "of '" + cls->tag() + "' and needs an object here - only "
                               "sizeof and decltype may name it with none");
                 }
-                if (leftOutBase(cls)) {
+                if (leftOutBase(cls) || waits) {
                     at_ += k + 2;
                     return zeroOf(dependentResult());
                 }
                 src_.fail(peekAt(k + 1).pos, "'" + cls->tag() + "' has no member called '" +
                                          member + "'");
             }
+            if (waits) {
+                at_ += k + 2;
+                return zeroOf(dependentResult());
+            }
+        }
         // [temp.variadic]/5: a pack is written with the `...` that expands it, never bare.
         if (packs_.count(name) != 0)
             src_.fail(pos, "'" + name + "' is a parameter pack, and here it is written without the "
