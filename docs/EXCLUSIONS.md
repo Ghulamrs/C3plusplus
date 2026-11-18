@@ -148,7 +148,7 @@ is left:
   `tests/cases/nontype-pack-beside-signature-refused.cpp`
 - **a pattern over a pack in a template's signature**, `f(List<(Ns * 2)...>)` -
   the same non-deduced context, spelled `JXspmlT_Li2EEE`; the pattern works
-  wherever the members are known. `src/parser/ParserTemplate.cpp:1452`,
+  wherever the members are known. `src/parser/ParserTemplate.cpp:1453`,
   `tests/cases/nontype-pack-pattern-signature-refused.cpp`
 - **explicit arguments ending at a pack, the parameter after it deduced from the
   call**, `f<1>(L<1>(), L<2>())` for `template <int... Ns, int M>` - the written
@@ -180,21 +180,21 @@ is left:
   and **a function template's explicit specialization declared without its
   body** - give it the body there. `src/parser/ParserTemplate.cpp:728`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:1720`,
-  `src/parser/ParserTemplate.cpp:1788`, `src/parser/ParserTemplate.cpp:1873`
+  that was only declared** - `src/parser/ParserTemplate.cpp:1732`,
+  `src/parser/ParserTemplate.cpp:1800`, `src/parser/ParserTemplate.cpp:1885`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1877`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1889`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1947`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1959`; **a member class template** -
   `src/parser/ParserType.cpp:538`; **an out-of-line member template
   definition of a class template's member, or of a constructor template** (a
   non-template class's other member templates are defined out of line) -
   `src/parser/ParserType.cpp:598`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3706`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3712`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -218,13 +218,13 @@ is left:
   has no body. `src/parser/ParserType.cpp:1289`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2500`
+  `src/parser/ParserTopLevel.cpp:2510`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1333`
+  array member** - `src/parser/ParserTopLevel.cpp:1343`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1300`
+  `src/parser/ParserTopLevel.cpp:1310`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
@@ -276,7 +276,7 @@ is left:
 
 - **a braced call argument on a road that never asks the parameter's type** -
   a call through a function pointer or a member pointer; name the type,
-  `T{...}`. `src/parser/ParserExprCall.cpp:663`
+  `T{...}`. `src/parser/ParserExprCall.cpp:674`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
   the list. `src/parser/ParserTemplate.cpp:1356`
@@ -398,7 +398,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:981`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2413`
+  C++14. `src/parser/ParserTopLevel.cpp:2423`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
