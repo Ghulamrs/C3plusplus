@@ -5,7 +5,8 @@
 1 member-templates | '' is a member function template and '' cannot be worked out from this call: '' does not give a valu
 1 member-templates | a call with a dependent argument, which would instantiate its callee
 1 member-templates | a cast from '' to '' - the two classes are unrelated and '' has no conversion function to '', so the
-1 | '' cannot name the type of this: only a fundamental type has a type_info object the standard library
 1 | '' is '' and this is '' - C++ converts an integer to an enumeration only with a cast, where C does i
+1 | a throw of a value whose type waits for the arguments
 1 | expected ''
+1 | the members of a class specialization over the template's own local class
 1 | the members of a class specialization the program has not asked for yet
