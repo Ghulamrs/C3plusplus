@@ -442,8 +442,8 @@ struct Effect {
     ExprPtr expr; int guard; int loop; long long count; int when; long long above;
     Effect(ExprPtr e = ExprPtr(), int g = 0) : expr(std::move(e)), guard(g), loop(-1), count(0), when(-1), above(0) {}
 };
-// A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
-struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
+// A `constexpr` constructor, kept as its steps in order (a null one a statement no constant takes): this slot, then the parameters'.
+struct ConstexprCtor { std::vector<const Expr *> steps; std::vector<int> slots; int thisSlot = 0; };
 
 // One frame per call being folded, holding what each parameter slot is worth:
 // an integer, or a double when the parameter's type is floating (A11).

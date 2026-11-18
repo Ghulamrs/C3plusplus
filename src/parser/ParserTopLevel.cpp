@@ -1135,8 +1135,9 @@ void Parser::topLevel(Program &program) {
     // Closures are numbered within the function that writes them, which is what clang does.
     lambdaCount_ = 0;
     // The mem-initializer list, [class.base.init], parsed here because `this` and the parameters are in scope and the body has not begun.
-    std::vector<StmtPtr> memberInits;
-    // For each of those statements, the member it finishes building, or -1 - [except.ctor]/3 needs it.
+    std::vector<MemberStep> memberInits;
+    auto addStep = [&](Effect e) { memberInits.emplace_back(); memberInits.back().effects.push_back(std::move(e)); };
+    // For each of those steps, the member it finishes building, or -1 - [except.ctor]/3 needs it.
     std::vector<int> memberDone;
     // Which members this constructor's own list covers. Kept out here because
     // the initialisers the class wrote are applied to the rest, below, and the
@@ -1369,7 +1370,7 @@ void Parser::topLevel(Program &program) {
 
     }
 
-    StmtPtr delegateCall;
+    Effect delegateCall;
     if (delegates) delegateCall = delegatingCall(d, memberOf, std::move(delegateArgs),
                                                  delegatePos, entries);
 
@@ -1394,7 +1395,9 @@ void Parser::topLevel(Program &program) {
         int doneMember = -1;
         bool ownTempsPending = false;
         auto settle = [&]() {
-            if (ownTempsPending) flushTemporaries(memberInits);
+            std::vector<Effect> gone;
+            if (ownTempsPending) temporaryEffects(gone);
+            for (Effect &x : gone) addStep(std::move(x));
             ownTempsPending = false;
             memberDone.resize(memberInits.size(), -1);
             if (doneMember >= 0 && memberInits.size() > doneFrom) memberDone.back() = doneMember;
@@ -1413,16 +1416,19 @@ void Parser::topLevel(Program &program) {
             if (found == memberExprs.end()) {
                 if (m->anonUnion != nullptr && namedUnions.count(m->anonUnion) != 0) continue;
                 memberDefaultFor_ = currentFunction_;
-                StmtPtr one = memberInitialiser(d.qualifier, memberOf, *m,
-                                                thisOffset_, d.pos);
+                MemberStep step;
+                bool one = memberInitialiser(d.qualifier, memberOf, *m, thisOffset_, d.pos, step.effects);
                 memberDefaultFor_.clear();
                 std::vector<ExprPtr> none;
-                if (one == nullptr && memberOf->kind() != Kind::Union && m->anonUnion == nullptr)
-                    one = constructMember(d.qualifier, memberOf, *m,
-                                          thisOffset_, none, d.pos, false);
+                if (!one && memberOf->kind() != Kind::Union && m->anonUnion == nullptr) {
+                    Effect built = constructMember(d.qualifier, memberOf, *m, thisOffset_, none, d.pos, false);
+                    one = built.expr != nullptr;
+                    if (built.loop >= 0) step.statement = memberLoop(std::move(built), memberOf, *m, thisOffset_, d.pos);
+                    else if (one) step.effects.push_back(std::move(built));
+                }
                 // [class.base.init]/8: a const or reference member the list leaves out
                 // is ill-formed, since nothing after this can give it a value.
-                if (one == nullptr && memberOf->kind() != Kind::Union &&
+                if (!one && memberOf->kind() != Kind::Union &&
                     (m->type->isReference() ||
                      (m->type->isConst() && !classes_.constDefaultInitialisable(m->type))))
                     src_.fail(d.pos, "this constructor of '" + d.qualifier +
@@ -1430,7 +1436,7 @@ void Parser::topLevel(Program &program) {
                                      (m->type->isReference() ? "reference" : "const") +
                                      " member '" + m->name + "', and nothing after "
                                      "it can - name it in the initialiser list");
-                if (one != nullptr) memberInits.push_back(std::move(one));
+                if (one) memberInits.push_back(std::move(step));
                 continue;
             }
             std::size_t epos = where[m->name];
@@ -1443,11 +1449,11 @@ void Parser::topLevel(Program &program) {
             const bool valueInitialised = valueInit.count(m->name) != 0;
 
             if (!m->type->isReference() && !valueInitialised) {
-                StmtPtr built = constructMember(d.qualifier, memberOf, *m,
-                                                thisOffset_, found->second,
-                                                epos, false);
-                if (built != nullptr) {
-                    memberInits.push_back(std::move(built));
+                Effect built = constructMember(d.qualifier, memberOf, *m,
+                                               thisOffset_, found->second,
+                                               epos, false);
+                if (built.expr != nullptr) {
+                    addStep(std::move(built));
                     continue;
                 }
             }
@@ -1471,9 +1477,8 @@ void Parser::topLevel(Program &program) {
                     std::vector<Effect> laid;
                     emitString(std::string(), path, m->type, str, epos, laid);
                     memberRoot_ = was;
-                    std::vector<StmtPtr> steps;
-                    appendEffects(laid, steps);
-                    memberInits.push_back(oneStatement(std::move(steps)));
+                    memberInits.emplace_back();
+                    memberInits.back().effects.swap(laid);
                     continue;
                 }
                 found->second[0] = std::move(in.value);
@@ -1490,7 +1495,7 @@ void Parser::topLevel(Program &program) {
                                              epos, "'" + m->name + "'");
                 ExprPtr bind(new Assign(std::move(field), std::move(addr)));
                 bind->setType(held);
-                memberInits.push_back(StmtPtr(new ExprStmt(std::move(bind))));
+                addStep(Effect(std::move(bind)));
                 continue;
             }
             field->setType(m->type);
@@ -1505,7 +1510,7 @@ void Parser::topLevel(Program &program) {
                 // the member's address, when there is one to run.
                 if (!hasCtor || lookup_.functions_[vi->second].implicit)
                     if (ExprPtr chain = zeroChain(*field, mt))
-                        memberInits.push_back(StmtPtr(new ExprStmt(std::move(chain))));
+                        addStep(Effect(std::move(chain)));
                 if (hasCtor) {
                     const Type *ptr = types_.pointerTo(mt);
                     // [dcl.fct.default]/4: `A(int = 7)` is the default constructor, called with its defaults; held by value.
@@ -1524,9 +1529,8 @@ void Parser::topLevel(Program &program) {
                     std::vector<ExprPtr> one;
                     one.push_back(std::move(addr));
                     for (std::size_t k = 0; k < defaults.size(); k++) one.push_back(std::move(defaults[k]));
-                    memberInits.push_back(StmtPtr(new ExprStmt(
-                        completeCall(mt->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps, false,
-                                     epos, std::move(one)))));
+                    addStep(Effect(completeCall(mt->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps, false,
+                                                epos, std::move(one))));
                 }
                 continue;
             }
@@ -1536,7 +1540,7 @@ void Parser::topLevel(Program &program) {
             value = convert(std::move(value), m->type);
             ExprPtr assign(new Assign(std::move(field), std::move(value)));
             assign->setType(m->type);
-            memberInits.push_back(StmtPtr(new ExprStmt(std::move(assign))));
+            addStep(Effect(std::move(assign)));
         }
         settle();
     }
@@ -1584,10 +1588,17 @@ void Parser::topLevel(Program &program) {
     // a mem-initialiser made is cleared here and not left to the function this one was instantiated inside.
     const std::size_t guardsFrom = frameGuards;
     StmtPtr body;
+    // A constexpr constructor's steps, in the order the body runs them; `bodyWrapped` when wrapUp put more round the block.
+    ConstexprCtor ctorSteps;
+    bool bodyWrapped = false;
+    auto ahead = [&](const Effect &e) {
+        ctorSteps.steps.insert(ctorSteps.steps.begin(), e.guard == 0 && e.loop < 0 && e.when < 0 ? e.expr.get() : nullptr);
+    };
     // What every function does once its body is read - in a constructor's function try block, after its handlers.
     auto wrapUp = [&]() {
         // **Every guard this function made is cleared at its entry.**
         if (guardSlots_.size() > guardsFrom) {
+            bodyWrapped = true;
             std::vector<StmtPtr> withClears;
             for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
                 withClears.push_back(StmtPtr(new ExprStmt(
@@ -1600,7 +1611,7 @@ void Parser::topLevel(Program &program) {
         // did not throw itself.
         if (inNoexceptFunction_ && mayThrow_ > 0 && !functionHasPads_ &&
             !target_.microsoftNames()) {
-            noexceptWrapped = true;
+            noexceptWrapped = bodyWrapped = true;
             const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
             const int pointerSlot = allocateFrameSlot(voidPtr);
             const int selectorSlot = allocateFrameSlot(types_.intType());
@@ -1642,6 +1653,7 @@ void Parser::topLevel(Program &program) {
         // already unwinds everything the function owes, parameters included, so these are
         // appended for the one path that does not go through one: falling off the end.
         if (aliveParams != 0) {
+            bodyWrapped = true;
             std::vector<StmtPtr> withParams;
             withParams.push_back(std::move(body));
             emitDestructors(withParams, paramsFrom, d.pos);
@@ -1680,24 +1692,37 @@ void Parser::topLevel(Program &program) {
                 Alive member{ "this", thisOffset_, memberOf };
                 member.owner = memberOf;
                 member.member = memberDone[i];
-                if (memberHasDestructor(memberOf->members()[memberDone[i]].type))
+                if (memberHasDestructor(memberOf->members()[memberDone[i]].type)) {
                     body = guardSubobject(std::move(body), member, d.pos, builtBefore(member));
+                    ahead(Effect());
+                }
             }
             std::vector<StmtPtr> withInit;
-            withInit.push_back(std::move(memberInits[i]));
+            std::vector<Effect> &steps = memberInits[i].effects;
+            if (memberInits[i].statement != nullptr) {
+                ahead(Effect());
+                withInit.push_back(std::move(memberInits[i].statement));
+            } else {
+                for (std::size_t k = steps.size(); k-- > 0; ) ahead(steps[k]);
+                std::vector<StmtPtr> made;
+                appendEffects(steps, made);
+                withInit.push_back(oneStatement(std::move(made)));
+            }
             withInit.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withInit)));
         }
 
-        if (delegateCall != nullptr) {
+        if (delegateCall.expr != nullptr) {
             // [except.ctor]/2: once the target returns the object is complete, so the body's exception destroys it.
             if (destructorOf(memberOf) != nullptr) {
                 Alive whole{ "this", thisOffset_, memberOf };
                 whole.owner = memberOf;
                 body = guardSubobject(std::move(body), whole, d.pos);
+                ahead(Effect());
             }
+            ahead(delegateCall);
             std::vector<StmtPtr> withTarget;
-            withTarget.push_back(std::move(delegateCall));
+            withTarget.push_back(effectStatement(std::move(delegateCall)));
             withTarget.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withTarget)));
         }
@@ -1709,6 +1734,7 @@ void Parser::topLevel(Program &program) {
             std::vector<sema::VptrStore> &stores = vptrStores_[currentFunction_];
             stores.clear();
             std::vector<Effect> vp = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
+            for (std::size_t k = vp.size(); k-- > 0; ) ahead(vp[k]);
             std::vector<StmtPtr> withVptr;
             appendEffects(vp, withVptr);
             withVptr.push_back(std::move(body));
@@ -1839,16 +1865,18 @@ void Parser::topLevel(Program &program) {
                     value->setType(base);
                     ExprPtr there(new Unary('*', std::move(me)));
                     there->setType(base);
-                    ExprPtr copy(new Assign(std::move(there), std::move(value)));
-                    copy->setType(base);
+                    Effect copy(make_owned<Assign>(std::move(there), std::move(value)));
+                    copy.expr->setType(base);
                     if (destructorOf(base) != nullptr) {
                         Alive one{ "this", thisOffset_, memberOf };
                         one.owner = memberOf;
                         one.base = static_cast<int>(which);
                         body = guardSubobject(std::move(body), one, d.pos, builtBefore(one));
+                        ahead(Effect());
                     }
+                    ahead(copy);
                     std::vector<StmtPtr> wrapped;
-                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(copy))));
+                    wrapped.push_back(effectStatement(std::move(copy)));
                     wrapped.push_back(std::move(body));
                     body = StmtPtr(new Block(std::move(wrapped)));
                     continue;
@@ -1883,9 +1911,9 @@ void Parser::topLevel(Program &program) {
                         memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
                     }
                 }
-                ExprPtr call = completeCall(base->tag(), symbol, nullptr,
-                                            types_.get(Kind::Void), params2, false,
-                                            d.pos, std::move(args), false, 0);
+                Effect call(completeCall(base->tag(), symbol, nullptr,
+                                         types_.get(Kind::Void), params2, false,
+                                         d.pos, std::move(args), false, 0));
 
                 std::vector<StmtPtr> wrapped;
                 if (building) {
@@ -1895,12 +1923,14 @@ void Parser::topLevel(Program &program) {
                         one.owner = memberOf;
                         one.base = static_cast<int>(which);
                         body = guardSubobject(std::move(body), one, d.pos, builtBefore(one));
+                        ahead(Effect());
                     }
-                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
+                    ahead(call);
+                    wrapped.push_back(effectStatement(std::move(call)));
                     wrapped.push_back(std::move(body));
                 } else {
                     wrapped.push_back(std::move(body));
-                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
+                    wrapped.push_back(effectStatement(std::move(call)));
                 }
                 body = StmtPtr(new Block(std::move(wrapped)));
             }
@@ -1915,6 +1945,7 @@ void Parser::topLevel(Program &program) {
             std::vector<StmtPtr> guarded =
                 guardedVirtualBaseInit(memberOf, d.qualifier, thisOffset_,
                                        msVbInitSlot_, d.pos, -1, false, &baseArgs, &vbs, true);
+            if (!guarded.empty()) ctorSteps.steps.assign(1, nullptr);
             body = withVirtualBases(std::move(guarded), vbs, std::move(body), d.pos);
         }
     };
@@ -1967,18 +1998,9 @@ void Parser::topLevel(Program &program) {
     if (noexceptWrapped) noexceptWraps_.insert(definedSymbol);
     if (ctorTry && (isCtor || !specFilter) && !noexceptWrapped) ctorTries_.insert(definedSymbol);
 
-    // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
-    // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.
-    if (isCtor && body != nullptr && (constexprFunction || constant_.constexprCtorSymbols_.count(definedSymbol))) {
-        ConstexprCtor ctor;
-        ctor.body = body.get();
-        ctor.thisSlot = thisOffset_;
-        for (const Param &p : paramSlots)
-            if (p.offset != thisOffset_) ctor.slots.push_back(p.offset);
-        constant_.constexprCtors_[definedSymbol] = ctor;
-        const std::size_t c1 = definedSymbol.find("C1E");
-        if (c1 != std::string::npos) constant_.constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
-    }
+    const bool constexprCtor = isCtor && body != nullptr &&
+                               (constexprFunction || constant_.constexprCtorSymbols_.count(definedSymbol));
+    const int ctorThis = thisOffset_;
     const bool constexprBody = constexprFunction && body != nullptr && !isCtor;
     currentClass_ = nullptr;
     currentFunction_.clear();
@@ -1995,6 +2017,20 @@ void Parser::topLevel(Program &program) {
     if (scope != 0) scopedFunctions_[fnSyntax.v] = scope;
     if (isCtor) constructorNodes_.insert(fnSyntax.v);
     declaredReturns_[fnSyntax.v] = returnType_;
+    // A constexpr constructor is kept as its steps, also under the C2 name a derived class calls it by; a body with a
+    // statement in its block, or one the parser wrapped, is a step no constant takes - as is one in a `try` round all.
+    if (constexprCtor) {
+        std::uint32_t n = syntaxTree_.node(fnSyntax).count;
+        while (n > 0 && syntaxTree_.node(syntaxTree_.child(fnSyntax, n - 1)).kind != syntax::Kind::Block) n--;
+        if (bodyWrapped || n == 0 || syntaxTree_.node(syntaxTree_.child(fnSyntax, n - 1)).count != 0) ctorSteps.steps.push_back(nullptr);
+        if (specFilter || ctorTry) ctorSteps.steps.assign(1, nullptr);
+        ctorSteps.thisSlot = ctorThis;
+        for (const Param &p : paramSlots)
+            if (p.offset != ctorThis) ctorSteps.slots.push_back(p.offset);
+        constant_.constexprCtors_[definedSymbol] = ctorSteps;
+        const std::size_t c1 = definedSymbol.find("C1E");
+        if (c1 != std::string::npos) constant_.constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctorSteps;
+    }
     if (constexprBody) {
         // The body is the definition's block; one the parser wrapped for a throw(...) list or a function try block is no one return.
         std::uint32_t n = syntaxTree_.node(fnSyntax).count;
@@ -2494,8 +2530,8 @@ void Parser::noteEntryDefaults(const std::string &name, const std::vector<ExprPt
 
 // The call a delegating constructor makes - [class.base.init]/6 - to the target chosen by
 // overload resolution, on `this`, before the body; its C1 on Itanium, as clang calls.
-StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
-                               std::size_t pos, std::size_t entries) {
+Parser::Effect Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
+                                      std::size_t pos, std::size_t entries) {
     if (entries != 1)
         src_.fail(pos, "a delegating constructor's initialiser list names '" +
                        localOf(d.qualifier) + "' and nothing else - the constructor it "
@@ -2532,9 +2568,9 @@ StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<E
             memberBuilt_[currentFunction_ + "|~" + cls->tag() + "|0"] = u;
         }
     }
-    return StmtPtr(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
-                                             types_.get(Kind::Void), params, false, pos,
-                                             std::move(all), false, 0)));
+    return Effect(completeCall(cls->tag(), chosen.symbol, nullptr,
+                               types_.get(Kind::Void), params, false, pos,
+                               std::move(all), false, 0));
 }
 
 // **The local a body returns from every `return` in its scope** ([class.copy]/31's named return value), read

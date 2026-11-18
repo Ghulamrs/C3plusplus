@@ -2685,21 +2685,24 @@ std::vector<StmtPtr> Parser::memberInitialisers(const std::string &tag,
     for (std::size_t i = 0; i < ms.size(); i++) {
         if (already.find(ms[i].name) != already.end()) continue;
         if (ms[i].anonUnion != nullptr && taken.count(ms[i].anonUnion) != 0) continue;
-        StmtPtr one = memberInitialiser(tag, type, ms[i], thisSlot, pos);
-        if (one != nullptr) out.push_back(std::move(one));
+        std::vector<Effect> laid;
+        if (!memberInitialiser(tag, type, ms[i], thisSlot, pos, laid)) continue;
+        std::vector<StmtPtr> made;
+        appendEffects(laid, made);
+        out.push_back(oneStatement(std::move(made)));
     }
     return out;
 }
 
-StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
-                                  const Member &m, int thisSlot,
-                                  std::size_t pos) {
+bool Parser::memberInitialiser(const std::string &tag, const Type *type,
+                               const Member &m, int thisSlot,
+                               std::size_t pos, std::vector<Effect> &out) {
     std::map<std::string, std::size_t>::const_iterator it =
         memberInit_.find(tag + "::" + m.name);
     // The written constructor this replay is for, if any: a nested replay is another constructor's.
     const std::string forCtor = memberDefaultFor_;
     memberDefaultFor_.clear();
-    if (it == memberInit_.end()) return nullptr;
+    if (it == memberInit_.end()) return false;
 
     // Read where it was written, with the constructor's locals put aside and
     // the class current: an initialiser on a member is in the class's scope,
@@ -2758,7 +2761,8 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
                 syntaxTree_.add(syntax::Kind::MemInit, m.name, pos, std::vector<syntax::NodeId>());
         locals_.swap(outer);
         at_ = resume;
-        return StmtPtr(new ExprStmt(std::move(filled)));
+        out.push_back(Effect(std::move(filled)));
+        return true;
     }
     // **A list on a class or an array** (M1 L4): a class with constructors is built from it, direct- or
     // copy-list as `{` or `= {` was written; an aggregate or an array of scalars is laid down leaf by leaf.
@@ -2767,7 +2771,6 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     if ((braced || literal) && (m.type->isArray() || m.type->unqualified()->isStructOrUnion())) {
         const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
-        std::vector<StmtPtr> all;
         const Type *cls = m.type->unqualified();
         const bool copyList = memberInitCopy_.count(tag + "::" + m.name) != 0;
         const bool built = cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag()) &&
@@ -2784,21 +2787,19 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
             std::vector<ExprPtr> args;
             if (copyList) args.push_back(listTemporaryFrom(cls, in, true, pos));
             else args = bracedInitArguments(cls, in, pos);
-            all.push_back(constructMember(tag, type, m, thisSlot, args, lo, false));     // keyed by the braces, as its entry is
+            out.push_back(constructMember(tag, type, m, thisSlot, args, lo, false));     // keyed by the braces, as its entry is
         } else {
             const MemberRoot root = { thisSlot, type, &m };
             const MemberRoot *was = memberRoot_;
             memberRoot_ = &root;
             std::vector<InitStep> path;
-            std::vector<Effect> laid;
-            emitInit(std::string(), path, m.type, in, laid);
-            appendEffects(laid, all);
+            emitInit(std::string(), path, m.type, in, out);
             memberRoot_ = was;
         }
         locals_.swap(outer);
         at_ = resume;
-        flushTemporaries(all);
-        return oneStatement(std::move(all));
+        temporaryEffects(out);
+        return true;
     }
     if (braced) at_++;
     const std::size_t valueAt = peek().pos;
@@ -2816,30 +2817,30 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
 
     // **A class-typed member is *built* from its initialiser, not assigned
     // one.**
-    StmtPtr made;
+    Effect made;
     if (memberClass(m.type) != nullptr && !m.type->isReference() &&
         hasConstructors(memberClass(m.type)->tag())) {
         std::vector<ExprPtr> one;
         one.push_back(std::move(value));
         made = constructMember(tag, type, m, thisSlot, one, pos, false);
-        if (made == nullptr) value = std::move(one[0]);
+        if (made.expr == nullptr) value = std::move(one[0]);
     }
-    if (made == nullptr && m.type->isReference()) {
+    if (made.expr == nullptr && m.type->isReference()) {
         // [class.base.init]/9: `T &r = v;` binds r as the mem-initialiser `r(v)` would - the address stored.
         const Type *held = types_.pointerTo(m.type->referent());
         ExprPtr field = thisMember(thisSlot, type, m);
         field->setType(held);
         ExprPtr bind(make_owned<Assign>(std::move(field), bindReference(m.type, std::move(value), valueAt, "'" + m.name + "'")));
         bind->setType(held);
-        made = StmtPtr(make_owned<ExprStmt>(std::move(bind)));
+        made = Effect(std::move(bind));
     }
-    if (made == nullptr) {
+    if (made.expr == nullptr) {
         checkAssignable(*value, m.type, pos, "'" + m.name + "'");
         value = convert(std::move(value), m.type);
         ExprPtr field = thisMember(thisSlot, type, m);
         ExprPtr store(new Assign(std::move(field), std::move(value)));
         store->setType(m.type);
-        made = StmtPtr(new ExprStmt(std::move(store)));
+        made = Effect(std::move(store));
     }
     locals_.swap(outer);
     at_ = resume;
@@ -2847,10 +2848,9 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     // **The initialiser is a full expression, and its temporaries die at the
     // end of it** - [class.temporary]/4, which here means before the next
     // member is built and not at the end of the constructor.
-    std::vector<StmtPtr> all;
-    all.push_back(std::move(made));
-    flushTemporaries(all);
-    return oneStatement(std::move(all));
+    out.push_back(std::move(made));
+    temporaryEffects(out);
+    return true;
 }
 
 // Statements as one: the statement itself where there is one, a block of them otherwise.
@@ -2862,14 +2862,14 @@ StmtPtr Parser::oneStatement(std::vector<StmtPtr> all) {
 // **A class-typed member is built, not left.** [class.base.init]/8: one the list does
 // not name is default-initialised, and a written constructor used to leave it holding
 // the stack. An array member is built by a loop, N being a property of the type.
-StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
-                                const Member &m, int thisSlot,
-                                std::vector<ExprPtr> &args, std::size_t pos,
-                                bool implicit) {
+Parser::Effect Parser::constructMember(const std::string &cls, const Type *type,
+                                       const Member &m, int thisSlot,
+                                       std::vector<ExprPtr> &args, std::size_t pos,
+                                       bool implicit) {
     const Type *mc = memberClass(m.type);
-    if (mc == nullptr || mc->tag().empty() || m.type->isReference()) return nullptr;
+    if (mc == nullptr || mc->tag().empty() || m.type->isReference()) return Effect();
     const std::string key = constructorKey(mc->tag());
-    if (lookup_.overloadsOf(key) == nullptr) return nullptr;
+    if (lookup_.overloadsOf(key) == nullptr) return Effect();
     if (!args.empty() && m.type->isArray())
         src_.fail(pos, "'" + m.name + "' is an array, and an initialiser list "
                        "cannot say what to pass to each element of it");
@@ -2893,7 +2893,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
             dst->setType(m.type);
             ExprPtr store(new Assign(std::move(dst), std::move(args[0])));
             store->setType(m.type);
-            return StmtPtr(new ExprStmt(std::move(store)));
+            return Effect(std::move(store));
         }
     }
 
@@ -2970,15 +2970,22 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         if (had == memberBuilt_.end()) memberBuilt_[key] = b;
         else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
     }
-    StmtPtr one(new ExprStmt(
-        completeCall(mc->tag(), chosen.symbol, nullptr, types_.get(Kind::Void),
-                     ps, false, pos, std::move(all))));
+    Effect one(completeCall(mc->tag(), chosen.symbol, nullptr, types_.get(Kind::Void),
+                            ps, false, pos, std::move(all)));
     if (!m.type->isArray()) return one;
-    Alive built{ "this", thisSlot, mc };
+    one.loop = indexSlot;
+    one.count = count;
+    return one;
+}
+
+// An array member's loop, under its elements' guard ([except.ctor]/3) when they have a destructor.
+StmtPtr Parser::memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos) {
+    const int indexSlot = e.loop;
+    Alive built{ "this", thisSlot, memberClass(m.type) };
     built.owner = type;
     for (std::size_t k = 0; k < type->members().size(); k++)
         if (&type->members()[k] == &m) built.member = static_cast<int>(k);
-    StmtPtr loop = eachElement(indexSlot, count, std::move(one));
+    StmtPtr loop = effectStatement(std::move(e));
     return built.member < 0 ? std::move(loop) : guardElements(std::move(loop), built, indexSlot, pos);
 }
 

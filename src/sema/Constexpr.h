@@ -39,7 +39,6 @@ public:
     bool foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, std::size_t pos) const;
     bool objectAddress(const Expr &lvalue, ConstObjectPtr *obj, int *at, std::size_t pos) const;
     bool foldLeaf(const Expr &lvalue, ConstLeaf *out, std::size_t pos) const;
-    bool runConstexpr(const Stmt &s, std::size_t pos) const;
     bool runConstexpr(const Effect &e, std::size_t pos) const;
     bool runConstexprEffect(const Expr &e, std::size_t pos) const;
     bool constructConst(const Call &c, std::size_t pos) const;

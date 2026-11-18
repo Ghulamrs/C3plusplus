@@ -1971,10 +1971,18 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         // them by the time this body runs.
         if (memberFromBase(type, ms[i])) continue;
         p_.memberDefaultFor_ = symbol;      // the initialiser's syntax recorded under this constructor (M3b.3)
-        StmtPtr one = p_.memberInitialiser(cls, type, ms[i], thisSlot, pos);
+        std::vector<Effect> laid;
+        StmtPtr one;
         std::vector<ExprPtr> none;
-        if (one == nullptr && type->kind() != Kind::Union && ms[i].anonUnion == nullptr)
-            one = p_.constructMember(cls, type, ms[i], thisSlot, none, pos, true);
+        if (p_.memberInitialiser(cls, type, ms[i], thisSlot, pos, laid)) {
+            std::vector<StmtPtr> made;
+            p_.appendEffects(laid, made);
+            one = p_.oneStatement(std::move(made));
+        } else if (type->kind() != Kind::Union && ms[i].anonUnion == nullptr) {
+            Effect built = p_.constructMember(cls, type, ms[i], thisSlot, none, pos, true);
+            if (built.loop >= 0) one = p_.memberLoop(std::move(built), type, ms[i], thisSlot, pos);
+            else if (built.expr != nullptr) one = p_.effectStatement(std::move(built));
+        }
         if (one == nullptr) continue;
         body.push_back(std::move(one));
         done.resize(body.size());

@@ -61,6 +61,8 @@ public:
 private:
     typedef sema::Local Local;
     typedef sema::Effect Effect;
+    // A mem-initialiser's steps; `statement` instead where an array member's loop is under its elements' guard.
+    struct MemberStep { std::vector<Effect> effects; StmtPtr statement; };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
     struct FreeSlot { const Type *stored; int offset; int align; };
@@ -1044,6 +1046,7 @@ private:
     };
     // [except.ctor]/3 over an element loop: `loop` counts in `indexSlot` the elements of `a` built.
     StmtPtr guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos);
+    StmtPtr memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos);
 
     // One automatic object a jump may not land past - see Local::guardsJump - or with `region`
     // a `try` block (1) or a handler (2), which [except.handle]/2 lets a jump leave and never enter.
@@ -2071,8 +2074,8 @@ private:
     bool trailingArrowAhead() const;
     void noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written);
     std::vector<syntax::NodeId> defaultNodes(const std::vector<ExprPtr> &args, std::size_t written);
-    StmtPtr delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
-                           std::size_t pos, std::size_t entries);
+    Effect delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
+                          std::size_t pos, std::size_t entries);
     std::string resolveNamespaceName(const std::string &written) const;
     // **An unnamed namespace is a named one that nothing outside can name.**
     bool inUnnamedNamespace_ = false;
@@ -2146,17 +2149,17 @@ private:
                                             const Type *type, int thisSlot,
                                             const std::set<std::string> &already,
                                             std::size_t pos);
-    // The same for one member: the store its own initialiser asks for, or
-    // nullptr where the class wrote none.
-    StmtPtr memberInitialiser(const std::string &tag, const Type *type,
-                              const Member &m, int thisSlot, std::size_t pos);
+    // The same for one member: the steps its own initialiser asks for, into `out`, or
+    // false where the class wrote none.
+    bool memberInitialiser(const std::string &tag, const Type *type,
+                           const Member &m, int thisSlot, std::size_t pos, std::vector<Effect> &out);
     // The constructor call for a class-typed member - [class.base.init]/8 with `args`
-    // empty, the mem-initialiser `: m(args)` otherwise. Answers nullptr for a member
+    // empty, the mem-initialiser `: m(args)` otherwise. Answers no expression for a member
     // whose type has no constructors, leaving `args` untouched for the scalar path.
-    StmtPtr constructMember(const std::string &cls, const Type *type,
-                            const Member &m, int thisSlot,
-                            std::vector<ExprPtr> &args, std::size_t pos,
-                            bool implicit);
+    Effect constructMember(const std::string &cls, const Type *type,
+                           const Member &m, int thisSlot,
+                           std::vector<ExprPtr> &args, std::size_t pos,
+                           bool implicit);
     // [dcl.fct.default]/4: the defaults have to be a suffix of the parameter list. Asked
     // by both parameter-list parsers - declarations and definitions - because a
     // definition may carry the defaults where the declaration did not.

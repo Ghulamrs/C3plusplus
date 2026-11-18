@@ -567,20 +567,11 @@ bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
         frame.push_back(slot);
     }
     constexprFrames_.push_back(frame);
-    const bool ok = runConstexpr(*ctor.body, pos);
+    bool ok = true;
+    for (std::size_t i = 0; ok && i < ctor.steps.size(); i++)
+        ok = ctor.steps[i] != nullptr && runConstexprEffect(*ctor.steps[i], pos);
     constexprFrames_.pop_back();
     return ok;
-}
-
-// The statements a constructor's body and a declaration's initialisation are lowered to.
-bool Constexpr::runConstexpr(const Stmt &s, std::size_t pos) const {
-    if (const Block *b = dynamic_cast<const Block *>(&s)) {
-        for (const StmtPtr &x : b->body())
-            if (!runConstexpr(*x, pos)) return false;
-        return true;
-    }
-    if (const ExprStmt *x = dynamic_cast<const ExprStmt *>(&s)) return runConstexprEffect(x->expr(), pos);
-    return false;
 }
 
 // A step under a guard, a loop or a `$vb` test is not one a constant expression takes.
