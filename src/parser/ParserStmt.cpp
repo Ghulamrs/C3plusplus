@@ -2112,10 +2112,10 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         }
         if (!msExit.brk.empty())
             after.push_back(make_owned<Label>(msExit.brk, outer != nullptr && handlersLeftByBreak() > 0
-                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->brk, "brk"))) : StmtPtr(make_owned<Break>())));
+                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->brk, "brk"))) : StmtPtr(new Block({}))));
         if (!msExit.cont.empty())
             after.push_back(make_owned<Label>(msExit.cont, outer != nullptr && handlersLeftByContinue() > 0
-                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->cont, "cont"))) : StmtPtr(make_owned<Continue>())));
+                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->cont, "cont"))) : StmtPtr(new Block({}))));
         // The funclet destroyed what the jump left, so the parent's half only jumps on.
         for (const std::pair<std::string, std::string> &e : gotoExits)
             after.push_back(StmtPtr(new Label(e.first, gotoStatement(e.second, pos, false))));
@@ -2617,7 +2617,11 @@ StmtPtr Parser::statementBody() {
                                    "this condition");
         expect(")");
         expect(";");
-        return StmtPtr(new DoWhile(std::move(body), std::move(cond)));
+        // The loop is lowered from its syntax; its parts are kept here, where nothing reads them.
+        std::vector<StmtPtr> parts;
+        parts.push_back(std::move(body));
+        parts.push_back(effectStatement(Effect(std::move(cond))));
+        return StmtPtr(new Block(std::move(parts)));
     }
 
     if (peek().is("switch")) return switchStatement();
@@ -2646,7 +2650,7 @@ StmtPtr Parser::statementBody() {
         if (target_.microsoftNames() && handlersLeftByBreak() > 0 && msExit_ != nullptr)
             return jumpLeaving(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->brk, "brk"))),
                                breakMarks_.back(), pos, handlersLeftByBreak());
-        return jumpLeaving(StmtPtr(new Break()), breakMarks_.back(), pos,
+        return jumpLeaving(StmtPtr(new Block({})), breakMarks_.back(), pos,
                            handlersLeftByBreak());
     }
 
@@ -2659,7 +2663,7 @@ StmtPtr Parser::statementBody() {
         if (target_.microsoftNames() && handlersLeftByContinue() > 0 && msExit_ != nullptr)
             return jumpLeaving(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->cont, "cont"))),
                                loopMarks_.back(), pos, handlersLeftByContinue());
-        return jumpLeaving(StmtPtr(new Continue()), loopMarks_.back(), pos,
+        return jumpLeaving(StmtPtr(new Block({})), loopMarks_.back(), pos,
                            handlersLeftByContinue());
     }
     if (peek().is("{")) return block();

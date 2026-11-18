@@ -32,15 +32,12 @@ class Block;
 class If;
 class While;
 class For;
-class DoWhile;
 class Switch;
 class Case;
 class Goto;
 class Label;
 class Conditional;
 class Comma;
-class Break;
-class Continue;
 class FuncletLeave;
 class Try;
 
@@ -65,15 +62,12 @@ public:
     virtual void visit(const If &) = 0;
     virtual void visit(const While &) = 0;
     virtual void visit(const For &) = 0;
-    virtual void visit(const DoWhile &) = 0;
     virtual void visit(const Switch &) = 0;
     virtual void visit(const Case &) = 0;
     virtual void visit(const Goto &) = 0;
     virtual void visit(const Label &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
-    virtual void visit(const Break &) = 0;
-    virtual void visit(const Continue &) = 0;
     virtual void visit(const FuncletLeave &) = 0;
     virtual void visit(const Try &) = 0;
 };
@@ -449,18 +443,6 @@ private:
     int scope_ = -1;
 };
 
-class DoWhile final : public Stmt {
-public:
-    DoWhile(StmtPtr body, ExprPtr cond)
-        : body_(std::move(body)), cond_(std::move(cond)) {}
-    const Stmt &body() const { return *body_; }
-    const Expr &cond() const { return *cond_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    StmtPtr body_;
-    ExprPtr cond_;
-};
-
 class Case final : public Stmt {
 public:
     Case(long long value, bool isDefault, int id, StmtPtr body)
@@ -511,16 +493,6 @@ public:
 private:
     std::string name_;
     StmtPtr body_;
-};
-
-class Break final : public Stmt {
-public:
-    void accept(Visitor &v) const override { v.visit(*this); }
-};
-
-class Continue final : public Stmt {
-public:
-    void accept(Visitor &v) const override { v.visit(*this); }
 };
 
 // **Leaving a Microsoft handler funclet early**: the runtime carries on at the
