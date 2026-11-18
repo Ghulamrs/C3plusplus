@@ -1736,6 +1736,13 @@ ExprPtr Parser::newExpression(std::size_t pos) {
                                   "may be given here");
     }
 
+    std::vector<ExprPtr> ctorArgs;
+    // A read's `new __tree_node<V>(v)` over a class no pattern has made: its operands read, its value a zero.
+    if (patternBody_ && !made->isComplete() && dependentType(made)) {
+        if (peek().is("{")) parseInitialiser();
+        else if (consume("(")) parseArguments(ctorArgs);
+        return zeroOf(types_.pointerTo(made));
+    }
     if (!made->isComplete())
         src_.fail(pos, "'new' needs a complete type, and '" + made->describe() +
                        "' is not one here");
@@ -1749,7 +1756,6 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     checkNotAbstract(made, pos, "the object 'new' would make");
     const bool constructed = made->isStructOrUnion() && !made->tag().empty() &&
                              hasConstructors(made->tag());
-    std::vector<ExprPtr> ctorArgs;
     bool hasInit = false;
     ExprPtr init;
     // **`new T{}` is `new T()`**, [dcl.init]/11; `new T{...}` list-initialises the object,
@@ -2205,6 +2211,10 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
 
     ExprPtr what = decay(unary());
     const Type *t = what->type();
+    if (patternBody_ && !t->isPointer() && dependentType(t)) {     // a read's `delete at.n_`, over a held local
+        what->setType(types_.get(Kind::Void));
+        return what;
+    }
     if (!t->isPointer())
         src_.fail(pos, "'delete' needs a pointer, and this is '" +
                        t->describe() + "'");
