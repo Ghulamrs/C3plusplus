@@ -814,3 +814,19 @@ the flag against without at `fcb6f5bc` on Windows: cases 1,238 / 0, the self-hos
 no `tests/cases` program was added (the gates are the self-host and `identical.sh`, which found the label).
 **Not done**: the signature's expression reader (eight shapes), not started; commit 4 not started.
 src/ lines: 94,877 before, 94,886 after.
+
+### M8.1 commits 1-3 landed, 2026-11-18 (the coordinator)
+
+- Commits 1-3 (lanes m8b-m8j): the count (`-check=templates`), the signature kept at the declaration, and a function
+  template's body read at its declaration in a Lookup layer of its own - the read always on (the flag dropped in
+  241cd65b), writing nothing into the unit's tables; the replay still emits. Read 3,379 of 3,478 function templates over
+  tests/cases; the self-host's -S the same with the read on and off but Driver's `__TIME__`.
+- With them (lane m8x): docs/EXCLUSIONS.md's 11 citations re-pointed after the merge with main; **x86_64-windows: a
+  function with a landing pad and no call keeps 8 bytes below its unwind-help word** (000dbd71) - with no outgoing area
+  the word sat at rsp+0 and dispUnwindHelp read 0, on main too (ssa-ms-try, ssa-try-catch, nested-parse-state); and two
+  gate mends: win-structure's unwind faults fail the step (6cede9be - m6g had passed with 6), and a worse cycle case
+  passes only through tests/tms6747-cycles.txt (ca4eaa3d).
+- **Gate: tools/wave-gate m81j -w dbdce549 at ac71cf9d: 43 passed, 0 failed, 4 not run** (the fixed points, not owed).
+  The first gate of this tree (m81i) failed only on the unwind mend's 31 unnamed x86_64-windows differences (the frame 8
+  bytes larger, its unwind bytes and frame offsets moved); m81g and m81h were void (a Linux build stopped under load).
+- tests/wave-expected.txt emptied (31 rows were this wave's). Commit 4 (the class doors) continues on m8-e.
