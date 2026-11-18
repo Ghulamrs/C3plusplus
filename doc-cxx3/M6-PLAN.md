@@ -3249,3 +3249,63 @@ C6xSelect.cpp, Tms6747.cpp, C6xPack.cpp at -O0 and -O2 6 / 0 (Driver.cpp is no C
 **Windows and what the wave gate owes:** in boxkit/m6d1-handover.md's last lines (the cl /W4 /WX build and shards 4-6 as far as the hour
 went); x86 and arm64 identity for Lowering.cpp's one line and Driver.cpp's (identical.sh, the other ARCHS), run.sh, winpass, ssa.sh,
 SIM=0, -O1, the wtms legs, asm6x, ti-link, make test.
+
+### M6d, second round: the C6000 walker deleted, and the frame's record on ir::Function - lane m6d2, 2026-11-18
+
+From m6d-shell 9289ca3b. src/ 95,287 -> 93,441 lines (-1,846: 195 added, 2,041 removed over 14 files).
+
+**(1) The walker is gone** (commit b619033a, src/ -1,942 +52). `Tms6747` derives from `Regions`, not `Walker`: its 15 `visit`s and
+every helper only they reached - the plan and layout of the two walks (`planParams`, `planLocals`, `planRegisters`, `planFrame`,
+`placed`, `noteUse`, `noteExtent`, `frameSlot`), the spills and pushes (`planSpills`, `chooseSpill`, `spillPush`, `spillPop`, `push`,
+`pop`, `pushValue`, `popValue`, `moveValue`), inlining in place (`inlineTarget`, `walkInPlace`, the `Inliner` and `opt::Costs` it
+held), `genAddr`, `genArg`, `genTruth`, `earlyExit`, `simpleOfParams`, the bit-field trio, `immediateBinary`, `constDivisor`,
+`divideByConstant`, `fpConst`, `isZero`, `addOffset`, `regFor`, `regRead`, `regCandidate`, `walkBody`, the branch hooks, `low32` -
+and their state. `src/backend/Walker.cpp` and `Walker.h` (505 lines: the statement visitors and `AstCodeGen`) had this one user and
+go with it; `Regions`' two pure hooks a walker called (`landingPad`, `caseBranch`) are empty overrides. Tms6747.cpp 2,490 -> 1,212
+lines. **A body outside the selector is refused by name** in `ssaChoose` (`<symbol>, outside the C6000 selector (<why>), is not
+supported yet by the tms6747 backend`): the census has none (walked 0 / 0). `CXX1_C6X_WALKER` is read nowhere; tools/wave-gate's
+`wtms0/1/2` legs, their box-table entries, group and report text are removed (tests/tms6747.sh had no walker mode of its own; nothing
+else under tests/ or tools/ set the switch). `emitExceptionTable` takes the selector's rows as they are (the walker's joining of
+pure cleanup rows went with `ssaRows_`). ide/ regenerated (102 sources).
+
+**(2) The frame's record off Ast.h** (commit c29ce92b): `ir::Laid` on `ir::Function` (Ir.h: `LaidParam`, `LaidLocal`, `Laid`) - the
+parser's parameters (type, offset), locals (name, static name, type, offset, scope, serial, isParam), the lexical blocks and where
+each opens, the declared result type, `sretSlot`, the parser's own pads, `alias`, `name`. Driver.cpp's `laidOf` fills it from Ast.h's
+`Function` once `Lowering::lower` or `Builder::build` has made the function - one place, every target. Read from it now:
+`emitParams`, `emitVariables`, `emitScope`, `declaresAnything`, `stackParamOffset`, `emitFunction` (which takes the symbol alone),
+`ssaChoose`/`ssaOutside`, `layoutSsa`, `layoutSsaLocals`, `ssaAssign`, `selectBody` - **no `const Function &` is left in Tms6747.h,
+Tms6747.cpp or C6xSelect.cpp**. Two shared facts took the record as their one implementation rather than a copy: `ssaLocalAllocas(f)`
+(Regions.cpp; x86's and arm64's `ssaFrameLocals` call it) and `blockAt`, which is `ir::Laid::blockAt` only - `Function::blockAt` is
+deleted from Ast.h (x86's `ssaMark` and arm64's selector read `f.laid`; x86's `ssaFn_` went), `Function::blockPositions()` hands the
+positions over. **Not moved: `emitData`/`emitGlobal`** - they read `Program::globals` (`Global`, its pieces and relocations), and
+`ir::Module` holds no data at all: that is a record of its own (the module's data, for every target), not a field, and an hour did
+not hold it. `run(const Program &)` reads the functions' order by symbol, the globals and `initFunction`.
+
+**(3) tools/ast-residue** (baseline lowered in its own commit 95504b22): ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413 -
+unmoved, and none of them is the C6000's (the four are counted under src/parser and src/sema: the parser's building half, `Classes`'
+synthesised bodies, the constant evaluator); **visits 124 -> 0** (all 124 were the C6000 walker's; no generator visits a node now);
+**ast-lines 850 -> 845** (`blockAt`); **readers 14**, unmoved - of them the C6000's is Tms6747.cpp's own include (0 node-kind names:
+`Program`, `Global`, `Segment` for `emitData` and `run`), and `src/optimizer/Inliner.h` (2 node-kind names) lost its C6000 user
+here: who else holds it (Optimizer.cpp, OptFunction.h) is the next round's question, not answered in this one.
+
+**Gate (coding lane).** Each step against 9289ca3b's binary (Linux ~/m6d1b's cxx3.exe, kept as ~/m6d2-ref.exe), tools/identical.sh
+LEVELS "0 2": step 1 tms6747 **1,808 compared, 0 differ**, x86_64-linux + x86_64-windows + arm64-darwin **7,232 compared, 0
+differ**; step 2 the tree before `blockAt` moved (~/m6d2b) tms6747 1,808 / 0 differ, and the **final tree** (~/m6d2c) tms6747 **1,808
+compared, 0 differ**, the three other targets **7,232 compared, 0 differ**. tests/g-same.sh and tests/debug.sh: g-same 888 same, 0 differ, 0 broken (358 not for tms6747); debug.sh gdb 5 passed, 0 failed; and, since
+identical.sh compiles no -g, every tests/cases file's `-g -S` text whole against the REF's (boxkit/m6d2-gdiff.sh, the tree's path
+normalised): tms6747 888 same, 358 refused alike, **0 differ**; x86_64-linux and arm64-darwin 903 same, 343 refused alike, **0 differ**
+each (their locals and blocks now come from `f.laid`). tests/tms6747.sh SIM=1, final tree: Linux shards 1-3
+-O2 425 passed / 0 failed, -O0 425 / 0 (and 4-6 there too: 850 / 0 at each level); Windows shards 4-6 (the cl build) -O2 425 / 0; -O0 4/6 138 / 0, then stopped by the lane's stop file - a
+Windows shard took 3 to 6 minutes on the shared box against Linux's 20 to 60 seconds, so -O0 5/6 and 6/6 are Linux's alone. tools/c6x-cycles --check: -O2 **149,248,103**, -O0 **307,812,480**, both the base's to the cycle (the text is
+identical), with the base's 18 and 4 worse cases neither owed nor accepted, so the check fails as it did at 9289ca3b; nothing
+accepted or written. Census -O2 and -O0 11,510 of 11,510 selected, walked 0 / 0; c6x-declines 0 (baseline 0 holds); the two
+lowering-* cases refused as their `.error` on all four targets at -O0 and -O2; self-compile -arch tms6747 of C6xSelect.cpp,
+Tms6747.cpp, Regions.cpp at -O0 and -O2 6 / 0; exclusions 554 sites, --check rc 0; comment cap 0 over; memory gate holds; ide/generate.py --check
+up to date; g++ -Werror clean. **The Windows cl /W4 /WX build** (work\m6d2x, `_CL_=/MP4`, /affinity 3FF, alone in its tree): step 1's
+tree 6 min 33 s, step 2's 2 min 47 s, the final tree 3 min 39 s (one comment line
+older than commit c29ce92b) - all inside the 9-minute cap, none retried.
+
+**Owed to the wave gate:** Windows shards 5/6 and 6/6 at -O0 (SIM=1) on the cl build; run.sh, winpass (both spellings), ssa.sh
+1/2, names.sh, make test to its end, tms6747 SIM=0 and -O1, asm6x, ti-link, release-check, lldb/cdb (-g on x86 and arm64 now reads `f.laid` for locals and blocks), the fixed point; the guide's
+line on `backend/Walker.h` and tools/ssa-census's `c6x-walker` count (now always 0: a refusal is an error) are the coordinator's to
+retire; `emitData` on a module data record; `Inliner`'s remaining users.
