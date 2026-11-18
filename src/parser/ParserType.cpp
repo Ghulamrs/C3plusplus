@@ -235,8 +235,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             } else {
                 baseName = expectIdent("a base class name");
             }
-            // A read's `struct D : B<T>`: the base is no class yet, so it is left out and its members are not found.
-            if (readLayout_ && b != nullptr && b->isSpecialization() && !b->isComplete() && dependentArgs(b->templateArgs())) {
+            // A read's `struct D : B<T>`, or `: C<int>` of a template template parameter: no class yet, so left out, its members not found.
+            if (readLayout_ && b != nullptr && b->isSpecialization() && !b->isComplete() &&
+                (dependentArgs(b->templateArgs()) || b->templateName().compare(0, 3, "$TT") == 0)) {
                 dependentLaid = dependentBase = true;
                 if (!consume(",")) break;
                 continue;
@@ -669,6 +670,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 at_ += 5;
                 continue;
             }
+        }
+        // A read's `using B<T>::B;` over a base it left out: what it names waits for the arguments, as the base does.
+        if (peek().is("using") && readLayout_ && (dependentBase || dependentAhead(false))) {
+            while (!peek().is(";") && peek().kind != TokenKind::End) at_++;
+            expect(";");
+            continue;
         }
         if (peek().is("using"))
             src_.fail(peek().pos, "a using-declaration inside a class is not "
@@ -2415,6 +2422,8 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
             skipAttributes();
             continue;
         }
+        // A class read's bound over its parameters waits for them: the member is laid out as nothing, as `int v[N];` is.
+        if (readLayout_ && dependentAhead(false)) { decay(conditional()); dims.push_back(-1); expect("]"); skipAttributes(); continue; }
         // `long long`, not `long`: this compiler is built by cl on one of its three
         // machines, where a `long` is 32 bits - so `char a[0x100000001]` silently
         // became `char a[1]` there and kept its full length on the other two.
