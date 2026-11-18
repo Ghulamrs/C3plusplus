@@ -439,8 +439,7 @@ static const std::size_t kLongScope = 0xF000;
 // phase 2 then lands once, on the pad of the barrier phase 1 found, whose
 // selector walks the chain of pads the parser built.
 void Tms6747::emitExceptionTable(bool noexcept_, const std::vector<std::string> &spec) {
-    // The rows are the selector's: one per invoke, each whole, so none is joined to another.
-    const std::vector<CallSite> &rows = callSites();
+    const std::vector<CallSite> &rows = callSites();     // the selector's: one per invoke, each whole, none joined to another
     const bool states = noexcept_ || !spec.empty();
     if (rows.empty() && !states) return;
     const std::string table = "__c6xabi_extab$" + functionName_;
@@ -691,10 +690,10 @@ void Tms6747::wideCast(const Type *from, const Type *to) {
 // Where a stack-passed parameter (from firstStack_ on) sits relative to the
 // caller's B15 - the layout the Call visit uses. i == ps.size() names the
 // word past the last parameter, where a variadic function's extras begin.
-int Tms6747::stackParamOffset(const std::vector<Param> &ps, std::size_t i) {
+int Tms6747::stackParamOffset(const std::vector<ir::LaidParam> &ps, std::size_t i) {
     int end = 4;
-    for (std::size_t k = firstStack_; k < i; k++) stackArg(ps[k].type, end);
-    return i < ps.size() ? stackArg(ps[i].type, end) : end;
+    for (std::size_t k = firstStack_; k < i; k++) stackArg(laidType(ps[k].type), end);
+    return i < ps.size() ? stackArg(laidType(ps[i].type), end) : end;
 }
 // Where the next stack argument of type t sits, as cl6x places it: a scalar
 // at its own alignment in its own size (a char and a short pack), a class of
@@ -837,10 +836,10 @@ void Tms6747::emitData(const Program &program) {
 // Parameters arrive in the argument registers and, from the eleventh, on
 // the stack; each is copied to its own frame slot so the body sees a local.
 // Runs after the body has been selected, when the frame link's size is known.
-void Tms6747::emitParams(const Function &fn) {
-    const std::vector<Param> &ps = fn.params();
+void Tms6747::emitParams(const ir::Function &f) {
+    const std::vector<ir::LaidParam> &ps = f.laid.params;
     for (std::size_t i = 0; i < ps.size(); i++) {
-        const Type *t = ps[i].type;
+        const Type *t = laidType(ps[i].type);
         bool byRef = t->isStructOrUnion() && !inPair(t);   // the address of the caller's copy
         if (i < firstStack_) {
             const char *reg = abi_.intRegs[i + sretShift_];
@@ -943,23 +942,24 @@ std::vector<unsigned> Tms6747::longUnwindWords() const {
 // -g: parameters, then locals, in TI's .dwtag spelling for sim6747 and vm6747 (GRIDEd docs\C6747-LOCALS-DESIGN.md): a frame
 // variable at its slot from A15 (DWARF register 15), one kept in a register or given no room left out, a static by its symbol.
 // An inner block's variables go inside its DW_TAG_lexical_block (phase F), so a debugger lists them only while the stop is in it.
-void Tms6747::emitVariables(const Function &fn) {
+void Tms6747::emitVariables(const ir::Function &f) {
     if (lineSource() == nullptr) return;
     // ASM6x ends a string at the next quote, so a literal operator's `operator"" _km` is `operator'' _km` here.
-    std::string name = fn.name();
+    std::string name = f.laid.name;
     for (char &c : name) if (c == '"') c = '\'';
-    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
-    emitScope(fn, 0);
+    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << f.symbol << ")\n";
+    emitScope(f, 0);
     out_ << "\t.dwendtag\n";
 }
 
 // a block's own variables (the function's, scope 0, parameters first), then each inner block that declares
 // something: as a lexical block when it has code of its own, else folded into this one
-void Tms6747::emitScope(const Function &fn, int scope) {
+void Tms6747::emitScope(const ir::Function &f, int scope) {
     for (int pass = 0; pass < 2; pass++)
-        for (std::size_t n = 0; n < fn.locals().size(); n++) {
-            const Local &l = fn.locals()[n];
-            if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
+        for (std::size_t n = 0; n < f.laid.locals.size(); n++) {
+            const ir::LaidLocal &l = f.laid.locals[n];
+            if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || !l.type.valid()) continue;
+            const Type *lt = laidType(l.type);
             std::string where;
             if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
             else if (n < ssaPlace_.size() && (ssaPlace_[n] >= 0 || !l.isParam || regOf_.count(l.offset))) {
@@ -970,25 +970,25 @@ void Tms6747::emitScope(const Function &fn, int scope) {
                 where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + l.offset));
             }
             out_ << "\t.dwtag\t" << (l.isParam ? "DW_TAG_formal_parameter" : "DW_TAG_variable")
-                 << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << l.type->describe() << "\"), "
+                 << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << lt->describe() << "\"), "
                  << "DW_AT_location[" << where << "]\n";
-            noteType(l.type);
+            noteType(lt);
         }
     const std::vector<DwarfBlock> &bs = blocks();
     for (std::size_t b = 1; b < bs.size(); b++) {
-        if (bs[b].parent != scope || !declaresAnything(fn, static_cast<int>(b))) continue;
-        if (bs[b].begin.empty() || bs[b].end.empty()) { emitScope(fn, static_cast<int>(b)); continue; }
+        if (bs[b].parent != scope || !declaresAnything(f, static_cast<int>(b))) continue;
+        if (bs[b].begin.empty() || bs[b].end.empty()) { emitScope(f, static_cast<int>(b)); continue; }
         out_ << "\t.dwtag\tDW_TAG_lexical_block, DW_AT_low_pc(" << bs[b].begin << "), DW_AT_high_pc(" << bs[b].end << ")\n";
-        emitScope(fn, static_cast<int>(b));
+        emitScope(f, static_cast<int>(b));
         out_ << "\t.dwendtag\n";
     }
 }
 
-bool Tms6747::declaresAnything(const Function &fn, int scope) const {
-    for (const Local &l : fn.locals()) if (l.scope == scope && !l.name.empty()) return true;
+bool Tms6747::declaresAnything(const ir::Function &f, int scope) const {
+    for (const ir::LaidLocal &l : f.laid.locals) if (l.scope == scope && !l.name.empty()) return true;
     const std::vector<DwarfBlock> &bs = blocks();
     for (std::size_t b = 1; b < bs.size(); b++)
-        if (bs[b].parent == scope && declaresAnything(fn, static_cast<int>(b))) return true;
+        if (bs[b].parent == scope && declaresAnything(f, static_cast<int>(b))) return true;
     return false;
 }
 
@@ -1053,10 +1053,10 @@ void Tms6747::emitTypes() {
     file_ += o.str();
 }
 
-void Tms6747::emitFunction(const Function &fn) {
+void Tms6747::emitFunction(const std::string &symbol) {
     resetLabels();
     // The IR's function of `fn`, which the shell reads (M6d): a refusal of the lowering is an error, so each has one.
-    const ir::FuncId irId = ssa_ != nullptr ? ssa_->find(fn.symbol()) : ir::FuncId();
+    const ir::FuncId irId = ssa_ != nullptr ? ssa_->find(symbol) : ir::FuncId();
     if (!irId.valid()) unsupported("a function the SSA lowering built none of");
     const ir::Function &irFn = ssa_->functions[irId.v];
     // The symbol, not the name: with C++ linkage that is the mangled name, and
@@ -1064,10 +1064,11 @@ void Tms6747::emitFunction(const Function &fn) {
     functionName_ = irFn.symbol;
     labelPrefix_ = "L." + irFn.symbol + ".";
     returnLabel_ = "L.return." + irFn.symbol;
-    returns_ = fn.returns();
+    const ir::Laid &laid = irFn.laid;     // the parser's frame of it
+    returns_ = laidType(laid.returns);
 
-    sretSlot_ = fn.sretSlot();
-    sretShift_ = sretSlot_ != 0 && hiddenInA4(fn.returns()) ? 1 : 0;
+    sretSlot_ = laid.sretSlot;
+    sretShift_ = sretSlot_ != 0 && hiddenInA4(returns_) ? 1 : 0;
 
     // Which parameters the caller put on the stack, and where a variadic
     // function's unnamed arguments start. The hidden pointer in A4 takes a
@@ -1076,10 +1077,10 @@ void Tms6747::emitFunction(const Function &fn) {
     firstStack_ = regCount - sretShift_;
     vaStart_ = 0;
     if (irFn.variadic) {
-        std::size_t named = fn.params().size();
+        std::size_t named = laid.params.size();
         std::size_t last = named > 0 ? named - 1 : 0;
         if (last < firstStack_) firstStack_ = last;
-        vaStart_ = (stackParamOffset(fn.params(), named) + 3) / 4 * 4;   // a word past a packed char
+        vaStart_ = (stackParamOffset(laid.params, named) + 3) / 4 * 4;   // a word past a packed char
     }
 
     // The body first, into its own entries: what it does decides the prologue.
@@ -1089,8 +1090,8 @@ void Tms6747::emitFunction(const Function &fn) {
     saveBytes_ = kSaveBytes;
     // Selected from SSA (M6a); a body outside the selector's subset is refused by name in ssaChoose (M6d: no walker).
     ssaPlace_.clear();
-    ssaChoose(fn, irFn);
-    selectBody(fn, irFn);
+    ssaChoose(irFn);
+    selectBody(irFn);
     out_.str(std::string());
     if (sretSlot_ != 0) {
         // The caller's pointer to where the result goes - A4 for a class
@@ -1099,7 +1100,7 @@ void Tms6747::emitFunction(const Function &fn) {
         localAddr(sretSlot_, "A0");
         out_ << (sretShift_ != 0 ? "\tSTW\tA4, *A0\n" : "\tSTW\tA3, *A0\n");
     }
-    emitParams(fn);
+    emitParams(irFn);
     std::string params = out_.str();
     out_.str(std::string());
 
@@ -1112,10 +1113,10 @@ void Tms6747::emitFunction(const Function &fn) {
     out_ << irFn.symbol << ":\n";
     // A second name for the same code (Function::alias): a label at the same
     // address, not a copy of the body.
-    if (!fn.alias().empty()) {
-        if (irFn.isInline)       out_ << "\t.weak\t" << fn.alias() << "\n";
-        else if (!irFn.isStatic) out_ << "\t.global " << fn.alias() << "\n";
-        out_ << fn.alias() << ":\n";
+    if (!laid.alias.empty()) {
+        if (irFn.isInline)       out_ << "\t.weak\t" << laid.alias << "\n";
+        else if (!irFn.isStatic) out_ << "\t.global " << laid.alias << "\n";
+        out_ << laid.alias << ":\n";
     }
 
     int frame = frame_;
@@ -1124,8 +1125,8 @@ void Tms6747::emitFunction(const Function &fn) {
     markLine(irFn.pos);                                     // -g: the function's own line, as cl6x's first .dwpsn names it
     std::vector<std::string> saved = savedRegs();
     // A leaf whose parameters and locals are all in registers needs no frame at all.
-    bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !fn.params().empty()) || sretSlot_ != 0 ||
-                     saved.size() > 1 || fn.hasLandingPads() || irFn.variadic;
+    bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !laid.params.empty()) || sretSlot_ != 0 ||
+                     saved.size() > 1 || laid.pads || irFn.variadic;
     // An odd:even pair saved side by side on an 8-aligned word (A15 is the caller's B15, 8-aligned) goes
     // in one STDW and comes back in one LDDW - one round trip to memory where there were two.
     auto pairAt = [&](std::size_t k) -> bool {
@@ -1140,7 +1141,7 @@ void Tms6747::emitFunction(const Function &fn) {
             if (pairAt(k)) { out_ << "\tSTDW\t" << saved[k] << ":" << saved[k + 1] << ", *-A15(" << 4 * (k + 1) << ")\n"; k++; continue; }
             out_ << "\tSTW\t" << saved[k] << ", *-A15(" << 4 * k << ")\n";
         }
-        spAdjust(-(saveBytes_ + frame + (optimize_ > 0 && (hasCall_ || fn.hasLandingPads()) ? 8 : 0)));
+        spAdjust(-(saveBytes_ + frame + (optimize_ > 0 && (hasCall_ || laid.pads) ? 8 : 0)));
     }
 
     pro.swap(out_);
@@ -1156,7 +1157,7 @@ void Tms6747::emitFunction(const Function &fn) {
         epi << "\tLDW\t*A15, A15\n\tNOP\t4\n";      // the caller's FP, last
     }
     epi << "\tB\tB3\n\tNOP\t5\n";
-    emitVariables(fn);                                      // -g: after the label, outside the scheduled code
+    emitVariables(irFn);                                     // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
     std::string declined, refused;
     const bool whole = optimize_ > 0 && !backendSkipped("pro");
@@ -1189,7 +1190,7 @@ void Tms6747::run(const Program &program) {
     emitData(program);
     file_ += out_.str();
     out_.str(std::string());
-    for (const Function &fn : program.functions) emitFunction(fn);
+    for (const Function &fn : program.functions) emitFunction(fn.symbol());
     emitTypes();
     // Dynamic initialisation: the init function's address in .init_array,
     // which the EABI's start-up code - and the VM6747 emulator - walk before

@@ -303,7 +303,7 @@ bool declaresName(const std::string &text, const std::string &name) {
 
 }   // namespace
 
-std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f) {
+std::vector<int> ssaLocalAllocas(const ir::Function &f) {
     std::vector<char> live(f.frame.size(), 0);
     for (std::size_t b = 0; b < f.blocks.size(); b++)
         for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
@@ -312,7 +312,7 @@ std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f) {
         }
     std::map<std::string, std::size_t> next;
     std::vector<int> at;
-    for (const Local &l : fn.locals()) {
+    for (const ir::LaidLocal &l : f.laid.locals) {
         at.push_back(-1);
         if (!l.staticName.empty()) continue;
         std::size_t &j = next[l.name];
@@ -326,7 +326,7 @@ std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f) {
 // (promoted at -O1 and -O2) has no record.
 const std::vector<Local> &Regions::ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot,
                                                   const std::string &who) {
-    const std::vector<int> at = ssaLocalAllocas(fn, f);
+    const std::vector<int> at = ssaLocalAllocas(f);
     ssaLocals_.push_back(std::vector<Local>());
     for (std::size_t n = 0; n < fn.locals().size(); n++) {
         const Local &l = fn.locals()[n];

@@ -254,12 +254,11 @@ private:
     void selectHandler(const ir::Function &f, ir::BlockId hb);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     // -g: the statements that begin before `i` (ir::Inst::lines), then `i` - the body's blocks and a funclet's alike.
-    void selectMarked(const ir::Function &f, const ir::Inst &i) { for (std::size_t m = 0; m < i.lines.size(); m++) ssaMark(i.lines[m]); selectInst(f, i); }
-    void ssaMark(std::uint32_t m) {
+    void selectMarked(const ir::Function &f, const ir::Inst &i) { for (std::size_t m = 0; m < i.lines.size(); m++) ssaMark(f, i.lines[m]); selectInst(f, i); }
+    void ssaMark(const ir::Function &f, std::uint32_t m) {
         const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses;
-        if (m & block) markBlock(ssaFn_->blockAt(m & ~block), (m & ir::kBlockCloses) != 0); else markLine(m);
+        if (m & block) markBlock(f.laid.blockAt(m & ~block), (m & ir::kBlockCloses) != 0); else markLine(m);
     }
-    const Function *ssaFn_ = nullptr;
     void selectBody(const Function &fn, const ir::Function &f);
     // The parser's parameters' slots that hold a scalar; the rest of the frame is the selector's (layoutSsa).
     std::vector<opt::Local> scalarsOf(const Function &fn) const;

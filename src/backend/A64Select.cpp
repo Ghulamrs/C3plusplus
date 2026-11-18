@@ -978,7 +978,7 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
             const ir::Inst &in = f.inst(id);
             for (std::size_t m = 0; m < in.lines.size(); m++) {
                 const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses, at = in.lines[m];
-                if (at & block) markBlock(fn.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
+                if (at & block) markBlock(f.laid.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
             }
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);

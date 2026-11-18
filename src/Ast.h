@@ -714,13 +714,8 @@ public:
     const std::vector<Local> &locals() const { return locals_; }
 
     const std::vector<int> &blocks() const { return blocks_; }
+    const std::vector<std::size_t> &blockPositions() const { return blockAt_; }     // where each opens: ir::Laid::blockAt reads them
     void setBlocks(std::vector<int> b, std::vector<std::size_t> at) { blocks_ = std::move(b); blockAt_ = std::move(at); }
-    // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
-    int blockAt(std::size_t pos) const {
-        int found = 0;
-        for (std::size_t i = 1; i < blockAt_.size(); i++) if (blockAt_[i] == pos) found = found == 0 ? static_cast<int>(i) : -1;
-        return found > 0 && pos != 0 ? found : 0;
-    }
 
     // Whether this function has a landing pad in it, which the prologue has
     // to know before the body is walked: the personality routine and the LSDA

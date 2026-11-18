@@ -150,7 +150,7 @@ private:
     void fpBinary(BinOp op, bool dp);       // operands in A5:A4 / A7:A6
     void wideBinary(BinOp op, bool sign);     // 64-bit integers, the same places
     void wideCast(const Type *from, const Type *to);
-    int stackParamOffset(const std::vector<Param> &ps, std::size_t i);
+    int stackParamOffset(const std::vector<ir::LaidParam> &ps, std::size_t i);
     int stackArg(const Type *t, int &end);
     std::string stackArgAccess(const Type *t, bool store, const std::string &mem);
     void load(const Type *t);                 // [A4] -> A4
@@ -159,16 +159,16 @@ private:
     void narrowInt(const Type *t);            // truncate A4 to t's width
     void emitGlobal(const Global &g, Segment seg);
     void emitData(const Program &program);
-    void emitParams(const Function &fn);
-    void emitVariables(const Function &fn);
-    void emitScope(const Function &fn, int scope);
-    bool declaresAnything(const Function &fn, int scope) const;
+    void emitParams(const ir::Function &f);
+    void emitVariables(const ir::Function &f);
+    void emitScope(const ir::Function &f, int scope);
+    bool declaresAnything(const ir::Function &f, int scope) const;
     // -g: every type a variable names, described once at the file's end (emitTypes) for the debugger
     std::vector<const Type *> debugTypes_;
     void noteType(const Type *t);
     void emitTypes();
     void emitExceptionTable(bool noexcept_, const std::vector<std::string> &spec);
-    void emitFunction(const Function &fn);
+    void emitFunction(const std::string &symbol);
 
     // **The SSA selector** (M6a, C6xSelect.cpp): a function inside its subset is written from the module, the rest
     // refused by name - ssaChoose says why. A value has a home register (ssaAssign, M6b) or a word above the parser's parameters;
@@ -181,20 +181,22 @@ private:
     std::vector<char> ssaFused_;                                   // 1: a compare written by its branch; 2: a cast remade at its calls
     std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
     int ssaSelected_ = 0;
-    void ssaChoose(const Function &fn, const ir::Function &f);
-    std::string ssaOutside(const Function &fn, const ir::Function &f) const;
+    void ssaChoose(const ir::Function &f);
+    std::string ssaOutside(const ir::Function &f) const;
+    // A type of the parser's frame record (ir::Laid), null where it has none.
+    const Type *laidType(TypeId t) const { return t.valid() ? ssaTypes_->type(t) : nullptr; }
     const Type *ssaType(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
-    int layoutSsa(const Function &fn, const ir::Function &f);
-    int layoutSsaLocals(const Function &fn, const ir::Function &f, int cur);
+    int layoutSsa(const ir::Function &f);
+    int layoutSsaLocals(const ir::Function &f, int cur);
     int layoutSsaTemps(const ir::Function &f, int cur);
-    void selectBody(const Function &fn, const ir::Function &f);
+    void selectBody(const ir::Function &f);
     void selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId next);
     std::string ssaMem(int off, int size);                 // the frame word `off` above the saves, as an operand
     bool ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::string &mem);   // *p where p is a frame address
     void ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, bool fresh = false);
     void ssaStore(const ir::Function &f, ir::ValueId v, const char *reg);
     void ssaMoves(const ir::Function &f, const ir::Succ &s);
-    void ssaAssign(const Function &fn, const ir::Function &f);
+    void ssaAssign(const ir::Function &f);
     const char *ssaHomeOf(ir::ValueId v) const;
     std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
     std::string ssaRead(const ir::Function &f, ir::ValueId v, const char *scratch);

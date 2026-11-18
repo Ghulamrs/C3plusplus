@@ -55,21 +55,23 @@ bool smallConst(const ir::Function &f, ir::ValueId v, long long lo, long long hi
 }   // namespace
 
 // A body outside the selector's subset is refused by name, its reason said: the C6000 has no second path (M6d).
-void Tms6747::ssaChoose(const Function &fn, const ir::Function &f) {
-    const std::string why = ssaOutside(fn, f);
+void Tms6747::ssaChoose(const ir::Function &f) {
+    const std::string why = ssaOutside(f);
     if (why.empty()) { ssaSelected_++; return; }
     unsupported((f.symbol + ", outside the C6000 selector (" + why + "),").c_str());
 }
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
-std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
+std::string Tms6747::ssaOutside(const ir::Function &f) const {
+    const Type *ret = laidType(f.laid.returns);
+    const int sretSlot = f.laid.sretSlot;
     // A class result (W3): in A5:A4, or copied through A3's pointer, or built through the hidden first parameter in A4.
-    const bool cls = fn.returns()->isStructOrUnion(), hidden = fn.sretSlot() != 0 && hiddenInA4(fn.returns());
+    const bool cls = ret->isStructOrUnion(), hidden = sretSlot != 0 && hiddenInA4(ret);
     // One with a destructor and a trivial copy (W7) is copied through the hidden pointer from the object the lowering returns.
-    if ((f.sret.valid() != hidden && (f.sret.valid() || fn.returns()->nonTrivialCopy())) || (cls ? !inPair(fn.returns()) && fn.sretSlot() == 0 : fn.sretSlot() != 0)) return "class result of another shape";
-    if (fn.params().size() != f.params.size()) return "parameters differ";
-    for (std::size_t n = 0; n < fn.params().size(); n++) {
-        const Type *p = fn.params()[n].type;
+    if ((f.sret.valid() != hidden && (f.sret.valid() || ret->nonTrivialCopy())) || (cls ? !inPair(ret) && sretSlot == 0 : sretSlot != 0)) return "class result of another shape";
+    if (f.laid.params.size() != f.params.size()) return "parameters differ";
+    for (std::size_t n = 0; n < f.laid.params.size(); n++) {
+        const Type *p = laidType(f.laid.params[n].type);
         if (!p->isStructOrUnion()) continue;
         if (!ssaTypes_->type(f.values[f.params[n].v].type)->isPointer()) return "class parameter of another shape";
     }
@@ -223,12 +225,12 @@ void Tms6747::ssaFill(int size, const char *to, int align) {
 }
 
 // The parser's parameter slots stay where emitParams writes them; above them a word per value, then each alloca.
-int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
+int Tms6747::layoutSsa(const ir::Function &f) {
     int cur = 0;
     // A class parameter's slot holds the object itself (emitParams), and the result pointer's its word: both stay.
-    for (std::size_t i = 0; i < fn.params().size(); i++)
-        if (ssaHome_[f.params[i].v] == 0 || fn.params()[i].type->isStructOrUnion()) cur = std::max(cur, fn.params()[i].offset);
-    cur = std::max(cur, fn.sretSlot());
+    for (std::size_t i = 0; i < f.laid.params.size(); i++)
+        if (ssaHome_[f.params[i].v] == 0 || laidType(f.laid.params[i].type)->isStructOrUnion()) cur = std::max(cur, f.laid.params[i].offset);
+    cur = std::max(cur, f.laid.sretSlot);
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid()) continue;
@@ -238,7 +240,7 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
         ssaValueSlot_[v] = cur;
     }
     ssaAllocaSlot_.assign(f.frame.size(), 0);
-    cur = layoutSsaLocals(fn, f, cur);
+    cur = layoutSsaLocals(f, cur);
     cur = layoutSsaTemps(f, cur);
     // A call's copied arguments live from their copy to the call, both written at the call: every call's lie in the same bytes.
     ssaArgCopy_.assign(f.operands.size(), 0);
@@ -266,7 +268,7 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
 // **Frame slots shared by scope**: a local's object (AllocaInfo::serial) keeps the parser's distance from every local whose
 // bytes the parser overlapped with it - sibling scopes' objects, as the walker's frame had them. Groups are packed from `cur`;
 // a serial on two objects, a size the parser did not lay, or an alignment the group cannot keep leaves the object its own bytes.
-int Tms6747::layoutSsaLocals(const Function &fn, const ir::Function &f, int cur) {
+int Tms6747::layoutSsaLocals(const ir::Function &f, int cur) {
     std::map<int, int> uses;
     for (std::size_t a = 0; a < f.frame.size(); a++) uses[f.frame[a].serial]++;
     std::vector<std::pair<int, std::size_t> > objs;          // (the parser's low end, the object)
@@ -275,9 +277,9 @@ int Tms6747::layoutSsaLocals(const Function &fn, const ir::Function &f, int cur)
         if (f.frame[a].serial <= 0 || uses[f.frame[a].serial] != 1) continue;
         const Type *t = ssaTypes_->type(f.frame[a].type);
         const int size = t->size(target_);
-        for (const Local &l : fn.locals()) {
+        for (const ir::LaidLocal &l : f.laid.locals) {
             if (l.serial != f.frame[a].serial) continue;
-            if (l.isParam || !l.staticName.empty() || l.type == nullptr || size == 0 || l.type->size(target_) != size || l.offset < size) break;
+            if (l.isParam || !l.staticName.empty() || !l.type.valid() || size == 0 || laidType(l.type)->size(target_) != size || l.offset < size) break;
             key[a] = l.offset;
             align[a] = std::max(f.frame[a].align > 0 ? f.frame[a].align : t->align(target_), 1);
             objs.push_back(std::make_pair(l.offset - size, a));
@@ -619,7 +621,7 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
 
 // **Homes for the values** (M6b), as arm64's ssaAssign: a linear scan over live ranges, a range that crosses a call in a
 // saved register only, the heavier range taking a lighter one's place; a compare read by its block's branch alone has none.
-void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
+void Tms6747::ssaAssign(const ir::Function &f) {
     const std::size_t nv = f.values.size(), nb = f.blockArena.size();
     ssaHome_.assign(nv, 0);
     ssaFused_.assign(nv, 0);
@@ -629,9 +631,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<long long> weight(nv, 0);
     std::vector<char> hot(nv, 0);       // a constant or an address a loop reads where no instruction can hold it
     std::vector<char> kept2(nv, 0);     // read by other than a call's argument, or by a call deeper in loops than its definition
-    bool wideCall = fn.params().size() + sretShift_ > 6, pairPast = false;
-    for (std::size_t n = 0; n < fn.params().size(); n++) {
-        const Type *p = fn.params()[n].type;
+    bool wideCall = f.laid.params.size() + sretShift_ > 6, pairPast = false;
+    for (std::size_t n = 0; n < f.laid.params.size(); n++) {
+        const Type *p = laidType(f.laid.params[n].type);
         pairPast = pairPast || (n + sretShift_ >= 6 && (p->isStructOrUnion() ? inPairWide(p) : accessSize(p) > 4));
     }
     // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
@@ -1133,7 +1135,7 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
     }
 }
 
-void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
+void Tms6747::selectBody(const ir::Function &f) {
     resetLabels();
     clearCallSites();
     hasCall_ = false;
@@ -1145,10 +1147,10 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     ssaRegionAt_ = 0;
     // A loop's blocks together, its latch last, at every level: in the IR's order a block jumps round the early return block.
     ssaOrder_ = ssaBlockOrder(f);
-    ssaAssign(fn, f);
-    frame_ = layoutSsa(fn, f);
+    ssaAssign(f);
+    frame_ = layoutSsa(f);
     // Each parameter into its home by emitParams (regOf_), or from the slot emitParams wrote it to into its value's word.
-    const std::vector<Param> &ps = fn.params();
+    const std::vector<ir::LaidParam> &ps = f.laid.params;
     if (f.sret.valid()) {       // the hidden pointer, from the word emitFunction kept it in
         ssaEmit(c6x::MInst("LDW", ssaMem(sretSlot_, 4), "A4"));
         ssaNop(4);
@@ -1156,19 +1158,20 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     }
     for (std::size_t i = 0; i < ps.size(); i++) {
         // A class parameter is the address of the slot emitParams wrote or copied it to.
-        if (ps[i].type->isStructOrUnion()) { localAddr(ps[i].offset, "A4"); ssaStore(f, f.params[i], "A4"); continue; }
+        const Type *pt = laidType(ps[i].type);
+        if (pt->isStructOrUnion()) { localAddr(ps[i].offset, "A4"); ssaStore(f, f.params[i], "A4"); continue; }
         if (const char *h = ssaHomeOf(f.params[i])) { regOf_[ps[i].offset] = h; continue; }
-        const std::string m = ssaMem(ps[i].offset, accessSize(ps[i].type));
-        loadFrom(ps[i].type, m);
+        const std::string m = ssaMem(ps[i].offset, accessSize(pt));
+        loadFrom(pt, m);
         ssaKeep(f, f.params[i]);
     }
     // -g: each variable at its alloca's slot (ssaPlace_); a value in a register has no record, as the walker's regOf_.
-    ssaPlace_.assign(fn.locals().size(), -1);
+    ssaPlace_.assign(f.laid.locals.size(), -1);
     ssaInsts_ = 0;
     ssaCounting_ = lineSource() != nullptr;
     if (lineSource() != nullptr) {
-        resetBlocks(fn.blocks());
-        const std::vector<int> at = ssaLocalAllocas(fn, f);
+        resetBlocks(f.laid.blocks);
+        const std::vector<int> at = ssaLocalAllocas(f);
         for (std::size_t n = 0; n < at.size(); n++) if (at[n] >= 0) ssaPlace_[n] = ssaAllocaSlot_[static_cast<std::size_t>(at[n])];
     }
     std::size_t lastPos = 0;
@@ -1202,7 +1205,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
             const ir::Inst &in = f.inst(id);
             for (std::size_t m = 0; m < in.lines.size(); m++) {
                 const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses, at = in.lines[m];
-                if (at & block) markBlock(fn.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
+                if (at & block) markBlock(f.laid.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
             }
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in, next);

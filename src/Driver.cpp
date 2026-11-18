@@ -1440,6 +1440,20 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         facts.returns = TypeTable::id(fn.returns());
     };
+    // The parser's frame of `fn` onto its IR function (ir::Laid), which the C6000's shell and -g's locals read.
+    auto laidOf = [&into](const Function &fn, ir::FuncId id) {
+        ir::Laid &d = into.functions[id.v].laid;
+        for (const Param &p : fn.params()) { ir::LaidParam q; q.type = TypeTable::id(p.type); q.offset = p.offset; d.params.push_back(q); }
+        for (const Local &l : fn.locals()) {
+            ir::LaidLocal q;
+            q.name = l.name; q.staticName = l.staticName; q.type = TypeTable::id(l.type);
+            q.offset = l.offset; q.scope = l.scope; q.serial = l.serial; q.isParam = l.isParam;
+            d.locals.push_back(q);
+        }
+        d.blocks = fn.blocks(); d.blockAts = fn.blockPositions();
+        d.returns = TypeTable::id(fn.returns()); d.sretSlot = fn.sretSlot(); d.pads = fn.hasLandingPads();
+        d.alias = fn.alias(); d.name = fn.name();
+    };
     std::map<std::string, int> reasons;
     int lowered = 0;
     // Itanium's C2 of a class with virtual bases, by the C1 its records are keyed by: the Builder's C1 reads its entries (M3b.3).
@@ -1474,8 +1488,9 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
             if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) facts.localAligns[l.serial] = l.align;
         }
-        if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
-        if (why.empty()) { lowered++; continue; }
+        const ir::FuncId made = lowering.lower(t, facts, why);
+        if (!made.valid() && why.empty()) why = "the lowering gave no reason";
+        if (why.empty()) { laidOf(fn, made); lowered++; continue; }
         reasons[why]++;
         outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
@@ -1504,7 +1519,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         for (std::size_t p = (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0); p + (facts.msFlag ? 1 : 0) < fn.params().size(); p++)
             facts.paramTypes.push_back(TypeTable::id(fn.params()[p].type));
         std::string why;
-        if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
+        const ir::FuncId made = builder.build(facts, fn.synthesised(), why);
+        if (made.valid()) { laidOf(fn, made); built[fn.synthesised()]++; builtCount++; continue; }
         left[fn.synthesised() + " - " + why]++;
         outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());

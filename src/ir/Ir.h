@@ -85,6 +85,34 @@ struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId te
 // `serial`: the parser's serial of the local this object is (Local::serial), -1 for a temporary or an inlined callee's object.
 struct AllocaInfo { TypeId type; int align; std::string name; int serial; AllocaInfo() : align(0), serial(-1) {} };
 
+// **The parser's frame of a function** (M6d): the parameters' slots, the result's, -g's variables and blocks - what a
+// shell reads beside the body, as records. Driver.cpp fills it from Ast.h's Function once the function is lowered.
+struct LaidParam { TypeId type; int offset; LaidParam() : offset(0) {} };
+struct LaidLocal {
+    std::string name, staticName;
+    TypeId type;
+    int offset, scope, serial;
+    bool isParam;
+    LaidLocal() : offset(0), scope(0), serial(-1), isParam(false) {}
+};
+struct Laid {
+    std::vector<LaidParam> params;
+    std::vector<LaidLocal> locals;
+    std::vector<int> blocks;                // each lexical block's parent
+    std::vector<std::size_t> blockAts;      // where each opens
+    TypeId returns;                         // as declared, qualifiers kept
+    int sretSlot;
+    bool pads;                              // the parser's own landing pads
+    std::string alias, name;
+    Laid() : sretSlot(0), pads(false) {}
+    // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
+    int blockAt(std::size_t pos) const {
+        int found = 0;
+        for (std::size_t i = 1; i < blockAts.size(); i++) if (blockAts[i] == pos) found = found == 0 ? static_cast<int>(i) : -1;
+        return found > 0 && pos != 0 ? found : 0;
+    }
+};
+
 struct Function {
     std::string symbol, displayName;
     bool isStatic, isInline, variadic, hasThis, noexcept_;
@@ -93,6 +121,7 @@ struct Function {
     std::vector<ValueId> params;
     ValueId sret;
     std::vector<AllocaInfo> frame;
+    Laid laid;
     BlockId entry;
     std::vector<BlockId> blocks;
     std::vector<std::string> spec;

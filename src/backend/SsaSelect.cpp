@@ -968,7 +968,6 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     ssaSretSlot_ = fn.sretSlot();
     if (f.sret.valid() && fn.sretSlot() != 0) { a_->ins("mov", local(fn.sretSlot()), reg("%rax")); ssaStore(f, f.sret); }
     std::size_t lastPos = 0;
-    ssaFn_ = &fn;
     ssaRegionAt_ = 0;
     ssaTries_.clear();
     ssaTryOrder_.clear();
@@ -1045,7 +1044,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
             const ir::Inst &in = f.inst(id);
-            for (std::size_t m = 0; m < in.lines.size(); m++) ssaMark(in.lines[m]);
+            for (std::size_t m = 0; m < in.lines.size(); m++) ssaMark(f, in.lines[m]);
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);
         }

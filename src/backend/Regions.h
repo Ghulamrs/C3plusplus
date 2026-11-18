@@ -13,7 +13,7 @@ class Source;
 namespace ir { struct Function; }
 
 // -g in a selected frame: per fn.locals(), its live alloca's index in f.frame (by name, in order), or -1 (static or promoted).
-std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f);
+std::vector<int> ssaLocalAllocas(const ir::Function &f);     // each of f.laid.locals' live alloca, -1 for none
 
 // **What a generator writes besides its code, and reads no `Ast.h` node** (M3b.7 round 4 B): the Itanium call-site
 // regions and their table, the Microsoft state tree, the -g blocks and lines, and the hooks those are written through.
