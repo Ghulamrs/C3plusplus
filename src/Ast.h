@@ -270,8 +270,6 @@ public:
     bool resultIndirect() const { return resultIndirect_; }
     void setResultIndirect(bool b) { resultIndirect_ = b; }
 
-    int namedArgs() const { return namedArgs_; }
-
     int argSlot(std::size_t i) const {
         return i < argSlots_.size() ? argSlots_[i] : 0;
     }
@@ -300,7 +298,6 @@ public:
     Postfix(ExprPtr target, bool increment, long long step)
         : target_(std::move(target)), increment_(increment), step_(step) {}
     const Expr &target() const { return *target_; }
-    bool increment() const { return increment_; }
     long long step() const { return step_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
@@ -402,7 +399,6 @@ public:
     // For the one block that is filled in after it is placed.
     void append(StmtPtr s) { body_.push_back(std::move(s)); }
 
-    int scope() const { return scope_; }
     void setScope(int s) { scope_ = s; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
@@ -445,7 +441,6 @@ public:
     const Expr *step() const { return step_.get(); }
     const Stmt &body() const { return *body_; }
 
-    int scope() const { return scope_; }
     void setScope(int s) { scope_ = s; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
@@ -491,8 +486,6 @@ public:
           cases_(std::move(cases)), default_(deflt) {}
     const Expr &cond() const { return *cond_; }
     const Stmt &body() const { return *body_; }
-    const std::vector<const Case *> &cases() const { return cases_; }
-    const Case *defaultCase() const { return default_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr cond_;
@@ -576,8 +569,6 @@ public:
     // **Null on Windows.**
     bool hasPad() const { return pad_ != nullptr; }
     const Stmt &pad() const { return *pad_; }
-    int pointerSlot() const { return pointerSlot_; }
-    int selectorSlot() const { return selectorSlot_; }
     const std::vector<std::string> &types() const { return types_; }
     // **Set late, and only for a `try` body's cleanup rows.**
     void setTypes(std::vector<std::string> t) { types_ = std::move(t); }
@@ -660,8 +651,6 @@ public:
     const Type *returns() const { return returns_; }
     const std::vector<Param> &params() const { return params_; }
     const Stmt &body() const { return *body_; }
-    // The adapter's body in place of the parser's (M2.11, -front=typed).
-    void setBody(StmtPtr b) { body_ = std::move(b); }
     int frameSize() const { return frameSize_; }
     // **What the frame must be aligned to**: the stack's 16 unless a local asked for more with
     // `alignas` or its type, when the prologue realigns the frame to it - [basic.align], measured
