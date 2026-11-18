@@ -830,3 +830,14 @@ src/ lines: 94,877 before, 94,886 after.
   The first gate of this tree (m81i) failed only on the unwind mend's 31 unnamed x86_64-windows differences (the frame 8
   bytes larger, its unwind bytes and frame offsets moved); m81g and m81h were void (a Linux build stopped under load).
 - tests/wave-expected.txt emptied (31 rows were this wave's). Commit 4 (the class doors) continues on m8-e.
+
+### The Fable review's H1 landed: a read marks nothing used, 2026-11-18 (the coordinator)
+
+- The one Fable run the user allowed (review m8rev, boxkit/m8rev-review.md: 2 high, 7 medium, 3 low) found H1: a pattern's
+  read marked a static data member used, so a template never instantiated that names `Box<int>::s` emitted its dynamic
+  initialiser - on main 95e06424 the case printed `init ran` twice (clang: once). Lane h1 (63ed234d) marks only outside a
+  read at four sites: staticMemberRef, an external thread_local's wrapper, a copied string's label, a mem-initialiser's
+  constructor; case tests/cases/template-unused-static-init (clang's .expected; its class half is read once m8-e lands).
+- **Gate: tools/wave-gate h1g -w 95e06424 at 099f3fb0: 40 passed, 0 failed, 4 not run** (the fixed points, not owed); the
+  only output difference is the new case (the base build emits the initialiser). tests/wave-expected.txt emptied.
+- H2, M1-M7 and L1-L3 are M8's lanes' (m8z6 on m8-e: H2 and M3 first).
