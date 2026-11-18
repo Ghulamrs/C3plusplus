@@ -1640,7 +1640,7 @@ std::string Parser::vectorDestructor(const Type *cls, std::size_t pos) {
     inner.push_back(StmtPtr(new ExprStmt(destructorCall(std::move(at), *dtor, pos))));
     std::vector<StmtPtr> body;
     body.push_back(StmtPtr(new ExprStmt(std::move(init))));
-    body.push_back(StmtPtr(new While(std::move(cond), StmtPtr(new Block(std::move(inner))))));
+    body.push_back(loopStatement(StmtPtr(), std::move(cond), ExprPtr(), StmtPtr(new Block(std::move(inner)))));
     body.push_back(StmtPtr(new Return(nullptr)));
     current_->functions.push_back(Function(name, types_.get(Kind::Void),
                                            std::move(params),
@@ -1836,8 +1836,7 @@ StmtPtr Parser::eachElement(int indexSlot, ExprPtr n, StmtPtr one) {
 
     std::vector<StmtPtr> all;
     all.push_back(StmtPtr(new ExprStmt(std::move(init))));
-    all.push_back(StmtPtr(new While(std::move(cond),
-                                    StmtPtr(new Block(std::move(inner))))));
+    all.push_back(loopStatement(StmtPtr(), std::move(cond), ExprPtr(), StmtPtr(new Block(std::move(inner)))));
     return StmtPtr(new Block(std::move(all)));
 }
 

@@ -2025,7 +2025,7 @@ void Parser::topLevel(Program &program) {
         const syntax::NodeId ctorBlock = n == 0 ? syntax::NodeId() : syntaxTree_.child(fnSyntax, n - 1);
         for (std::uint32_t si = 0; ctorBlock.valid() && si < syntaxTree_.node(ctorBlock).count; si++) {
             const syntax::NodeId stmtId = syntaxTree_.child(ctorBlock, si);
-            const syntax::Node &stmtNode = syntaxTree_.node(stmtId);
+            const syntax::Node stmtNode = syntaxTree_.node(stmtId);
             const bool declares = stmtNode.kind == syntax::Kind::DeclStmt && (syntaxTree_.text(stmtId) == "static_assert" || syntaxTree_.text(stmtId) == "using");
             if (!stmtNode.dead && !declares && stmtNode.kind != syntax::Kind::Null && stmtNode.kind != syntax::Kind::Typedef) refuseConstexprConstructorStatement(stmtNode.loc);
         }

@@ -788,7 +788,7 @@ StmtPtr Parser::initRangeLocal(const std::string &name, const Type *t, int off,
     return StmtPtr(new Block(std::move(out)));
 }
 
-StmtPtr Parser::rangeForStatement(int scope) {
+StmtPtr Parser::rangeForStatement() {
     StorageClass sc;
     Qualifiers quals;
     const Type *base = specifiers(&sc, &quals);
@@ -970,10 +970,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     Block *inside = new Block(std::move(body));
     inside->setScope(inner);
 
-    For *f = new For(StmtPtr(), std::move(cond), std::move(step),
-                     StmtPtr(inside));
-    f->setScope(scope);
-    setup.push_back(StmtPtr(f));
+    setup.push_back(loopStatement(StmtPtr(), std::move(cond), std::move(step), StmtPtr(inside)));
     const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray();
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
@@ -1079,12 +1076,12 @@ StmtPtr Parser::forStatement() {
     expect("for");
     expect("(");
     enterScope();
-    int scope = enterBlock(pos);
+    enterBlock(pos);
     // What the init-statement builds lives to the end of the for statement and no further.
     const std::size_t aliveAtEntry = alive_.size();
 
     builtForParts_ = -1;
-    if (atRangeFor()) return rangeForStatement(scope);
+    if (atRangeFor()) return rangeForStatement();
 
     StmtPtr init;
     if (!consume(";")) {
@@ -1120,9 +1117,7 @@ StmtPtr Parser::forStatement() {
     leaveScope();
     if (alive_.size() == aliveAtEntry) {
         builtForParts_ = (init != nullptr ? 1 : 0) | (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
-        For *f = new For(std::move(init), std::move(cond), std::move(step), std::move(body));
-        f->setScope(scope);
-        return StmtPtr(f);
+        return loopStatement(std::move(init), std::move(cond), std::move(step), std::move(body));
     }
 
     // **`for (S s; ...)` destroys s when the loop is done**, the way a block destroys what it built
@@ -1131,7 +1126,7 @@ StmtPtr Parser::forStatement() {
     std::vector<StmtPtr> steps;
     const int partsAfterInit = (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
     steps.push_back(std::move(init));
-    steps.push_back(StmtPtr(new For(StmtPtr(), std::move(cond), std::move(step), std::move(body))));
+    steps.push_back(loopStatement(StmtPtr(), std::move(cond), std::move(step), std::move(body)));
     const std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(1), alive_.size()));
     emitDestructors(steps, aliveAtEntry, pos);
     steps = target_.microsoftNames() ? wrapMsCleanups(std::move(steps), built, aliveAtEntry, pos)
@@ -1139,9 +1134,7 @@ StmtPtr Parser::forStatement() {
     alive_.resize(aliveAtEntry);
     hoistedForParts_ = 1 | partsAfterInit;
     builtForParts_ = -1;
-    Block *b = new Block(std::move(steps));
-    b->setScope(scope);
-    return StmtPtr(b);
+    return StmtPtr(new Block(std::move(steps)));
 }
 
 // **`static_assert(cond, "message");` - a declaration that declares nothing and emits
@@ -2590,7 +2583,7 @@ StmtPtr Parser::statementBody() {
         breakMarks_.pop_back();
         loopMarks_.pop_back();
         loopDepth_--;
-        StmtPtr made(new While(std::move(cond), std::move(body)));
+        StmtPtr made(loopStatement(StmtPtr(), std::move(cond), ExprPtr(), std::move(body)));
         if (!declares) return made;
         leaveBlock();
         leaveScope();

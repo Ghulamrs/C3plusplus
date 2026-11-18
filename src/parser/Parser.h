@@ -331,7 +331,7 @@ private:
     const Type *decltypeSpecifier();
     bool atNamePath() const;
     bool atRangeFor() const;
-    StmtPtr rangeForStatement(int scope);
+    StmtPtr rangeForStatement();
     // [stmt.ranged]'s begin-expr and end-expr for a class range, and the slots
     // holding them. Returns the iterator type; fills `setup` with the three
     // assignments the loop needs in front of it.
@@ -2039,6 +2039,14 @@ private:
     // A jump and a label are lowered from their syntax: the parse keeps an empty block, or one holding the labelled statement.
     static StmtPtr jumpStatement(const std::string &) { return StmtPtr(new Block({})); }
     static StmtPtr labelStatement(const std::string &, StmtPtr s) { std::vector<StmtPtr> held; held.push_back(std::move(s)); return StmtPtr(new Block(std::move(held))); }
+    static StmtPtr loopStatement(StmtPtr init, ExprPtr cond, ExprPtr step, StmtPtr body) {   // a loop's parts, likewise
+        std::vector<StmtPtr> parts;
+        parts.push_back(std::move(init));
+        parts.push_back(StmtPtr(new ExprStmt(std::move(cond))));
+        parts.push_back(StmtPtr(new ExprStmt(std::move(step))));
+        parts.push_back(std::move(body));
+        return StmtPtr(new Block(std::move(parts)));
+    }
     void appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into);
     std::vector<Effect> throwEffects(ExprPtr value, std::size_t pos);
     std::vector<Effect> microsoftThrow(ExprPtr value, std::size_t pos);

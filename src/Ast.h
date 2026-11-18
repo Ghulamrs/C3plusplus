@@ -30,8 +30,6 @@ class ExprStmt;
 class Return;
 class Block;
 class If;
-class While;
-class For;
 class Conditional;
 class Comma;
 class Try;
@@ -55,8 +53,6 @@ public:
     virtual void visit(const Return &) = 0;
     virtual void visit(const Block &) = 0;
     virtual void visit(const If &) = 0;
-    virtual void visit(const While &) = 0;
-    virtual void visit(const For &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
     virtual void visit(const Try &) = 0;
@@ -400,37 +396,6 @@ public:
 private:
     ExprPtr cond_;
     StmtPtr then_, else_;
-};
-
-class While final : public Stmt {
-public:
-    While(ExprPtr cond, StmtPtr body)
-        : cond_(std::move(cond)), body_(std::move(body)) {}
-    const Expr &cond() const { return *cond_; }
-    const Stmt &body() const { return *body_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    ExprPtr cond_;
-    StmtPtr body_;
-};
-
-class For final : public Stmt {
-public:
-    For(StmtPtr init, ExprPtr cond, ExprPtr step, StmtPtr body)
-        : init_(std::move(init)), cond_(std::move(cond)),
-          step_(std::move(step)), body_(std::move(body)) {}
-    const Stmt *init() const { return init_.get(); }
-    const Expr *cond() const { return cond_.get(); }
-    const Expr *step() const { return step_.get(); }
-    const Stmt &body() const { return *body_; }
-
-    void setScope(int s) { scope_ = s; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    StmtPtr init_;
-    ExprPtr cond_, step_;
-    StmtPtr body_;
-    int scope_ = -1;
 };
 
 struct Param {
