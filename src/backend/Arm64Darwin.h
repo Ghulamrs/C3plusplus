@@ -47,7 +47,6 @@ public:
     void run(const ir::Module &module) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
 
-    void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
 

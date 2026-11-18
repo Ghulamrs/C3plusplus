@@ -126,7 +126,6 @@ protected:
     // Whether the holder is in front: a different fact from passesRun(), and only emittedSize asks it.
     bool holding() const { return optimizer_ && a_ == optimizer_.get(); }
 
-    void landingPad(int pointerSlot, int selectorSlot) override;
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) override;
 
 protected:

@@ -65,7 +65,6 @@ public:
     void vaStartAt();                         // A4 = &ap
     void vaArgAt(const Type *t);
     // Regions' hooks for a generator that walks: the selector writes its own pads and switches.
-    void landingPad(int, int) override {}
     void caseBranch(long long, const std::string &) override {}
     bool terminateScopes() const override { return true; }
     void setOptimize(int level) override;

@@ -1008,16 +1008,10 @@ std::string X86_64Linux::label(const char *kind, int id) const {
     return labelPrefix_ + kind + "." + std::to_string(id);
 }
 
-// The SysV pair: %rax holds the exception object and %rdx the selector, and
-// both go into frame slots the parser already knows the numbers of.
 void X86_64Linux::exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) {
     if (passesRun()) optimizer_->exceptionRegion(begin, end, target);
 }
 
-void X86_64Linux::landingPad(int pointerSlot, int selectorSlot) {
-    a_->ins("mov", reg("%rax"), local(pointerSlot));
-    a_->ins("movl", reg("%edx"), local(selectorSlot));
-}
 // Where a throw out of a cleanup pad lands: std::terminate, as clang's
 // __clang_call_terminate does, jumped over on the way through.
 std::string X86_64Linux::terminatePad(int id) {

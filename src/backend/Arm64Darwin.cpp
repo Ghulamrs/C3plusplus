@@ -263,16 +263,6 @@ int Arm64Darwin::aggStackSlot(const Type *t, const AggPlan &p, int &at) const {
     return here;
 }
 
-// **The runtime arrives here with two values in registers**, and this is the
-// whole of what the backend does about it: x0 the exception object and x1 the
-// selector, into frame slots the parser knows. From then on they are locals.
-void Arm64Darwin::landingPad(int pointerSlot, int selectorSlot) {
-    localIn("x9", pointerSlot);
-    out_ << "  str x0, [x9]\n";
-    localIn("x9", selectorSlot);
-    out_ << "  str w1, [x9]\n";
-}
-
 // **The language-specific data area, laid out exactly as clang lays it out** -
 // every number read off clang's output, since the personality routine trusts
 // the header.
