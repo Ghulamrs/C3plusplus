@@ -707,6 +707,9 @@ private:
     std::unordered_map<std::uint32_t, int> varBounds_;  // an array declarator's written bounds: its `var` node's first parts (M3b.2)
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
     int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
+    int builtForParts_ = -1;    // the `for` forStatement just returned as itself: its parts; -1 for any other shape
+    bool builtTry_ = false;     // tryStatement returned the `try` itself, not a block of it and its exits
+    void builtShapeDiffers(const char *what);
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
     std::map<std::uint32_t, MemberBuilt> caughtCopy_;    // a class caught by value: the copy constructor that copied it, by `catch` node
     struct MsUnnamed { std::string descriptor; bool byRef, isConst; };
@@ -873,6 +876,7 @@ private:
     // A case label's folded value and the number caseLabel gave it, by node (M2.12n).
     struct CaseFacts { long long value; bool isDefault; int id; };
     std::unordered_map<std::uint32_t, CaseFacts> caseFacts_;
+    CaseFacts builtCase_ = CaseFacts{ 0, false, -1 };   // the label caseLabel just returned
     std::unordered_map<std::uint32_t, std::pair<const Type *, bool> > refCastTypes_;
     // A range-based for over a class range, an object or a temporary: its begin and end calls' records, and a class
     // iterator's `!=`, `*` and `++` (M3b.2).
@@ -2280,7 +2284,7 @@ private:
     void topLevel(Program &program);
     // A `{...}`, or with `functionTry` a function's whole body that is one `try` statement, [dcl.fct.def.general].
     StmtPtr block(bool functionTry = false);
-    StmtPtr statement();
+    StmtPtr statement(bool *madeTry = nullptr);
     StmtPtr statementBody();
     StmtPtr declarationBody();
     StmtPtr forStatement();

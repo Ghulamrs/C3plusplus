@@ -1078,7 +1078,8 @@ StmtPtr Parser::forStatement() {
     // What the init-statement builds lives to the end of the for statement and no further.
     const std::size_t aliveAtEntry = alive_.size();
 
-    if (atRangeFor()) return rangeForStatement(scope);
+    builtForParts_ = -1;
+    if (atRangeFor()) { StmtPtr range = rangeForStatement(scope); builtForParts_ = -1; return range; }
 
     StmtPtr init;
     if (!consume(";")) {
@@ -1113,6 +1114,7 @@ StmtPtr Parser::forStatement() {
     leaveBlock();
     leaveScope();
     if (alive_.size() == aliveAtEntry) {
+        builtForParts_ = (init != nullptr ? 1 : 0) | (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
         For *f = new For(std::move(init), std::move(cond), std::move(step), std::move(body));
         f->setScope(scope);
         return StmtPtr(f);
@@ -1131,6 +1133,7 @@ StmtPtr Parser::forStatement() {
                                      : wrapCleanups(std::move(steps), built, aliveAtEntry, pos);
     alive_.resize(aliveAtEntry);
     hoistedForParts_ = 1 | partsAfterInit;
+    builtForParts_ = -1;
     Block *b = new Block(std::move(steps));
     b->setScope(scope);
     return StmtPtr(b);
@@ -1235,6 +1238,7 @@ StmtPtr Parser::caseLabel() {
 
     StmtPtr body = atDeclarationStart() ? declaration() : statement();
 
+    builtCase_ = CaseFacts{ value, isDefault, caseIds_ };
     Case *node = new Case(value, isDefault, caseIds_++, std::move(body));
     StmtPtr owned(node);
     SwitchCtx &sw = switches_.back();
@@ -1467,9 +1471,11 @@ StmtPtr Parser::block(bool functionTry) {
         const std::size_t aliveBefore = alive_.size();
         blockOwesFrom_ = regionFrom;
         blockStatementAt_ = at_;
-        body.push_back(atDeclarationStart() ? declaration() : statement());
+        bool madeTry = false;
+        body.push_back(atDeclarationStart() ? declaration() : statement(&madeTry));
         // **A `try` is not covered by a cleanup region, it answers for
         // itself.**
+        if ((dynamic_cast<const Try *>(body.back().get()) != nullptr) != madeTry) builtShapeDiffers("try");
         if (dynamic_cast<const Try *>(body.back().get()) != nullptr)
             tryAt.push_back(body.size() - 1);
         for (std::size_t k = 0; k < statementTemps_.size(); k++)
@@ -1530,7 +1536,8 @@ syntax::Kind Parser::statementKindAhead(std::string *text) const {
     return syntax::Kind::ExprStmt;
 }
 
-StmtPtr Parser::statement() {
+StmtPtr Parser::statement(bool *madeTry) {
+    if (madeTry != nullptr) *madeTry = false;
     std::size_t pos = peek().pos;
     // An `else if` chain is one statement under another, each arm a level.
     const Nesting deep(this, pos, "statement");
@@ -1540,6 +1547,9 @@ StmtPtr Parser::statement() {
     const bool throws = peek().is("throw");
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
+    if (madeTry != nullptr) *madeTry = kind == syntax::Kind::Try && builtTry_;
+    const int builtFor = kind == syntax::Kind::For ? builtForParts_ : -1;
+    const bool builtCase = (kind == syntax::Kind::Case || kind == syntax::Kind::Default) && builtCase_.id >= 0;
     if (kind == syntax::Kind::Other) return s;
     // `throw e;` is an expression statement whose expression is the throw.
     if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
@@ -1555,6 +1565,12 @@ StmtPtr Parser::statement() {
         listBuilt_[noted->syntax().v] = listsAt_[static_cast<std::uint32_t>(pendingReturnBraces_)];
     pendingReturnBraces_ = 0;
     pendingReturnEmpty_.clear();
+    {
+        const For *f = dynamic_cast<const For *>(noted.get());
+        if ((f != nullptr) != (builtFor >= 0) ||
+            (f != nullptr && builtFor != ((f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0))))
+            builtShapeDiffers("for");
+    }
     if (const For *f = dynamic_cast<const For *>(noted.get()))
         forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
     // The init hoisted in front of the loop, which is no longer the statement the parser returned: its parts as written.
@@ -1563,6 +1579,12 @@ StmtPtr Parser::statement() {
     if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
+    {
+        const Case *c = dynamic_cast<const Case *>(noted.get());
+        if ((c != nullptr) != builtCase || (c != nullptr && (builtCase_.value != c->value() || builtCase_.isDefault != c->isDefault() ||
+                                                            builtCase_.id != c->id())))
+            builtShapeDiffers("case");
+    }
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))
         caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
     return noted;
@@ -2050,8 +2072,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             for (const LabelDef &l : labels_) inside = inside || (l.name == e.second && l.pos >= pos);
             if (!inside) gotoExits.push_back(e);
         }
-        if (msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty())
-            return StmtPtr(t);
+        builtTry_ = msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty();
+        if (builtTry_) return StmtPtr(t);
         // **Where a handler's early exit carries on**: the funclet handed back one
         // of these labels, and the parent does here what the handler could not.
         std::vector<StmtPtr> after;
@@ -2158,6 +2180,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     guarded.push_back(std::move(body));
     Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,
                      selectorSlot, std::move(types));
+    builtTry_ = true;
     return StmtPtr(t);
 }
 
@@ -2653,4 +2676,10 @@ int Parser::typeIndexFor(const std::string &symbol) {
         if (functionTypes_[i] == symbol) return static_cast<int>(i) + 1;
     functionTypes_.push_back(symbol);
     return static_cast<int>(functionTypes_.size());
+}
+
+// M6d S3's oracle while both exist: what the builder said it made against the node's own class - the same, or an error.
+void Parser::builtShapeDiffers(const char *what) {
+    src_.fail(peek().pos, std::string("internal: the record of the '") + what + "' statement just built differs from its "
+                          "node, in '" + currentFunction_ + "' (M6d S3)");
 }
