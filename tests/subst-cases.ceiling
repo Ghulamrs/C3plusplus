@@ -1,12 +1,19 @@
 1 member-templates | '' is a member function template and '' cannot be worked out from this call: '' does not give a valu
 1 member-templates | a call with a dependent argument, which would instantiate its callee
 1 member-templates | a cast from '' to '' - the two classes are unrelated and '' has no conversion function to '', so the
+1 | '' casts to a pointer to a class or to '', and '' is neither
+1 | '' has an incomplete type
+1 | '' has no member type called ''
+1 | '' is not a class, so '' names no member of anything
+2 | '' names a member of the template parameter '', and whether that is a type depends on the argument -
+2 | a range-based '' needs an array or a class with '' and '', and this is ''
 1 | a throw of a value whose type waits for the arguments
-2 | an array whose bound depends on a template parameter
+3 | an array whose bound depends on a template parameter
+2 | the size of a dependent type
 door aliases bodies=7 read=7 unread=0 shape=0
-door class-members bodies=12570 read=12570 unread=0 shape=9
-door functions bodies=3490 read=3487 unread=3 shape=54
-door member-templates bodies=497 read=494 unread=3 shape=6
+door class-members bodies=12575 read=12575 unread=0 shape=9
+door functions bodies=3503 read=3489 unread=14 shape=54
+door member-templates bodies=498 read=495 unread=3 shape=6
 door out-of-line bodies=24 read=24 unread=0 shape=1
 door partial-members bodies=606 read=606 unread=0 shape=0
 shape chrono:37:4
