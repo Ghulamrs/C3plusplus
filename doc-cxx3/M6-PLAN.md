@@ -4339,3 +4339,47 @@ lane gives it a builder that returns its `Block` and the late writes a place of 
 and `Block` are what every deleted class became, and `Function::body`'s `Block` is read by nothing now either, so
 they go with `StmtPtr` last. The by-value conversion the lowering stops at (1) is owed before 528b76ac's spelling
 can go. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, eighth lane: the by-value copy the lowering stopped at, and `Try` deleted - lane m6d-s4h, 2026-11-19
+
+**(1) A by-value argument converted by a constructor whose own parameter is a class by value** (src/ 93,562 ->
+93,569). `f(Effect)` given an `Own` through `Effect(Own)` copies at one argument node twice - `Own` into the
+converting constructor's parameter, then the `Effect` temporary into `f`'s - and `noteArgumentCopy` kept one record
+per node, where two answers leave neither. The lowering built the converted `Effect` in place (convertedTemporary),
+then asked the same node for `Own`'s copy and stopped: "internal error: a by-value argument whose copy the parser
+recorded none for" (REF alike; lane m6d-s4g's p4.cpp, and every natural `loopStatement(..., std::move(cond), ...)`
+of ParserStmt.cpp, an ExprPtr into a sema::Effect holding one). **Mend**: the record is kept twice, by node (as
+before, two answers leaving neither) and by node and class (`Parser::copyKey`); the lowering asks the node first as
+it did and the class only where it stopped, so no output that compiled before changes. Building every converted
+argument in place first (tried as s1b) is what clang does at -O0 ([class.copy]/31) but changed by-value-lowered,
+default-argument-template-id, ssa-return-braces-nullptr and user-conversion: not identical, dropped - elision is
+permitted, so that is a choice for a later round, not a defect. **Case** converting-constructor-class-parameter
+(clang 19.1.5's output, `507 607 0 43 83 4`: move-only and copyable parameters, from an xvalue, a prvalue and an
+lvalue). 528b76ac's spelled `Effect(...)` calls are back to `std::move(cond)` / `std::move(step)`; one citation
+re-pointed. **Shown** against REF (78ee93bb): identical.sh tms6747 1,824 compared 2 differ, x86_64-linux,
+x86_64-windows (both spellings) and arm64-darwin 7,296 compared 8 differ, all the new case; `-g -S` on four targets 1
+differ each, the new case; run.sh 1,250 passed, 0 failed; self-compile for x86_64-linux -O2 of the five changed
+.cpp files by (1): all compile (ParserStmt.cpp's natural spelling among them); tms6747 refused as before (stack
+arguments). ast-residue at the baseline.
+
+**(2) `Try` leaves Ast.h** (src/ 93,569 -> 93,480). Nothing read it: its eight constructions (wrapMsCleanups,
+wrapCleanups, cleanupRegion twice, the function-try terminate pad, and tryStatement's handler region, Microsoft
+`try` and Itanium `try`) call `tryRegion(body, pad)`, which keeps the statements in a `Block` as returnStatement and
+ifStatement do; the late writes nothing read back go with it - `setHandlers` (and the `msHandlers` list that fed it),
+`setCleanup`, `setTypes` through `tryBodySegments_` (its save, restore and reset in Parser.cpp), and the catch-type
+lists only `Try` held. The frame slots its constructor took are still allocated, in the order they were, so the
+frame is laid out as before. 11 citations re-pointed, two comment groups cut to the cap. **ast-residue**: ExprPtr
+2,012, StmtPtr 484 -> 477, node-casts 149, node-refs 337 -> 325, readers 9, ast-lines 568 -> 535, recorded.
+**Shown** against REF: identical and `-g` as (1), the new case the only differ; run.sh 1,250 passed, 0 failed;
+self-compile of ParserStmt, ParserClass, ParserTopLevel and Parser.cpp for x86_64-linux -O2 by (2): all compile.
+
+**Gates on the final tree** (step 2, ecd58059; step 1 97200f37): g++ -Werror clean (each step built on Linux); cl /W4
+/WX clean, started first and alone - a full build of the base in 1 min 17 s (work\m6d-s4hy), deltas of (1) 1 min
+16 s and of the final tree 6 min 30 s (the box shared); tests/tms6747.sh SIM=1 on (2), shards 1-3 on Linux at -O2
+434/0 and -O0 434/0, shard 4 on Windows at -O2 139/0 (the shared box ran a shard in 6 min 30 s; shard 5 at -O2 reported in the handover, 6 and -O0 4-6 owed); comment cap 0 over, memory gate pass, ide --check up to date,
+exclusions 0 uncited 0 stale after each step's re-pointing; ast-residue at or below the baseline after each commit,
+recorded lower with (2).
+
+**Not done, and why.** Left of S4: `ExprStmt`, `Block`, `Function::body` and `StmtPtr` - every deleted class became
+a `Block` of `ExprStmt`s, so they go together, last; `MsHandler` (still filled for noteMsCatch, its `body` now read by
+nothing) goes with them. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
