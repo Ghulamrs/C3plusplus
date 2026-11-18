@@ -1903,8 +1903,17 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     }
 
     if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
-    // A class cannot be unmade when the read's layer goes: one the program has not asked for is substitution's to make (M8.2).
-    if (p_.patternUses_) throw SubstitutionFailure("a class specialization the program has not asked for yet");
+    // A class cannot be unmade when the read's layer goes: one the program has not asked for is held incomplete under its tag,
+    // for the program's own ask to complete; what needs its members refuses there by name.
+    if (p_.patternUses_) {
+        Type *named = p_.types_.structType(Kind::Struct, tag);
+        if (!named->isSpecialization()) {
+            named->setSpecialization(decl.name, args);
+            named->setTemplateNamespace(decl.ns);
+            named->noteClassKey(decl.classKey);
+        }
+        return named;
+    }
     const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
