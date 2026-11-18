@@ -7,8 +7,11 @@
 #include "../Ast.h"
 #include "../Lexer.h"
 #include "../Type.h"
+#include "../syntax/SyntaxId.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -162,6 +165,14 @@ public:
                 ConstexprAhead, BySubstitution, Doors };
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
+    // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read; the read itself is always made.
+    bool checkBodies_ = false;
+    void holdBodies(std::size_t mark);
+    // A function template's definition read once in pattern mode where it is declared; at the unit's end, held against its first replay.
+    void readDeclaration(const TemplateDecl &decl);
+    void holdDeclarations();
+    std::vector<syntax::NodeId> declRead_;
+    std::string bodiesReport() const;
     // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
     bool substitute_ = false, substituteDebug_ = false;
     // Function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
@@ -173,6 +184,17 @@ public:
 
 private:
     long census_[Doors] = {};
+    // A template body's syntax by its declarator's place, the nodes already held, and the tally: first, same, text, shape.
+    std::map<std::uint32_t, syntax::NodeId> bodyOnce_;
+    std::vector<char> bodySeen_;
+    long bodyTally_[4] = {};
+    long signatureTally_[2] = {};       // replays of a function template whose signature was kept, and those whose parameters agree
+    std::set<std::uint32_t> bodyShapes_;
+    // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
+    long declTally_[5] = {};
+    std::set<std::uint32_t> declShapes_;
+    std::vector<std::string> declShapeTrees_;     // each shape's two trees: the read's, then the first replay's
+    std::map<std::string, int> declUnread_;
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.

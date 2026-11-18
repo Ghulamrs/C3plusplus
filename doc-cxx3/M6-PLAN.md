@@ -3089,6 +3089,27 @@ debug stepping on vm6747/sim6747, release-check); run.sh, winpass and ssa.sh on 
 by the C6000 selector alone; IrText prints `byname`, in no recorded dump today); the census on the cl build; FS3's three
 (a constructor's unwind edge, the ledger cases' reading, map-set-node-stability) and c6x-class-values -O2.
 
+### The M6 wave landed - W5, W6, W7, FS, FS2 and wf7, 2026-11-18 (the coordinator)
+
+- C6000 walked -O0 1,036 -> 34, -O2 1,117 -> 47 (memcpy, memset, class arguments and results, indirect and variadic
+  calls selected; frame slots shared by scope; the -O0 block order). Cycles against 458f8974's baseline: -O2 192,025,550
+  -> 149,287,156, -O0 397,272,350 -> 307,814,752. The shared Lowering.cpp/Ir.h/SsaInline.cpp mends change x86_64 and
+  arm64 output too (code removed, frames renumbered; run.sh, winpass and the Mac legs pass).
+- **The user's decision**, given directly in the coordinator's session ("Yes, write them", 2026-11-18): the 21 worse
+  cases with no line (17 at -O2, 4 at -O0) accepted, each owed to its round (M6c's pipeliner, M6b's inliner over calls
+  through a value and its copy rounds, FS3, the lowering) - f2b9b7b5.
+- **Gate: tools/wave-gate m6i -w 156a6b46 at f2b9b7b5**, run as halves (WAVEGATE_HALVES: Linux+Mac, then Windows) so the
+  two gates of the day did not share Windows: **every step passed**. Linux's census, declines and asm0/asm1 first failed
+  on the disk at 71-73% (cleaned to 30%), then passed on the rerun; asm2 (854 objects, 0 failed) and cycles were never
+  taken by `-k` (the legs had no step of their own left) and were run by hand on Linux the way the gate runs them:
+  c6x-cycles --check over both halves joined (832 cases, rc 0, 70 worse all owed or accepted, 0 missing or stale). The
+  fixed points were not owed (under 100 src/ lines net). Earlier gates of the same wave (m6g, m6h) failed only on unnamed
+  differences, a capped GNU winpass leg, and m6h's cycles passing 17 unowned through wave-expected rows - closed in
+  0e955ca8 (a worse case passes only through tests/tms6747-cycles.txt).
+- Known and owed: win-structure's unwind faults (four functions with a pad and no call, on main too) are mended on m8-d
+  (000dbd71) and the gate made to fail on them (6cede9be), landing with M8.1.
+- tests/wave-expected.txt emptied (2,737 rows were this wave's).
+
 ### M6a.2 W8: the last walked reasons but R1's - 64-bit arguments past the sixth, an array read, a member's variadic call, a 64-bit divide - lane w8, 2026-11-18
 
 Branch m6a2-w8 from b563f30e: 63b1959f (the selector and the divide), c3eb6e53 (the baseline), a9cf1974 (the case). src/ 95,182 ->

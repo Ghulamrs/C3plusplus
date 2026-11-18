@@ -371,7 +371,7 @@ StmtPtr Parser::declarationBody() {
                 at_++;                        // the '('
                 std::vector<ExprPtr> args;
                 parseArguments(args);
-                if (args.size() != 1)
+                if (args.size() != 1 && !(patternBody_ && dependentType(d.type) && !args.empty()))
                     src_.fail(d.pos, "'" + d.type->describe() + "' has no "
                                      "constructor, so '" + d.name + "(...)' can "
                                      "only be a copy of another '" +
@@ -2327,7 +2327,7 @@ StmtPtr Parser::statementBody() {
             ownedTemporary = releaseTemporary(*returned);
         // A reference is bound before the full expression ends: the address is what is kept past its
         // temporaries' destruction - kept as a value it named a copy in this frame (M1, unordered_map's []).
-        if (returnType_->isReference()) {
+        if (returnType_->isReference() && !dependentOperand(returned->type())) {
             const bool glvalue = isGlvalue(*returned);   // only a value takes a temporary; a glvalue binds in place
             returned = bindReference(returnType_, std::move(returned), pos, "this function's return type");
             if (!glvalue && dynamic_cast<const Comma *>(returned.get()) != nullptr)

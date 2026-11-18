@@ -109,6 +109,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
         }
     }
     if (!builtArgs) parseArguments(args);
+    if (patternBody_ && dependentType(cls)) return zeroOf(cls);
 
     const std::string key = constructorKey(plain->tag());
     buildBracedArguments(key, args, pos);
@@ -467,6 +468,11 @@ ExprPtr Parser::zeroOf(const Type *to) {
     const Type *plain = to->unqualified();
     const bool floating = plain->isFloating();
     ExprPtr z(floating ? new Num(0.0L) : new Num(0LL));
+    // A pattern's value of dependent type stands as a zero of that type: nothing reads the number.
+    if (patternBody_ && dependentType(to)) {
+        z->setType(to->isReference() ? to->referent() : to);
+        return z;
+    }
     z->setType(plain->isPointer() || plain->isNullPtr() ? types_.get(Kind::NullPtr)
                : floating ? types_.doubleType()
                : plain->isEnumeration() ? plain : types_.intType());
@@ -549,6 +555,7 @@ const Parser::Signature *Parser::soleNumericConversion(const Type *from) {
 // **A class where a number or a pointer is wanted**, converted by its own
 // conversion function - a condition, `!`, `&&`, `||`, `?:`.
 ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what, syntax::NodeId at) {
+    if (dependentOperand(e->type(), false)) return e;
     if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion()) {
         if (const Signature *how = conversionFunction(e->type(), nullptr, true)) {
             const Type *object = e->type();

@@ -196,9 +196,11 @@ bool Parser::staticAssertion() {
     expect("(");
 
     const std::size_t condAt = peek().pos;
+    // A pattern's condition over its parameters is kept, not folded: instantiation's to assert.
+    const bool kept = patternBody_ && dependentAhead(false);
     ExprPtr cond = decay(conditional());
-    long long value;
-    if (!constant_.fold(*cond, &value, condAt))
+    long long value = 1;
+    if (!kept && !constant_.fold(*cond, &value, condAt))
         src_.fail(condAt, "the condition of a 'static_assert' has to be a "
                           "constant the compiler can work out here, and this "
                           "is not one");
@@ -224,7 +226,7 @@ bool Parser::staticAssertion() {
     expect(")");
     expect(";");
 
-    if (value == 0) src_.fail(pos, "static assertion failed: " + message);
+    if (!kept && value == 0) src_.fail(pos, "static assertion failed: " + message);
     return true;
 }
 

@@ -53,6 +53,9 @@ public:
     const syntax::Tree &syntaxTree() const { return syntaxTree_; }
     // M8.1-early's switch (-templates=subst), and -g, which refuses it.
     void substituteTemplates(bool on, bool debug) { tmpl_.substitute_ = on; tmpl_.substituteDebug_ = debug; }
+    // -check=templates (M8.1): hold each replayed template body against the first read of it, and say what differed.
+    void checkTemplates() { tmpl_.checkBodies_ = true; }
+    std::string templatesReport() const { return tmpl_.bodiesReport(); }
     Program parse();
 
 private:
@@ -221,6 +224,25 @@ private:
     std::vector<PendingBody> heldForSpecialization_;
     // Set while a template's declaration is read as a *pattern*, with Kind::TemplateParam in place of the arguments.
     bool patternOnly_ = false;
+    // M8.1: a function template's body is being read at its declaration - a dependent local takes no slot, a pattern no linker name.
+    bool patternBody_ = false;
+    // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
+    bool patternUses_ = false;
+    // M8.1: a pattern is read into a program of its own (`unit_` is the unit's meanwhile), its labels off a count of its own.
+    Program *unit_ = nullptr;
+    int patternStrings_ = 0;
+    int &stringLabel() { return unit_ != nullptr && current_ != unit_ ? patternStrings_ : strings_; }
+    struct ReplayUses {
+        Parser *p; bool was; Program *into;
+        explicit ReplayUses(Parser *parser) : p(parser), was(parser->patternUses_), into(parser->current_) {
+            p->patternUses_ = false;
+            if (p->unit_ != nullptr) p->current_ = p->unit_;
+        }
+        ~ReplayUses() { p->patternUses_ = was; p->current_ = into; }
+    };
+    // templatedName asks readTemplateDeclaration to keep the signature it reads as syntax, and takes it from here.
+    bool noteSignature_ = false;
+    syntax::NodeId patternSignature_;
 
     // **A trial, and everything it has to put back.** Forming a candidate's signature
     // reads tokens, pushes classes and binds parameters; if it fails half way through,
@@ -1645,6 +1667,11 @@ private:
     const DepExpr *depNode(DepExpr e);
     void depRefuse(std::size_t pos, const std::string &what);
     std::string depText(std::size_t from, std::size_t to) const;
+    // An expression of dependent type in a pattern's body: what an operand is, the type its result has, one postfix step.
+    bool dependentOperand(const Type *t, bool pointers = true) const;
+    const Type *dependentResult();
+    bool dependentPostfix(const Type *object, PostfixStep &step);
+    bool argsDependent_ = false;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;
     // `$this` - the member a `[this]` capture holds.

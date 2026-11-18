@@ -15,7 +15,7 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
     // `f(f(f(...)))` re-enters the whole expression grammar per call.
     const Nesting deep(this, peek().pos, "argument list");
     const std::size_t first = args.size();
-    if (consume(")")) { callArgs_.clear(); argGen_++; return; }
+    if (consume(")")) { callArgs_.clear(); argGen_++; argsDependent_ = false; return; }
     for (;;) {
         // **`rest...` - one thing written, one argument per member.** The names
         // were made when the parameter list expanded, so this is a lookup and not
@@ -61,7 +61,11 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
     }
     // What was read, as syntax, for the call node postfix records (M2 step 2).
     callArgs_.clear();
-    for (std::size_t i = first; i < args.size(); i++) callArgs_.push_back(syn(args[i]));
+    argsDependent_ = false;
+    for (std::size_t i = first; i < args.size(); i++) {
+        callArgs_.push_back(syn(args[i]));
+        argsDependent_ = argsDependent_ || (args[i] != nullptr && dependentOperand(args[i]->type()));
+    }
     argGen_++;
 }
 

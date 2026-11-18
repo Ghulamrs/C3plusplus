@@ -39,6 +39,7 @@ private:
     bool toStdout_ = false;
     bool timing_ = false;
     bool checkTyped_ = false;
+    bool checkTemplates_ = false;   // -check=templates: a template body's replays held against its first read (M8.1)
     bool templateSubst_ = false;  // -templates=subst: M8.1-early's stand-in, off by default (Q6)
     bool dumpSsa_ = false, checkSsa_ = false;   // -dump=ssa and -check=ssa, M3-IR 3.10
     std::string dumpSsaAfter_;                  // -dump=ssa=<pass>: the IR after that pass (M3b.4)

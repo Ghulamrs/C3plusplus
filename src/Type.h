@@ -251,6 +251,8 @@ public:
 
     int size(const Target &t) const;
     int align(const Target &t) const;
+    // M8.1's read alone: a dependent type's size is refused by name (a SubstitutionFailure), where the target would end the unit.
+    static void nameDependentSizes(bool on);
     bool isSigned(const Target &t) const;
 
     int rank() const;

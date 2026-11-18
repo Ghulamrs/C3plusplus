@@ -1,0 +1,2 @@
+-check=templates: bodies=12 held=9 same=2 text=1 shape=0 declared=1 signature=1
+-check=templates declarations: functions=1 read=1 unread=0 same=0 text=1 shape=0 unreplayed=0

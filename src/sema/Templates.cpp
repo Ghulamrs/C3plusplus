@@ -424,6 +424,143 @@ std::string Templates::censusLine() const {
     return out;
 }
 
+void Templates::holdBodies(std::size_t mark) {
+    if (!checkBodies_) return;
+    const std::size_t made = p_.syntaxTree_.size();
+    if (bodySeen_.size() < made + 1) bodySeen_.resize(made + 1, 0);
+    for (std::size_t i = mark + 1; i <= made; i++) {
+        const syntax::NodeId id(static_cast<std::uint32_t>(i));
+        const std::uint32_t parts = p_.syntaxTree_.node(id).count, at = p_.syntaxTree_.node(id).loc;
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function || p_.syntaxTree_.node(id).dead || bodySeen_[i] != 0) continue;
+        // A declaration has no block; a function try block's body is its `try`.
+        bool body = false;
+        for (std::uint32_t c = 0; c < parts; c++) {
+            const syntax::Kind k = p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind;
+            body = body || k == syntax::Kind::Block || k == syntax::Kind::Try;
+        }
+        if (!body) continue;
+        bodySeen_[i] = 1;
+        // The signature kept at the declaration, against this replay's parameters: one `var` for one.
+        std::uint32_t vars = 0;
+        while (vars < parts && p_.syntaxTree_.node(p_.syntaxTree_.child(id, vars)).kind == syntax::Kind::Var) vars++;
+        for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator t = fnTemplates_.begin(); t != fnTemplates_.end(); ++t)
+            for (std::size_t k = 0; k < t->second.size(); k++)
+                if (t->second[k].signature.valid() && p_.syntaxTree_.node(t->second[k].signature).loc == at) {
+                    signatureTally_[0]++;
+                    signatureTally_[1] += p_.syntaxTree_.node(t->second[k].signature).count == vars;
+                }
+        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(at);
+        if (held == bodyOnce_.end()) { bodyOnce_[at] = id; bodyTally_[0]++; continue; }
+        const int d = p_.syntaxTree_.differs(held->second, id);
+        bodyTally_[1 + d]++;
+        if (d == 2) bodyShapes_.insert(at);
+    }
+}
+
+void Templates::readDeclaration(const TemplateDecl &decl) {
+    std::string why;
+    std::vector<const Type *> binding;
+    for (std::size_t i = 0; i < decl.params.size(); i++) {
+        binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
+    }
+    const std::size_t mark = p_.syntaxTree_.size(), resume = p_.at_;
+    {
+        // The read's own layer: its signature, its typedefs and a function specialization it asks for are found in it, and go with it.
+        Lookup::Layer layer = p_.lookup_.pushLayer();
+        const std::size_t hadSpecializations = specializations_.size();
+        const int hadTemps = p_.refTemps_;      // its temporaries' numbers too: a `$chain4` label is the replay's to number
+        const std::map<std::string, std::size_t> hadMemberTemplates = memberTemplateMade_;
+        const std::map<std::string, std::vector<Owed> > hadOwed = owedBodies_;
+        // The pattern is no function: what its read writes - definition, static locals, literals - is a program of its own.
+        Program pattern;
+        Program *const into = p_.current_, *const wasUnit = p_.unit_;
+        pattern.dialect = into->dialect;
+        struct Back { Parser *p; Program *into, *unit; ~Back() { p->current_ = into; p->unit_ = unit; } } back = { &p_, into, wasUnit };
+        if (p_.unit_ == nullptr) p_.unit_ = into;
+        const Parser::FunctionState outer = p_.captureFunctionState();
+        const std::vector<std::string> wasStack = p_.namespaceStack_;
+        const bool wasBody = p_.patternBody_, wasUses = p_.patternUses_;
+        std::vector<Shadow> undo;
+        p_.clearFunctionState();
+        Type::nameDependentSizes(true);
+        try {
+            Parser::Trial trial(&p_);
+            bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
+            p_.patternOnly_ = p_.patternBody_ = p_.patternUses_ = true;
+            if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+            p_.at_ = decl.afterParams;
+            p_.current_ = &pattern;
+            p_.topLevel(pattern);
+        } catch (const SubstitutionFailure &f) {
+            why = f.why;
+        }
+        Type::nameDependentSizes(wasBody);
+        p_.patternBody_ = wasBody;
+        p_.patternUses_ = wasUses;
+        unbindTemplateParameters(undo);
+        p_.namespaceStack_ = wasStack;
+        p_.restoreFunctionState(outer);
+        p_.at_ = resume;
+        p_.lookup_.popLayer(layer);
+        specializations_.erase(specializations_.begin() + static_cast<long>(hadSpecializations), specializations_.end());
+        p_.refTemps_ = hadTemps;
+        memberTemplateMade_ = hadMemberTemplates;
+        owedBodies_ = hadOwed;
+        p_.syntaxTree_.kill(mark);
+    }
+    syntax::NodeId read;
+    for (std::size_t i = p_.syntaxTree_.size(); why.empty() && i > mark && !read.valid(); i--) {
+        const syntax::NodeId id(static_cast<std::uint32_t>(i));
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
+        for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
+            if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
+    }
+    if (why.empty() && !read.valid()) why = "the read made no function with a block";
+    if (!why.empty()) {
+        // One reason for every name: what is quoted is taken out.
+        for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
+            why.replace(a + 1, b - a - 1, "");
+        declUnread_[why.substr(0, 100)]++;
+        return;
+    }
+    declRead_.push_back(read);
+}
+
+void Templates::holdDeclarations() {
+    if (!checkBodies_) return;
+    for (std::size_t i = 0; i < declRead_.size(); i++) {
+        declTally_[0]++;
+        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(declRead_[i]).loc);
+        if (held == bodyOnce_.end()) declTally_[4]++;
+        else {
+            const int d = p_.syntaxTree_.differs(held->second, declRead_[i]);
+            declTally_[1 + d]++;
+            if (d == 2 && declShapes_.insert(p_.syntaxTree_.node(declRead_[i]).loc).second)
+                declShapeTrees_.push_back("read " + p_.syntaxTree_.spelled(declRead_[i]) + "\n-check=templates declaration shape: replayed " + p_.syntaxTree_.spelled(held->second));
+        }
+    }
+}
+
+std::string Templates::bodiesReport() const {
+    std::string out = "-check=templates: bodies=" + std::to_string(bodyTally_[0] + bodyTally_[1] + bodyTally_[2] + bodyTally_[3]) +
+                      " held=" + std::to_string(bodyTally_[0]) + " same=" + std::to_string(bodyTally_[1]) +
+                      " text=" + std::to_string(bodyTally_[2]) + " shape=" + std::to_string(bodyTally_[3]) +
+                      " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
+    for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
+        out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
+    long unread = 0;
+    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i) unread += i->second;
+    out += "-check=templates declarations: functions=" + std::to_string(declTally_[0] + unread) + " read=" + std::to_string(declTally_[0]) +
+           " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[1]) + " text=" + std::to_string(declTally_[2]) +
+           " shape=" + std::to_string(declTally_[3]) + " unreplayed=" + std::to_string(declTally_[4]) + "\n";
+    for (std::set<std::uint32_t>::const_iterator i = declShapes_.begin(); i != declShapes_.end(); ++i)
+        out += "-check=templates declaration shape: " + p_.src_.where(*i) + "\n";
+    for (std::size_t i = 0; i < declShapeTrees_.size(); i++) out += "-check=templates declaration shape: " + declShapeTrees_[i] + "\n";
+    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i)
+        out += "-check=templates unread (" + std::to_string(i->second) + "): " + i->first + "\n";
+    return out;
+}
+
 void Templates::instantiatePending() {
     for (bool again = true; again; ) {
         again = false;
@@ -525,6 +662,7 @@ void Templates::instantiatePending() {
             // Its bodies read names in the namespace it was declared in, wherever it is used from.
             const std::vector<std::string> wasStack = p_.namespaceStack_;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+            const std::size_t bodiesFrom = p_.syntaxTree_.size();
             if (sp.isClass) {
                 count(MemberBody, now.size() + outsideNow.size());
                 // Its member functions, held here; inlineOwner_ gives the scope.
@@ -541,6 +679,7 @@ void Templates::instantiatePending() {
                 p_.at_ = sp.start;
                 p_.topLevel(*p_.current_);
             }
+            holdBodies(bodiesFrom);
             p_.namespaceStack_ = wasStack;
             p_.replayingInline_ = wasReplayingInline;
             p_.at_ = resume;
@@ -1517,6 +1656,9 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     }
 
     if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
+    // A class cannot be unmade when the read's layer goes: one the program has not asked for is substitution's to make (M8.2).
+    if (p_.patternUses_) throw SubstitutionFailure("a class specialization the program has not asked for yet");
+    const Parser::ReplayUses replayed(&p_);
 
     // **A partial specialization is chosen before anything is replayed**, and what
     // it changes is which tokens get replayed and with which parameters bound. The
@@ -1654,6 +1796,11 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const std::string made = key + "@" + std::to_string(mt.declaredAt != 0 ? mt.declaredAt : mt.afterParams);
     if (memberTemplateMade_.count(made) != 0) return &p_.lookup_.functions_[memberTemplateMade_[made]];
     const std::size_t before = p_.lookup_.functions_.size();
+    const Parser::ReplayUses replayed(&p_);
+    for (std::size_t i = 0; i < binding.size(); i++)     // over a pattern's parameter, it is the pattern's still
+        if (binding[i] != nullptr && p_.dependentType(binding[i])) p_.patternUses_ = replayed.was;
+    // Its body is replayed into the unit at once, which no layer takes back.
+    if (replayed.was && !p_.patternUses_) throw SubstitutionFailure("a member template specialization the program has not asked for yet");
     if (!mt.defined && mt.declaredAt == 0)
         p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' is declared but "
                        "not defined, so there is nothing to instantiate");
@@ -1717,7 +1864,9 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     p_.memberTemplateDeclOnly_ = declOnly;
     if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
     count(MemberTemplate);
+    const std::size_t bodiesFrom = p_.syntaxTree_.size();
     p_.replayInlineBodies(one);
+    holdBodies(bodiesFrom);
     bound.unbindNow();
 
     // The function this replay declared under the key - the first one past `before`.

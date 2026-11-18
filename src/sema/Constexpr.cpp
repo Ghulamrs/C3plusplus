@@ -434,6 +434,9 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
         for (std::size_t b = 0; b < bodies.size(); b++) {
             if (bodies[b].which >= p_.lookup_.functions_.size() || p_.lookup_.functions_[bodies[b].which].symbol != complete) continue;
             const Parser::PendingBody body = bodies[b];
+            // Asked from a pattern's read, it would be replayed into the unit, which the read's layer cannot take back.
+            if (p_.patternUses_) throw SubstitutionFailure("a constexpr member's body the program has not asked for yet");
+            const Parser::ReplayUses replayed(&self);
             bodies.erase(bodies.begin() + static_cast<std::ptrdiff_t>(b));
             self.lookup_.functions_[body.which].used = true;
             const Parser::Specialization sp = p_.tmpl_.specializations_[i];

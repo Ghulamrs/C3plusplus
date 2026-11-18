@@ -196,6 +196,8 @@ std::string Parser::templatedName(const std::vector<TemplateParam> &params,
     for (std::size_t i = 0; i < params.size(); i++)
         binding[i] = types_.templateParam(static_cast<int>(i));
     std::string name;
+    patternSignature_ = syntax::NodeId();
+    noteSignature_ = true;
     const Type *fn = readTemplateDeclaration(scratch, binding, values, &name, qualifier, nullptr,
                                              construction);
     if (name.empty())
@@ -257,6 +259,8 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
                                             const Packs *packs,
                                             bool *construction) {
     const std::size_t resume = at_;
+    const bool noteSignature = noteSignature_;
+    noteSignature_ = false;      // this read's alone: a signature read inside it is another template's
     const KeepCallArgs keepArgs(this);
     // **Put back even if this throws.** Forming a signature is what a trial runs,
     // and a failed one must leave the parameter names unbound for the next
@@ -359,6 +363,13 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
                          "and only function templates are supported yet");
     }
 
+    if (noteSignature && d.type->kind() == Kind::Function) {
+        std::vector<syntax::NodeId> parts;
+        for (std::size_t i = 0; i < d.type->params().size(); i++)
+            parts.push_back(syntaxTree_.add(syntax::Kind::Var, d.type->params()[i]->describe(), d.pos));
+        patternSignature_ = syntaxTree_.add(syntax::Kind::Function, d.name, d.pos, parts);
+        syntaxTree_.markPattern(patternSignature_);
+    }
     patternOnly_ = wasPattern;
     at_ = resume;
     *name = d.name;
@@ -557,6 +568,7 @@ bool Parser::templateDeclaration() {
     bool constructs = false;
     const Type *fnPattern = nullptr;
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
+    if (!decl.isClass) decl.signature = patternSignature_;
     if (decl.isClass) refuseAfterPack(decl.params);
     else              tmpl_.requireDeducibleAfterPack(decl, fnPattern);
     if (!decl.isClass && !literalSuffix(decl.name).empty())
@@ -646,6 +658,7 @@ bool Parser::templateDeclaration() {
     // first; a call tries each by deduction.
     if (!decl.isClass) {
         if (decl.defined) tmpl_.fnTemplates_[decl.name].push_back(decl);
+        const bool readNow = decl.defined;
         auto it = tmpl_.templates_.find(decl.name);
         if (it == tmpl_.templates_.end()) {
             tmpl_.templates_[decl.name] = decl;
@@ -653,6 +666,7 @@ bool Parser::templateDeclaration() {
             decl.outOfLine = it->second.outOfLine;
             it->second = decl;
         }
+        if (readNow) tmpl_.readDeclaration(decl);     // M8.1's read, where the template is declared
         return true;
     }
 
@@ -1214,6 +1228,10 @@ Parser::instantiate(const TemplateDecl &decl,
     if (!decl.defined)
         src_.fail(pos, "'" + decl.name + "' is declared but never defined, so "
                        "there is nothing to instantiate");
+    // A pattern's body instantiates nothing over its own parameters: that callee is substitution's to bind (M8.2).
+    for (std::size_t i = 0; patternBody_ && i < binding.size(); i++)
+        if (binding[i] != nullptr && dependentType(binding[i]))
+            throw SubstitutionFailure("a call with a dependent argument, which would instantiate its callee");
 
     std::string name;
     const Type *fn = readTemplateDeclaration(decl, binding, values, &name,
@@ -1229,8 +1247,7 @@ Parser::instantiate(const TemplateDecl &decl,
     // And which template: two differing only in `decltype(...)` returns were one key, the first.
     key += "@" + std::to_string(decl.afterParams);
 
-    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key))
-        return lookup_.functions_[(*had)[0]];
+    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) return lookup_.functions_[(*had)[0]];
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
     // as a reference to itself - a type parameter as Kind::TemplateParam, a
@@ -1701,6 +1718,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         at_++;
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
+        if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
 
         std::vector<const Type *> argTypes;
         for (std::size_t i = 0; i < callArgs.size(); i++)
@@ -1769,6 +1787,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     at_++;
     std::vector<ExprPtr> callArgs;
     parseArguments(callArgs);
+    if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
     const std::size_t afterCall = at_;
     std::vector<const Type *> argTypes;
     for (std::size_t i = 0; i < callArgs.size(); i++) argTypes.push_back(tmpl_.deductionArgType(*callArgs[i]));
@@ -1826,7 +1845,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     // Written out rather than deduced, so no ranking chose it and nothing else
     // will mark it - a specialization is defined only where it was chosen.
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
-        if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = true; break; }
+        if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = !patternUses_ || lookup_.functions_[i].used; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
     // Its syntax is a call of the name as written, the arguments after it (M2.12l).
@@ -2083,6 +2102,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         if (ExprPtr mine = qualifiedMemberThroughThis(cls, *m, member, mpos)) return mine;
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
+    if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());     // a pattern class's: instantiation's to find
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");
 }

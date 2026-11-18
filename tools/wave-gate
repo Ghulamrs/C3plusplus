@@ -201,14 +201,14 @@ if [ "${1:-}" = --box ]; then
             elif [ ! -s "$LOG-cycles-joined.txt" ]; then verdict cycles "NOT RUN" "no joined cycles.txt came from tms2's shards"
             else job 1500 sh tools/c6x-cycles --check "$LOG-cycles-joined.txt" > "$LOG-cycles.log" 2>&1; rc=$?
                 d=$(grep -a ' cases, [0-9]* in the baseline' "$LOG-cycles.log" | tail -1 | cut -c1-200)
-                # a WORSE row passes only where tests/wave-expected.txt names the case at tms6747 -O2; missing or stale never
+                # a WORSE case passes only through an owed or accepted line in tests/tms6747-cycles.txt (accepting a cycle is the user's): a
+                # tests/wave-expected.txt row names an output difference and never accepts a cycle; missing or stale never pass
                 grep -a '^  WORSE ' "$LOG-cycles.log" | awk '{ print $2 " tms6747 2" }' > "$LOG-cycles.diff"
-                sed -n 's/^\([^# ][^ ]*\) tms6747 2 ..*/\1 tms6747 2/p' tests/wave-expected.txt 2>/dev/null | sort -u > "$LOG-cycles.named"
-                u=$(sort -u "$LOG-cycles.diff" | comm -23 - "$LOG-cycles.named" | tr '\n' ',' | cut -c1-160)
+                u=$(sort -u "$LOG-cycles.diff" | tr '\n' ',' | cut -c1-160)
                 o=$(grep -a -c '^  \(MISSING\|STALE\) ' "$LOG-cycles.log")
-                if [ -n "$d" ] && [ -z "$u" ] && [ "$o" = 0 ] && { [ $rc -eq 0 ] || [ -s "$LOG-cycles.diff" ]; }
-                then verdict cycles PASS "$d; $(wc -l < "$LOG-cycles.diff" | tr -d ' ') WORSE, each named in tests/wave-expected.txt"
-                else verdict cycles FAIL "rc $rc$(capnote $rc); ${d:-no count line}${u:+; WORSE and NOT NAMED: $u}; $o missing or stale; $LOG-cycles.log"; fi; fi ;;
+                if [ -n "$d" ] && [ -z "$u" ] && [ "$o" = 0 ] && [ $rc -eq 0 ]
+                then verdict cycles PASS "$d; every worse case owed or accepted in tests/tms6747-cycles.txt"
+                else verdict cycles FAIL "rc $rc$(capnote $rc); ${d:-no count line}${u:+; WORSE, neither owed nor accepted: $u}; $o missing or stale; $LOG-cycles.log"; fi; fi ;;
         identical) ident identical tms6747 ;;   identlnx) ident identlnx x86_64-linux ;;     # N2, N3
         identwin) ident identwin x86_64-windows ;;   identa64) ident identa64 arm64-darwin ;;
         emit) b=$T-base     # N5: the golden is the base's, recorded in this run; no golden is a FAIL
@@ -401,8 +401,10 @@ windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools
     names|overload|winstruct) u=$s; [ $s = winstruct ] && u=win-structure
         capped 1500 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --suite $u" > "$L" 2>&1
         d=$(tr -d '\r' < "$L" | grep -a "^$u.sh: \|^wave-gate: no " | tail -2 | tr '\n' ';' | cut -c1-300)
-        if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && ! grep -a -q "^$u.sh: skipped\|NOT RUN" "$L"
-        then wverdict "$s" PASS "$d"; else verdict "$s" FAIL "${d:-no count line}; $L" windows; fi ;;
+        # an unwind fault fails the step whatever the script's rc (m6g passed with 6: win-structure.sh's rc reads layout and names only)
+        uf=$(tr -d '\r' < "$L" | sed -n 's/^win-structure.sh: unwind: .*, \([0-9]*\) faults,.*/\1/p' | awk '{ s += $1 } END { print s + 0 }')
+        if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && [ "$uf" -eq 0 ] && ! grep -a -q "^$u.sh: skipped\|NOT RUN" "$L"
+        then wverdict "$s" PASS "$d"; else verdict "$s" FAIL "${d:-no count line}; $uf unwind faults; $L" windows; fi ;;
     wfixed[02]) f=; [ $s = wfixed2 ] && f=-O2
         sh "$W/self-host-stages.sh" "$N" "$f" > "$L" 2>&1
         a=$(grep -a 'the same object from stages 0, 1 and 2' "$L" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$L" | tail -1)

@@ -181,7 +181,6 @@ function @main() -> int {
   %21 = addr int *, @h
   %22 = load int, %21
   %23 = call @printf(%17, %14, %20, %22) : int variadic
-  memset %24
   %25 = gep int *, %24, 0
   %26 = iconst int, 6
   store %25, %26

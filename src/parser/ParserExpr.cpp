@@ -84,6 +84,7 @@ const char *binOpSpelling(BinOp op) {
 // looked for on the left operand only, and the two halves are ranked together.**
 ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
                                  std::size_t pos) {
+    if (dependentOperand(lhs->type()) || dependentOperand(rhs->type())) return zeroOf(dependentResult());
     const Type *lt = lhs->type();
     const Type *rt = rhs->type();
     // **An enumeration operand asks for an operator too** - [over.match.oper]/1 names class *or enumeration* type,
@@ -171,6 +172,7 @@ ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
 // built-in", not "there is a problem"**: a class with no `operator&` has an address.
 ExprPtr Parser::overloadedUnary(const char *spelling, ExprPtr &operand,
                                 std::size_t pos) {
+    if (dependentOperand(operand->type(), false)) return zeroOf(dependentResult());
     if (!operand->type()->unqualified()->isStructOrUnion()) return nullptr;
 
     // Read before the operand is moved from: memberCallWith wants the type
@@ -307,6 +309,7 @@ ExprPtr Parser::staticCast(std::size_t pos) {
     ExprPtr v;
     { OverloadTarget hold(*this, to); v = expr(); }
     expect(")");
+    if (patternBody_ && (dependentType(to) || dependentOperand(v->type()))) return zeroOf(to);
 
     if (to->isReference()) {
         const Type *referent = to->referent();
@@ -652,8 +655,9 @@ const Type *Parser::simpleTypeKeyword() const {
 
 // `T{...}` for any T, the '{' still ahead - [expr.type.conv]/2, list-initialisation.
 ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
-    if (!to->isScalar()) return listTemporary(to, pos);
-    // A scalar's `T{}` or `T{x}` is noted as the cast `T()` or `T(x)` is: a zero, or its one value converted.
+    const bool pattern = patternBody_ && dependentType(to);
+    if (!to->isScalar() && !pattern) return listTemporary(to, pos);
+    // A scalar's `T{}` or `T{x}` is noted as the cast `T()` or `T(x)` is: a zero, or its one value converted; a pattern's too.
     Init in = parseInitialiser();
     const bool one = in.items.size() == 1 && !in.items[0].isList && in.items[0].value;
     const syntax::NodeId operand = one ? syn(in.items[0].value) : syntax::NodeId();
@@ -661,7 +665,7 @@ ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
     r->setDeclCategory(Expr::Category::Prvalue);
     if (!in.items.empty() && !operand.valid()) return r;
     ExprPtr made = noteCast(std::move(r), types_.withoutConst(to->unqualified()), to->describe(), pos, operand);
-    if (in.items.empty() && made && made->syntax().valid()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to->unqualified()));
+    if (in.items.empty() && !pattern && made && made->syntax().valid()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to->unqualified()));
     return made;
 }
 
@@ -1404,7 +1408,7 @@ ExprPtr Parser::primaryNode(Program *program) {
     if (atUserDefinedLiteral()) return userDefinedLiteral(program);
 
     if (peek().kind == TokenKind::Str) {
-        std::string label = ".L.str." + std::to_string(strings_++);
+        std::string label = ".L.str." + std::to_string(stringLabel()++);
         std::string text = peek().text;
         at_++;
 
@@ -2257,7 +2261,7 @@ ExprPtr Parser::primaryNode(Program *program) {
             std::string bare = currentFunctionName_;
             const std::size_t cut = bare.rfind("::");
             if (cut != std::string::npos) bare = bare.substr(cut + 2);
-            const std::string label = ".L.str." + std::to_string(strings_++);
+            const std::string label = ".L.str." + std::to_string(stringLabel()++);
             program->module.data.strings.push_back(StringLit{ label, bare + '\0', 1 });
             ExprPtr n(new StrLit(label, bare));
             n->setType(types_.arrayOf(types_.withConst(types_.charType()),
@@ -2963,6 +2967,13 @@ ExprPtr Parser::postfix() {
         n = notePostfix(std::move(n), step);
         step = beginPostfix(n);
         std::size_t pos = peek().pos;
+        if (dependentOperand(n->type()) && dependentPostfix(n->type(), step)) { n = zeroOf(dependentResult()); continue; }
+        // A callee of dependent type: its arguments read, and a result of dependent type.
+        if (peek().is("(") && dependentOperand(n->type(), false) && !n->type()->isFunction()) {
+            at_++;
+            n = finishCall("a dependent callee", "$pattern$", std::move(n), dependentResult(), std::vector<const Type *>(), true, pos);
+            continue;
+        }
 
         // `f(1, 2)` where f is an object. **[over.call]: the call operator has to be
         // a non-static member function** - there is no non-member form of it - so the
@@ -3505,7 +3516,7 @@ ExprPtr Parser::unaryNode() {
                                                (s->access == Access::Private ? "private" : "protected"));
                             const std::size_t namePos = peek().pos;
                             at_ += q + 1;
-                            if (unevaluated_ == 0) usedStaticMembers_.insert(s->symbol);
+                            if (unevaluated_ == 0 && !patternUses_) usedStaticMembers_.insert(s->symbol);
                             Var *sv = Var::global(cls->tag() + "::" + s->name);
                             sv->setSymbol(s->symbol);
                             ExprPtr object(sv);

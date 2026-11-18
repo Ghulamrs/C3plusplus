@@ -2257,6 +2257,7 @@ Program Parser::parse() {
         classes_.defineImplicitFunctions();
         if (program.functions.size() == had) break;
     }
+    tmpl_.holdDeclarations();         // -check=templates alone: each declaration's tree against its first replay
     if (std::getenv("CXX1_TEMPLATE_CENSUS") != nullptr) std::fprintf(stderr, "%s\n", tmpl_.censusLine().c_str());
     classes_.pruneExternalVtables(program);
     pruneUnchosenCandidates(program);

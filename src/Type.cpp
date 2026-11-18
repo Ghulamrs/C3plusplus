@@ -1,5 +1,6 @@
 #include "Type.h"
 #include "Abi.h"
+#include "Source.h"
 
 #include <cmath>
 #include <cstdio>
@@ -55,6 +56,13 @@ int Type::microsoftInheritanceModel() const {
     return 0;
 }
 
+static thread_local bool dependentSizesNamed = false;
+void Type::nameDependentSizes(bool on) { dependentSizesNamed = on; }
+static void refuseDependent(Kind k) {
+    if (dependentSizesNamed && k >= Kind::PackExpansion && k != Kind::MemberPointer)
+        throw SubstitutionFailure("the size of a dependent type");
+}
+
 int Type::size(const Target &t) const {
     if (unqual_ != nullptr) return unqual_->size(t);
     // **A data member pointer is an offset**: Itanium's a ptrdiff_t, Microsoft's
@@ -72,6 +80,7 @@ int Type::size(const Target &t) const {
         return total > 2147483647LL ? 2147483647 : static_cast<int>(total);
     }
     if (kind_ == Kind::Struct || kind_ == Kind::Union) return size_;
+    refuseDependent(kind_);
     return t.sizeOf(kind_);
 }
 
@@ -81,6 +90,7 @@ int Type::align(const Target &t) const {
     if (isReference()) return pointee_->align(t);
     if (kind_ == Kind::Array) return pointee_->align(t);
     if (kind_ == Kind::Struct || kind_ == Kind::Union) return align_;
+    refuseDependent(kind_);
     return t.alignOf(kind_);
 }
 
