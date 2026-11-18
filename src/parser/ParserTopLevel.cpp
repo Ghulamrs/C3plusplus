@@ -2266,7 +2266,7 @@ Program Parser::parse() {
         const std::map<std::string, int>::const_iterator a = frameAligns_.find(f.symbol());
         if (a != frameAligns_.end()) f.setFrameAlign(a->second);
     }
-    pruneUnusedInline(program);
+    recordHeld(program);
     program.module.data.dialect = dialect();
     return program;
 }
