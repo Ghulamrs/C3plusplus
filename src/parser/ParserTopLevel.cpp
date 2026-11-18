@@ -2017,12 +2017,19 @@ void Parser::topLevel(Program &program) {
     if (scope != 0) scopedFunctions_[fnSyntax.v] = scope;
     if (isCtor) constructorNodes_.insert(fnSyntax.v);
     declaredReturns_[fnSyntax.v] = returnType_;
-    // A constexpr constructor is kept as its steps, also under the C2 name a derived class calls it by; a body with a
-    // statement in its block, or one the parser wrapped, is a step no constant takes - as is one in a `try` round all.
+    // A constexpr constructor is kept as its steps, also under the C2 name a derived class calls it by; a statement in
+    // its block is refused (C++14's), and a body the parser wrapped is a step no constant takes - as is a `try` round all.
     if (constexprCtor) {
         std::uint32_t n = syntaxTree_.node(fnSyntax).count;
         while (n > 0 && syntaxTree_.node(syntaxTree_.child(fnSyntax, n - 1)).kind != syntax::Kind::Block) n--;
-        if (bodyWrapped || n == 0 || syntaxTree_.node(syntaxTree_.child(fnSyntax, n - 1)).count != 0) ctorSteps.steps.push_back(nullptr);
+        const syntax::NodeId ctorBlock = n == 0 ? syntax::NodeId() : syntaxTree_.child(fnSyntax, n - 1);
+        for (std::uint32_t si = 0; ctorBlock.valid() && si < syntaxTree_.node(ctorBlock).count; si++) {
+            const syntax::NodeId stmtId = syntaxTree_.child(ctorBlock, si);
+            const syntax::Node &stmtNode = syntaxTree_.node(stmtId);
+            const bool declares = stmtNode.kind == syntax::Kind::DeclStmt && (syntaxTree_.text(stmtId) == "static_assert" || syntaxTree_.text(stmtId) == "using");
+            if (!stmtNode.dead && !declares && stmtNode.kind != syntax::Kind::Null && stmtNode.kind != syntax::Kind::Typedef) refuseConstexprConstructorStatement(stmtNode.loc);
+        }
+        if (bodyWrapped || n == 0) ctorSteps.steps.push_back(nullptr);
         if (specFilter || ctorTry) ctorSteps.steps.assign(1, nullptr);
         ctorSteps.thisSlot = ctorThis;
         for (const Param &p : paramSlots)

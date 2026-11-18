@@ -2379,6 +2379,7 @@ private:
     static bool deletedSpecial(const Signature *f) { return f != nullptr && f->deleted; }
     static bool nonPublicDefault(const DefaultedMember &m) { return m.is && m.access != Access::Public; }
     void refuseConstexprConstructorBody(std::size_t parenAt) const;
+    void refuseConstexprConstructorStatement(std::size_t pos) const;
     void refuseScopedConversion(const Type *from, const Type *to, std::size_t pos) const;
     void refuseScopedOperand(const Type *a, const Type *b, const char *op, std::size_t pos) const;
     // `E::a`, `n::E::a`, `C::E::a` - an enumerator named through its enumeration, [dcl.enum]/11.

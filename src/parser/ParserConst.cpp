@@ -117,10 +117,14 @@ void Parser::refuseConstexprConstructorBody(std::size_t parenAt) const {
             depth++;
         } else if (t.is("}")) depth--;
     }
-    if (peekAt(k + 1).is("}")) return;
-    src_.fail(peekAt(k + 1).pos, "a 'constexpr' constructor with statements in its body is C++14, "
-                                 "and this compiler is C++11 - [dcl.constexpr]/4 asks for an empty "
-                                 "body and the work in the initialiser list");
+    if (!peekAt(k + 1).is("}")) refuseConstexprConstructorStatement(peekAt(k + 1).pos);
+}
+
+// The same rule read off an out-of-line definition's block, where `;`, a typedef, static_assert and `using` are C++11's.
+void Parser::refuseConstexprConstructorStatement(std::size_t pos) const {
+    src_.fail(pos, "a 'constexpr' constructor with statements in its body is C++14, "
+                   "and this compiler is C++11 - [dcl.constexpr]/4 asks for an empty "
+                   "body and the work in the initialiser list");
 }
 
 
