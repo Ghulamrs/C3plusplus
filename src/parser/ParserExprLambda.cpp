@@ -387,8 +387,7 @@ ExprPtr Parser::lambdaExpression() {
     // **The tag has to be unique and the function's *name* is not enough.** In a
     // replay `currentFunctionName_` is `operator()`, so every nested lambda built
     // `operator()::$_0`; the owner decides, with a counter for the display tag.
-    // A read's closure is named apart (`$read$tw::$_0`), so it takes none of the names an instantiation's will.
-    const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;
+    const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;   // a read's, `$read$tw::$_0`, takes no instantiation's name
     std::string tag = currentFunctionName_.empty()
                     ? local : owner + "::" + local;
     if (!currentFunction_.empty()) {
