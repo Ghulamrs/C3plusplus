@@ -1974,3 +1974,77 @@ or closure read as dependent, and the 152 m8z's patch uncovered (constexpr membe
 5 and 65 go to 0; (2) the singles (9 in the cases, 2 in the self-host); (3) Fable's reading of the dependent-name
 marking; (4) `template` as payload and the member name's mark; (5) the lowering's refusal of a class template-id's
 static member call over a dependent argument (`tests/open/template-dependent-static-call`), M3's file.
+
+## M8.1: lane 3 measured with the correction and set aside again, five singles read (lane m8z3, 2026-11-18)
+
+Branch `m8-e` from `e11346bf`: `62cdff85`, `350f4244`, `a7a0a545` (the singles), `a5006585` (EXCLUSIONS re-pointed),
+`6404350b` (the cases' ceiling), this entry.
+
+**Lane 3 with m8z2's correction, measured** (`boxkit/m8z3-lane3.patch`: m8z's `boxkit/m8z-lane3.patch` on `e11346bf`,
+and `Parser::refuseHeldClass` wanting a held class only when `overReadLocal` is false - a class over the read's own
+local class stays dependent and is never made at the definition). Linux `~/m8z3a` (`SUBST_RECORD=1`) and Windows
+`work\m8z3a`: **the 25 Windows sources that died are gone** - 103 of 103 compile; they were m8z's local class
+defined twice, `vector<$read$build::Throw>` made below the read and the read made again over it. The cases' unread 15
+to 10 (the held class's 5 to 0). **The self-host's 67 became 152**: the 65 held-class reads gone, and behind them
+**50** `a constexpr member's body the program has not asked for yet`, **75** `a range-based 'for' needs an array or a
+class with 'begin' and 'end'` (both class-members) and **25** under the local-class name (member-templates, the
+correction's, read as dependent). Each is one header read in each of the 25 units that include `OptCore.h`: the 25
+local-class reads are `build<EffectsFn>`'s `vector<Throw>`; the 75 and 50 are three and two member bodies of
+`FlowOf<Entry>` - range-fors over a made `vector<Block>`'s elements (`for (int e : blocks[b].succs)`) and two calls of a
+constexpr member. **Not landed**: the unread would rise (152 > 67), against the brief's first condition. What
+lane 3 still needs, measured: a read's constexpr member body made where the class is (or the fold left to the
+replay), and a range-for over a made class's element read as the replay reads it - then 152 is 25 + 2, under 67.
+
+**The singles, by reason** (9 in the cases, 2 in the self-host before). Read now - five, each a read checking a rule
+its parameters decide:
+- `template-angle-split` (`the class: an array length must be positive, not 0`): `U m[sizeof(U) - 5]` - a class
+  read's bound over its parameters is laid out as nothing, as `int v[N];` is (`Parser::arraySuffix`).
+- `template-template-parameter` (`the class: '' is not defined yet - a base class has to be complete`): `struct
+  Derived : C<int>` over a template template parameter - `$TT0<int>` left out as a dependent base is.
+- `inheriting-constructors` (`the class: a using-declaration inside a class is not supported yet here`): `using
+  Holder<T>::Holder;` over a left-out base waits for the arguments, as the base does.
+- `nontype-pack-types` (`'' is '' and this is '' - C++ converts an integer to an enumeration only with a cast`):
+  a read's non-type parameter had no type (an int); it has its declared type now, as a value's has
+  (`Templates::bindTemplateParameters`, [temp.param]/5) - `template <Colour C>`'s `{ C, Red }`.
+- `ssa-parameter-pack` (`expected ''`): `add3(twice(xs)...)` - a read's pattern over its function parameter pack is
+  one argument as dependent as its pattern (`Parser::parseArguments`).
+Left, with the reason each waits: `block-scope-typedef` (`a call with a dependent argument, which would instantiate
+its callee`: `f<U>()` - the dependent-name marking, item 3), `constructor-template-in-member-template` (`a cast from ''
+to '' - the two classes are unrelated`: `(Mx<K, K>)lhs` over a dependent `V<K>`) and `template-id-qualified-and-deduced`
+(`cannot be worked out from this call`: `dot(v)` deducing `N` from a dependent `Vec<N>`) - both deduction against a
+dependent argument, item 3's too; `function-try-block` (`a throw of a value whose type waits for the arguments`, m8z2's
+one name, kept: a dependent throw read as nothing would add an `Ast.h` statement, which `tools/ast-residue` lets only
+fall); `template-local-class-held` (the local-class name, dependent by design). The self-host's two, `'' was not
+declared` (`OptJumps.cpp`) and `'' needs a pointer to a struct or union` (`OptPipeline.cpp`), not met this hour.
+
+**Not read, by reason**: before (`e11346bf`) the cases 15 in 12 reasons and the self-host 67 in 5; after (`6404350b`,
+recorded on Linux `~/m8z3f` with `SUBST_RECORD=1`, and on Windows the same bytes) **the cases 10 in 7** - the held
+class's 5, the three member-template reads above, m8z2's dependent throw and the local-class one - and **the
+self-host 67 in 5**, unchanged (the held class's 65, `OptJumps` and `OptPipeline`). With lane 3 (not landed) the
+cases would be 5 and the self-host 152.
+
+**Gates** (REF `e11346bf` built fresh from `git archive` on both boxes, Linux `~/m8z3r` and Windows `work\m8z3r`; NEW
+`a5006585`'s sources - the ceiling commit after them changes no source - built fresh in `~/m8z3f` (g++ `-Werror`
+clean) and `work\m8z3f` (cl /W4 /WX clean); both trees' paths of one length). **Linux**: `tools/identical.sh` REF
+against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2 **8,860 compared, 0 differ**;
+the self-host's 103 sources' `-S` REF against NEW **102 the same and `Driver`**, its `__TIME__` bytes (`14:22:40`
+against `14:22:48`), so 0 of 103; `run.sh` **1235 passed, 0 failed**; `typed.sh` **878 passed, 0 failed** (untyped
+other=38 name=8, as REF); self-compile stage 0 **103 of 103** (77 s); `syntax.sh` **4 passed, 0 failed**; `subst.sh
+bodies self` **0 failed** (5,126 replayed over 878 units; the cases 10 under 10 in 7, the self-host 103 of 103 and 67
+under 67 in 5); the `.templates` records re-made, none changed; the cases' `-S` with `-check=templates` against
+without **0 differ**; `open.sh` 1 still differs; exclusions (31 citations re-pointed, 0 uncited, 0 stale), comment
+cap (0 over), memory gate, ast-residue (ExprPtr 2016, StmtPtr 639, +0) and `ide/generate.py` rc 0 each by its own
+status. **Windows**: the five spellings at -O0 and -O2 against REF, text and diagnostics, **12,410 the same, 0 differ** (equal paths: m8z2's 12 caret columns gone); `names.sh` **886
+passed, 0 failed**; `overload.sh` **46 agreed, 0 differed**; the flag against no flag **1,241 the same, 0 differ**;
+`typed.sh` **859 passed, 0 failed** (20 not for this host); static rc 0 each; `subst.sh bodies self` with
+`SUBST_RECORD=1` writes both ceilings byte for byte as committed; its four `.templates` records and `syntax.sh`'s four
+fail there as m8z2 measured them at REF and NEW alike (a host difference of those records, owed; REF not re-run).
+
+src/ lines: 95,690 before, 95,704 after.
+
+**What M8.1 still owes.** (1) Lane 3 (`boxkit/m8z3-lane3.patch`, correction in): the five `FlowOf<Entry>` bodies it
+uncovers - a constexpr member's body made where the class is, or its fold left to the replay; a range-for over a
+made class's element read as the replay reads it - before the cases' 5 and the self-host's 65 go to 0 and 152 to 27;
+(2) the singles left: three deductions and calls over a dependent argument (with item 3), the dependent throw, and
+the self-host's two; (3) Fable's reading of the dependent-name marking; (4) `template` as payload and the member
+name's mark; (5) `tests/open/template-dependent-static-call`, M3's file.
