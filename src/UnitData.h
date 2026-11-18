@@ -42,6 +42,8 @@ struct Global {
     int align = 0;   // `alignas(N)` on the object: what it asked for beyond its type's, else 0
     // `thread_local`: one copy per thread, in the target's TLS segment rather than .data or .bss.
     bool isThreadLocal = false;
+    // Emitted only where something emitted names it (the prune): a vtable group with no key function here, cl's vftable.
+    bool held = false;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Global(std::string name = std::string(), std::string symbol = std::string(),
@@ -67,6 +69,10 @@ struct StringLit {
     std::string label;
     std::string bytes;
     int width;
+    bool copied;        // copied into an array by an initialiser: kept though no instruction names its label
+    StringLit() : width(0), copied(false) {}
+    StringLit(std::string label, std::string bytes, int width)
+        : label(std::move(label)), bytes(std::move(bytes)), width(width), copied(false) {}
 };
 
 struct UnitData {
@@ -74,6 +80,8 @@ struct UnitData {
     std::vector<StringLit> strings;
     // Every function's symbol, in the order the unit defined them: the order a generator emits them in.
     std::vector<std::string> order;
+    // The functions emitted only where something emitted names them (the prune): the inline ones, sorted.
+    std::vector<std::string> held;
     // **The Microsoft ThrowInfo chains**, one per type thrown or caught, finished by the parser.
     std::vector<MicrosoftThrow> msThrows;
     // **The classes wanting a Microsoft run-time description**, five each.

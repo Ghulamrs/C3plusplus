@@ -1947,11 +1947,13 @@ void Parser::pruneUnusedInline(Program &program) {
             if (n.compare(4, k.size(), k) == 0) return false;
         return true;
     };
-    if (held.empty()) {
-        bool any = false;
-        for (const Global &g : program.module.data.globals) any = any || heldGlobal(g);
-        if (!any) return;
-    }
+    // The holding facts as the unit's records (M6d S1): what the closure below, and the driver's over the IR, start from.
+    UnitData &data = program.module.data;
+    data.held.assign(held.begin(), held.end());
+    bool any = !held.empty();
+    for (Global &g : data.globals) { g.held = heldGlobal(g); any = any || g.held; }
+    for (StringLit &sl : data.strings) sl.copied = copiedStrings_.count(sl.label) != 0;
+    if (!any) return;
     // A node is a function (its index) or a global (its index past the functions).
     const std::size_t nf = program.functions.size();
     std::map<std::string, std::size_t> bySymbol;
@@ -1977,7 +1979,7 @@ void Parser::pruneUnusedInline(Program &program) {
             work.push_back(i);
         }
     for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
-        if (!heldGlobal(program.module.data.globals[i])) {
+        if (!program.module.data.globals[i].held) {
             reached[nf + i] = true;
             work.push_back(nf + i);
         }
@@ -2014,7 +2016,7 @@ void Parser::pruneUnusedInline(Program &program) {
     // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
     std::vector<StringLit> keptStrings;
     for (StringLit &sl : program.module.data.strings)
-        if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
+        if (everyName.count(sl.label) != 0 || sl.copied) keptStrings.push_back(std::move(sl));
     program.module.data.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<TypeId> rtti;
