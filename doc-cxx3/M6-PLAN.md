@@ -4056,3 +4056,36 @@ run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-
 -O2 refused by both alike (stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate,
 ide --check pass; ast-residue lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2,
 names.sh, make test.
+
+### M6d S4, second lane: the vptr stores and the destructor registrations Classes and the parser build are effects - lane m6d-s4b, 2026-11-18
+
+From m6d-s4a e2e57f2b. src/ 93,579 -> 93,582 lines. REF is e2e57f2b built from clean in the lane's own Linux tree
+(`~/m6d-s4b-ref.exe`); the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) The vptr and vbptr stores are effects** (b6131c50, src/ 93,579 -> 93,582). `Classes::storeVptrs`,
+`itaniumVptrStores` and `storeVbptr` hand back `sema::Effect` - moved from `Parser` into Entities.h so `Classes` can
+name it, `Parser::Effect` its typedef; their four callers (the written constructor's and destructor's assembly in
+ParserTopLevel.cpp, `synthesizeDefaultCtor`, `synthesizeCopy`, `guardedVirtualBaseInit`) make the statements with
+`appendEffects`, at the place and in the order they were. **ast-residue** (Linux): ExprPtr 2,012 (the word moved, not
+added), StmtPtr 588 -> 575, node-casts 153, node-refs 351, readers 9, ast-lines 717. **Shown** against REF: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and arm64-darwin 7,232/0; `-g` 888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike).
+**(2) The destructor registration and the base's and own destructor calls are effects** (53ac05e5, src/ 93,582).
+`registerDestruction` writes `Effect`s (`__cxa_atexit`, its thread twins, `atexit` of the Microsoft helper);
+`baseDestructorCall` and `selfDestructorCall` return one; `buildStaticConstruction` and `destroyObject` make the
+statement where they pushed it. **ast-residue**: ExprPtr 2,012, StmtPtr 575 -> 564, node-casts 153, node-refs 351, readers 9, ast-lines 717; baseline recorded (lowered by hand to the measured count, no line raised). EXCLUSIONS.md: six citations the two steps moved (ParserClass.cpp three, ParserTopLevel.cpp two, ParserInit.cpp one) re-pointed in this entry's commit - the steps were already being gated, so neither was amended; the final tree checks 0 uncited, 0 stale. **Shown** against REF: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and arm64-darwin 7,232/0; `-g` 888/903/903 same and x86_64-windows 878, 0 differ (358/343/343/368 refused alike).
+
+**Not done, and why: no statement class leaves Ast.h yet, and acceptance is unchanged.** What (b) still owes is the
+part with a shape an effect cannot hold: `Classes::memberDestructor`'s array case is `eachElement`'s `For`, and
+`destroyObject`'s virtual-base case is an `If` over `$vb` - each needs a loop's or a test's record beside the effect,
+not a second spelling of the statement; then `buildStaticConstruction` returns its steps as effects (all of them are
+expressions once those two are records), `foldDeclaredObject` takes them, and `ConstexprCtor` keeps the constructor's
+steps where `assemble` writes the mem-initialisers instead of the body. (a) and (c) are as S4a left them: (a) "one
+return and nothing else" asked of the syntax tree, an acceptance change with each difference measured against clang;
+(c) `statement()` returning syntax nodes and the fifteen classes deleted, after (a) and (b).
+
+**Gates on the final tree** (53ac05e5, and the entry's commit for exclusions): Linux g++ -Werror clean (both steps);
+Windows work\m6d-s4bx cl /W4 /WX clean, started first and alone - step 1 a full build in 4 min 15 s with the tar, step 2
+a delta in 2 min 50 s; run.sh 1,240 passed, 0 failed; tests/tms6747.sh SIM=1 shards 1-3 on Linux and 4-6 on Windows at
+-O2 425/0 and 425/0, -O0 425/0 and 425/0; self-compile of the four changed files (Classes.cpp, ParserClass.cpp,
+ParserInit.cpp, ParserTopLevel.cpp): x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both alike
+(stack arguments outside the C6000 selector); exclusions 0/0, comment cap, memory gate, ide --check pass; ast-residue
+lower, recorded. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
