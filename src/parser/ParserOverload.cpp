@@ -157,9 +157,11 @@ ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const
         Parser *self = const_cast<Parser *>(this);
         if (const Signature *ctor = self->convertingConstructor(to, *e, 0, allowExplicit)) {
             self->markUsed(ctor);
+            const Signature chosen = *ctor;     // applyDefaults may grow the table under the pointer
             std::vector<ExprPtr> one;
             one.push_back(std::move(e));
-            return self->constructTemporary(to->unqualified(), *ctor, std::move(one), false, 0);
+            self->applyDefaults(chosen, one, 0);
+            return self->constructTemporary(to->unqualified(), chosen, std::move(one), false, 0, 1);
         }
     }
 

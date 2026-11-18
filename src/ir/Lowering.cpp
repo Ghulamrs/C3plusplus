@@ -6546,13 +6546,18 @@ bool Lowering::convertedTemporary(sema::TypedId an, const Type &c, bool destroys
     const bool destroyed = destroys && destroyedClass(c);
     if (!destroyedClass(c) && !constructedClass(c)) outside("a converted value of a class the lowering does not build");
     const Type &ft = T(sig);
-    if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != c.unqualified())
+    // [dcl.fct.default]/9: the constructor's defaults past the value, which the parser recorded by the value's node.
+    std::vector<sema::TypedId> parts(1, an);
+    const sema::TypedId defaults = ft.isFunction() && ft.params().size() > 2 && memberDefault_
+                                       ? memberDefault_(key_, "^$conv:" + std::to_string(tree_.node(an).syntax.v)) : sema::TypedId();
+    for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) parts.push_back(child(defaults, i));
+    if (!ft.isFunction() || ft.params().size() != parts.size() + 1 || ft.params()[0]->pointee()->unqualified() != c.unqualified())
         outside("a converted value built by a constructor of another shape");
     const std::string dtor = destroyed ? temporaryDestructor(*c.unqualified()) : std::string();
     if (destroyed && skippable_ != 0 && !canFlag()) outside("a class temporary with a destructor in an operand that may not be evaluated");
     slot = entryAlloca(tid(*c.unqualified()), "$tmp");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
-    argumentList(ft, 1, false, std::vector<sema::TypedId>(1, an), false, ops);
+    argumentList(ft, 1, false, parts, false, ops);
     directCall(symbol, sig, ops);
     if (destroyed) guard(slot, *c.unqualified(), dtor);
     return true;

@@ -584,7 +584,8 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &c = lookup_.functions_[(*set)[k]];
         // Direct-initialisation - a cast - may take an explicit one, [over.match.ctor].
-        if ((c.isExplicit && !directInit) || c.params.size() != 1) continue;
+        // [class.conv.ctor]/1: the parameters past the first may all have defaults.
+        if ((c.isExplicit && !directInit) || c.params.empty() || overload_.leastArguments(c) > 1) continue;
         const Type *want = c.params[0];
         const Type *bare = want->isReference() ? want->pointee()->unqualified()
                                                : want->unqualified();
@@ -647,9 +648,13 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
     markUsed(ctor);
     noteConvertedBuilt(arg->syntax(), plain, *ctor);
 
+    const Signature chosen = *ctor;     // applyDefaults may grow the table under the pointer
+    const syntax::NodeId operand = arg->syntax();
     std::vector<ExprPtr> one;
     one.push_back(std::move(arg));
-    return constructTemporary(plain, *ctor, std::move(one), false, pos);
+    applyDefaults(chosen, one, pos);
+    noteEntryDefaults("$conv:" + std::to_string(operand.v), one, 1);     // by the value's node, for the lowering
+    return constructTemporary(plain, chosen, std::move(one), false, pos);
 }
 
 // Whether any constructor of `cls` takes these arguments as they stand - the
