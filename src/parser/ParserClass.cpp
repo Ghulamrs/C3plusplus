@@ -635,7 +635,7 @@ StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
     const bool intoTry = !handOver.empty();
     const int pointerSlot = intoTry ? targetPtr : allocateFrameSlot(voidPtr);
     const int selectorSlot = intoTry ? targetSel : allocateFrameSlot(types_.intType());
-    if (intoTry) steps.push_back(StmtPtr(new Goto(handOver)));
+    if (intoTry) steps.push_back(jumpStatement(handOver));
     else         steps.push_back(resumeUnwinding(pointerSlot));
     Try *seg = new Try(std::move(body), unwindPad(std::move(steps)), pointerSlot, selectorSlot,
                        std::vector<std::string>());
@@ -708,7 +708,7 @@ StmtPtr Parser::cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
     // carries the `try`'s catch types, so the selector may name a handler -
     // and the one chain that tests it lives in the `try`'s own pad.
     if (chainLabel.empty()) steps.push_back(resumeUnwinding(pointerSlot));
-    else                    steps.push_back(StmtPtr(new Goto(chainLabel)));
+    else                    steps.push_back(jumpStatement(chainLabel));
     return unwindPad(std::move(steps));
 }
 

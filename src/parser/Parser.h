@@ -1063,8 +1063,8 @@ private:
                    const std::string &jump, const std::string &origin) const;
 
     struct SwitchCtx {
-        std::vector<const Case *> cases;
-        const Case *deflt;
+        std::vector<long long> values;   // the case values noted so far, which a duplicate is held against
+        bool deflt;
         const Type *governing;
         // What was in scope at the `switch` itself, which is where every one
         // of its case labels is jumped to from.
@@ -2036,6 +2036,9 @@ private:
     void flushTemporaries(std::vector<StmtPtr> &into);
     void temporaryEffects(std::vector<Effect> &into);
     StmtPtr effectStatement(Effect x);
+    // A jump and a label are lowered from their syntax: the parse keeps an empty block, or one holding the labelled statement.
+    static StmtPtr jumpStatement(const std::string &) { return StmtPtr(new Block({})); }
+    static StmtPtr labelStatement(const std::string &, StmtPtr s) { std::vector<StmtPtr> held; held.push_back(std::move(s)); return StmtPtr(new Block(std::move(held))); }
     void appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into);
     std::vector<Effect> throwEffects(ExprPtr value, std::size_t pos);
     std::vector<Effect> microsoftThrow(ExprPtr value, std::size_t pos);

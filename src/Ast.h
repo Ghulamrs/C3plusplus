@@ -32,13 +32,8 @@ class Block;
 class If;
 class While;
 class For;
-class Switch;
-class Case;
-class Goto;
-class Label;
 class Conditional;
 class Comma;
-class FuncletLeave;
 class Try;
 
 class Visitor {
@@ -62,13 +57,8 @@ public:
     virtual void visit(const If &) = 0;
     virtual void visit(const While &) = 0;
     virtual void visit(const For &) = 0;
-    virtual void visit(const Switch &) = 0;
-    virtual void visit(const Case &) = 0;
-    virtual void visit(const Goto &) = 0;
-    virtual void visit(const Label &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
-    virtual void visit(const FuncletLeave &) = 0;
     virtual void visit(const Try &) = 0;
 };
 
@@ -441,69 +431,6 @@ private:
     ExprPtr cond_, step_;
     StmtPtr body_;
     int scope_ = -1;
-};
-
-class Case final : public Stmt {
-public:
-    Case(long long value, bool isDefault, int id, StmtPtr body)
-        : value_(value), isDefault_(isDefault), id_(id), body_(std::move(body)) {}
-    long long value() const { return value_; }
-    bool isDefault() const { return isDefault_; }
-    int id() const { return id_; }
-    const Stmt &body() const { return *body_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    long long value_;
-    bool isDefault_;
-    int id_;
-    StmtPtr body_;
-};
-
-class Switch final : public Stmt {
-public:
-    Switch(ExprPtr cond, StmtPtr body, std::vector<const Case *> cases,
-           const Case *)
-        : cond_(std::move(cond)), body_(std::move(body)),
-          cases_(std::move(cases)) {}
-    const Expr &cond() const { return *cond_; }
-    const Stmt &body() const { return *body_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    ExprPtr cond_;
-    StmtPtr body_;
-    std::vector<const Case *> cases_;
-};
-
-class Goto final : public Stmt {
-public:
-    explicit Goto(std::string label) : label_(std::move(label)) {}
-    const std::string &label() const { return label_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    std::string label_;
-};
-
-class Label final : public Stmt {
-public:
-    Label(std::string name, StmtPtr body)
-        : name_(std::move(name)), body_(std::move(body)) {}
-    const std::string &name() const { return name_; }
-    const Stmt &body() const { return *body_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    std::string name_;
-    StmtPtr body_;
-};
-
-// **Leaving a Microsoft handler funclet early**: the runtime carries on at the
-// label named, which the parser laid down in the parent after the `try`.
-class FuncletLeave final : public Stmt {
-public:
-    explicit FuncletLeave(std::string label) : label_(std::move(label)) {}
-    const std::string &label() const { return label_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    std::string label_;
 };
 
 struct Param {

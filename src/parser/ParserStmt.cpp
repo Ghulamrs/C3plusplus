@@ -1175,16 +1175,19 @@ StmtPtr Parser::switchStatement() {
     cond = convert(std::move(cond), governing);
     expect(")");
 
-    switches_.push_back(SwitchCtx{ {}, nullptr, governing, jumpGuards() });
+    switches_.push_back(SwitchCtx{ {}, false, governing, jumpGuards() });
     switchDepth_++;
     breakMarks_.push_back(alive_.size());
     StmtPtr body = statement();
     breakMarks_.pop_back();
     switchDepth_--;
 
-    SwitchCtx ctx = std::move(switches_.back());
     switches_.pop_back();
-    StmtPtr made(make_owned<Switch>(std::move(cond), std::move(body), std::move(ctx.cases), ctx.deflt));
+    // The switch is lowered from its syntax; its parts are kept here, where nothing reads them.
+    std::vector<StmtPtr> parts;
+    parts.push_back(std::move(body));
+    parts.push_back(effectStatement(Effect(std::move(cond))));
+    StmtPtr made(new Block(std::move(parts)));
     if (!declares) return made;
     leaveBlock();
     leaveScope();
@@ -1222,8 +1225,8 @@ StmtPtr Parser::caseLabel() {
         if (!constant_.fold(*e, &folded, at))
             src_.fail(at, "expected a case value, and this is not an integer constant expression");
         value = constant_.narrowTo(folded, governing);
-        for (const Case *c : switches_.back().cases)
-            if (c->value() == value)
+        for (long long v : switches_.back().values)
+            if (v == value)
                 src_.fail(pos, "duplicate case value " + std::to_string(value));
     }
     expect(":");
@@ -1243,13 +1246,11 @@ StmtPtr Parser::caseLabel() {
 
     StmtPtr body = atDeclarationStart() ? declaration() : statement();
 
-    builtCase_ = CaseFacts{ value, isDefault, caseIds_ };
-    Case *node = new Case(value, isDefault, caseIds_++, std::move(body));
-    StmtPtr owned(node);
+    builtCase_ = CaseFacts{ value, isDefault, caseIds_++ };
     SwitchCtx &sw = switches_.back();
-    if (isDefault) sw.deflt = node;
-    else sw.cases.push_back(node);
-    return owned;
+    if (isDefault) sw.deflt = true;
+    else sw.values.push_back(value);
+    return labelStatement(std::string(), std::move(body));
 }
 
 StmtPtr Parser::gotoLabel() {
@@ -1267,7 +1268,7 @@ StmtPtr Parser::gotoLabel() {
     if (peek().is("}"))
         src_.fail(peek().pos, "a label must be followed by a statement");
 
-    return StmtPtr(new Label(std::move(name), atDeclarationStart() ? declaration() : statement()));
+    return labelStatement(name, atDeclarationStart() ? declaration() : statement());
 }
 
 // **[stmt.dcl]/3: a jump may not enter the scope of an initialised object.** All three
@@ -1431,13 +1432,13 @@ void Parser::resolveGotos() {
             leaves += kept ? 0 : 1;
         }
         if (leaves > 0 && !g.msExit.empty()) {
-            g.cleanups->append(StmtPtr(make_owned<FuncletLeave>(g.msExit)));
+            g.cleanups->append(jumpStatement(g.msExit));
             continue;
         }
         std::vector<StmtPtr> ends;
         endCatches(ends, leaves);
         for (std::size_t k = 0; k < ends.size(); k++) g.cleanups->append(std::move(ends[k]));
-        g.cleanups->append(StmtPtr(new Goto(g.name)));
+        g.cleanups->append(jumpStatement(g.name));
     }
     labels_.clear();
     gotos_.clear();
@@ -2021,12 +2022,12 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             if (!beyond.empty() && beyond == wasChain && aliveOutside > wasAliveFrom)
                 emitDestructors(padSteps, wasAliveFrom, pos, -1, aliveOutside);
             if (!beyond.empty()) {
-                padSteps.push_back(StmtPtr(new Goto(beyond)));
+                padSteps.push_back(jumpStatement(beyond));
             } else {
                 padSteps.push_back(resumeUnwinding(padPtr));
             }
             // Behind the label a region inside this handler jumps to.
-            StmtPtr padLabelled(new Label(endCatchLabel, unwindPad(std::move(padSteps))));
+            StmtPtr padLabelled(labelStatement(endCatchLabel, unwindPad(std::move(padSteps))));
             Try *region = new Try(std::move(guarded), std::move(padLabelled),
                                   padPtr, padSel, std::vector<std::string>());
             steps.push_back(StmtPtr(region));
@@ -2081,7 +2082,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         std::vector<StmtPtr> after;
         after.push_back(StmtPtr(t));
         std::string skip;
-        after.push_back(StmtPtr(new Goto(msExitLabel(skip, "skip"))));
+        after.push_back(jumpStatement(msExitLabel(skip, "skip")));
         // **Inside an enclosing handler these labels are in its funclet**, so an exit that leaves it too
         // leaves it the same way: the value handed on, and the enclosing handler's own exit asked for (M1).
         MsExit *const outer = inMsHandler_ ? msExit_ : nullptr;
@@ -2104,22 +2105,22 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                     copy->setType(returnType_);
                     on.push_back(StmtPtr(make_owned<ExprStmt>(std::move(copy))));
                 }
-                on.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->ret, "ret"))));
-                after.push_back(make_owned<Label>(msExit.ret, make_owned<Block>(std::move(on))));
+                on.push_back(jumpStatement(msExitLabel(outer->ret, "ret")));
+                after.push_back(labelStatement(msExit.ret, make_owned<Block>(std::move(on))));
             } else {
-                after.push_back(make_owned<Label>(msExit.ret, make_owned<Return>(std::move(give))));
+                after.push_back(labelStatement(msExit.ret, make_owned<Return>(std::move(give))));
             }
         }
         if (!msExit.brk.empty())
-            after.push_back(make_owned<Label>(msExit.brk, outer != nullptr && handlersLeftByBreak() > 0
-                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->brk, "brk"))) : StmtPtr(new Block({}))));
+            after.push_back(labelStatement(msExit.brk, outer != nullptr && handlersLeftByBreak() > 0
+                ? jumpStatement(msExitLabel(outer->brk, "brk")) : StmtPtr(new Block({}))));
         if (!msExit.cont.empty())
-            after.push_back(make_owned<Label>(msExit.cont, outer != nullptr && handlersLeftByContinue() > 0
-                ? StmtPtr(make_owned<FuncletLeave>(msExitLabel(outer->cont, "cont"))) : StmtPtr(new Block({}))));
+            after.push_back(labelStatement(msExit.cont, outer != nullptr && handlersLeftByContinue() > 0
+                ? jumpStatement(msExitLabel(outer->cont, "cont")) : StmtPtr(new Block({}))));
         // The funclet destroyed what the jump left, so the parent's half only jumps on.
         for (const std::pair<std::string, std::string> &e : gotoExits)
-            after.push_back(StmtPtr(new Label(e.first, gotoStatement(e.second, pos, false))));
-        after.push_back(StmtPtr(new Label(skip, StmtPtr(new Block({})))));
+            after.push_back(labelStatement(e.first, gotoStatement(e.second, pos, false)));
+        after.push_back(labelStatement(skip, StmtPtr(new Block({}))));
         Block *b = new Block(std::move(after));
         b->setScope(-1);
         return StmtPtr(b);
@@ -2138,7 +2139,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     if (!beyondTry.empty() && beyondTry == wasChain && aliveOutside > wasAliveFrom)
         emitDestructors(resume, wasAliveFrom, pos, -1, aliveOutside);
     if (beyondTry.empty()) resume.push_back(resumeUnwinding(pointerSlot));
-    else                   resume.push_back(StmtPtr(new Goto(beyondTry)));
+    else                   resume.push_back(jumpStatement(beyondTry));
     StmtPtr chain = unwindPad(std::move(resume));
     // [except.unexpected]: an exception the list does not allow, once this frame is unwound.
     if (!spec.empty()) {
@@ -2176,7 +2177,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         segments[i]->setTypes(types);
     }
     // The one chain, behind the label those segments jump to.
-    StmtPtr labelled(new Label(chainLabel, std::move(chain)));
+    StmtPtr labelled(labelStatement(chainLabel, std::move(chain)));
 
     std::vector<StmtPtr> guarded;
     guarded.push_back(std::move(body));
@@ -2279,7 +2280,7 @@ StmtPtr Parser::statementBody() {
         auto leaveVoid = [&]() -> StmtPtr {
             if (dtorExit_.empty()) return make_owned<Return>(nullptr);
             dtorExitTaken_ = true;
-            return make_owned<Goto>(dtorExit_);
+            return jumpStatement(dtorExit_);
         };
         // **A lambda's body, read to find what it returns**: the operand's
         // type is the answer, the first `return` deciding, and the statement
@@ -2305,7 +2306,7 @@ StmtPtr Parser::statementBody() {
                 emitDestructors(unwind, 0, pos);
                 endCatches(unwind, handlerDepth_);
                 if (leavesFunclet)
-                    unwind.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->ret, "ret"))));
+                    unwind.push_back(jumpStatement(msExitLabel(msExit_->ret, "ret")));
                 else
                     unwind.push_back(leaveVoid());
                 return StmtPtr(new Block(std::move(unwind)));
@@ -2463,7 +2464,7 @@ StmtPtr Parser::statementBody() {
                 emitDestructors(unwind, 0, pos, elided);
                 endCatches(unwind, handlerDepth_);
                 if (leavesFunclet)
-                    unwind.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->ret, "ret"))));
+                    unwind.push_back(jumpStatement(msExitLabel(msExit_->ret, "ret")));
                 else
                     unwind.push_back(leaveVoid());
                 return StmtPtr(new Block(std::move(unwind)));
@@ -2496,7 +2497,7 @@ StmtPtr Parser::statementBody() {
             endCatches(unwind, handlerDepth_);
 
             if (leavesFunclet) {
-                unwind.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->ret, "ret"))));
+                unwind.push_back(jumpStatement(msExitLabel(msExit_->ret, "ret")));
                 return StmtPtr(new Block(std::move(unwind)));
             }
             ExprPtr give(Var::local(temp, slot));
@@ -2648,7 +2649,7 @@ StmtPtr Parser::statementBody() {
         // **Out of a Microsoft handler it leaves the funclet**, and the parent
         // breaks at the label - a `Break` there, inside the loop the try is in.
         if (target_.microsoftNames() && handlersLeftByBreak() > 0 && msExit_ != nullptr)
-            return jumpLeaving(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->brk, "brk"))),
+            return jumpLeaving(jumpStatement(msExitLabel(msExit_->brk, "brk")),
                                breakMarks_.back(), pos, handlersLeftByBreak());
         return jumpLeaving(StmtPtr(new Block({})), breakMarks_.back(), pos,
                            handlersLeftByBreak());
@@ -2661,7 +2662,7 @@ StmtPtr Parser::statementBody() {
             src_.fail(pos, "'continue' is not inside a loop");
         expect(";");
         if (target_.microsoftNames() && handlersLeftByContinue() > 0 && msExit_ != nullptr)
-            return jumpLeaving(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->cont, "cont"))),
+            return jumpLeaving(jumpStatement(msExitLabel(msExit_->cont, "cont")),
                                loopMarks_.back(), pos, handlersLeftByContinue());
         return jumpLeaving(StmtPtr(new Block({})), loopMarks_.back(), pos,
                            handlersLeftByContinue());
