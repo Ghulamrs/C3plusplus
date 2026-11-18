@@ -464,9 +464,14 @@ bool Parser::dependentPostfix(const Type *object, PostfixStep &step) {
         if (written) k++;
         while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::")) k += 2;
         if (peekAt(k).kind != TokenKind::Ident) return false;      // `~T`, an operator's name: the ordinary reader's refusal
+        const std::string op = peek().text;
         at_ += k + 1;
-        // [temp.names]/4: after `template` the name is a template's, and `<` opens its arguments.
-        if (written && peek().is("<")) skipTemplateArguments();
+        if (!written) return true;
+        // [temp.names]/4: after `template` the name is a template's, and `<` opens its arguments - both kept (M8rev M2).
+        step.text = op + "template " + step.text.substr(op.size());
+        const std::size_t from = at_;
+        if (peek().is("<")) skipTemplateArguments();
+        step.text += spelledTokens(from, at_);
         return true;
     }
     return consume("++") || consume("--");
