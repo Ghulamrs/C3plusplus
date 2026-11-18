@@ -405,8 +405,10 @@ windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools
     names|overload|winstruct) u=$s; [ $s = winstruct ] && u=win-structure
         capped 1500 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --suite $u" > "$L" 2>&1
         d=$(tr -d '\r' < "$L" | grep -a "^$u.sh: \|^wave-gate: no " | tail -2 | tr '\n' ';' | cut -c1-300)
-        if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && ! grep -a -q "^$u.sh: skipped\|NOT RUN" "$L"
-        then wverdict "$s" PASS "$d"; else verdict "$s" FAIL "${d:-no count line}; $L" windows; fi ;;
+        # an unwind fault fails the step whatever the script's rc (m6g passed with 6: win-structure.sh's rc reads layout and names only)
+        uf=$(tr -d '\r' < "$L" | sed -n 's/^win-structure.sh: unwind: .*, \([0-9]*\) faults,.*/\1/p' | awk '{ s += $1 } END { print s + 0 }')
+        if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && [ "$uf" -eq 0 ] && ! grep -a -q "^$u.sh: skipped\|NOT RUN" "$L"
+        then wverdict "$s" PASS "$d"; else verdict "$s" FAIL "${d:-no count line}; $uf unwind faults; $L" windows; fi ;;
     wfixed[02]) f=; [ $s = wfixed2 ] && f=-O2
         sh "$W/self-host-stages.sh" "$N" "$f" > "$L" 2>&1
         a=$(grep -a 'the same object from stages 0, 1 and 2' "$L" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$L" | tail -1)
