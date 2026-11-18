@@ -483,8 +483,8 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
 }
 
 void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::size_t which) {
-    // The class doors are measured, not yet relied on: -check=templates alone, and never from inside a read.
-    if (door != ReadFunction && (!checkBodies_ || p_.patternUses_)) return;
+    // The class doors read with no flag, as the function door (commit 5), and never from inside a read.
+    if (door != ReadFunction && p_.patternUses_) return;
     const bool partial = door == ReadPartial;
     const std::vector<TemplateParam> &params = partial ? decl.partials[which].params : decl.params;
     std::string why;
@@ -653,7 +653,7 @@ std::vector<TemplateDecl> Templates::memberTemplatesUnder(const std::string &tag
 }
 
 void Templates::readMemberTemplatesOf(const std::string &tag) {
-    if (!checkBodies_ || p_.patternUses_) return;
+    if (p_.patternUses_) return;
     const std::vector<TemplateDecl> mine = memberTemplatesUnder(tag);
     for (std::size_t t = 0; t < mine.size(); t++)
         if (mine[t].classParams.empty()) readDeclaration(mine[t], ReadMember);

@@ -171,7 +171,7 @@ public:
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);
     // A function template's definition read once in pattern mode where it is declared; at the unit's end, held against its first replay.
-    // M8.1 commit 4's doors read the same way under -check=templates: `which` is the out-of-line member or the partial.
+    // The class doors read the same way, with no flag since commit 5: `which` is the out-of-line member or the partial.
     enum ReadDoor { ReadFunction, ReadClass, ReadOutOfLine, ReadPartial, ReadAlias, ReadMember, ReadDoors };
     void readDeclaration(const TemplateDecl &decl, ReadDoor door = ReadFunction, std::size_t which = 0);
     void tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody, std::size_t at);
