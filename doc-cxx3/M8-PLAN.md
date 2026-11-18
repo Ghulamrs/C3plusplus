@@ -2323,3 +2323,97 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
   against the rows left, checked by the coordinator: 6 and 6, the same. Landed on that.
 - Owed: the Windows CRLF compare (branch m8-crlf, the user's ask - lands with the next M8 wave); M1, M2, M4-M7, L1-L3 of
   the review; M3 (c); boxkit/m8z4-singles.patch; tests/open/template-dependent-static-call.
+
+## M8.1: the review's M5, M6, M1, M2 and M4, and what the mark means (M7) (lane m8h1, 2026-11-19)
+
+Branch `m8-g` from `0177b5cc`: `6184e0a2` (M5), `1c721fd0` (M6), `91ede77c` (M1), `139213de` (M2), `7700d6b4` and `01dd0dc7` (M4's
+case), `fbe8007b` (the cases ceiling, the syntax record), `9c769fc3` (EXCLUSIONS: 11 re-pointed) and this entry. src/ 94,232 -> 94,287 lines (+63 -8 in `ParserDependent.cpp`, `ParserExpr.cpp`,
+`ParserOperator.cpp`, `ParserType.cpp`, `Parser.h`, `syntax/Syntax.h`, `syntax/Syntax.cpp`). Every clang answer below is
+clang 19.1.5 `-x c++ -std=c++11 -pedantic-errors -nostdinc++ -isystem include` on the Windows box.
+
+- **M5** (`Parser::expr`): a comma whose left operand has a dependent type has a dependent type ([temp.dep.expr]/1), so
+  `g((x += 1, k))` reads `(call (name "g" dependent) (comma "," ...))` where `g` was unmarked and resolved to `g(int)`.
+  Case `template-read-comma`, clang `3 5`. (An overloaded `operator,` is refused at its declaration, so no case can show
+  the type it would give.)
+- **M6** (`Parser::refuseUntypedMember`, from `unqualifiedSpecifiers`' two template-id paths): a class template-id whose
+  argument tokens name a bound type or non-type parameter, followed by `::name` where a type is read and no `typename`
+  was written, is refused by name, as `T::type` is: "'Sel<(N>3)>::type' names a member of a class whose arguments depend
+  on 'N', and whether that is a type depends on them - write 'typename ...'" - at the read and at the replay alike, so the
+  program is refused as clang refuses it ("missing 'typename' prior to dependent type name"). A template-id naming a
+  class being defined (the current instantiation, `Own<N>::type` inside `Own`) is exempt. Cases
+  `template-typename-dependent-id` (`.error`) and `template-typename-not-needed` - what clang takes with no `typename`:
+  the current instantiation's member, `k = Sel<(N > 3)>::s(k)`, `Sel<sizeof(T) == 4>::c`, `Sel<true>::type`,
+  `sizeof(Sel<(N > 1)>::c)` - clang `8 3`. **Found**: `Sel<(N > 3)>::s(k);` as a statement is refused, by REF too
+  ("'Sel<1>' has no member type called 's'": `atTypeName` says a class template-id starts a declaration) - a refusal
+  stricter than the standard, now `tests/open/template-static-call-statement` (clang `s 7`, `7`); its mend is in the
+  statement builder's question, lane m6d-s4h's file, not touched.
+- **M1** (`Parser::unfoundResult`, `markReadName`, `syntax::Unfound`): which names change - exactly an *unqualified* name
+  that no scope declares, read in a class whose base was left out (`primaryNode`'s last `leftOutBase(nullptr)`): it
+  stays read (no body moves to unread) but its node is marked `unfound`, never `dependent`; clang refuses it
+  ([temp.dep]/3: unqualified lookup looks in no dependent base), `tests/open/template-left-out-base-unqualified`
+  (REFUSE; cxx1's replay finds `nb` and prints 1, as before - the over-acceptance M8.5 is to refuse, now visible in the
+  tree). Unchanged, and right to be: `this->nb`, `C::nb` and a mem-initialiser naming the base - members of an unknown
+  specialization ([temp.dep.expr]/5), still `dependent` (case `template-left-out-base-qualified`, clang `4`); a call
+  `g(nb)` over the unfound name still waits (`g` dependent), since nothing in it may be bound at the definition.
+  Not made a hard refusal: a read declines by name and the replay decides, so a refusal from a read would be an
+  unread body, not a refused program; and the self-host and `include/` are not measured against it yet.
+- **M2** (`Parser::dependentPostfix`): after `.template` / `->template` over a dependent object, the member node keeps
+  `template` and the written arguments: `(member ".template cv<int>" (name "b" dependent))` against `(member ".cv" ...)`
+  for `b.cv(k)` - the two are two trees now. Case `template-read-member-template`, clang `4.5`. Not done: the review's
+  second half, `conv<int>(k)` (a function template-id with non-dependent arguments) reading `(name "conv")` - the
+  primary's name builder, owed.
+- **M4**: `tests/cases/template-read-shapes.cpp`, ten valid shapes, each in a template of its own, instantiated
+  (clang `3 3 3 4` / `1 8 4 1 11 1`), each unread by its reason: range-for over `T` and over `const T &` (2, "a
+  range-based 'for' needs an array or a class with 'begin' and 'end'"), `T::s;` and `T::f(k);` (2, "names a member of
+  the template parameter ... depends on the argument"), `int (T::*pm) = 0;` ("'T' is not a class"), a local class
+  holding a `T` and `alignof(T)` (2, "the size of a dependent type"), `dynamic_cast<T *>(&x)` ("casts to a pointer to a
+  class ... and 'T' is neither"), `int a[N];` ("has an incomplete type" - not H2's bound message) and `char
+  b[sizeof(T)];` ("an array whose bound depends on a template parameter"). Two are out: `T::template X<int>::s;` (a
+  member class template is refused whole, "not supported yet") and **`T{};`, which under `-check=templates` refuses the
+  whole unit** ("expected a name", REF too; without the flag it compiles) - owed, as it would fail subst.sh's count.
+  None is mended: range-for and the expression statements are decided in the statement builders (lane m6d-s4h's).
+- **M7, what the mark means, and what M8.2 needs it to mean.** `dependent` on a name node is *the expression's type waits
+  for the arguments* (type-dependent, [temp.dep.expr]) - `markReadName` sets it on a name, and on a call's callee from
+  the call's type - and nothing more; it is not [temp.dep]'s *dependent name*. It is on every local and parameter of
+  dependent type, on members of the current instantiation, and it is absent where an argument is only value-dependent
+  (`g(N)`). `typename` records a written `typename`; `unfound` (M1) a name no scope has. **M8.2 reads `dependent` as
+  type-dependent only.** What M8.2 needs before it binds a call at the definition, and does not have: (1) a
+  `dependent-name` mark set only on an unqualified callee with a type-dependent argument ([temp.dep]/1) and on a name
+  qualified by a dependent scope; (2) on such a callee, the functions unqualified lookup found at the definition
+  ([temp.dep.candidate]: those, and ADL from both contexts); (3) the explicit arguments of a function template-id
+  (M2's second half). Until (1)-(3) land, M8.2 binds at the definition only a name with no mark, and replays every body
+  whose tree holds an `unfound` name, a `dependent` callee, or a member template-id.
+
+**Unread by door and reason** (Linux, `tests/subst.sh bodies self`). Before (`0177b5cc`): cases 6 in 5 - functions 3
+(a throw of a dependent value 1, an array bound 2), member-templates 3 (1 each: a member function template not worked
+out, a call with a dependent argument, a cast between unrelated classes); self 26 in 2 - member-templates 25 (range-based
+`for` over a dependent range), functions 1 ("needs a pointer to a struct or union"). After: **self 26 in 2, the same
+bodies, every door's read and shape as recorded** (M5, M6, M1 and M2 moved no body of the compiler's own); cases 17 in
+12 - the old 6 unchanged, and the new cases' 11: `template-read-shapes` 10 in 7 reasons (above; the bound reason 2 -> 3)
+and `template-typename-not-needed` 1 ("has no member type called", the same in REF). The cases ceiling was re-recorded
+for those alone: functions bodies 3490 -> 3503, read 3487 -> 3489, unread 3 -> 14; class-members 12570 -> 12575;
+member-templates 497 -> 498 and 494 -> 495; no shape, no old count up.
+
+**Gates** (REF `0177b5cc` from `git archive`, Linux `~/m8h1r`, Windows `work\m8h1r`; NEW `~/m8h1n`, `work\m8h1n` at
+`7700d6b4`'s source - the later commits change cases and records only; each built alone, paths of one length; g++ `-Werror`
+and cl /W4 /WX clean). **Linux**: `identical.sh` REF against NEW on tms6747, arm64-darwin, x86_64-linux and x86_64-windows
+at -O0 and -O2 **9,160 compared, 0 differ** (it leaves out a `.error` case; the new cases compile the same under both);
+**the self-host's `-S` REF against NEW 101 of 102 the same, Driver's `__TIME__` the one**; self-compile stage 0 102 of 102
+(159 s); run 1253/0; typed 908/0; syntax 5/0 (the new `template-read-marks` read by hand); subst bodies self 0 failed
+with the committed ceilings (906 of 906 case units counted, self 102 of 102); open 34 differ, 2 agree - the same two
+REF closes, and the two new entries OPEN as recorded; static gates rc 0 each (exclusions 0 uncited 0 stale after 11
+re-pointed, comments 0 over, memory, ast-residue, ide). **Windows**: the five spellings at -O0 and -O2 against REF, text and
+diagnostics, **12,580 the same, 10 differ - all `template-typename-dependent-id`**, which REF accepts and NEW refuses (M6,
+its `.error`); **the self-host's `-S` REF against NEW 101 of 102, Driver's `__TIME__` the one**; names 915 passed, 1
+failed - `template-left-out-base-qualified`'s inline constructor of `B` emitted (CLAUDE.md's rule; `1cf65309` takes the
+constructor out, and it passes; the cases ceiling's class-members 12575 -> 12574 with it, `6660c1ef`, and subst.sh holds
+on Linux again); overload 46/0; typed 889/0 (20 not this host); syntax 5/0 and **subst bodies self 0 failed** (874 of 874
+case units, 17 under 17, self 26 under 26, shapes 53 and 3) - the CRLF fix holds; static rc 0 each. **run.sh on Windows:
+906 of the printing cases "fail" by CR alone** - `tests/run.sh` diffs `.expected` against output a Windows build writes
+with CRLF (the m8-crlf fix covered subst.sh and syntax.sh); the 343 refusals pass; a host difference of the suite, owed
+(`tr -d '\r'` at its `diff`), not of this round. Self-compile (`tools/windows/self-host.cmd`, stage 0, after the chains: its stage 0 re-runs
+`msvc\build.cmd`, which cannot replace a `cxx3-msvc.exe` the chains hold open): 102 of 102 sources, stage 1 built.
+
+**Owed**: M2's `conv<int>(k)`; the statement builders' three refusals (`Sel<...>::s(k);`, `T::f(k);`/`T::s;`, range-for
+over a dependent range - 25 of the self-host's 26); M1's refusal (M8.5); M7's (1)-(3) (M8.2); the review's M3 (c), L1-L3;
+`boxkit/m8z4-singles.patch`; run.sh's CR compare on Windows; `T{};` under `-check=templates` (a unit refused).
