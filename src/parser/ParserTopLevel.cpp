@@ -1114,8 +1114,7 @@ void Parser::topLevel(Program &program) {
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.
-        // A read's `std::remove` beside `using ::remove;` is asked by the key declareFunction gave it.
-        const bool own = patternBody_ && absoluteName.empty() && cLinkage_ == 0 && !namespaceStack_.empty();
+        const bool own = patternBody_ && absoluteName.empty() && cLinkage_ == 0 && !namespaceStack_.empty();   // a read's std::remove, by its own key
         currentFunction_ = lookup_.lookupSignature(own ? namespacePrefix() + d.name
                                                        : absoluteName.empty() ? d.name : absoluteName, params, variadic,
                                            d.pos).symbol;
