@@ -525,6 +525,9 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         if (p_.unit_ == nullptr) p_.unit_ = into;
         const Parser::FunctionState outer = p_.captureFunctionState();
         const std::vector<std::string> wasStack = p_.namespaceStack_;
+        // An instantiation leaves its function parameter pack's written name in packs_ (packParameter): `args` there is not this read's.
+        const std::map<std::string, PackBinding> wasPacks = p_.packs_;
+        p_.packs_.clear();
         const bool wasBody = p_.patternBody_, wasUses = p_.patternUses_;
         // What a class's read sets and a refusal thrown through it leaves set.
         const std::vector<const Type *> wasClasses = p_.classStack_;
@@ -643,6 +646,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         p_.patternBody_ = wasBody;
         p_.patternUses_ = wasUses;
         unbindTemplateParameters(undo);
+        p_.packs_ = wasPacks;
         p_.namespaceStack_ = wasStack;
         p_.restoreFunctionState(outer);
         p_.at_ = resume;
