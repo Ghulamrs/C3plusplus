@@ -1332,3 +1332,42 @@ read as nothing), `~/m8qw`: the cases' function door **3,478 / 3,402 / 76**, cla
 the dependent sizes; a partial's own key for its `C<T>`; the member-template door - not started; the out-of-line
 door's 13. Unread is not 0 on either box, so commit 5 (the read on by default) waits.
 src/ lines: 95,448 before, 95,452 after.
+
+**M8.1, commit 4, eighth step: m8q's held patch, a read's closure names, and the root of "declared twice", 2026-11-18**
+(lane m8r, branch `m8-e` from `89911b67`; code `6a92fe79`, `62a9aa96`). Still under `-check=templates`; the replay is
+what emits. `boxkit/m8q-held.patch` as its own commit (`6a92fe79`: a read's `new` of a dependent class no pattern has
+made reads its operands and is a zero; a read's local of one is held; a read's `delete` of a dependent operand is its
+operand typed void), written so it adds no raw `new` and no `ExprPtr` word - as first committed (`faf61e4a`) it raised
+the memory gate 1,053 to 1,054 and the residue's `ExprPtr` 2,016 to 2,018, which m8q's static step reported as rc 0
+(it printed `tail`'s status: a defect of the script, mended in `boxkit/m8rf-linux.sh`). **The coordinator's owed
+item** (`62a9aa96`, `ParserExprLambda.cpp`, `ParserType.cpp`): a function template's read named its closures and
+local classes first, so `lambda-returning-lambda`'s `tw::$_0` became `tw$3::$_0` in the -g text; a read's are now
+`$read$tw::$_0` and take no name an instantiation will.
+
+**Read / not read by door**, before `89911b67` (m8q's `~/m8qn`, `work\m8qn`), after `faf61e4a` (Windows `work\m8rn`,
+`m8r-win.sh bodies` / `self`): the cases' function door 3,478 / 3,395 / 83 to **3,478 / 3,402 / 76**, class members
+12,237 / 12,108 / 129 to **12,237 / 12,156 / 81**, out-of-line 22 / 9 / 13, partials 607 / 586 / 21, aliases 7 / 7 / 0
+- unread **246 to 191**; the self-host's class members 31,158 / 30,315 / 843 to **31,158 / 30,864 / 294**, function
+7,512 / 7,325 / 187, partials 1,796 / 1,688 / 108 - unread **1,138 to 589**; 103 of 103 compiled. These are m8q's
+`~/m8qw` on Linux, reason by reason; Linux's counts on the gated tree were still running at the hour (below).
+
+**"Declared twice" has its root** (`boxkit/m8n-why.patch` over `faf61e4a`, `~/m8rx`): all 11 in the cases are
+`map:105` and `unordered_map:87`, `insert(const value_type &)` against `insert(const pair<K, V> &)` - value_type being
+`pair<const K, V>`. `Templates::specializationKey` spelled a template parameter's argument without its cv, so
+`pair<const $T0,$T1>` and `pair<$T0,$T1>` were one key and one class; and a partial's own key would have been its
+primary's, which is why the class door registers none. `boxkit/m8r-cvkey.patch` (the cv in the key, and a partial
+read keyed by its written arguments) is measured as `~/m8rw` - not finished at the hour; not committed, since the
+key is the replay's too and wants identical.sh.
+
+**Gates on `faf61e4a`** (REF built fresh from `89911b67`, alone, in Linux `~/m8rr` and Windows `work\m8rr`; NEW
+`~/m8rn`, `work\m8rn`, built alone after it on Linux, before it on Windows): Linux g++ `-Werror` 0 warnings; `subst.sh
+bodies` 0 failed (5,119 over 876 units); exclusions 0, comment cap 0. Windows cl /W4 /WX clean; the cases' `-S` with the
+flag against without 1,239 the same, 0 differ; the self-host's flag against no flag and REF against NEW 102 of 103 and
+`Driver` (both `fc` opened: one `DB` line of `__TIME__`); `names.sh` 884 passed, 0 failed; `overload.sh` 46 agreed, 0
+differed. **Owed at the hour** (running, results in the files named in `boxkit/m8r-handover.md`): Linux identical.sh,
+self-host REF against NEW and flag, typed, run, selfc, the counts; Windows the five spellings' halves and
+self-compile; the final tree `62a9aa96` built and its static gates on both boxes (`~/m8rf`, `work\m8rf`), and its -g
+text against REF (`~/m8ry`, `m8rf-win.sh same` with `GF=-g`). The member-template door, the out-of-line 13 and the
+dependent sizes were not started. Unread is not 0, so commit 5 waits: 191 in the cases and 589 in the self-host, of
+which "declared twice" (11 / 127) is the cv key above and the dependent sizes (25 + 16 + 16 / 104 + 96 + 96) lead.
+src/ lines: 95,452 before, 95,467 after.
