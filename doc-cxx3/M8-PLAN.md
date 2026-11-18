@@ -2301,3 +2301,8 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
   spellings 12,530, 0 differ (the new case the same on both). Linux run 1247/0, typed 903/0; Windows names 911/0, overload
   46/0. subst.sh bodies self: Linux 1 failed, the class-members shape 58 alone; Windows 6 failed - that line and the five
   `.templates` records, which differ from cxx3-msvc's output by CR alone (as at m8z5). Static gates rc 0 on both boxes.
+- **The class-members shape recorded at 58** (coordinator's ruling, 2026-11-18): no new shape - the same known body,
+  `include/map:92:8` (`map::operator[]`, `V()` read as a cast where the replay makes a temporary), counted in one more
+  unit, Tms6747.cpp, which main's changes made include it. The read cannot know V's kind (owed to M8.2's binding). The
+  record lists no class-door places, so the count alone moves. The coordinator judges this rule; it is not a user's
+  ratchet. Windows' five `.templates` records that differ by CR alone stay as they are, owed.
