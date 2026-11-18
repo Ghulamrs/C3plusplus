@@ -1015,7 +1015,8 @@ void Parser::topLevel(Program &program) {
                 else
                     ok = itaniumMemberTemplateName(d.qualifier, memberOf, d.name,
                           patternFn, memberTemplateArgs_, constThis, refThis, &sym, &why);
-                if (!ok)
+                if (!ok && patternBody_) sym = "$pattern$" + key + "$" + fnType->describe();      // read, never emitted
+                else if (!ok)
                     src_.fail(d.pos, "'" + key + "' cannot be given a name the "
                                      "linker can hold: " + why);
                 if (!c2.empty()) constructorC2_[sym] = c2;
