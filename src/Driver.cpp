@@ -1433,7 +1433,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
                             std::vector<std::string> &outside) {
     sema::Typer typer(parser);
     typer.emitInto(program);
-    const sema::Census c = sema::Typer::census(parser, program, true);
+    const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, into);
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
@@ -1746,16 +1746,6 @@ bool Driver::compile(const Job &job) {
         parser.syntaxTree().dump(dumped, src);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
-    if (dumpTyped_) {
-        const std::string dumped = sema::Typer::dump(parser, program);
-        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-    }
-    if (checkTyped_) {
-        int differ = 0;
-        const std::string report = sema::Typer::check(parser, program, src, &differ);
-        std::fwrite(report.data(), 1, report.size(), stdout);
-        if (differ != 0) return false;
-    }
     // **On x86 a `volatile` access is marked in MIR and every pass keeps it** (R8); arm64's and the C6000's generators have
     // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
     const bool marks = std::strncmp(backend_->name(), "x86_64", 6) == 0;
@@ -1779,6 +1769,17 @@ bool Driver::compile(const Job &job) {
         int failures = 0;
         const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
+        // The typed tree's dump and check count the functions the driver's prune kept (M6d S1).
+        if (dumpTyped_) {
+            const std::string typed = sema::Typer::dump(parser, program);
+            std::fwrite(typed.data(), 1, typed.size(), stdout);
+        }
+        if (checkTyped_) {
+            int differ = 0;
+            const std::string typed = sema::Typer::check(parser, program, src, &differ);
+            std::fwrite(typed.data(), 1, typed.size(), stdout);
+            if (differ != 0) return false;
+        }
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);

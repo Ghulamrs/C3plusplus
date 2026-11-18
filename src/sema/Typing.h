@@ -204,7 +204,7 @@ public:
     static std::string check(Parser &p, const Program &program, const Source &src, int *differ);
     // **-dump=typed** (R12): every body the census finds, typed; a node a line - kind, parts, text, type, record, folded value.
     static std::string dump(Parser &p, const Program &program);
-    static Census census(const Parser &p, const Program &program, bool whole = false);
+    static Census census(const Parser &p, const Program &program);
     // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
     TypeId declaredReturn(syntax::NodeId fn) const;
     bool wrappedBody(const std::string &symbol) const;

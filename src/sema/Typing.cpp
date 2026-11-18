@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
-#include <set>
 
 namespace sema {
 
@@ -949,19 +948,15 @@ TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) con
     return TypeTable::id(p_.tmpl_.substituted(s->second, p_.types_.type(declared)));
 }
 
-Census Typer::census(const Parser &p, const Program &program, bool whole) {
+Census Typer::census(const Parser &p, const Program &program) {
     Census c;
     std::map<std::string, std::size_t> bySymbol;
     std::map<std::string, int> kinds;
-    // Before the driver's prune the list is whole: the check and the dump count what the parser's closure kept.
-    const std::vector<std::string> &d = program.module.data.dropped;
-    const std::set<std::string> gone(whole ? d.end() : d.begin(), d.end());
     for (std::size_t i = 0; i < program.functions.size(); i++) {
-        if (gone.count(program.functions[i].symbol()) != 0) continue;
         bySymbol[program.functions[i].symbol()] = i;
-        c.emitted++;
         if (!program.functions[i].synthesised().empty()) kinds[program.functions[i].synthesised()]++;
     }
+    c.emitted = static_cast<int>(program.functions.size());
     // Every live `function` node that defined a symbol: a root, or a lambda's call operator under its `lambda` node.
     const syntax::Tree &st = p.syntaxTree_;
     for (std::uint32_t i = 1; i <= st.size(); i++) {
