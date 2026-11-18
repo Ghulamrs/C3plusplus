@@ -489,6 +489,7 @@ StmtPtr Parser::declarationBody() {
                                   (peek().is("=") || atBracedInitialiser(d.name));
         // A read's `const_iterator i` over a class no pattern has made is held as its operands are.
         const bool heldLocal = patternBody_ && !d.type->isComplete() && dependentType(d.type);
+        if (!d.type->isComplete() && !sizedByInitialiser && !heldLocal) refuseHeldClass(d.type);
         if (!d.type->isComplete() && !sizedByInitialiser && !heldLocal)
             src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
         checkNotAbstract(d.type, d.pos, "'" + d.name + "'");

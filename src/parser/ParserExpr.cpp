@@ -2435,6 +2435,7 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     const Type *it = init->type();
     // A read's `T &en = f(x);` over a dependent value or referent: what it binds to is substitution's.
     if (patternBody_ && (dependentType(referent) || dependentOperand(it))) return zeroOf(types_.pointerTo(referent));
+    refuseHeldClass(referent, it);
 
     // **A reference to a function holds the function's address** - [dcl.init.ref]/5 binds it to a
     // function lvalue of the same type, and `&f` already is that address.

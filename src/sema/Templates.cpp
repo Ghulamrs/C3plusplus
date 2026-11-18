@@ -1916,6 +1916,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
             named->setTemplateNamespace(decl.ns);
             named->noteClassKey(decl.classKey);
         }
+        if (!named->isComplete()) p_.readHeld_.insert(named);
         return named;
     }
     const Parser::ReplayUses replayed(&p_);

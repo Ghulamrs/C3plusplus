@@ -736,6 +736,16 @@ std::vector<syntax::NodeId> Parser::withDefaults(const Expr &e, const std::vecto
     return whole;
 }
 
+// A read's class held incomplete (`readHeld_`) has no members to convert by, to be a member or to be a local of.
+void Parser::refuseHeldClass(const Type *a, const Type *b) const {
+    if (!patternUses_ || readHeld_.empty()) return;
+    const Type *both[2] = { a == nullptr || !a->isReference() ? a : a->referent(), b == nullptr || !b->isReference() ? b : b->referent() };
+    if (both[0] != nullptr && both[1] != nullptr && both[0]->unqualified() == both[1]->unqualified()) return;
+    for (int i = 0; i < 2; i++)
+        if (both[i] != nullptr && readHeld_.count(both[i]->unqualified()) != 0 && !both[i]->unqualified()->isComplete())
+            throw SubstitutionFailure("the members of a class specialization the program has not asked for yet");
+}
+
 void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
                              const std::string &what) const {
     if (patternBody_ && (dependentType(to) || dependentOperand(from.type()))) return;
@@ -745,6 +755,7 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
 
     // Copying ignores the const at the top.
     if (ft->unqualified() == to->unqualified()) return;
+    refuseHeldClass(ft, to);
 
     if (ft->unqualified()->isScopedEnumeration()) refuseScopedConversion(ft, to, pos);
     if (ft->isArithmetic() && to->unqualified()->isEnumeration() && !rules().integerConvertsToEnumeration()) {

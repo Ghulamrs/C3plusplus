@@ -229,6 +229,9 @@ private:
     bool readLayout_ = false;       // a class door's read is laying its class out: Type::DependentLayout
     // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
     bool patternUses_ = false;
+    // M8.1: the classes a read held incomplete under their tags; what needs one's members is refused by one name.
+    std::set<const Type *> readHeld_;
+    void refuseHeldClass(const Type *a, const Type *b = nullptr) const;
     // M8.1: a pattern is read into a program of its own (`unit_` is the unit's meanwhile), its labels off a count of its own.
     Program *unit_ = nullptr;
     int patternStrings_ = 0;

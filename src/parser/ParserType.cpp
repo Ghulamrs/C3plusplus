@@ -1300,6 +1300,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
 
             // A read's `C<T> c;` over a class no pattern has made, or its `int v[N];`, is laid out as nothing, as a dependent base is.
             const bool heldMember = readLayout_ && !d.type->isComplete() && (dependentType(d.type) || d.type->isArray());
+            if (!d.type->isComplete() && !heldMember) refuseHeldClass(d.type);
             if (!d.type->isComplete() && !heldMember)
                 src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
             checkNotAbstract(d.type, d.pos, "the member '" + d.name + "'");

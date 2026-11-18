@@ -2121,6 +2121,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
     if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());     // a pattern class's: instantiation's to find
+    refuseHeldClass(cls);
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");
 }
