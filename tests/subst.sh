@@ -21,21 +21,41 @@ export CXX1 OUT
 steps="${*:-run typed census same bodies self}"
 bad=0
 mkdir -p "$OUT"
-# ceiling <corpus> <suffix>: the unread bodies of $OUT/*.<suffix>, "count door | reason" a line, against the record.
+# ceiling <corpus> <suffix>: from $OUT/*.<suffix>, the unread bodies ("count door | reason"), each door's sums ("door <name>
+# bodies= read= unread= shape=") and each read whose tree differs in shape from its replay ("shape <file:line:col>"), against
+# the record: a reason new or above its count, a door's read below or shape above its record, or a new shape fails (M8rev M3).
 ceiling() {
     rec=tests/subst-$1.ceiling; now=$OUT/$1.unread
-    cat "$OUT"/*."$2" | tr -d '\r' | sed -n 's/^-check=templates unread\([^(]*\)(\([0-9]*\)): /\2 \1| /p' |
-        awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "%d%s\n", s[k], k}' | LC_ALL=C sort -t' ' -k2 > "$now"
+    { cat "$OUT"/*."$2" | tr -d '\r' | sed -n 's/^-check=templates unread\([^(]*\)(\([0-9]*\)): /\2 \1| /p' |
+          awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "%d%s\n", s[k], k}' | LC_ALL=C sort -t' ' -k2
+      cat "$OUT"/*."$2" | tr -d '\r' | sed -n 's/^-check=templates declarations: functions=/door functions bodies=/p
+          s/^-check=templates declarations \([^:]*\): bodies=/door \1 bodies=/p' |
+          awk '{if (!($2 in b)) d[++k] = $2; for (i = 3; i <= NF; i++) { split($i, kv, "="); v[$2, kv[1]] += kv[2] } b[$2] = 1}
+               END {for (i = 1; i <= k; i++) printf "door %s bodies=%d read=%d unread=%d shape=%d\n", d[i], v[d[i], "bodies"], v[d[i], "read"], v[d[i], "unread"], v[d[i], "shape"]}' | LC_ALL=C sort
+      cat "$OUT"/*."$2" | tr -d '\r' | sed -n 's|^-check=templates declaration shape: \(.*[/\\]\)\{0,1\}\([^/\\ ]*:[0-9]*:[0-9]*\)$|shape \2|p' | LC_ALL=C sort -u
+    } > "$now"
     [ -z "$SUBST_RECORD" ] || cp "$now" "$rec"
     [ -f "$rec" ] || { echo "FAIL $1: no $rec (SUBST_RECORD=1 writes it)"; bad=$((bad + 1)); return; }
-    awk -v corpus="$1" -v rec="$rec" 'FILENAME == rec { n = $1; $1 = ""; c[$0] = n; ct += n; nr++; next }
+    awk -v corpus="$1" -v rec="$rec" '
+        function field(line, name,   i, kv, w) { split(line, w, " "); for (i in w) if (split(w[i], kv, "=") == 2 && kv[1] == name) return kv[2] + 0; return 0 }
+        FILENAME == rec && $1 == "door" { door[$2] = $0; next }
+        FILENAME == rec && $1 == "shape" { shape[$2] = 1; ns++; next }
+        FILENAME == rec { n = $1; $1 = ""; c[$0] = n; ct += n; nr++; next }
+        $1 == "door" { sd[$2] = 1
+          if (!($2 in door)) { printf "FAIL %s: a door the ceiling does not record: %s\n", corpus, $0; f++; next }
+          if (field($0, "read") < field(door[$2], "read")) { printf "FAIL %s: door %s read %d, below the floor of %d\n", corpus, $2, field($0, "read"), field(door[$2], "read"); f++ }
+          else if (field($0, "read") > field(door[$2], "read")) low++
+          if (field($0, "shape") > field(door[$2], "shape")) { printf "FAIL %s: door %s shape %d, above the record of %d\n", corpus, $2, field($0, "shape"), field(door[$2], "shape"); f++ }
+          next }
+        $1 == "shape" { if (!($2 in shape)) { printf "FAIL %s: a read differs in shape from its replay at %s, not recorded\n", corpus, $2; f++ } else nsn++; next }
         { n = $1; $1 = ""; seen[$0] = 1; t += n
           if (!($0 in c)) { printf "FAIL %s: a reason the ceiling does not record (%d):%s\n", corpus, n, $0; f++ }
           else if (n > c[$0]) { printf "FAIL %s: %d above the ceiling of %d:%s\n", corpus, n, c[$0], $0; f++ }
           else if (n < c[$0]) low++ }
         END { for (k in c) if (!(k in seen)) low++
-              printf "subst.sh ceiling %s: %d unread under a ceiling of %d in %d reasons\n", corpus, t, ct, nr
-              if (low) printf "    %d reasons are below the record: record again (SUBST_RECORD=1 sh tests/subst.sh bodies self)\n", low
+              for (k in door) if (!(k in sd)) { if (field(door[k], "read") > 0) { printf "FAIL %s: door %s read nothing, below the floor of %d\n", corpus, k, field(door[k], "read"); f++ } }
+              printf "subst.sh ceiling %s: %d unread under a ceiling of %d in %d reasons; %d shapes of %d recorded\n", corpus, t, ct, nr, nsn, ns
+              if (low) printf "    %d counts are below the record (or read above it): record again (SUBST_RECORD=1 sh tests/subst.sh bodies self)\n", low
               exit f != 0 }' "$rec" "$now" || bad=$((bad + 1))
 }
 for step in $steps; do case "$step" in
@@ -88,6 +108,10 @@ same)
 bodies)
     ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |
         xargs -P "$JOBS" -n 1 sh -c '( ulimit -t 20; $CXX1 -nologo -check=templates -S "$0" -o /dev/null > "$OUT/$(basename "$0" .cpp).bodies" 2> /dev/null )'
+    n=$(ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done | wc -l | tr -d ' ')
+    got=$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')
+    echo "subst.sh bodies: $got of $n cases reached the count"
+    [ "$got" -eq "$n" ] || { bad=$((bad + 1)); for b in "$OUT"/*.bodies; do grep -q '^-check=templates: bodies=' "$b" || echo "    no count: $(basename "$b" .bodies)"; done | head -10; }
     cat "$OUT"/*.bodies | grep '^-check=templates: bodies=' | tr ' ' '\n' | grep = | tr '=' ' ' |
         awk -v units="$(cat "$OUT"/*.bodies | grep -c '^-check=templates: bodies=')" '{s[$1]+=$2} END {printf "subst.sh bodies: %d replayed over %d units: %d first reads, %d the same as the first, %d differ in text alone, %d differ in shape\n", s["bodies"], units, s["held"], s["same"], s["text"], s["shape"]}'
     echo "    $(cat "$OUT"/*.bodies | grep -c '^-check=templates shape: ') bodies whose replays differ in shape, in $(grep -l '^-check=templates shape: ' "$OUT"/*.bodies | wc -l | tr -d ' ') units"

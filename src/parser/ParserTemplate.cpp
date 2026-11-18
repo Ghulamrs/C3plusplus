@@ -2144,6 +2144,14 @@ bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
     return false;
 }
 
+// A read's own class, closure or enumeration: local to the read function (`$read$f::L`), or nested in the read class (`C<$T0>$read3::D`).
+static bool underRead(const std::string &tag) {
+    if (tag.compare(0, 6, "$read$") == 0) return true;
+    for (std::size_t at = tag.find("$read"); at != std::string::npos; at = tag.find("$read", at + 5))
+        if (at + 5 < tag.size() && tag[at + 5] >= '0' && tag[at + 5] <= '9' && tag.find("::", at) != std::string::npos) return true;
+    return false;
+}
+
 bool Parser::dependentType(const Type *t) const {
     for (int depth = 0; t != nullptr && depth < 64; depth++) {
         if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember ||
@@ -2154,9 +2162,12 @@ bool Parser::dependentType(const Type *t) const {
             int tt;
             // A read's class laid out over a dependent member (a nested `Node` holding a `T`) is as dependent as its member.
             if (t->dependentLayout()) return true;
+            // A member of the current instantiation, or the templated function's own local class or closure ([temp.dep.type]/8).
+            if (patternBody_ && underRead(t->tag())) return true;
             return t->isSpecialization() &&
                    (ttRefName(t->templateName(), &tt) || dependentArgs(t->templateArgs()));
         }
+        if (t->isEnumeration()) return patternBody_ && underRead(t->tag());
         if (t->kind() == Kind::Function) {
             for (const Type *p : t->params())
                 if (dependentType(p)) return true;

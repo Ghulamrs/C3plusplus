@@ -1724,7 +1724,9 @@ const Type *Parser::enumSpecifier() {
     Type *self = nullptr;
     if (!tag.empty()) {
         const Type *before = lookup_.findTypedef(tagKey("enum", prefix + tag));
-        self = types_.enumType(prefix + tag,
+        // A read function's own enumeration is its own type (`$read$f::E`), dependent, and not the one its replay defines.
+        const bool readLocal = patternBody_ && within == nullptr && !currentFunction_.empty();
+        self = types_.enumType((readLocal ? "$read$" + currentFunctionName_ + "::" : std::string()) + prefix + tag,
                                underlying != nullptr ? underlying->kind() : Kind::Int);
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
         if (before != nullptr && before->unqualified() == self &&
@@ -2424,6 +2426,8 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
         }
         // A class read's bound over its parameters waits for them: the member is laid out as nothing, as `int v[N];` is.
         if (readLayout_ && dependentAhead(false)) { decay(conditional()); dims.push_back(-1); expect("]"); skipAttributes(); continue; }
+        // A function read's bound over a parameter is value-dependent ([temp.dep.type]/8): refused by name, never folded with 0.
+        if (patternBody_ && !readLayout_ && dependentAhead(false)) throw SubstitutionFailure("an array whose bound depends on a template parameter");
         // `long long`, not `long`: this compiler is built by cl on one of its three
         // machines, where a `long` is 32 bits - so `char a[0x100000001]` silently
         // became `char a[1]` there and kept its full length on the other two.
