@@ -709,7 +709,6 @@ private:
     int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
     int builtForParts_ = -1;    // the `for` forStatement just returned as itself: its parts; -1 for any other shape
     bool builtTry_ = false;     // tryStatement returned the `try` itself, not a block of it and its exits
-    void builtShapeDiffers(const char *what);
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
     std::map<std::uint32_t, MemberBuilt> caughtCopy_;    // a class caught by value: the copy constructor that copied it, by `catch` node
     struct MsUnnamed { std::string descriptor; bool byRef, isConst; };

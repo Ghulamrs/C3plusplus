@@ -996,6 +996,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     leaveScope();
     Block *whole = new Block(std::move(setup));
     whole->setScope(-1);
+    builtForParts_ = -1;
     return StmtPtr(whole);
 }
 
@@ -1079,7 +1080,7 @@ StmtPtr Parser::forStatement() {
     const std::size_t aliveAtEntry = alive_.size();
 
     builtForParts_ = -1;
-    if (atRangeFor()) { StmtPtr range = rangeForStatement(scope); builtForParts_ = -1; return range; }
+    if (atRangeFor()) return rangeForStatement(scope);
 
     StmtPtr init;
     if (!consume(";")) {
@@ -1475,9 +1476,7 @@ StmtPtr Parser::block(bool functionTry) {
         body.push_back(atDeclarationStart() ? declaration() : statement(&madeTry));
         // **A `try` is not covered by a cleanup region, it answers for
         // itself.**
-        if ((dynamic_cast<const Try *>(body.back().get()) != nullptr) != madeTry) builtShapeDiffers("try");
-        if (dynamic_cast<const Try *>(body.back().get()) != nullptr)
-            tryAt.push_back(body.size() - 1);
+        if (madeTry) tryAt.push_back(body.size() - 1);
         for (std::size_t k = 0; k < statementTemps_.size(); k++)
             temps.push_back(statementTemps_[k]);
         statementTemps_.clear();
@@ -1565,28 +1564,14 @@ StmtPtr Parser::statement(bool *madeTry) {
         listBuilt_[noted->syntax().v] = listsAt_[static_cast<std::uint32_t>(pendingReturnBraces_)];
     pendingReturnBraces_ = 0;
     pendingReturnEmpty_.clear();
-    {
-        const For *f = dynamic_cast<const For *>(noted.get());
-        if ((f != nullptr) != (builtFor >= 0) ||
-            (f != nullptr && builtFor != ((f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0))))
-            builtShapeDiffers("for");
-    }
-    if (const For *f = dynamic_cast<const For *>(noted.get()))
-        forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
+    if (builtFor >= 0) forParts_[noted->syntax().v] = builtFor;
     // The init hoisted in front of the loop, which is no longer the statement the parser returned: its parts as written.
     if (kind == syntax::Kind::For && hoistedForParts_ != 0) forParts_[noted->syntax().v] = hoistedForParts_;
     hoistedForParts_ = 0;
     if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
-    {
-        const Case *c = dynamic_cast<const Case *>(noted.get());
-        if ((c != nullptr) != builtCase || (c != nullptr && (builtCase_.value != c->value() || builtCase_.isDefault != c->isDefault() ||
-                                                            builtCase_.id != c->id())))
-            builtShapeDiffers("case");
-    }
-    if (const Case *c = dynamic_cast<const Case *>(noted.get()))
-        caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
+    if (builtCase) caseFacts_[noted->syntax().v] = builtCase_;
     return noted;
 }
 
@@ -2676,10 +2661,4 @@ int Parser::typeIndexFor(const std::string &symbol) {
         if (functionTypes_[i] == symbol) return static_cast<int>(i) + 1;
     functionTypes_.push_back(symbol);
     return static_cast<int>(functionTypes_.size());
-}
-
-// M6d S3's oracle while both exist: what the builder said it made against the node's own class - the same, or an error.
-void Parser::builtShapeDiffers(const char *what) {
-    src_.fail(peek().pos, std::string("internal: the record of the '") + what + "' statement just built differs from its "
-                          "node, in '" + currentFunction_ + "' (M6d S3)");
 }
