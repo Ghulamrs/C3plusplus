@@ -2669,8 +2669,8 @@ void Parser::checkLiteralOperator(const std::string &name,
     for (std::size_t i = 0; i < pendingDefaults_.size(); i++)
         if (pendingDefaults_[i] != 0)
             src_.fail(pos, "literal operator cannot have a default argument - [over.literal]/8");
-    // A template's specialization takes nothing, the template's own list being checked where it is declared.
-    if (params.empty() && !instantiationKey_.empty()) return;
+    // A template's specialization takes nothing, nor a read of the template: its own list is checked where it is declared.
+    if (params.empty() && (!instantiationKey_.empty() || patternUses_)) return;
     auto character = [&](const Type *t) {
         const Kind k = t->unqualified()->kind();
         return k == Kind::Char || k == Kind::WChar || k == Kind::Char16 || k == Kind::Char32;
