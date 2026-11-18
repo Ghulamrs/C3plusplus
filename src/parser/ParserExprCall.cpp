@@ -314,7 +314,7 @@ StmtPtr Parser::effectStatement(Effect x) {
         built->setType(types_.intType());
         std::vector<StmtPtr> calls;
         calls.push_back(std::move(call));
-        call = StmtPtr(make_owned<If>(std::move(built), StmtPtr(make_owned<Block>(std::move(calls))), StmtPtr()));
+        call = ifStatement(std::move(built), StmtPtr(make_owned<Block>(std::move(calls))), StmtPtr());
     }
     if (x.guard == 0) return call;
     ExprPtr live(Var::local("$guard", x.guard));
@@ -322,7 +322,7 @@ StmtPtr Parser::effectStatement(Effect x) {
     std::vector<StmtPtr> both;
     both.push_back(std::move(call));
     both.push_back(StmtPtr(make_owned<ExprStmt>(setGuard(x.guard, 0))));
-    return StmtPtr(make_owned<If>(std::move(live), StmtPtr(make_owned<Block>(std::move(both))), StmtPtr()));
+    return ifStatement(std::move(live), StmtPtr(make_owned<Block>(std::move(both))), StmtPtr());
 }
 
 ExprPtr Parser::temporaryDestruction(const Temporary &t, std::size_t pos) {

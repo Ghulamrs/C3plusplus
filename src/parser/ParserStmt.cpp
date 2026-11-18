@@ -2101,7 +2101,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                 on.push_back(jumpStatement(msExitLabel(outer->ret, "ret")));
                 after.push_back(labelStatement(msExit.ret, make_owned<Block>(std::move(on))));
             } else {
-                after.push_back(labelStatement(msExit.ret, make_owned<Return>(std::move(give))));
+                after.push_back(labelStatement(msExit.ret, returnStatement(std::move(give))));
             }
         }
         if (!msExit.brk.empty())
@@ -2147,7 +2147,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         zero->setType(types_.intType());
         ExprPtr test(new Binary(BinOp::Lt, std::move(sel), std::move(zero)));
         test->setType(types_.intType());
-        chain = StmtPtr(new If(std::move(test), std::move(unexpected), std::move(chain)));
+        chain = ifStatement(std::move(test), std::move(unexpected), std::move(chain));
     }
 
     for (std::size_t i = handlers.size(); i-- > 0; ) {
@@ -2161,8 +2161,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         want->setType(types_.intType());
         ExprPtr test(new Binary(BinOp::Eq, std::move(sel), std::move(want)));
         test->setType(types_.intType());
-        chain = StmtPtr(new If(std::move(test), std::move(handlers[i].stmt),
-                               std::move(chain)));
+        chain = ifStatement(std::move(test), std::move(handlers[i].stmt),
+                               std::move(chain));
     }
 
     // **Every segment of the body carries this `try`'s catch types.**
@@ -2271,7 +2271,7 @@ StmtPtr Parser::statementBody() {
         std::size_t pos = peek().pos;
         // A written destructor's `return` jumps past its body, [class.dtor]/8; any other leaves the function.
         auto leaveVoid = [&]() -> StmtPtr {
-            if (dtorExit_.empty()) return make_owned<Return>(nullptr);
+            if (dtorExit_.empty()) return returnStatement(nullptr);
             dtorExitTaken_ = true;
             return jumpStatement(dtorExit_);
         };
@@ -2287,7 +2287,7 @@ StmtPtr Parser::statementBody() {
                 expect(";");
             }
             if (*deducingReturn_ == nullptr) *deducingReturn_ = found;
-            return StmtPtr(new Return(nullptr));
+            return returnStatement(nullptr);
         }
         if (consume(";")) {
             if (!returnType_->isVoid())
@@ -2495,15 +2495,15 @@ StmtPtr Parser::statementBody() {
             }
             ExprPtr give(Var::local(temp, slot));
             give->setType(returnType_);
-            unwind.push_back(StmtPtr(new Return(std::move(give))));
+            unwind.push_back(returnStatement(std::move(give)));
             return StmtPtr(new Block(std::move(unwind)));
         }
         if (!before.empty()) {
-            before.push_back(StmtPtr(new Return(std::move(value))));
+            before.push_back(returnStatement(std::move(value)));
             return StmtPtr(new Block(std::move(before)));
         }
         pendingPlainReturn_ = value.get();
-        return StmtPtr(new Return(std::move(value)));
+        return returnStatement(std::move(value));
     }
     if (peek().is("if")) {
         const std::size_t pos = peek().pos;
@@ -2538,7 +2538,7 @@ StmtPtr Parser::statementBody() {
         StmtPtr thenArm = statement();
         StmtPtr elseArm;
         if (consume("else")) elseArm = statement();
-        StmtPtr made(new If(std::move(cond), std::move(thenArm),
+        StmtPtr made(ifStatement(std::move(cond), std::move(thenArm),
                             std::move(elseArm)));
         if (!declares) return made;
         leaveBlock();

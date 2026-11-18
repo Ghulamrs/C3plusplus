@@ -205,16 +205,16 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
         one->setType(flagType);
         ExprPtr test(new Binary(BinOp::BitAnd, std::move(flags), std::move(one)));
         test->setType(flagType);
-        body.push_back(StmtPtr(new If(std::move(test), std::move(freeIt), nullptr)));
+        body.push_back(ifStatement(std::move(test), std::move(freeIt), nullptr));
 
         ExprPtr back(Var::local("this", thisSlot));
         back->setType(self);
         ExprPtr asVoid(new Cast(vp, std::move(back)));
         asVoid->setType(vp);
-        body.push_back(StmtPtr(new Return(std::move(asVoid))));
+        body.push_back(returnStatement(std::move(asVoid)));
     } else {
         body.push_back(std::move(freeIt));
-        body.push_back(StmtPtr(new Return(nullptr)));
+        body.push_back(returnStatement(nullptr));
     }
 
     const Type *returns = ms ? vp : p_.types_.get(Kind::Void);
@@ -467,7 +467,7 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
                                 false, pos, std::move(args), true);
     if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     std::vector<StmtPtr> body;
-    body.push_back(StmtPtr(new Return(returns->isVoid() ? nullptr : std::move(call))));
+    body.push_back(returnStatement(returns->isVoid() ? nullptr : std::move(call)));
     if (returns->isVoid()) body.insert(body.begin(), StmtPtr(new ExprStmt(std::move(call))));
 
     p_.current_->functions.push_back(Function(name, returns, std::move(params),
@@ -538,9 +538,9 @@ std::string Classes::synthesizeVcallThunk(const Type *cls, const Signature &f,
     std::vector<StmtPtr> body;
     if (f.returns->isVoid()) {
         body.push_back(StmtPtr(new ExprStmt(std::move(call))));
-        body.push_back(StmtPtr(new Return(nullptr)));
+        body.push_back(returnStatement(nullptr));
     } else {
-        body.push_back(StmtPtr(new Return(std::move(call))));
+        body.push_back(returnStatement(std::move(call)));
     }
     p_.current_->functions.push_back(Function(name, f.returns, std::move(params),
                                            StmtPtr(new Block(std::move(body))),
@@ -2319,7 +2319,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         returns = p_.types_.pointerTo(type);
         ExprPtr me(Var::local("this", thisSlot));
         me->setType(self);
-        body.push_back(StmtPtr(new Return(std::move(me))));
+        body.push_back(returnStatement(std::move(me)));
     }
 
     bool guarded = false;
@@ -2695,9 +2695,9 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
     if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     if (returns->isVoid()) {
         body.push_back(StmtPtr(new ExprStmt(std::move(call))));
-        body.push_back(StmtPtr(new Return(nullptr)));
+        body.push_back(returnStatement(nullptr));
     } else {
-        body.push_back(StmtPtr(new Return(std::move(call))));
+        body.push_back(returnStatement(std::move(call)));
     }
 
     p_.current_->functions.push_back(Function(name, returns, std::move(params),

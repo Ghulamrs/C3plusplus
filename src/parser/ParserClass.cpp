@@ -276,9 +276,9 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
 
     ExprPtr flag(Var::local(".initVBases", flagSlot));
     flag->setType(types_.intType());
-    out.push_back(StmtPtr(new If(std::move(flag),
+    out.push_back(ifStatement(std::move(flag),
                                  StmtPtr(new Block(std::move(inside))),
-                                 StmtPtr())));
+                                 StmtPtr()));
     return out;
 }
 
@@ -684,9 +684,9 @@ void Parser::releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t) {
     both.push_back(StmtPtr(new ExprStmt(setGuard(t.flag, 0))));
     ExprPtr live(Var::local("$guard", t.flag));
     live->setType(types_.intType());
-    steps.push_back(StmtPtr(new If(std::move(live),
+    steps.push_back(ifStatement(std::move(live),
                                    StmtPtr(new Block(std::move(both))),
-                                   StmtPtr())));
+                                   StmtPtr()));
 }
 
 // **What an exception has to do on its way out of a scope.** The objects are the ones
@@ -1584,7 +1584,7 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
     body.push_back(guardElements(eachElement(indexSlot, convert(std::move(n), types_.intType()),
                                              std::move(one)),
                                  built, indexSlot, pos));
-    body.push_back(StmtPtr(new Return(nullptr)));
+    body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(name, types_.get(Kind::Void),
                                            std::move(params),
                                            StmtPtr(new Block(std::move(body))),
@@ -1641,7 +1641,7 @@ std::string Parser::vectorDestructor(const Type *cls, std::size_t pos) {
     std::vector<StmtPtr> body;
     body.push_back(StmtPtr(new ExprStmt(std::move(init))));
     body.push_back(loopStatement(StmtPtr(), Effect(std::move(cond)), Effect(), StmtPtr(new Block(std::move(inner)))));
-    body.push_back(StmtPtr(new Return(nullptr)));
+    body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(name, types_.get(Kind::Void),
                                            std::move(params),
                                            StmtPtr(new Block(std::move(body))),

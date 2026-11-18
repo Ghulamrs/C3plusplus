@@ -1213,7 +1213,7 @@ void Parser::finishTlsInit(Program &program) {
         std::vector<StmtPtr> once;
         once.push_back(StmtPtr(new ExprStmt(std::move(mark))));
         for (std::size_t i = 0; i < tlsInit_.size(); i++) once.push_back(std::move(tlsInit_[i]));
-        body.push_back(StmtPtr(new If(std::move(fresh), StmtPtr(new Block(std::move(once))), StmtPtr())));
+        body.push_back(ifStatement(std::move(fresh), StmtPtr(new Block(std::move(once))), StmtPtr()));
     }
     tlsInit_.clear();
     tlsInitGuards_.clear();
@@ -1392,7 +1392,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     const MemberBuilt a = { symbol, d.type, false, false };
     memberBuilt_[fn + "|$array|0"] = a;
     body.push_back(StmtPtr(new ExprStmt(callVectorLoop(loop, plain, std::move(first), std::move(n2), d.pos))));
-    body.push_back(StmtPtr(new Return(nullptr)));
+    body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(fn, types_.get(Kind::Void),
                                            std::move(params),
                                            StmtPtr(new Block(std::move(body))),
@@ -1650,8 +1650,8 @@ StmtPtr Parser::guardTemplateMember(const std::string &symbol,
     body.push_back(StmtPtr(new ExprStmt(std::move(set))));
     for (std::size_t i = 0; i < built.size(); i++)
         body.push_back(std::move(built[i]));
-    return StmtPtr(new If(std::move(fresh), StmtPtr(new Block(std::move(body))),
-                          StmtPtr()));
+    return ifStatement(std::move(fresh), StmtPtr(new Block(std::move(body))),
+                          StmtPtr());
 }
 
 void Parser::dynamicInitialiseStaticMember(const std::string &name,
@@ -1705,7 +1705,7 @@ StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> 
     ExprPtr set(new Assign(flag(), std::move(one)));
     set->setType(byte);
     body.push_back(StmtPtr(new ExprStmt(std::move(set))));
-    return StmtPtr(new If(std::move(fresh), StmtPtr(new Block(std::move(body))), StmtPtr()));
+    return ifStatement(std::move(fresh), StmtPtr(new Block(std::move(body))), StmtPtr());
 }
 
 // [stmt.dcl]/4 under the ABI's own guard: __cxa_guard_acquire / _release
@@ -1781,11 +1781,11 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
             runtimeCall("__cxa_guard_release", types_.get(Kind::Void),
                         std::move(a2)))));
         std::vector<StmtPtr> inner;
-        inner.push_back(StmtPtr(new If(std::move(acquired),
+        inner.push_back(ifStatement(std::move(acquired),
                                        StmtPtr(new Block(std::move(built))),
-                                       StmtPtr())));
-        return StmtPtr(new If(guardIs(0, Kind::UChar),
-                              StmtPtr(new Block(std::move(inner))), StmtPtr()));
+                                       StmtPtr()));
+        return ifStatement(guardIs(0, Kind::UChar),
+                              StmtPtr(new Block(std::move(inner))), StmtPtr());
     }
 
     std::vector<StmtPtr> whole;
@@ -1800,9 +1800,9 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
     built.push_back(StmtPtr(new ExprStmt(
         runtimeCall("_Init_thread_footer", types_.get(Kind::Void),
                     std::move(a2)))));
-    whole.push_back(StmtPtr(new If(guardIs(-1, Kind::Int),
+    whole.push_back(ifStatement(guardIs(-1, Kind::Int),
                                    StmtPtr(new Block(std::move(built))),
-                                   StmtPtr())));
+                                   StmtPtr()));
     return StmtPtr(new Block(std::move(whole)));
 }
 

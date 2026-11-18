@@ -27,9 +27,7 @@ class VaStart;
 class VaArg;
 class MemberAccess;
 class ExprStmt;
-class Return;
 class Block;
-class If;
 class Conditional;
 class Comma;
 class Try;
@@ -50,9 +48,7 @@ public:
     virtual void visit(const VaArg &) = 0;
     virtual void visit(const MemberAccess &) = 0;
     virtual void visit(const ExprStmt &) = 0;
-    virtual void visit(const Return &) = 0;
     virtual void visit(const Block &) = 0;
-    virtual void visit(const If &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
     virtual void visit(const Try &) = 0;
@@ -361,16 +357,6 @@ private:
     ExprPtr expr_;
 };
 
-class Return final : public Stmt {
-public:
-    explicit Return(ExprPtr value) : value_(std::move(value)) {}
-    bool hasValue() const { return value_ != nullptr; }
-    const Expr &value() const { return *value_; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    ExprPtr value_;
-};
-
 class Block final : public Stmt {
 public:
     explicit Block(std::vector<StmtPtr> body) : body_(std::move(body)) {}
@@ -385,18 +371,19 @@ private:
     int scope_ = -1;
 };
 
-class If final : public Stmt {
-public:
-    If(ExprPtr cond, StmtPtr thenArm, StmtPtr elseArm)
-        : cond_(std::move(cond)), then_(std::move(thenArm)), else_(std::move(elseArm)) {}
-    const Expr &cond() const { return *cond_; }
-    const Stmt &thenArm() const { return *then_; }
-    const Stmt *elseArm() const { return else_.get(); }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    ExprPtr cond_;
-    StmtPtr then_, else_;
-};
+// A return or an if is lowered from its syntax; what it held is kept in a Block, where nothing reads it.
+inline StmtPtr returnStatement(ExprPtr value) {
+    std::vector<StmtPtr> held;
+    if (value) held.push_back(StmtPtr(new ExprStmt(std::move(value))));
+    return StmtPtr(new Block(std::move(held)));
+}
+inline StmtPtr ifStatement(ExprPtr cond, StmtPtr thenArm, StmtPtr elseArm) {
+    std::vector<StmtPtr> held;
+    held.push_back(StmtPtr(new ExprStmt(std::move(cond))));
+    held.push_back(std::move(thenArm));
+    if (elseArm) held.push_back(std::move(elseArm));
+    return StmtPtr(new Block(std::move(held)));
+}
 
 struct Param {
     const Type *type;
