@@ -1,7 +1,7 @@
-ExprPtr 2014 user-approved 2026-11-18 "Yes, allow +2" (M6d S4, sema::Effect's constructor, 4cf6bcf5)
-StmtPtr 541
-node-casts 151
-node-refs 348
+ExprPtr 2012
+StmtPtr 519
+node-casts 149
+node-refs 343
 visits 0
 readers 9
-ast-lines 717
+ast-lines 689

@@ -4190,3 +4190,46 @@ next lane's first step, then `runConstexpr(const Stmt &)` goes. (4) waits on (3)
 lane. **The ExprPtr mark**: the coordinator relayed the user's "allow +2" (ExprPtr 2,014 for 4cf6bcf5); the lane did not
 write `tools/ast-residue.baseline` - the tool keeps the user-approved mark to the coordinator and `--record` refuses a raise.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test (syntax.sh among it), the mark.
+
+### M6d S4, fifth lane: `assemble`'s constructor steps as effects, `ConstexprCtor` over them, and the first three statement classes deleted - lane m6d-s4e, 2026-11-18
+
+From m6d-s4d f4fce1ed. src/ 93,635 -> 93,655 lines. REF is f4fce1ed built from clean in the lane's own Linux tree
+(`~/m6d-s4e-ref.exe`); the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(3) The constructor's steps are effects** (b4254ff8, src/ 93,635 -> 93,679). `memberInitialiser` puts its steps
+into an `Effect` list (false where the class wrote none) and `constructMember` and `delegatingCall` return one; an
+array member's loop is the effect's `loop`/`count`, made a statement under its elements' guard by `memberLoop` where
+the caller takes it, as `constructMember` did. The written constructor's mem-initialisers are `MemberStep`s (effects,
+or that guarded loop); `assemble` and `Classes::synthesizeDefaultCtor` make the statements, in the place and order
+they were. `ConstexprCtor` keeps `steps`: each step's expression in the order the body runs it, a null where the body
+has a statement no constant takes (a guard, a loop, a `$vb` test, a subobject's unwind region, a `try` round it all,
+or a written block with a statement in it or wrapped by `wrapUp`); `constructConst` runs them and stops at a null, as
+the walk stopped at the statement. `runConstexpr(const Stmt &)` - the last two statement casts in the constant
+evaluator - is deleted. One difference from the walk, unreachable by any case: an out-of-line constexpr constructor
+whose block holds an expression statement was run by the walk (C++14's rule) and is not run now (C++11's; clang
+refuses the body). **ast-residue** (Linux): ExprPtr 2,014 -> 2,012, StmtPtr 541 -> 518, node-casts 151 -> 149,
+node-refs 348 -> 343, readers 9, ast-lines 717. **Shown** against REF: identical tms6747 1,820/0, x86_64-linux, x86_64-windows and arm64-darwin 7,280/0; `-g` 894/909/909 same and x86_64-windows 884, 0 differ (359/344/344/369 refused alike).
+
+**(4) `DoWhile`, `Break` and `Continue` leave Ast.h** (42ae8898, src/ 93,679 -> 93,655). With (3) nothing reads a
+statement node: every `body()` reader is gone and nothing implements `Visitor`. A do-while's parts are kept in a
+`Block` (its body and the condition's effect), where nothing reads them; a `break` or `continue` is an empty `Block`;
+the lowering reads all three from the syntax tree, as it did. The three classes, their forward declarations and
+`Visitor` slots go. **ast-residue**: ExprPtr 2,012, StmtPtr 518 -> 519 (the do-while's parts vector), node-casts 149, node-refs 343, readers 9, ast-lines 717 -> 689; baseline recorded on Linux (`--record`, every count lower than f4fce1ed's: ExprPtr 2,012 is below the start's 2,016, so its line needs no mark). **Shown** against REF: identical tms6747 1,820/0 and 7,280/0; `-g` 894/909/909 same and x86_64-windows 884, 0 differ (359/344/344/369 refused alike).
+
+**Gates on the final tree** (42ae8898, and the entry's commit for exclusions and the baseline): Linux g++ -Werror
+clean (each step built); Windows cl /W4 /WX clean, started first and alone - step 1's first full build (with the tar,
+work\m6d-s4ey) found `Classes::synthesizeDefaultCtor` still calling the old `memberInitialiser`, mended by amending
+the step before any gate counted it, then a delta in about 90 s; step 2 a full rebuild after Ast.h in about 3 min;
+run.sh 1,247 passed, 0 failed (both steps); tests/tms6747.sh SIM=1 on the final tree, shards 1-3 on Linux at -O2
+428/0 and -O0 428/0, shards 4-6 on Windows (work\m6d-s4ey) at -O2 428/0 and -O0 428/0; self-compile of the five
+changed files (Constexpr.cpp, ParserClass.cpp, ParserTopLevel.cpp with step 1; ParserStmt.cpp, Classes.cpp with step
+2): x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both alike (`std::fma` undeclared; calls
+outside the C6000 selector); comment cap, memory gate, ide --check pass; exclusions 0/0 after 8 citations the steps
+moved were re-pointed in this entry's commit (lines moved, words kept); ast-residue lower, recorded.
+
+**Not done, and why.** What is left of S4 is (4)'s rest: twelve statement classes (`ExprStmt`, `Return`, `Block`,
+`If`, `While`, `For`, `Case`, `Switch`, `Goto`, `Label`, `FuncletLeave`, `Try`) are still built, and two are still
+read by the parser itself - `Case` (a switch's duplicate test reads `value()` off the cases it noted) and the body
+`Block` a `Function` holds. The order the next lane can take: `Case` (the switch's record of values instead of the
+node), then each builder returning its syntax node, `Function::body` and `StmtPtr` last. **Owed to the wave gate:**
+winpass in both spellings, ssa.sh 1/2, names.sh, make test.
