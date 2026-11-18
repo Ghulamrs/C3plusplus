@@ -1,7 +1,7 @@
 ExprPtr 2012
-StmtPtr 635
-node-casts 158
-node-refs 357
+StmtPtr 625
+node-casts 155
+node-refs 353
 visits 0
 readers 9
-ast-lines 722
+ast-lines 717

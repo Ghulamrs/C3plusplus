@@ -1321,31 +1321,6 @@ void Parser::finishMicrosoftThrow(MicrosoftThrow &names, bool thrown) {
     current_->module.data.msThrows.push_back(names);
 }
 
-// The statements a `throw` lowers to are a block of expression statements - stores, guard flags and
-// calls - so an expression can carry them as one comma chain. Anything else in there is refused.
-ExprPtr Parser::statementsAsExpression(StmtPtr s, std::size_t pos) {
-    if (ExprStmt *one = dynamic_cast<ExprStmt *>(s.get())) return one->release();
-    Block *b = dynamic_cast<Block *>(s.get());
-    if (b == nullptr)
-        src_.fail(pos, "this 'throw' builds a statement an expression cannot carry - write it as "
-                       "a statement of its own");
-    ExprPtr chain;
-    for (const StmtPtr &x : b->body()) {
-        ExprStmt *one = dynamic_cast<ExprStmt *>(x.get());
-        if (one == nullptr)
-            src_.fail(pos, "this 'throw' builds a statement an expression cannot carry - write it "
-                           "as a statement of its own");
-        ExprPtr e = one->release();
-        if (chain == nullptr) { chain = std::move(e); continue; }
-        ExprPtr both(new Comma(std::move(chain), std::move(e)));
-        both->setType(types_.get(Kind::Void));
-        chain = std::move(both);
-    }
-    if (chain == nullptr) src_.fail(pos, "this 'throw' lowered to nothing");
-    chain->setType(types_.get(Kind::Void));
-    return chain;
-}
-
 // **[expr.throw]: `throw e` is an expression of type void** - an assignment-expression, so an arm of `?:`
 // (`b ? 7 : throw 1`) and the operand of `noexcept` (1.27, 2026-10-21, review of 1.25, item 3). Lowered as the
 // statement is, chained; a rethrow where it has one; [except.spec]/9's terminate where it puts it.
@@ -1365,10 +1340,22 @@ ExprPtr Parser::throwExpression() {
         both->setType(types_.get(Kind::Void));
         return both;
     }
-    return statementsAsExpression(throwStatement(std::move(value), tpos), tpos);
+    std::vector<Effect> steps = throwEffects(std::move(value), tpos);
+    ExprPtr chain;
+    for (Effect &x : steps) {
+        if (x.guard != 0)
+            src_.fail(tpos, "this 'throw' builds a statement an expression cannot carry - write it "
+                            "as a statement of its own");
+        if (chain == nullptr) { chain = std::move(x.expr); continue; }
+        ExprPtr both(make_owned<Comma>(std::move(chain), std::move(x.expr)));
+        both->setType(types_.get(Kind::Void));
+        chain = std::move(both);
+    }
+    chain->setType(types_.get(Kind::Void));
+    return chain;
 }
 
-StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
+std::vector<Parser::Effect> Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
     value = decay(std::move(value));
     const Type *thrown = value->type()->unqualified();
     MicrosoftThrow names;
@@ -1424,19 +1411,26 @@ StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
                                   std::move(args));
     // The object is made, the operand's temporaries go, and then the throw -
     // [except.throw]/3's order, as the Itanium path keeps it.
-    std::vector<StmtPtr> steps;
-    steps.push_back(StmtPtr(new ExprStmt(std::move(store))));
-    flushTemporaries(steps);
-    steps.push_back(StmtPtr(new ExprStmt(std::move(thrower))));
-    Block *b = new Block(std::move(steps));
-    b->setScope(-1);
-    return StmtPtr(b);
+    std::vector<Effect> steps;
+    steps.push_back(Effect{ std::move(store), 0 });
+    temporaryEffects(steps);
+    steps.push_back(Effect{ std::move(thrower), 0 });
+    return steps;
 }
 
 // **`throw x;` is three calls and a store, and no new machinery**:
 // __cxa_allocate_exception, the store, __cxa_throw with the type that identifies
 // it. That type_info pointer is the work - fundamental types, the rest refused.
 StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
+    std::vector<Effect> made = throwEffects(std::move(value), pos);
+    std::vector<StmtPtr> steps;
+    for (Effect &x : made) steps.push_back(effectStatement(std::move(x)));
+    std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
+    b->setScope(-1);
+    return StmtPtr(std::move(b));
+}
+
+std::vector<Parser::Effect> Parser::throwEffects(ExprPtr value, std::size_t pos) {
     const Type *thrown = value->type()->unqualified();
     if (target_.microsoftNames()) return microsoftThrow(std::move(value), pos);
 
@@ -1533,7 +1527,7 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
     // **Three statements, because something happens between them.** The
     // exception object is initialised, *then* the operand's temporaries are
     // destroyed - [except.throw]/3 - and only then does the throw leave.
-    std::vector<StmtPtr> steps;
+    std::vector<Effect> steps;
     const bool copyMayThrow = cc != nullptr && !cc->isNoexcept;
     int storageGuard = 0;
     if (copyMayThrow) {
@@ -1544,16 +1538,12 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
     }
     ExprPtr first(new Comma(std::move(save), std::move(store)));
     first->setType(types_.get(Kind::Void));
-    if (copyMayThrow)
-        steps.push_back(StmtPtr(new ExprStmt(setGuard(storageGuard, 1))));
-    steps.push_back(StmtPtr(new ExprStmt(std::move(first))));
-    if (copyMayThrow)
-        steps.push_back(StmtPtr(new ExprStmt(setGuard(storageGuard, 0))));
-    flushTemporaries(steps);
-    steps.push_back(StmtPtr(new ExprStmt(std::move(thrower))));
-    Block *b = new Block(std::move(steps));
-    b->setScope(-1);
-    return StmtPtr(b);
+    if (copyMayThrow) steps.push_back(Effect{ setGuard(storageGuard, 1), 0 });
+    steps.push_back(Effect{ std::move(first), 0 });
+    if (copyMayThrow) steps.push_back(Effect{ setGuard(storageGuard, 0), 0 });
+    temporaryEffects(steps);
+    steps.push_back(Effect{ std::move(thrower), 0 });
+    return steps;
 }
 
 ExprPtr Parser::callAllocator(const char *itanium, const char *microsoft,

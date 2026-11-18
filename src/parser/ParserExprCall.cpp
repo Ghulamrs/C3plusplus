@@ -280,25 +280,32 @@ ExprPtr Parser::finishCall(const std::string &name, const std::string &symbol,
 // it, its address handed over, all one expression - and below it the end of a full
 // expression, where those temporaries are destroyed in the reverse of their order.
 void Parser::flushTemporaries(std::vector<StmtPtr> &into) {
+    std::vector<Effect> steps;
+    temporaryEffects(steps);
+    for (Effect &x : steps) into.push_back(effectStatement(std::move(x)));
+}
+
+void Parser::temporaryEffects(std::vector<Effect> &into) {
     if (pendingTemps_.empty()) return;
     std::vector<Temporary> mine;
     mine.swap(pendingTemps_);
     for (std::size_t k = mine.size(); k-- > 0; ) {
         ExprPtr gone = temporaryDestruction(mine[k], 0);
         if (gone == nullptr) continue;
-        StmtPtr call(make_owned<ExprStmt>(std::move(gone)));
-        // **Under its guard, and cleared with it.**
-        if (mine[k].flag != 0) {
-            ExprPtr live(Var::local("$guard", mine[k].flag));
-            live->setType(types_.intType());
-            std::vector<StmtPtr> both;
-            both.push_back(std::move(call));
-            both.push_back(StmtPtr(new ExprStmt(setGuard(mine[k].flag, 0))));
-            call.reset(new If(std::move(live),
-                              StmtPtr(new Block(std::move(both))), StmtPtr()));
-        }
-        into.push_back(std::move(call));
+        into.push_back(Effect{ std::move(gone), mine[k].flag });
     }
+}
+
+// **Under its guard, and cleared with it.**
+StmtPtr Parser::effectStatement(Effect x) {
+    StmtPtr call(make_owned<ExprStmt>(std::move(x.expr)));
+    if (x.guard == 0) return call;
+    ExprPtr live(Var::local("$guard", x.guard));
+    live->setType(types_.intType());
+    std::vector<StmtPtr> both;
+    both.push_back(std::move(call));
+    both.push_back(StmtPtr(make_owned<ExprStmt>(setGuard(x.guard, 0))));
+    return StmtPtr(make_owned<If>(std::move(live), StmtPtr(make_owned<Block>(std::move(both))), StmtPtr()));
 }
 
 ExprPtr Parser::temporaryDestruction(const Temporary &t, std::size_t pos) {

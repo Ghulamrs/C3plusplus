@@ -1927,7 +1927,6 @@ private:
     bool functionHasTry_ = false;
     // `throw x;` - rung 6.2. Answers the statement it lowers to.
     StmtPtr throwStatement(ExprPtr value, std::size_t pos);
-    StmtPtr microsoftThrow(ExprPtr value, std::size_t pos);
     // The copy constructors and destructor a Microsoft ThrowInfo chain names, marked used, and the chain recorded.
     void finishMicrosoftThrow(MicrosoftThrow &names, bool thrown);
     // A call to something in the runtime, named by its symbol and needing no
@@ -2024,6 +2023,12 @@ private:
     // The index in pendingTemps_ of the temporary a bound address names, or -1.
     int pendingTemporaryOf(const Expr &e) const;
     void flushTemporaries(std::vector<StmtPtr> &into);
+    // One step a builder took, as an expression; a nonzero `guard` runs it under that flag and clears it.
+    struct Effect { ExprPtr expr; int guard; };
+    void temporaryEffects(std::vector<Effect> &into);
+    StmtPtr effectStatement(Effect x);
+    std::vector<Effect> throwEffects(ExprPtr value, std::size_t pos);
+    std::vector<Effect> microsoftThrow(ExprPtr value, std::size_t pos);
     ExprPtr completeCall(const std::string &name, const std::string &symbol,
                          ExprPtr callee, const Type *returns,
                          const std::vector<const Type *> &params, bool variadic,
@@ -2433,10 +2438,8 @@ private:
                                const std::string &code = std::string());
     // The null pointer to a member function, the same pair with a null code word (1.27).
     ExprPtr nullMemberFunctionPointer(const Type *mp);
-    // `throw e` as an expression - an arm of `?:`, the operand of `noexcept` - of type void, and the
-    // statements a `throw` lowers to, which are all expressions, as one comma chain (1.27).
+    // `throw e` as an expression of type void (a `?:` arm, `noexcept`'s operand): its effects as one comma chain (1.27).
     ExprPtr throwExpression();
-    ExprPtr statementsAsExpression(StmtPtr s, std::size_t pos);
     // How many throw-expressions have been read, which tells a `?:` that an arm is one.
     int throwsSeen_ = 0;
     // Whether the function template signature readTemplateDeclaration last read says `noexcept` (1.27).
