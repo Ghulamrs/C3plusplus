@@ -119,7 +119,10 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
             auto en = p_.lookup_.enumIndex_.find(p.name);
             if (en != p_.lookup_.enumIndex_.end()) { ev.had = true; ev.was = en->second; }
             p_.lookup_.enumIndex_[p.name] = p_.lookup_.enums_.size();
-            p_.lookup_.enums_.push_back(EnumConst{ p.name, values[i] });
+            EnumConst read{ p.name, values[i] };
+            const Type *pt = Parser::paramTypeIn(p, binding);     // its declared type, as a value's below ([temp.param]/5)
+            if (pt != nullptr && pt->isInteger()) read.type = pt->unqualified();
+            p_.lookup_.enums_.push_back(read);
             p_.boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
@@ -283,8 +286,9 @@ std::string Templates::specializationKey(const std::string &name,
         else if (!args[i].isType) key += std::to_string(args[i].value);
         // A pattern's argument is a template parameter, and describe() would
         // put a space in a tag every table is keyed by.
-        else if (args[i].type->kind() == Kind::TemplateParam)
-            key += "$T" + std::to_string(args[i].type->length());
+        else if (args[i].type->kind() == Kind::TemplateParam)      // `pair<const $T0,$T1>` is not `pair<$T0,$T1>`
+            key += std::string(args[i].type->unqualified() == args[i].type ? "" : args[i].type->isConst() ? "const " : "volatile ") +
+                   "$T" + std::to_string(args[i].type->length());
         // A template named as an argument: `Holder<Box,int>`, the name as written.
         else if (args[i].isTemplate)
             key += args[i].type->templateNamespace() + args[i].type->templateName();
@@ -457,13 +461,55 @@ void Templates::holdBodies(std::size_t mark) {
     }
 }
 
-void Templates::readDeclaration(const TemplateDecl &decl) {
+static const char *const readDoorNames[] = { "functions", "class-members", "out-of-line", "partial-members", "aliases", "member-templates" };
+
+// One read's verdict: a body's `function` node with a block made after `mark`, or the reason there is none - noted at token `at`.
+void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody, std::size_t at) {
+    syntax::NodeId read;
+    for (std::size_t i = p_.syntaxTree_.size(); wantsBody && why.empty() && i > mark && !read.valid(); i--) {
+        const syntax::NodeId id(static_cast<std::uint32_t>(i));
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
+        for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
+            if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
+    }
+    if (wantsBody && why.empty() && !read.valid()) why = "the read made no function with a block";
+    if (!why.empty()) {
+        // One reason for every name: what is quoted is taken out.
+        for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
+            why.replace(a + 1, b - a - 1, "");
+        declUnread_[door][why.substr(0, 100)]++;
+        p_.syntaxTree_.noteUnread(p_.tokens_[at < p_.tokens_.size() ? at : 0].pos, std::string(readDoorNames[door]) + ": " + why.substr(0, 100));
+        return;
+    }
+    if (wantsBody) declRead_[door].push_back(read);
+    if (wantsBody) p_.syntaxTree_.noteRead(read);
+    else declTally_[door][0]++;
+}
+
+void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::size_t which) {
+    // The class doors read with no flag, as the function door (commit 5), and never from inside a read.
+    if (door != ReadFunction && p_.patternUses_) return;
+    const bool partial = door == ReadPartial;
+    const std::vector<TemplateParam> &params = partial ? decl.partials[which].params : decl.params;
     std::string why;
     std::vector<const Type *> binding;
-    for (std::size_t i = 0; i < decl.params.size(); i++) {
+    for (std::size_t i = 0; i < params.size(); i++) {
         binding.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
     const std::size_t mark = p_.syntaxTree_.size(), resume = p_.at_;
+    bool tallied = false;
+    // What the read tallies, as it stood: a read made again (makeWanted) is counted once.
+    const bool outermost = !p_.patternUses_;
+    std::vector<std::size_t> hadRead;
+    std::vector<long> hadTally;
+    std::vector<std::map<std::string, int> > hadUnread;
+    for (int d = 0; outermost && d < ReadDoors; d++) {
+        hadRead.push_back(declRead_[d].size());
+        hadTally.push_back(declTally_[d][0]);
+        hadUnread.push_back(declUnread_[d]);
+    }
+    const std::pair<std::size_t, std::size_t> hadNotes = p_.syntaxTree_.noted();
+    if (outermost) { wanted_.clear(); held_.clear(); }
     {
         // The read's own layer: its signature, its typedefs and a function specialization it asks for are found in it, and go with it.
         Lookup::Layer layer = p_.lookup_.pushLayer();
@@ -479,25 +525,128 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         if (p_.unit_ == nullptr) p_.unit_ = into;
         const Parser::FunctionState outer = p_.captureFunctionState();
         const std::vector<std::string> wasStack = p_.namespaceStack_;
+        // An instantiation leaves its function parameter pack's written name in packs_ (packParameter): `args` there is not this read's.
+        const std::map<std::string, PackBinding> wasPacks = p_.packs_;
+        p_.packs_.clear();
         const bool wasBody = p_.patternBody_, wasUses = p_.patternUses_;
+        // What a class's read sets and a refusal thrown through it leaves set.
+        const std::vector<const Type *> wasClasses = p_.classStack_;
+        const Type *const wasClass = p_.currentClass_;
+        const std::string wasInline = p_.inlineOwner_, wasTag = p_.classInstantiationTag_, wasOf = p_.classInstantiationOf_;
+        const std::string wasNamespace = p_.instantiatingNamespace_;
+        const auto wasArgs = p_.instantiatingArgs_;
+        const auto wasParams = p_.instantiatingParams_;
+        const auto wasBinding = p_.instantiatingBinding_;
+        const auto wasValues = p_.instantiatingValues_;
+        const auto wasHeld = p_.heldForSpecialization_;
+        const bool wasDeferring = p_.deferSpecializationBodies_, wasReplaying = p_.replayingInline_, wasInArgs = p_.inTemplateArgs_;
         std::vector<Shadow> undo;
         p_.clearFunctionState();
         Type::nameDependentSizes(true);
+        classDoor_ = door != ReadFunction;
         try {
             Parser::Trial trial(&p_);
-            bindTemplateParameters(decl.params, binding, std::vector<long long>(binding.size(), 0), Packs(), &undo);
+            const std::vector<long long> values(binding.size(), 0);
+            if (door == ReadFunction || door == ReadAlias || door == ReadMember) bindTemplateParameters(params, binding, values, Packs(), &undo);
             p_.patternOnly_ = p_.patternBody_ = p_.patternUses_ = true;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
-            p_.at_ = decl.afterParams;
             p_.current_ = &pattern;
-            p_.topLevel(pattern);
+            if (door == ReadFunction) {
+                p_.at_ = decl.afterParams;
+                p_.topLevel(pattern);
+            } else if (door == ReadMember) {
+                const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, Packs(params.size()));
+                const std::string display = specializationKey(decl.isConstructor ? decl.ownerLocal : decl.name, args);
+                replayMemberTemplate(decl, display, decl.ownerTag + "::" + display, args, nullptr, false);
+            } else if (door == ReadAlias) {
+                p_.at_ = decl.aliasAt;
+                Parser::StorageClass sc;
+                Parser::Qualifiers quals;
+                const Type *base = p_.specifiers(&sc, &quals);
+                p_.declarator(base, true);
+            } else {
+                // The class over its own parameters, under a tag of this read alone; `C<T>` finds it while the read lasts.
+                const Packs packs(params.size());
+                const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, packs);
+                // Keyed as its own members write it: `Box<T, N>` is `Box<$T0,$P1>`, `Counted<Ns...>` is `Counted<{$T0...}>`.
+                std::vector<TemplateArg> written = args;
+                for (std::size_t i = 0; i < written.size(); i++)
+                    if (params[i].isPack) { written[i].pack.assign(1, binding[i]); written[i].expandsParam = static_cast<int>(i); }
+                    else if (!written[i].isType) { written[i].isParam = true; written[i].paramIndex = static_cast<int>(i); }
+                const std::string tag = specializationKey(decl.name, written);
+                std::vector<Parser::PendingBody> bodies;
+                const std::string readTag = tag + "$read" + std::to_string(readSerial_++);
+                // From its head on, not from its end, so a member's declaration and its replayed definition see one class;
+                // a partial's key is its written arguments over its own parameters (`pair<const $T0,$T1>`), none past a pack.
+                std::string own = tag;
+                if (partial) {
+                    std::vector<TemplateArg> written;
+                    for (const TemplateDecl::Partial::Arg &w : decl.partials[which].args) {
+                        TemplateArg a;
+                        a.isType = w.isType; a.type = w.type; a.isParam = w.isParam;
+                        a.paramIndex = static_cast<int>(w.param); a.value = w.value;
+                        if (w.isPackExpansion) own.clear();
+                        written.push_back(a);
+                    }
+                    if (!own.empty()) own = specializationKey(decl.name, written);
+                }
+                if (!own.empty()) { readingTag_ = own; readingRead_ = readTag; }
+                const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
+                                                 args, params, binding, values, packs, &bodies, &undo);
+                if (!own.empty()) readPattern_[own] = made;
+                p_.replayingInline_ = true;
+                if (door == ReadOutOfLine) {
+                    p_.at_ = decl.outOfLine[which].start;
+                    p_.topLevel(pattern);
+                }
+                // Each held member body is a read of its own: one refused leaves the others read.
+                for (std::size_t b = 0; door != ReadOutOfLine && b < bodies.size(); b++) {
+                    const std::size_t from = p_.syntaxTree_.size();
+                    std::string refused;
+                    try {
+                        Parser::Trial one(&p_);
+                        p_.replayInlineBodies(std::vector<Parser::PendingBody>(1, bodies[b]));
+                    } catch (const SubstitutionFailure &f) {
+                        refused = f.why;
+                    }
+                    p_.current_ = &pattern;
+                    tallyRead(door, from, refused, true, bodies[b].start);
+                }
+                if (door != ReadOutOfLine) readMemberTemplates(readTag, params.size(), &pattern);
+                tallied = door != ReadOutOfLine;
+            }
         } catch (const SubstitutionFailure &f) {
-            why = f.why;
+            why = (door == ReadFunction || door == ReadAlias || door == ReadMember || tallied ? "" : "the class: ") + f.why;
+            tallied = false;
         }
+        readPattern_.clear();
+        readingTag_.clear();
+        // A pattern class the read was first to ask for keeps no arguments of the read's: the unit's first asker gives its own.
+        for (std::size_t s = 0; s < readShallow_.size(); s++) {
+            readShallow_[s]->setSpecialization(std::string(), std::vector<TemplateArg>());
+            readShallow_[s]->setTemplateNamespace(std::string());
+        }
+        readShallow_.clear();
+        classDoor_ = p_.readLayout_ = false;
+        p_.classStack_ = wasClasses;
+        p_.currentClass_ = wasClass;
+        p_.inlineOwner_ = wasInline;
+        p_.classInstantiationTag_ = wasTag;
+        p_.classInstantiationOf_ = wasOf;
+        p_.instantiatingNamespace_ = wasNamespace;
+        p_.instantiatingArgs_ = wasArgs;
+        p_.instantiatingParams_ = wasParams;
+        p_.instantiatingBinding_ = wasBinding;
+        p_.instantiatingValues_ = wasValues;
+        p_.heldForSpecialization_ = wasHeld;
+        p_.deferSpecializationBodies_ = wasDeferring;
+        p_.replayingInline_ = wasReplaying;
+        p_.inTemplateArgs_ = wasInArgs;
         Type::nameDependentSizes(wasBody);
         p_.patternBody_ = wasBody;
         p_.patternUses_ = wasUses;
         unbindTemplateParameters(undo);
+        p_.packs_ = wasPacks;
         p_.namespaceStack_ = wasStack;
         p_.restoreFunctionState(outer);
         p_.at_ = resume;
@@ -508,37 +657,80 @@ void Templates::readDeclaration(const TemplateDecl &decl) {
         owedBodies_ = hadOwed;
         p_.syntaxTree_.kill(mark);
     }
-    syntax::NodeId read;
-    for (std::size_t i = p_.syntaxTree_.size(); why.empty() && i > mark && !read.valid(); i--) {
-        const syntax::NodeId id(static_cast<std::uint32_t>(i));
-        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Function) continue;
-        for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++)
-            if (p_.syntaxTree_.node(p_.syntaxTree_.child(id, c)).kind == syntax::Kind::Block) read = id;
-    }
-    if (why.empty() && !read.valid()) why = "the read made no function with a block";
-    if (!why.empty()) {
-        // One reason for every name: what is quoted is taken out.
-        for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
-            why.replace(a + 1, b - a - 1, "");
-        declUnread_[why.substr(0, 100)]++;
+    if (outermost && makeWanted()) {
+        for (int d = 0; d < ReadDoors; d++) {
+            declRead_[d].resize(hadRead[static_cast<std::size_t>(d)]);
+            declTally_[d][0] = hadTally[static_cast<std::size_t>(d)];
+            declUnread_[d] = hadUnread[static_cast<std::size_t>(d)];
+        }
+        p_.syntaxTree_.forget(hadNotes);
+        readDeclaration(decl, door, which);
         return;
     }
-    declRead_.push_back(read);
+    const std::size_t at = door == ReadPartial ? decl.partials[which].bodyAt : door == ReadOutOfLine ? decl.outOfLine[which].start :
+                           door == ReadAlias ? decl.aliasAt : decl.afterParams;
+    if (!tallied) tallyRead(door, mark, why, door != ReadAlias, at);
+}
+
+// The member templates registered under `tag` and defined in its class.
+std::vector<TemplateDecl> Templates::memberTemplatesUnder(const std::string &tag) const {
+    std::vector<TemplateDecl> mine;
+    for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator m = memberTemplates_.lower_bound(tag + "::");
+         m != memberTemplates_.end() && m->first.compare(0, tag.size() + 2, tag + "::") == 0; ++m)
+        for (std::size_t t = 0; t < m->second.size(); t++)
+            if (m->second[t].defined && !m->second[t].outOfLineBody) mine.push_back(m->second[t]);
+    return mine;
+}
+
+void Templates::readMemberTemplatesOf(const std::string &tag) {
+    if (p_.patternUses_) return;
+    const std::vector<TemplateDecl> mine = memberTemplatesUnder(tag);
+    for (std::size_t t = 0; t < mine.size(); t++)
+        if (mine[t].classParams.empty()) readDeclaration(mine[t], ReadMember);
+}
+
+void Templates::readMemberTemplates(const std::string &readTag, std::size_t outer, Program *pattern) {
+    const std::vector<TemplateDecl> mine = memberTemplatesUnder(readTag);
+    for (std::size_t t = 0; t < mine.size(); t++) {
+        const TemplateDecl &mt = mine[t];
+        const std::size_t from = p_.syntaxTree_.size();
+        const bool wasBody = p_.memberTemplateBody_;
+        std::string refused;
+        try {
+            Parser::Trial one(&p_);
+            std::vector<const Type *> binding;
+            for (std::size_t i = 0; i < mt.params.size(); i++) binding.push_back(p_.types_.templateParam(static_cast<int>(outer + i)));
+            const std::vector<long long> values(binding.size(), 0);
+            const Packs packs(mt.params.size());
+            const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
+            Parser::BoundParams bound(&p_);
+            bindTemplateParameters(mt.params, binding, values, packs, &bound.undo);
+            const std::string display = specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args);
+            replayMemberTemplate(mt, display, mt.ownerTag + "::" + display, args, nullptr, false);
+        } catch (const SubstitutionFailure &f) {
+            refused = f.why;
+        }
+        p_.memberTemplateBody_ = wasBody;
+        p_.current_ = pattern;
+        tallyRead(ReadMember, from, refused, true, mt.afterParams);
+    }
 }
 
 void Templates::holdDeclarations() {
     if (!checkBodies_) return;
-    for (std::size_t i = 0; i < declRead_.size(); i++) {
-        declTally_[0]++;
-        const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(declRead_[i]).loc);
-        if (held == bodyOnce_.end()) declTally_[4]++;
-        else {
-            const int d = p_.syntaxTree_.differs(held->second, declRead_[i]);
-            declTally_[1 + d]++;
-            if (d == 2 && declShapes_.insert(p_.syntaxTree_.node(declRead_[i]).loc).second)
-                declShapeTrees_.push_back("read " + p_.syntaxTree_.spelled(declRead_[i]) + "\n-check=templates declaration shape: replayed " + p_.syntaxTree_.spelled(held->second));
+    for (int door = 0; door < ReadDoors; door++)
+        for (std::size_t i = 0; i < declRead_[door].size(); i++) {
+            const syntax::NodeId read = declRead_[door][i];
+            declTally_[door][0]++;
+            const std::map<std::uint32_t, syntax::NodeId>::const_iterator held = bodyOnce_.find(p_.syntaxTree_.node(read).loc);
+            if (held == bodyOnce_.end()) declTally_[door][4]++;
+            else {
+                const int d = p_.syntaxTree_.differs(held->second, read);
+                declTally_[door][1 + d]++;
+                if (door == ReadFunction && d == 2 && declShapes_.insert(p_.syntaxTree_.node(read).loc).second)
+                    declShapeTrees_.push_back("read " + p_.syntaxTree_.spelled(read) + "\n-check=templates declaration shape: replayed " + p_.syntaxTree_.spelled(held->second));
+            }
         }
-    }
 }
 
 std::string Templates::bodiesReport() const {
@@ -548,16 +740,24 @@ std::string Templates::bodiesReport() const {
                       " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
         out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
-    long unread = 0;
-    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i) unread += i->second;
-    out += "-check=templates declarations: functions=" + std::to_string(declTally_[0] + unread) + " read=" + std::to_string(declTally_[0]) +
-           " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[1]) + " text=" + std::to_string(declTally_[2]) +
-           " shape=" + std::to_string(declTally_[3]) + " unreplayed=" + std::to_string(declTally_[4]) + "\n";
-    for (std::set<std::uint32_t>::const_iterator i = declShapes_.begin(); i != declShapes_.end(); ++i)
-        out += "-check=templates declaration shape: " + p_.src_.where(*i) + "\n";
-    for (std::size_t i = 0; i < declShapeTrees_.size(); i++) out += "-check=templates declaration shape: " + declShapeTrees_[i] + "\n";
-    for (std::map<std::string, int>::const_iterator i = declUnread_.begin(); i != declUnread_.end(); ++i)
-        out += "-check=templates unread (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (int door = 0; door < ReadDoors; door++) {
+        long unread = 0;
+        for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i) unread += i->second;
+        // A door the unit never came to prints nothing: the function door's lines are the record's.
+        if (door != ReadFunction && declTally_[door][0] + unread == 0) continue;
+        const std::string head = door == ReadFunction ? "" : std::string(" ") + readDoorNames[door];
+        out += "-check=templates declarations" + (door == ReadFunction ? std::string(": functions=") : head + ": bodies=") +
+               std::to_string(declTally_[door][0] + unread) + " read=" + std::to_string(declTally_[door][0]) +
+               " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[door][1]) + " text=" + std::to_string(declTally_[door][2]) +
+               " shape=" + std::to_string(declTally_[door][3]) + " unreplayed=" + std::to_string(declTally_[door][4]) + "\n";
+        if (door == ReadFunction) {
+            for (std::set<std::uint32_t>::const_iterator i = declShapes_.begin(); i != declShapes_.end(); ++i)
+                out += "-check=templates declaration shape: " + p_.src_.where(*i) + "\n";
+            for (std::size_t i = 0; i < declShapeTrees_.size(); i++) out += "-check=templates declaration shape: " + declShapeTrees_[i] + "\n";
+        }
+        for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i)
+            out += "-check=templates unread" + head + " (" + std::to_string(i->second) + "): " + i->first + "\n";
+    }
     return out;
 }
 
@@ -1602,104 +1802,20 @@ std::size_t Templates::choosePartial(const TemplateDecl &decl,
 }
 
 // `Box<int, 3>` as a type - rung 5.4: replays `struct Box { ... };` with the arguments bound, told the tag.
-const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t pos) {
-    // Before the arguments are read: `A<A<A<...>>>` instantiates from the inside out, through here.
-    const Parser::Nesting deep(&p_, pos, "template instantiation");
-    std::vector<const Type *> binding;
-    std::vector<long long> values;
-    std::vector<TemplateArg> args;
-    Packs packs;
-    p_.templateArguments(decl, &binding, &values, &args, &packs);
-
-    // [temp.alias]/2: an alias template's id is its type-id with the arguments substituted.
-    if (decl.isAlias) {
-        const std::size_t resume = p_.at_;
-        std::vector<Shadow> undo;
-        struct Unbind {
-            Parser *p; std::vector<Shadow> *u;
-            ~Unbind() { p->tmpl_.unbindTemplateParameters(*u); }
-        } unbind{ &p_, &undo };
-        bindTemplateParameters(decl.params, binding, values, packs, &undo);
-        count(AliasId);
-        p_.at_ = decl.aliasAt;
-        Parser::StorageClass sc;
-        Parser::Qualifiers quals;
-        const Type *base = p_.specifiers(&sc, &quals);
-        const Type *t = p_.declarator(base, true).type;
-        p_.at_ = resume;
-        return t;
-    }
-    const std::string tag = specializationKey(decl.name, args);
-
-    // **A pattern's `C<T>`**, the stand-in applied: a shape deduction matches and Itanium spells `T_I...E`.
-    if (decl.ttParam >= 0) {
-        Type *shallow = p_.types_.structType(Kind::Struct, tag);
-        if (!shallow->isSpecialization()) shallow->setSpecialization(decl.name, args);
-        p_.lookup_.declareTypeName(tag, shallow);
-        return shallow;
-    }
-
-    // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
-    // and deduction read only its name and arguments. An argument list that mentions no
-    // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
-    if (p_.patternOnly_ && p_.dependentArgs(args)) {
-        Type *shallow = p_.types_.structType(Kind::Struct, tag);
-        if (!shallow->isSpecialization()) {
-            shallow->setSpecialization(decl.name, args);
-            shallow->setTemplateNamespace(decl.ns);
-        }
-        // Registered so that `Box<T>::get` reads: the declarator's qualified
-        // path looks the class up by name, and this is the only name it has.
-        // The tag holds a `$` and so cannot collide with anything written.
-        p_.lookup_.declareTypeName(tag, shallow);
-        return shallow;
-    }
-
-    if (const Type *had = p_.lookup_.findTypedef(tag)) return had;
-    // A class cannot be unmade when the read's layer goes: one the program has not asked for is substitution's to make (M8.2).
-    if (p_.patternUses_) throw SubstitutionFailure("a class specialization the program has not asked for yet");
-    const Parser::ReplayUses replayed(&p_);
-
-    // **A partial specialization is chosen before anything is replayed**, and what
-    // it changes is which tokens get replayed and with which parameters bound. The
-    // tag does not change, which keeps the mangling and every lookup the same.
-    std::vector<const Type *> useBinding = binding;
-    std::vector<long long> useValues = values;
-    std::vector<TemplateParam> useParams = decl.params;
-    Packs usePacks;
-    const std::size_t which = choosePartial(decl, args, &useBinding, &useValues,
-                                            &usePacks, pos);
-    const bool partial = which != static_cast<std::size_t>(-1);
-    if (partial) useParams = decl.partials[which].params;
-
-    // **Asked after the partial is chosen, not before.**
-    if (!partial && !decl.defined) {
-        Type *shallow = p_.types_.structType(Kind::Struct, tag);
-        if (!shallow->isSpecialization()) {
-            shallow->setSpecialization(decl.name, args);
-            shallow->setTemplateNamespace(decl.ns);
-            shallow->noteClassKey(decl.classKey);
-        }
-        return shallow;
-    }
-
+// The class's tokens from `start` read under a binding: the class made under `tag`, its member bodies held in `bodies`.
+const Type *Templates::readClassBody(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
+                                     const std::vector<TemplateArg> &args, const std::vector<TemplateParam> &useParams,
+                                     const std::vector<const Type *> &useBinding, const std::vector<long long> &useValues,
+                                     const Packs &packs, std::vector<Parser::PendingBody> *bodies, std::vector<Shadow> *kept) {
     const std::size_t resume = p_.at_;
-    std::vector<Shadow> undo;
+    std::vector<Shadow> mine;
+    // A read keeps the parameters bound for the member bodies and takes them back itself, refused or not.
+    std::vector<Shadow> &undo = kept != nullptr ? *kept : mine;
     // **A chosen partial binds its own pack, not the primary's.** `L<T, R...>` on
     // `L<int, char, long>` leaves R holding {char, long}, which is what the replayed
     // body has to see - the primary's Ts is not in scope at all.
-    bindTemplateParameters(useParams, useBinding, useValues,
-                           partial ? usePacks : packs, &undo);
-
-    p_.at_ = partial ? decl.partials[which].bodyAt : decl.afterParams;
-    count(ClassBody);
-    // A base named through a parameter, counted: a `:` in the head and a parameter's name before the `{`.
-    bool colon = false, dependent = false;
-    for (std::size_t t = p_.at_; t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";"); t++) {
-        colon = colon || p_.tokens_[t].is(":");
-        for (std::size_t q = 0; colon && q < useParams.size(); q++) dependent = dependent || p_.tokens_[t].text == useParams[q].name;
-    }
-    if (dependent) count(DependentBase);
+    bindTemplateParameters(useParams, useBinding, useValues, packs, &undo);
+    p_.at_ = start;
     // **A specialization is not a member of whatever class asked for it.**
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
@@ -1734,9 +1850,11 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // And its body names things in its own namespace, as a function template's does, wherever it is used from.
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+    p_.readLayout_ = kept != nullptr;      // a read's class is laid out over its dependent members and bases
     const Type *made = partial
         ? p_.structOrUnionSpecifier(Kind::Struct, false)
         : p_.specifiers(&sc, &quals);
+    p_.readLayout_ = false;
     p_.namespaceStack_ = outerStack;
     p_.angleSplit_ = outerAngle;
     p_.classInstantiationTag_.clear();
@@ -1751,11 +1869,135 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     p_.currentClass_ = outerCurrent;
     p_.inlineOwner_ = outerInline;
     p_.deferSpecializationBodies_ = wasDeferring;
-    std::vector<Parser::PendingBody> bodies;
-    bodies.swap(p_.heldForSpecialization_);
+    bodies->swap(p_.heldForSpecialization_);
 
-    unbindTemplateParameters(undo);
+    if (kept == nullptr) unbindTemplateParameters(undo);
     p_.at_ = resume;
+    return made;
+}
+
+const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t pos) {
+    // Before the arguments are read: `A<A<A<...>>>` instantiates from the inside out, through here.
+    const Parser::Nesting deep(&p_, pos, "template instantiation");
+    std::vector<const Type *> binding;
+    std::vector<long long> values;
+    std::vector<TemplateArg> args;
+    Packs packs;
+    p_.templateArguments(decl, &binding, &values, &args, &packs);
+
+    // [temp.alias]/2: an alias template's id is its type-id with the arguments substituted.
+    if (decl.isAlias) {
+        const std::size_t resume = p_.at_;
+        std::vector<Shadow> undo;
+        struct Unbind {
+            Parser *p; std::vector<Shadow> *u;
+            ~Unbind() { p->tmpl_.unbindTemplateParameters(*u); }
+        } unbind{ &p_, &undo };
+        bindTemplateParameters(decl.params, binding, values, packs, &undo);
+        count(AliasId);
+        p_.at_ = decl.aliasAt;
+        Parser::StorageClass sc;
+        Parser::Qualifiers quals;
+        const Type *base = p_.specifiers(&sc, &quals);
+        const Type *t = p_.declarator(base, true).type;
+        p_.at_ = resume;
+        return t;
+    }
+    const std::string tag = specializationKey(decl.name, args);
+    if (p_.patternOnly_ && readPattern_.count(tag) != 0) return readPattern_[tag];     // a class door's read: the class itself
+    if (p_.patternOnly_ && !readingTag_.empty() && tag == readingTag_)                // ... and while its body is read
+        if (const Type *own = p_.lookup_.findTypedef(readingRead_)) return own;
+
+    // **A pattern's `C<T>`**, the stand-in applied: a shape deduction matches and Itanium spells `T_I...E`.
+    if (decl.ttParam >= 0) {
+        Type *shallow = p_.types_.structType(Kind::Struct, tag);
+        if (!shallow->isSpecialization()) {
+            shallow->setSpecialization(decl.name, args);
+            if (classDoor_) readShallow_.push_back(shallow);
+        }
+        p_.lookup_.declareTypeName(tag, shallow);
+        return shallow;
+    }
+
+    // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
+    // and deduction read only its name and arguments. An argument list that mentions no
+    // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
+    if (p_.patternOnly_ && p_.dependentArgs(args)) {
+        Type *shallow = p_.types_.structType(Kind::Struct, tag);
+        if (!shallow->isSpecialization()) {
+            shallow->setSpecialization(decl.name, args);
+            shallow->setTemplateNamespace(decl.ns);
+            if (classDoor_) readShallow_.push_back(shallow);
+        }
+        // Registered so that `Box<T>::get` reads: the declarator's qualified
+        // path looks the class up by name, and this is the only name it has.
+        // The tag holds a `$` and so cannot collide with anything written.
+        p_.lookup_.declareTypeName(tag, shallow);
+        return shallow;
+    }
+
+    if (const Type *had = p_.lookup_.findTypedef(tag)) {
+        asked(tag, pos);
+        return had;
+    }
+    // A class cannot be unmade when the read's layer goes: one the program has not asked for is held incomplete under its tag;
+    // what needs its members refuses there by name, and the read is made again with the class made below it (makeWanted).
+    if (p_.patternUses_) {
+        Type *named = p_.types_.structType(Kind::Struct, tag);
+        if (!named->isSpecialization()) {
+            named->setSpecialization(decl.name, args);
+            named->setTemplateNamespace(decl.ns);
+            named->noteClassKey(decl.classKey);
+        }
+        if (!named->isComplete()) {
+            p_.readHeld_.insert(named);
+            if (held_.count(named) == 0) held_[named] = Held{ decl, binding, values, args, packs, pos };
+        }
+        return named;
+    }
+    return makeClass(decl, tag, binding, values, args, packs, pos);
+}
+
+// The class `tag` made for good: its partial chosen, its body read under the arguments, its member bodies owed.
+const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &tag, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                                 const std::vector<TemplateArg> &args, const Packs &packs, std::size_t pos) {
+    const std::size_t logFrom = seatLog_.size(), fnFrom = p_.lookup_.functions_.size();
+    const Parser::ReplayUses replayed(&p_);
+
+    // **A partial specialization is chosen before anything is replayed**, and what
+    // it changes is which tokens get replayed and with which parameters bound. The
+    // tag does not change, which keeps the mangling and every lookup the same.
+    std::vector<const Type *> useBinding = binding;
+    std::vector<long long> useValues = values;
+    std::vector<TemplateParam> useParams = decl.params;
+    Packs usePacks;
+    const std::size_t which = choosePartial(decl, args, &useBinding, &useValues,
+                                            &usePacks, pos);
+    const bool partial = which != static_cast<std::size_t>(-1);
+    if (partial) useParams = decl.partials[which].params;
+
+    // **Asked after the partial is chosen, not before.**
+    if (!partial && !decl.defined) {
+        Type *shallow = p_.types_.structType(Kind::Struct, tag);
+        if (!shallow->isSpecialization()) {
+            shallow->setSpecialization(decl.name, args);
+            shallow->setTemplateNamespace(decl.ns);
+            shallow->noteClassKey(decl.classKey);
+        }
+        return shallow;
+    }
+
+    const std::size_t start = partial ? decl.partials[which].bodyAt : decl.afterParams;
+    count(ClassBody);
+    // A base named through a parameter, counted: a `:` in the head and a parameter's name before the `{`.
+    bool colon = false, dependent = false;
+    for (std::size_t t = start; t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";"); t++) {
+        colon = colon || p_.tokens_[t].is(":");
+        for (std::size_t q = 0; colon && q < useParams.size(); q++) dependent = dependent || p_.tokens_[t].text == useParams[q].name;
+    }
+    if (dependent) count(DependentBase);
+    std::vector<Parser::PendingBody> bodies;
+    const Type *made = readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
 
     if (!made->isStructOrUnion())
         p_.src_.fail(pos, "'" + decl.name + "' is not a class template");
@@ -1780,7 +2022,119 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     sp.depth = p_.instantiationDepth_ + 1;
     refuseInstantiationDepth(decl.name, sp.depth, pos);
     specializations_.push_back(sp);
+    noteMade(tag, logFrom, fnFrom);
     return made;
+}
+
+// The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.
+std::vector<std::size_t> Templates::seatedOrder(std::size_t n) const {
+    std::vector<std::pair<std::pair<std::size_t, int>, std::size_t> > keyed;
+    for (std::size_t i = 0; i < n; i++) {
+        const std::map<std::size_t, std::size_t>::const_iterator s = fnSeat_.find(i);
+        keyed.push_back(std::make_pair(s == fnSeat_.end() ? std::make_pair(i, 1) : std::make_pair(s->second, 0), i));
+    }
+    std::sort(keyed.begin(), keyed.end());
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < keyed.size(); i++) order.push_back(keyed[i].second);
+    return order;
+}
+
+// Made while a held class is: entered in the log, and seated by its key with what its own making logged before it.
+void Templates::noteMade(const std::string &key, std::size_t from, std::size_t fnFrom) {
+    if (!making_) return;
+    const std::size_t fnTo = p_.lookup_.functions_.size();
+    seatLog_.push_back(Seat{ specializations_.size() - 1, std::string(), fnFrom > fnTo ? fnTo : fnFrom, fnTo });
+    seat_[key].assign(seatLog_.begin() + static_cast<long>(from), seatLog_.end());
+}
+
+// The program's ask for what a held class's making made: seated last, as its replay would have made it there.
+void Templates::asked(const std::string &key, std::size_t pos) {
+    if (p_.patternUses_) return;
+    const std::map<std::string, std::vector<Seat> >::iterator seated = seat_.find(key);
+    if (seated == seat_.end()) return;
+    if (making_) { seatLog_.push_back(Seat{ 0, key, 0, 0 }); return; }
+    const std::size_t at = p_.lookup_.functions_.size();
+    std::vector<Seat> log;
+    log.swap(seated->second);
+    seat_.erase(seated);
+    for (std::size_t i = 0; i < log.size(); i++) {
+        if (!log[i].key.empty()) { asked(log[i].key, pos); continue; }
+        for (std::size_t f = log[i].fnFrom; f < log[i].fnTo; f++) fnSeat_.insert(std::make_pair(f, at));
+        if (specializations_[log[i].index].emitted) continue;
+        Specialization sp = specializations_[log[i].index];
+        specializations_[log[i].index].emitted = true;
+        specializations_[log[i].index].name.clear();
+        specializations_[log[i].index].key.clear();
+        specializations_[log[i].index].bodies.clear();
+        seat_.erase(sp.key);
+        sp.pos = pos;
+        sp.depth = p_.instantiationDepth_ + 1;
+        specializations_.push_back(sp);
+    }
+}
+
+// Each class the read just ended needed the members of, made here; true if one was completed, and the read is worth making again.
+bool Templates::makeWanted() {
+    std::vector<const Type *> want;
+    want.swap(wanted_);
+    // Inside a class still being defined the class may name it, incomplete: left held, refused by name as before.
+    if (!p_.classStack_.empty() || p_.currentClass_ != nullptr) want.clear();
+    bool made = false;
+    const bool was = making_;
+    for (std::size_t i = 0; i < want.size(); i++) {
+        const std::map<const Type *, Held>::iterator h = held_.find(want[i]);
+        if (h == held_.end() || want[i]->isComplete()) continue;
+        const Held it = h->second;
+        held_.erase(h);
+        const std::string tag = specializationKey(it.decl.name, it.args);
+        if (p_.lookup_.findTypedef(tag) != nullptr) continue;
+        making_ = true;
+        makeClass(it.decl, tag, it.binding, it.values, it.args, it.packs, it.pos);
+        making_ = was;
+        made = made || want[i]->isComplete();
+    }
+    held_.clear();
+    if (!making_) seatLog_.clear();
+    return made;
+}
+
+// One member template's body replayed as the specialization `display` of `key`, its parameters already bound.
+void Templates::replayMemberTemplate(const TemplateDecl &mt, const std::string &display, const std::string &key,
+                                     const std::vector<TemplateArg> &args, const Type *patternFn, bool declOnly) {
+    const bool wasInst = p_.memberTemplateInst_;
+    const std::string wasOf = p_.memberTemplateOf_;
+    const std::string wasName = p_.memberTemplateName_;
+    const std::vector<TemplateArg> wasArgs = p_.memberTemplateArgs_;
+    const Type *wasPattern = p_.memberTemplatePattern_;
+    p_.memberTemplateInst_ = true;
+    p_.memberTemplateOf_ = mt.name;
+    p_.memberTemplateName_ = display;
+    p_.memberTemplateArgs_ = args;
+    p_.memberTemplateAccess_ = mt.memberAccess;
+    p_.memberTemplatePattern_ = patternFn;
+
+    std::vector<Parser::PendingBody> one(1);
+    one[0].tag = mt.ownerTag;
+    one[0].start = mt.afterParams;
+    one[0].local = mt.ownerLocal.empty() ? mt.ownerTag : mt.ownerLocal;
+    one[0].key = key;
+    one[0].which = Parser::PendingBody::npos();
+    // Defined at namespace scope: replayed as written there, `C::f` read in the namespace it was written in.
+    if (mt.outOfLineBody) { one[0].freeFunction = true; one[0].tag.clear(); }
+    struct Restore {
+        Parser *p; bool inst; std::string of, name; std::vector<TemplateArg> args; const Type *pattern;
+        bool statik, declOnly; std::vector<std::string> ns;
+        ~Restore() {
+            p->memberTemplateInst_ = inst; p->memberTemplateOf_ = of; p->memberTemplateName_ = name;
+            p->memberTemplateArgs_ = args; p->memberTemplatePattern_ = pattern;
+            p->memberTemplateStatic_ = statik; p->memberTemplateDeclOnly_ = declOnly; p->namespaceStack_ = ns;
+        }
+    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern, p_.memberTemplateStatic_,
+               p_.memberTemplateDeclOnly_, p_.namespaceStack_ };
+    p_.memberTemplateStatic_ = mt.staticMember;
+    p_.memberTemplateDeclOnly_ = declOnly;
+    if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
+    p_.replayInlineBodies(one);
 }
 
 // The specialization these arguments ask for, made if it is new.
@@ -1830,42 +2184,9 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     std::string patternName;
     const Type *patternFn = p_.readTemplateDeclaration(mt, pattern, values, &patternName);
 
-    const bool wasInst = p_.memberTemplateInst_;
-    const std::string wasOf = p_.memberTemplateOf_;
-    const std::string wasName = p_.memberTemplateName_;
-    const std::vector<TemplateArg> wasArgs = p_.memberTemplateArgs_;
-    const Type *wasPattern = p_.memberTemplatePattern_;
-    p_.memberTemplateInst_ = true;
-    p_.memberTemplateOf_ = mt.name;
-    p_.memberTemplateName_ = display;
-    p_.memberTemplateArgs_ = args;
-    p_.memberTemplateAccess_ = mt.memberAccess;
-    p_.memberTemplatePattern_ = patternFn;
-
-    std::vector<Parser::PendingBody> one(1);
-    one[0].tag = mt.ownerTag;
-    one[0].start = mt.afterParams;
-    one[0].local = mt.ownerLocal.empty() ? mt.ownerTag : mt.ownerLocal;
-    one[0].key = key;
-    one[0].which = Parser::PendingBody::npos();
-    // Defined at namespace scope: replayed as written there, `C::f` read in the namespace it was written in.
-    if (mt.outOfLineBody) { one[0].freeFunction = true; one[0].tag.clear(); }
-    struct Restore {
-        Parser *p; bool inst; std::string of, name; std::vector<TemplateArg> args; const Type *pattern;
-        bool statik, declOnly; std::vector<std::string> ns;
-        ~Restore() {
-            p->memberTemplateInst_ = inst; p->memberTemplateOf_ = of; p->memberTemplateName_ = name;
-            p->memberTemplateArgs_ = args; p->memberTemplatePattern_ = pattern;
-            p->memberTemplateStatic_ = statik; p->memberTemplateDeclOnly_ = declOnly; p->namespaceStack_ = ns;
-        }
-    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern, p_.memberTemplateStatic_,
-               p_.memberTemplateDeclOnly_, p_.namespaceStack_ };
-    p_.memberTemplateStatic_ = mt.staticMember;
-    p_.memberTemplateDeclOnly_ = declOnly;
-    if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
     count(MemberTemplate);
     const std::size_t bodiesFrom = p_.syntaxTree_.size();
-    p_.replayInlineBodies(one);
+    replayMemberTemplate(mt, display, key, args, patternFn, declOnly);
     holdBodies(bodiesFrom);
     bound.unbindNow();
 

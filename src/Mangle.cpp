@@ -710,6 +710,15 @@ private:
     // reason, and the whole name is a substitution candidate so `d(Colour, Colour)` is `6ColourS_`.
     void enumeration(const Type *t) {
         const std::vector<std::string> parts = scopeComponents(t->enumTag());
+        // Inside a specialization the class is the prefix, `N1CIiLi1EE1EE`; its tag `C<int,1>` is no namespace.
+        const Type *in = t->enumScope();
+        if (in != nullptr && in->isSpecialization()) {
+            out += 'N';
+            prefix(in, std::string());
+            out += std::to_string(parts.back().size()) + parts.back() + 'E';
+            subs_.push_back(Sub{ t, std::string() });
+            return;
+        }
         const bool nested = parts.size() > 1;
         if (nested) out += 'N';
         namespacesOf(t->enumTag());

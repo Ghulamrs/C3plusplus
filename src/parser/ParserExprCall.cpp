@@ -37,6 +37,16 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
                 expect(",");
                 continue;
             }
+            // A read's `rest...` over its function parameter pack: one argument, as dependent as its pattern.
+            const Local *own = pk == packs_.end() && patternBody_ ? lookup_.findLocal(peek().text) : nullptr;
+            if (own != nullptr && own->type->kind() == Kind::PackExpansion) {
+                const Token named = peek();
+                at_ += 2;
+                args.push_back(note(objectRef(named.text), syntax::Kind::Name, named.text, named.pos));
+                if (consume(")")) break;
+                expect(",");
+                continue;
+            }
             // An empty pack expands to no arguments at all.
             if (pk != packs_.end() && pk->second.types.empty()) {
                 at_ += 2;
@@ -56,6 +66,8 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
             OverloadTarget waits(*this, nullptr, true);
             args.push_back(assign());
         } else if (!expandPackPattern(args)) args.push_back(assign());
+        // A read's `f(xs)...` over its function parameter pack: one argument, as dependent as its pattern.
+        if (patternBody_ && consume("...")) args.back()->setType(dependentResult());
         if (consume(")")) break;
         expect(",");
     }
@@ -805,6 +817,8 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
                                const std::string &name, std::size_t pos,
                                std::vector<ExprPtr> args,
                                const Type *forceOwner) {
+    // A read's member call over a dependent argument is no call yet: which member it means is substitution's.
+    if (patternBody_ && argsDependent_) return zeroOf(dependentResult());
     const Type *plain = cls->unqualified();
 
     // **A member function is looked for up the base chain**, unlike a data

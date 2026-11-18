@@ -935,7 +935,8 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
             ? microsoftConstructorName(cls, lookup_.findTypedef(cls), linkage_.manglingType(fn),
                                        code, &out, &why)
             : itaniumConstructorName(cls, lookup_.findTypedef(cls), fn, true, &out, &why);
-    if (!ok)
+    if (!ok && patternBody_) out = "$pattern$" + cls + "::" + cls + "$" + fn->describe();      // read, never emitted
+    else if (!ok)
         src_.fail(pos, "'" + cls + "::" + cls + "' cannot be given a name the "
                        "linker can hold: " + why);
 
@@ -1910,13 +1911,18 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
     if (consume("=")) {
-        if (!d.type->isConst() || !d.type->isInteger())
+        if (patternBody_ && d.type->isConst() && dependentType(d.type)) {    // a read's `static const T value = v;`: folded to nothing
+            conditional();
+            s.folded = true;
+        } else if (!d.type->isConst() || !d.type->isInteger())
             src_.fail(d.pos, "'" + cls + "::" + d.name + "' is initialised "
                              "inside the class, and only a 'static const' of "
                              "integer type may be - write the value on the "
                              "definition outside the class instead");
-        s.folded = true;
-        s.value = constantExpression("a static member's value");
+        if (!s.folded) {
+            s.folded = true;
+            s.value = constantExpression("a static member's value");
+        }
     } else if (d.type->isArray() && d.type->length() < 0) {
         src_.fail(d.pos, "'" + cls + "::" + d.name + "' has no length, and a "
                          "static member cannot take one from its definition - "
@@ -2199,7 +2205,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
         n->setType(s.type);
         return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, 1, s.value, owner));
     }
-    if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
+    if (unevaluated_ == 0 && !patternUses_) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
     v->setSymbol(s.symbol);
     // Through the wrapper unless this unit has already defined it with a constant initialiser - a

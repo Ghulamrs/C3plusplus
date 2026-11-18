@@ -18,6 +18,12 @@ static void showMemberAs(Function &f, const Type *cls, const std::string &member
 // A synthesiser's records are keyed by the function it writes, for the SSA builder (M3b.3): currentFunction_ for its duration.
 namespace { struct Keyed { std::string &ref, saved; Keyed(std::string &r, const std::string &v) : ref(r), saved(r) { ref = v; } ~Keyed() { ref = saved; } }; }
 
+// A read's class over `$T0` has no Microsoft name: read, never emitted, a special member is named by its signature.
+static bool readName(bool read, const std::string &tag, const Type *fn, std::string *out) {
+    if (read) *out = "$pattern$" + tag + "$" + fn->describe();
+    return read;
+}
+
 // The deleting destructor's name. Built through the manglers rather than by
 // concatenation, because a nested class's is a whole nested-name -
 // ??_GInner@Outer@@UEAAPEAXI@Z, not ??_GOuter::Inner@@...
@@ -1321,7 +1327,7 @@ void Classes::declareImplicitDefaultCtor(const std::string &tag, const Type *typ
     const bool ok = p_.target_.microsoftNames()
             ? microsoftConstructorName(tag, type, fn, 'Q', &out, &why)
             : itaniumConstructorName(tag, type, fn, true, &out, &why);
-    if (!ok)
+    if (!ok && !readName(p_.patternBody_, tag, fn, &out))
         p_.src_.fail(pos, "'" + tag + "' needs a default constructor the compiler "
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
@@ -1581,7 +1587,7 @@ void Classes::declareImplicitCopyAssign(const std::string &tag, const Type *type
     const bool ok = p_.target_.microsoftNames()
             ? microsoftCopyAssignName(tag, type, fn, 'Q', &out, &why)
             : itaniumCopyAssignName(tag, type, fn, &out, &why);
-    if (!ok)
+    if (!ok && !readName(p_.patternBody_, tag, fn, &out))
         p_.src_.fail(pos, "'" + tag + "' needs a copy assignment the compiler would "
                        "write, and it cannot be given a name the linker can "
                        "hold: " + why);
@@ -1634,7 +1640,7 @@ void Classes::declareDefaultedMoveAssign(const std::string &tag, const Type *typ
     const bool ok = p_.target_.microsoftNames()
             ? microsoftCopyAssignName(tag, type, fn, 'Q', &out, &why)
             : itaniumCopyAssignName(tag, type, fn, &out, &why);
-    if (!ok)
+    if (!ok && !readName(p_.patternBody_, tag, fn, &out))
         p_.src_.fail(pos, "'" + tag + "' needs a move assignment the compiler would write, and it "
                        "cannot be given a name the linker can hold: " + why);
     p_.lookup_.functionIndex_[Parser::assignmentKey(tag)].push_back(p_.lookup_.functions_.size());
@@ -1674,7 +1680,7 @@ void Classes::declareImplicitMoveCtor(const std::string &tag, const Type *type,
     const bool ok = p_.target_.microsoftNames()
             ? microsoftConstructorName(tag, type, fn, 'Q', &out, &why)
             : itaniumConstructorName(tag, type, fn, true, &out, &why);
-    if (!ok)
+    if (!ok && !readName(p_.patternBody_, tag, fn, &out))
         p_.src_.fail(pos, "'" + tag + "' needs a move constructor the compiler "
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
@@ -1720,7 +1726,7 @@ void Classes::declareImplicitCopyCtor(const std::string &tag, const Type *type,
     const bool ok = p_.target_.microsoftNames()
             ? microsoftConstructorName(tag, type, fn, 'Q', &out, &why)
             : itaniumConstructorName(tag, type, fn, true, &out, &why);
-    if (!ok)
+    if (!ok && !readName(p_.patternBody_, tag, fn, &out))
         p_.src_.fail(pos, "'" + tag + "' needs a copy constructor the compiler "
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
@@ -1763,7 +1769,7 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
                 const bool ok0 = p_.target_.microsoftNames()
                         ? microsoftConstructorName(tag, type, fn0, code0, &out0, &why0)
                         : itaniumConstructorName(tag, type, fn0, true, &out0, &why0);
-                if (!ok0)
+                if (!ok0 && !readName(p_.patternBody_, tag, fn0, &out0))
                     p_.src_.fail(pos, "'" + tag + "''s default constructor cannot be given a name the linker "
                                    "can hold: " + why0);
                 p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
@@ -1797,7 +1803,7 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
             const bool ok = p_.target_.microsoftNames()
                     ? microsoftConstructorName(tag, type, fn, code, &out, &why)
                     : itaniumInheritingConstructorName(tag, type, origin, fn, true, &out, &why);
-            if (!ok)
+            if (!ok && !readName(p_.patternBody_, tag, fn, &out))
                 p_.src_.fail(pos, "'" + tag + "''s constructor inherited from '" + base->tag() +
                                "' cannot be given a name the linker can hold: " + why);
             p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
@@ -2421,7 +2427,10 @@ void Classes::pruneExternalVtables(Program &program) {
 void Classes::defineImplicitFunctions() {
     for (bool again = true; again; ) {
         again = false;
-        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
+        // In declaration order, a class a read made (M8.1) seated where the program asked for it; then what this pass declares.
+        const std::vector<std::size_t> order = p_.tmpl_.seatedOrder(p_.lookup_.functions_.size());
+        for (std::size_t k = 0; k < order.size() || k < p_.lookup_.functions_.size(); k++) {
+            const std::size_t i = k < order.size() ? order[k] : k;
             if (!p_.lookup_.functions_[i].implicit || !p_.lookup_.functions_[i].used ||
                 p_.lookup_.functions_[i].defined)
                 continue;

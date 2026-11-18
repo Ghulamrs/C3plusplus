@@ -253,6 +253,16 @@ public:
     int align(const Target &t) const;
     // M8.1's read alone: a dependent type's size is refused by name (a SubstitutionFailure), where the target would end the unit.
     static void nameDependentSizes(bool on);
+    // A class door's read lays a dependent member out as nothing; the class it is in then answers as one does.
+    struct DependentLayout {
+        bool was, saw;
+        explicit DependentLayout(bool on);
+        ~DependentLayout();
+        bool met() const;
+    };
+    void setDependentLayout(bool base) { dependentLayout_ = true; dependentBase_ = base; }
+    bool dependentLayout() const { return dependentLayout_; }
+    bool dependentBase() const { return dependentBase_; }     // a base was among what it left out
     bool isSigned(const Target &t) const;
 
     int rank() const;
@@ -636,6 +646,8 @@ private:
     int size_ = 0;
     int align_ = 1;
     bool complete_ = false;
+    bool dependentLayout_ = false;
+    bool dependentBase_ = false;
 };
 
 class TypeTable {

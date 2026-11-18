@@ -450,6 +450,7 @@ bool Parser::templateDeclaration() {
         }
         expect(";");
         tmpl_.templates_[decl.name] = decl;
+        tmpl_.readDeclaration(decl, sema::Templates::ReadAlias);
         return true;
     }
 
@@ -560,6 +561,7 @@ bool Parser::templateDeclaration() {
         at_ = decl.afterParams;
         skipTemplatedDefinition();
         primary->second.partials.push_back(ps);
+        tmpl_.readDeclaration(primary->second, sema::Templates::ReadPartial, primary->second.partials.size() - 1);
         return true;
     }
 
@@ -649,6 +651,7 @@ bool Parser::templateDeclaration() {
         ool.isData = !defined && (sawInit || constructs || dataNoInit);
         ool.nested = nestedIn;
         owner->second.outOfLine.push_back(ool);
+        if (!ool.isData && owner->second.defined) tmpl_.readDeclaration(owner->second, sema::Templates::ReadOutOfLine, owner->second.outOfLine.size() - 1);
         return true;
     }
 
@@ -691,6 +694,7 @@ bool Parser::templateDeclaration() {
                             "yet - a specialization is written 'template <> "
                             "struct " + decl.name + "<...>'");
     }
+    if (decl.defined) tmpl_.readDeclaration(decl, sema::Templates::ReadClass);
     return true;
 }
 
@@ -1102,8 +1106,8 @@ void Parser::templateArguments(const TemplateDecl &decl,
                                      "this names something");
                 a.pack.push_back(d.type);
             }
-            // `List<Ns..., 4>` in a signature is `JXspT_ELi4EE`: an expansion beside other arguments, not spelled here.
-            if (a.expandsParam >= 0 && a.pack.size() != 1)
+            // `List<Ns..., 4>` in a signature is `JXspT_ELi4EE`: an expansion beside other arguments, not spelled here; a read spells nothing.
+            if (a.expandsParam >= 0 && a.pack.size() != 1 && !patternUses_)
                 src_.fail(expandedAt, "a parameter pack expanded beside other arguments in a template's "
                                       "signature, '" + decl.name + "<" + p.name + "..., ...>', is not "
                                       "supported yet - the expansion alone is");
@@ -1247,7 +1251,11 @@ Parser::instantiate(const TemplateDecl &decl,
     // And which template: two differing only in `decltype(...)` returns were one key, the first.
     key += "@" + std::to_string(decl.afterParams);
 
-    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) return lookup_.functions_[(*had)[0]];
+    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key)) {
+        const std::size_t first = (*had)[0];
+        tmpl_.asked(key, pos);
+        return lookup_.functions_[first];
+    }
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
     // as a reference to itself - a type parameter as Kind::TemplateParam, a
@@ -1288,6 +1296,7 @@ Parser::instantiate(const TemplateDecl &decl,
     sp.depth = instantiationDepth_ + 1;
     tmpl_.refuseInstantiationDepth(decl.name, sp.depth, pos);
     tmpl_.specializations_.push_back(sp);
+    tmpl_.noteMade(key, tmpl_.seatLog_.size());
 
     // **Under two keys, on purpose.** "twice<int>" is what the replayed definition
     // declares and what a repeat of the same arguments finds; "twice" is what
@@ -1443,11 +1452,23 @@ void Parser::bindPatternMember(std::size_t from, std::size_t end, std::size_t m,
         if (pk != packs_.end()) {
             const PackBinding &pb = pk->second;
             // **In a pattern the pack stands for itself** and has no m-th member to bind: a pattern over
-            // it in a signature is what Itanium spells `XspmlT_Li2EE`, which is not written here.
-            if (pb.standsForItself())
+            // it in a signature is what Itanium spells `XspmlT_Li2EE`, which is not written here. A read
+            // reads the pattern once, the pack's name there its own parameter, no longer a pack.
+            if (pb.standsForItself() && !patternBody_)
                 src_.fail(t.pos, "a pattern over the parameter pack '" + t.text + "' in a template's "
                                  "signature is not supported yet - '" + t.text + "...' alone is");
-            if (m < pb.names.size() && pb.names[m] == t.text + "$" + std::to_string(m)) {
+            if (pb.standsForItself()) {
+                Shadow s;
+                s.name = t.text; s.isPack = true; s.had = true; s.hadPack = pb;
+                undo->push_back(s);
+                TemplateParam p;
+                p.name = t.text;
+                if (pb.isValue) p.type = pb.valueType;
+                bound.push_back(p);
+                types.push_back(pb.types[0]);
+                values.push_back(0);
+                packs_.erase(pk);
+            } else if (m < pb.names.size() && pb.names[m] == t.text + "$" + std::to_string(m)) {
                 t.text = pb.names[m];
             } else {
                 TemplateParam p;
@@ -2041,6 +2062,8 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         at_++;
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
+        // A read's `V<I>::f(x)`: a member of a dependent class is substitution's to find, [temp.dep.type].
+        if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());
         // **`CVector<I>::operator*(s)` in a member of CVector<4> or of a class derived from it** is
         // `Base::f(...)`: called on `this`, never dispatched, [expr.call]/1 - as for a plain base name.
         const Local *held = lookup_.findLocal("this");
@@ -2103,6 +2126,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
     if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());     // a pattern class's: instantiation's to find
+    refuseHeldClass(cls);
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");
 }
@@ -2120,6 +2144,14 @@ bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
     return false;
 }
 
+// A read's own class, closure or enumeration: local to the read function (`$read$f::L`), or nested in the read class (`C<$T0>$read3::D`).
+static bool underRead(const std::string &tag) {
+    if (tag.compare(0, 6, "$read$") == 0) return true;
+    for (std::size_t at = tag.find("$read"); at != std::string::npos; at = tag.find("$read", at + 5))
+        if (at + 5 < tag.size() && tag[at + 5] >= '0' && tag[at + 5] <= '9' && tag.find("::", at) != std::string::npos) return true;
+    return false;
+}
+
 bool Parser::dependentType(const Type *t) const {
     for (int depth = 0; t != nullptr && depth < 64; depth++) {
         if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember ||
@@ -2128,9 +2160,14 @@ bool Parser::dependentType(const Type *t) const {
         if (t->unqualified() != t) { t = t->unqualified(); continue; }
         if (t->isStructOrUnion()) {
             int tt;
+            // A read's class laid out over a dependent member (a nested `Node` holding a `T`) is as dependent as its member.
+            if (t->dependentLayout()) return true;
+            // A member of the current instantiation, or the templated function's own local class or closure ([temp.dep.type]/8).
+            if (patternBody_ && underRead(t->tag())) return true;
             return t->isSpecialization() &&
                    (ttRefName(t->templateName(), &tt) || dependentArgs(t->templateArgs()));
         }
+        if (t->isEnumeration()) return patternBody_ && underRead(t->tag());
         if (t->kind() == Kind::Function) {
             for (const Type *p : t->params())
                 if (dependentType(p)) return true;
@@ -2138,6 +2175,8 @@ bool Parser::dependentType(const Type *t) const {
             continue;
         }
         if (t->isPointer() || t->isReference() || t->isArray()) { t = t->pointee(); continue; }
+        // A read's function parameter pack, `Args &&... args`: read in its pattern as its pattern's type.
+        if (patternBody_ && t->kind() == Kind::PackExpansion) { t = t->pointee(); continue; }
         return false;
     }
     return false;

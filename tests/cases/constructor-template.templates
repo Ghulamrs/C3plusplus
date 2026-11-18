@@ -1,0 +1,4 @@
+-check=templates: bodies=10 held=8 same=0 text=2 shape=0 declared=0 signature=0
+-check=templates declarations: functions=0 read=0 unread=0 same=0 text=0 shape=0 unreplayed=0
+-check=templates declarations class-members: bodies=4 read=4 unread=0 same=0 text=3 shape=0 unreplayed=1
+-check=templates declarations member-templates: bodies=5 read=5 unread=0 same=0 text=5 shape=0 unreplayed=0

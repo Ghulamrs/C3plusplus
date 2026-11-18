@@ -387,15 +387,16 @@ ExprPtr Parser::lambdaExpression() {
     // **The tag has to be unique and the function's *name* is not enough.** In a
     // replay `currentFunctionName_` is `operator()`, so every nested lambda built
     // `operator()::$_0`; the owner decides, with a counter for the display tag.
+    const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;   // a read's, `$read$tw::$_0`, takes no instantiation's name
     std::string tag = currentFunctionName_.empty()
-                    ? local : currentFunctionName_ + "::" + local;
+                    ? local : owner + "::" + local;
     if (!currentFunction_.empty()) {
         for (int n = 2; ; n++) {
             std::map<std::string, std::string>::const_iterator had =
                 localClassOwner_.find(tag);
             if (had == localClassOwner_.end() || had->second == currentFunction_)
                 break;
-            tag = currentFunctionName_ + "$" + std::to_string(n) + "::" + local;
+            tag = owner + "$" + std::to_string(n) + "::" + local;
         }
     }
     Type *closure = types_.structType(Kind::Struct, tag);
@@ -416,6 +417,7 @@ ExprPtr Parser::lambdaExpression() {
     // alignment allows, and the whole thing aligned to the widest of them.
     std::vector<Member> members;
     int at = 0, widest = 1;
+    const Type::DependentLayout laid(patternBody_);   // a read's capture of dependent type: noted, as a class door's member
     for (std::size_t i = 0; i < capTypes.size(); i++) {
         // The same slot rule a reference data member follows: what it occupies
         // is a pointer, where `sizeof` the type is the referent's.
@@ -432,6 +434,7 @@ ExprPtr Parser::lambdaExpression() {
     }
     const int size = members.empty() ? 1 : alignTo(at, widest);
     closure->complete(members, size, widest);
+    if (laid.met()) closure->setDependentLayout(false);
     // **A closure is a class and gets the members a class gets.**
     classes_.declareImplicitSpecials(tag, closure, pos);
     // And is passed as a class is, settled as a class settles it: by address where copying it is a call (M1 -

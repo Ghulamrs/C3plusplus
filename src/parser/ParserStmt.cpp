@@ -370,6 +370,8 @@ StmtPtr Parser::declarationBody() {
                 at_++;                        // the '('
                 std::vector<ExprPtr> args;
                 parseArguments(args);
+                // A read's class held incomplete has no constructors yet: made where the read stands, and the read made again.
+                if (args.size() != 1) refuseHeldClass(d.type);
                 if (args.size() != 1 && !(patternBody_ && dependentType(d.type) && !args.empty()))
                     src_.fail(d.pos, "'" + d.type->describe() + "' has no "
                                      "constructor, so '" + d.name + "(...)' can "
@@ -486,7 +488,10 @@ StmtPtr Parser::declarationBody() {
         // 1.25, item 3: the braces without the '=' left the array "incomplete").
         bool sizedByInitialiser = d.type->isArray() && d.type->length() < 0 &&
                                   (peek().is("=") || atBracedInitialiser(d.name));
-        if (!d.type->isComplete() && !sizedByInitialiser)
+        // A read's `const_iterator i` over a class no pattern has made is held as its operands are.
+        const bool heldLocal = patternBody_ && !d.type->isComplete() && dependentType(d.type);
+        if (!d.type->isComplete() && !sizedByInitialiser && !heldLocal) refuseHeldClass(d.type);
+        if (!d.type->isComplete() && !sizedByInitialiser && !heldLocal)
             src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
         checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
 

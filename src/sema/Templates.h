@@ -55,6 +55,8 @@ public:
                                          std::size_t pos);
     void instantiateConstructorTemplates(const Type *cls,
                                          const std::vector<ExprPtr> &args, std::size_t pos);
+    void replayMemberTemplate(const TemplateDecl &mt, const std::string &display, const std::string &key,
+                              const std::vector<TemplateArg> &args, const Type *patternFn, bool declOnly);
     const Signature *instantiateMemberTemplate(
         const TemplateDecl &mt, const std::vector<const Type *> &binding,
         const std::vector<long long> &values,
@@ -159,6 +161,24 @@ public:
     std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
 
     std::vector<Specialization> specializations_;
+    // M8.1: a class a read held and then needed the members of is made where the read's declaration stands ([temp.inst]/1),
+    // and seated among the replays where the program first asks - what its making made, in the order it made it.
+    struct Held { TemplateDecl decl; std::vector<const Type *> binding; std::vector<long long> values; std::vector<TemplateArg> args; Packs packs; std::size_t pos; };
+    struct Seat { std::size_t index; std::string key; std::size_t fnFrom, fnTo; };
+    std::map<const Type *, Held> held_;
+    mutable std::vector<const Type *> wanted_;
+    std::map<std::string, std::vector<Seat> > seat_;
+    std::vector<Seat> seatLog_;
+    bool making_ = false;
+    void want(const Type *held) const { wanted_.push_back(held); }
+    bool makeWanted();
+    void asked(const std::string &key, std::size_t pos);
+    void noteMade(const std::string &key, std::size_t from, std::size_t fnFrom = static_cast<std::size_t>(-1));
+    // Each function such a class declared, seated where the program asked: the order implicit members are defined in.
+    std::map<std::size_t, std::size_t> fnSeat_;
+    std::vector<std::size_t> seatedOrder(std::size_t n) const;
+    const Type *makeClass(const TemplateDecl &decl, const std::string &tag, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                          const std::vector<TemplateArg> &args, const Packs &packs, std::size_t pos);
 
     // **The census of the doors** (M8.0): what each instantiation was, counted where it is made; CXX1_TEMPLATE_CENSUS prints it.
     enum Door { FunctionBody, ClassBody, MemberBody, MemberTemplate, DependentBase, SfinaeTrial, SfinaeFailed, AliasId,
@@ -169,9 +189,26 @@ public:
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);
     // A function template's definition read once in pattern mode where it is declared; at the unit's end, held against its first replay.
-    void readDeclaration(const TemplateDecl &decl);
+    // The class doors read the same way, with no flag since commit 5: `which` is the out-of-line member or the partial.
+    enum ReadDoor { ReadFunction, ReadClass, ReadOutOfLine, ReadPartial, ReadAlias, ReadMember, ReadDoors };
+    void readDeclaration(const TemplateDecl &decl, ReadDoor door = ReadFunction, std::size_t which = 0);
+    void tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody, std::size_t at);
+    // The class door's member templates, each read over its own parameters numbered past the class's `outer`.
+    void readMemberTemplates(const std::string &readTag, std::size_t outer, Program *pattern);
+    // A class's own member templates, once the class is complete: each read as a function template is.
+    void readMemberTemplatesOf(const std::string &tag);
+    std::vector<TemplateDecl> memberTemplatesUnder(const std::string &tag) const;
+    const Type *readClassBody(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
+                              const std::vector<TemplateArg> &args, const std::vector<TemplateParam> &useParams,
+                              const std::vector<const Type *> &useBinding, const std::vector<long long> &useValues,
+                              const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
+    std::map<std::string, const Type *> readPattern_;
+    std::vector<Type *> readShallow_;
+    std::string readingTag_, readingRead_;      // the class door's class while its body is read: `C<$T0>` and its read's tag
+    std::size_t readSerial_ = 0;
+    bool classDoor_ = false;
     void holdDeclarations();
-    std::vector<syntax::NodeId> declRead_;
+    std::vector<syntax::NodeId> declRead_[ReadDoors];
     std::string bodiesReport() const;
     // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
     bool substitute_ = false, substituteDebug_ = false;
@@ -191,10 +228,10 @@ private:
     long signatureTally_[2] = {};       // replays of a function template whose signature was kept, and those whose parameters agree
     std::set<std::uint32_t> bodyShapes_;
     // The declaration's own read: read, same, text, shape, never replayed; and each reason one was not read, counted.
-    long declTally_[5] = {};
+    long declTally_[ReadDoors][5] = {};
     std::set<std::uint32_t> declShapes_;
     std::vector<std::string> declShapeTrees_;     // each shape's two trees: the read's, then the first replay's
-    std::map<std::string, int> declUnread_;
+    std::map<std::string, int> declUnread_[ReadDoors];
     std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.

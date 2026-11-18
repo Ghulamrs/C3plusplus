@@ -154,11 +154,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (within == nullptr && defining && !tag.empty() &&
         !currentFunction_.empty() && specializationOf.empty()) {
         localOwner = currentFunction_;
-        std::string qualified = currentFunctionName_ + "::" + tag;
+        const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;   // as a read's closure
+        std::string qualified = owner + "::" + tag;
         for (int n = 2; ; n++) {
             auto had = localClassOwner_.find(qualified);
             if (had == localClassOwner_.end() || had->second == localOwner) break;
-            qualified = currentFunctionName_ + "$" + std::to_string(n) + "::" + tag;
+            qualified = owner + "$" + std::to_string(n) + "::" + tag;
         }
         local = tag;
         tag = qualified;
@@ -205,6 +206,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // laid down in the order written, which is the order their constructors run in.
     struct WrittenBase { const Type *type; Access access; bool isVirtual; };
     std::vector<WrittenBase> written;
+    bool dependentLaid = false, dependentBase = false;     // a class door's read: a dependent base or member, in no layout
     if (peek().is(":")) {
         at_++;
         for (;;) {
@@ -232,6 +234,13 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 if (b != nullptr) b = b->unqualified();
             } else {
                 baseName = expectIdent("a base class name");
+            }
+            // A read's `struct D : B<T>`, or `: C<int>` of a template template parameter: no class yet, so left out, its members not found.
+            if (readLayout_ && b != nullptr && b->isSpecialization() && !b->isComplete() &&
+                (dependentArgs(b->templateArgs()) || b->templateName().compare(0, 3, "$TT") == 0)) {
+                dependentLaid = dependentBase = true;
+                if (!consume(",")) break;
+                continue;
             }
             if (b == nullptr || !b->isStructOrUnion())
                 src_.fail(bpos, "'" + baseName + "' is not a class, so it "
@@ -661,6 +670,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 at_ += 5;
                 continue;
             }
+        }
+        // A read's `using B<T>::B;` over a base it left out: what it names waits for the arguments, as the base does.
+        if (peek().is("using") && readLayout_ && (dependentBase || dependentAhead(false))) {
+            while (!peek().is(";") && peek().kind != TokenKind::End) at_++;
+            expect(";");
+            continue;
         }
         if (peek().is("using"))
             src_.fail(peek().pos, "a using-declaration inside a class is not "
@@ -1290,7 +1305,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(d.pos, "'virtual' describes a function, and '" +
                                  d.name + "' is a data member");
 
-            if (!d.type->isComplete())
+            // A read's `C<T> c;` over a class no pattern has made, or its `int v[N];`, is laid out as nothing, as a dependent base is.
+            const bool heldMember = readLayout_ && !d.type->isComplete() && (dependentType(d.type) || d.type->isArray());
+            if (!d.type->isComplete() && !heldMember) refuseHeldClass(d.type);
+            if (!d.type->isComplete() && !heldMember)
                 src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
             checkNotAbstract(d.type, d.pos, "the member '" + d.name + "'");
             // **What a reference member occupies is a pointer**, and asking the type
@@ -1298,6 +1316,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // declared type stays the reference, which makes every read dereference.
             const Type *slot = d.type->isReference()
                              ? types_.pointerTo(d.type->referent()) : d.type;
+            const Type::DependentLayout laid(readLayout_);
             int a = Packed::to(slot->align(target_), pack);
             refuseWeakAlignas(mquals.alignAs, slot, d.pos);
             if (mquals.alignAs > a) a = mquals.alignAs;
@@ -1366,6 +1385,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (kind == Kind::Union) { if (endBits > widestBits) widestBits = endBits; }
             else bitCursor = endBits;
             msUnitBits = 0;          // a member that is not a bitfield closes the unit
+            dependentLaid = dependentLaid || laid.met() || heldMember;
             if (!consume(",")) break;
         }
         if (!heldBody) expect(";");
@@ -1554,6 +1574,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (noData) empties.push_back(Type::EmptyAt{ type, 0 });
     type->setEmptySubobjects(empties);
     type->complete(members, size, align);
+    if (dependentLaid) type->setDependentLayout(dependentBase);
     // Held bodies are read now, class complete, so a body may name a later member; taken out of the vector first,
     // since a body may define a class with held bodies. A specialization also takes its nested classes' bodies,
     // [temp.inst]/2; **so does any class** (1.27, item 3): a nested one waits for the outermost, [class.mem]/2.
@@ -1623,8 +1644,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     else if (deferSpecializationBodies_ && insideSpecialization)
         // Nested in a specialization being made: compiled where called, with the specialization's own.
         pendingBodies_.insert(pendingBodies_.end(), mine.begin(), mine.end());
-    else
+    else {
         replayInlineBodies(std::move(mine));
+        if (!type->isSpecialization() && !insideSpecialization) tmpl_.readMemberTemplatesOf(tag);
+    }
     return type;
 }
 
@@ -1701,7 +1724,9 @@ const Type *Parser::enumSpecifier() {
     Type *self = nullptr;
     if (!tag.empty()) {
         const Type *before = lookup_.findTypedef(tagKey("enum", prefix + tag));
-        self = types_.enumType(prefix + tag,
+        // A read function's own enumeration is its own type (`$read$f::E`), dependent, and not the one its replay defines.
+        const bool readLocal = patternBody_ && within == nullptr && !currentFunction_.empty();
+        self = types_.enumType((readLocal ? "$read$" + currentFunctionName_ + "::" : std::string()) + prefix + tag,
                                underlying != nullptr ? underlying->kind() : Kind::Int);
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
         if (before != nullptr && before->unqualified() == self &&
@@ -2084,10 +2109,10 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         peekAt(1).is("<")) {
         const TemplateDecl decl = findTemplate(peek().text)->second;
         if (!decl.isClass) refuseTemplateId();
-        const std::size_t tpos = peek().pos;
+        const std::size_t tpos = peek().pos, from = at_;
         at_++;
         const Type *cls = tmpl_.instantiateClass(decl, tpos);
-
+        if (!sawTypename) refuseUntypedMember(decl.name, from);
         return memberTypeWalk(cls);
     }
 
@@ -2122,10 +2147,11 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
                 }
             }
             if (tmplConsumed > consumed) {
-                const std::size_t tpos = peek().pos;
+                const std::size_t tpos = peek().pos, from = at_;
                 at_ += tmplConsumed;
                 const Type *cls = tmpl_.instantiateClass(findTemplate(tmpl)->second,
                                                    tpos);
+                if (!sawTypename) refuseUntypedMember(findTemplate(tmpl)->second.name, from);
                 return memberTypeWalk(cls);
             }
             if (found != nullptr) {
@@ -2399,6 +2425,10 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
             skipAttributes();
             continue;
         }
+        // A class read's bound over its parameters waits for them: the member is laid out as nothing, as `int v[N];` is.
+        if (readLayout_ && dependentAhead(false)) { decay(conditional()); dims.push_back(-1); expect("]"); skipAttributes(); continue; }
+        // A function read's bound over a parameter is value-dependent ([temp.dep.type]/8): refused by name, never folded with 0.
+        if (patternBody_ && !readLayout_ && dependentAhead(false)) throw SubstitutionFailure("an array whose bound depends on a template parameter");
         // `long long`, not `long`: this compiler is built by cl on one of its three
         // machines, where a `long` is 32 bits - so `char a[0x100000001]` silently
         // became `char a[1]` there and kept its full length on the other two.
@@ -2654,8 +2684,8 @@ void Parser::checkLiteralOperator(const std::string &name,
     for (std::size_t i = 0; i < pendingDefaults_.size(); i++)
         if (pendingDefaults_[i] != 0)
             src_.fail(pos, "literal operator cannot have a default argument - [over.literal]/8");
-    // A template's specialization takes nothing, the template's own list being checked where it is declared.
-    if (params.empty() && !instantiationKey_.empty()) return;
+    // A template's specialization takes nothing, nor a read of the template: its own list is checked where it is declared.
+    if (params.empty() && (!instantiationKey_.empty() || patternUses_)) return;
     auto character = [&](const Type *t) {
         const Kind k = t->unqualified()->kind();
         return k == Kind::Char || k == Kind::WChar || k == Kind::Char16 || k == Kind::Char32;

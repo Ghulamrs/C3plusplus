@@ -1428,6 +1428,8 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
 }
 
 std::vector<Parser::Effect> Parser::throwEffects(ExprPtr value, std::size_t pos) {
+    if (patternBody_ && dependentOperand(value->type()))   // a read's: the type_info and the size are the arguments' to give
+        throw SubstitutionFailure("a throw of a value whose type waits for the arguments");
     const Type *thrown = value->type()->unqualified();
     if (target_.microsoftNames()) return microsoftThrow(std::move(value), pos);
 
@@ -1651,6 +1653,13 @@ ExprPtr Parser::newExpression(std::size_t pos) {
                                   "may be given here");
     }
 
+    std::vector<ExprPtr> ctorArgs;
+    // A read's `new __tree_node<V>(v)` over a class no pattern has made: its operands read, its value a zero.
+    if (patternBody_ && !made->isComplete() && dependentType(made)) {
+        if (peek().is("{")) parseInitialiser();
+        else if (consume("(")) parseArguments(ctorArgs);
+        return zeroOf(types_.pointerTo(made));
+    }
     if (!made->isComplete())
         src_.fail(pos, "'new' needs a complete type, and '" + made->describe() +
                        "' is not one here");
@@ -1664,7 +1673,6 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     checkNotAbstract(made, pos, "the object 'new' would make");
     const bool constructed = made->isStructOrUnion() && !made->tag().empty() &&
                              hasConstructors(made->tag());
-    std::vector<ExprPtr> ctorArgs;
     bool hasInit = false;
     ExprPtr init;
     // **`new T{}` is `new T()`**, [dcl.init]/11; `new T{...}` list-initialises the object,
@@ -1735,7 +1743,8 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
     else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
     const Type *sizeT = types_.get(target_.sizeType());
-    ExprPtr bytes(new Num(static_cast<long long>(made->size(target_))));
+    // A read's `new T`: the size is the instance's.
+    ExprPtr bytes(new Num(patternBody_ && dependentType(made) ? 0LL : static_cast<long long>(made->size(target_))));
     bytes->setType(sizeT);
     // **An array of a class**: the count is wanted by the cookie, the
     // constructor loop and the allocator, so it goes into a slot. [expr.new]/12:
@@ -2119,6 +2128,10 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
 
     ExprPtr what = decay(unary());
     const Type *t = what->type();
+    if (patternBody_ && !t->isPointer() && dependentType(t)) {     // a read's `delete at.n_`, over a held local
+        what->setType(types_.get(Kind::Void));
+        return what;
+    }
     if (!t->isPointer())
         src_.fail(pos, "'delete' needs a pointer, and this is '" +
                        t->describe() + "'");

@@ -296,8 +296,8 @@ const DepExpr *Parser::depPrimary(bool angle) {
             const Type *t = lookup_.findTypedef(name);
             if (t != nullptr && t->kind() == Kind::TemplateParam) {
                 if (peekAt(1).is("::")) {
-                    if (peekAt(2).kind != TokenKind::Ident || peekAt(3).is("::") ||
-                        peekAt(3).is("<"))
+                    // `T::num < x` is less-than: with no `template` before it, `num` names no template ([temp.names]/4).
+                    if (peekAt(2).kind != TokenKind::Ident || peekAt(3).is("::"))
                         depRefuse(pos, "a qualified name other than 'T::name'");
                     n.op = DepExpr::QualifiedParamName;
                     n.type = t;
@@ -329,12 +329,33 @@ const DepExpr *Parser::depPrimary(bool angle) {
             }
         }
         if (const Local *l = lookup_.findLocal(name)) {
+            if (l->trailingParam < 0 && patternBody_) {      // a read's `A<n>` over a local: held by name, never spelt
+                at_++;
+                n.op = DepExpr::UnresolvedName;
+                n.name = n.text = name;
+                return depNode(n);
+            }
             if (l->trailingParam < 0) depRefuse(pos, "a local name");
             at_++;
             n.op = DepExpr::FunctionParam;
             n.index = l->trailingParam;
             return depNode(n);
         }
+    }
+    // A read's `is_integral<T>::value`: a dependent class's member named as a value, held as an unresolved name.
+    if (patternBody_ && tok.kind == TokenKind::Ident && peekAt(1).is("<") && findTemplate(tok.text) != tmpl_.templates_.end()) {
+        const std::size_t from = at_, split = angleSplit_;
+        at_++;
+        skipTemplateArguments();
+        if (angleSplit_ == split && peek().is("::") && peekAt(1).kind == TokenKind::Ident &&
+            !peekAt(2).is("<") && !peekAt(2).is("::") && !peekAt(2).is("(")) {
+            at_ += 2;
+            n.op = DepExpr::UnresolvedName;
+            n.name = n.text = depText(from, at_);
+            return depNode(n);
+        }
+        at_ = from;
+        angleSplit_ = split;
     }
     if (atTypeName()) {
         StorageClass sc;
@@ -366,6 +387,17 @@ std::string Parser::depText(std::size_t from, std::size_t to) const {
     return text;
 }
 
+// Tokens as written, a space only between two words: `Sel<(N>3)>`, `cv<unsigned int>`.
+std::string Parser::spelledTokens(std::size_t from, std::size_t to) const {
+    std::string text;
+    for (std::size_t i = from; i < to; i++) {
+        const Token &t = tokens_[i];
+        if (i > from && t.kind != TokenKind::Punct && tokens_[i - 1].kind != TokenKind::Punct) text += ' ';
+        text += t.kind == TokenKind::Num && t.text.empty() ? std::to_string(t.value) : t.text;
+    }
+    return text;
+}
+
 // **A pattern's body reads an operand of dependent type as any other and gives it no meaning**: the
 // ordinary productions note their syntax, and what they hand on is a zero of a dependent type (M8.1).
 bool Parser::dependentOperand(const Type *t, bool pointers) const {
@@ -378,6 +410,44 @@ const Type *Parser::dependentResult() {
     n.op = DepExpr::UnresolvedName;
     n.name = n.text = "a dependent expression";
     return types_.dependentExpr(depNode(n), false);
+}
+
+// An unqualified name a read finds nowhere in a class with a left-out base: not dependent ([temp.dep]/3 looks in no
+// dependent base), and held unfound so the body is not bound over it (M8rev M1).
+const Type *Parser::unfoundResult(const std::string &name) {
+    DepExpr n;
+    n.op = DepExpr::UnresolvedName;
+    n.name = name;
+    n.text = "a name not found, which a left-out base may not declare";
+    return types_.dependentExpr(depNode(n), false);
+}
+
+// A read's class whose base was left out (`struct D : B<T>`), or one around the body read: a name not found may be the base's.
+bool Parser::leftOutBase(const Type *cls) const {
+    if (!patternBody_) return false;
+    if (cls != nullptr) return cls->unqualified()->dependentBase();
+    if (currentClass_ != nullptr && currentClass_->unqualified()->dependentBase()) return true;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i] != nullptr && classStack_[i]->unqualified()->dependentBase()) return true;
+    return false;
+}
+
+// [temp.res]/3: `X<N>::type` over a bound parameter is a dependent name, a type only after `typename`, as `T::type`
+// (M8rev M6); `from` is the template's name, at_ past its `>`. A member of the current instantiation needs none.
+void Parser::refuseUntypedMember(const std::string &name, std::size_t from) {
+    if (!peek().is("::") || peekAt(1).kind != TokenKind::Ident) return;
+    if (currentClass_ != nullptr && currentClass_->unqualified()->templateName() == name) return;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i] != nullptr && classStack_[i]->unqualified()->templateName() == name) return;
+    for (std::size_t i = from; i < at_; i++) {
+        const Token &t = tokens_[i];
+        if (t.kind != TokenKind::Ident || (boundTypeParams_.count(t.text) == 0 && boundValueParams_.count(t.text) == 0 &&
+                                           nonTypePatternParams_.count(t.text) == 0))
+            continue;
+        const std::string spelled = spelledTokens(from, at_) + "::" + peekAt(1).text;
+        src_.fail(tokens_[from].pos, "'" + spelled + "' names a member of a class whose arguments depend on '" + t.text +
+                                     "', and whether that is a type depends on them - write 'typename " + spelled + "'");
+    }
 }
 
 // One postfix step on an object of dependent type, its tokens alone: a subscript, a member's name, `++`.
@@ -394,9 +464,14 @@ bool Parser::dependentPostfix(const Type *object, PostfixStep &step) {
         if (written) k++;
         while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::")) k += 2;
         if (peekAt(k).kind != TokenKind::Ident) return false;      // `~T`, an operator's name: the ordinary reader's refusal
+        const std::string op = peek().text;
         at_ += k + 1;
-        // [temp.names]/4: after `template` the name is a template's, and `<` opens its arguments.
-        if (written && peek().is("<")) skipTemplateArguments();
+        if (!written) return true;
+        // [temp.names]/4: after `template` the name is a template's, and `<` opens its arguments - both kept (M8rev M2).
+        step.text = op + "template " + step.text.substr(op.size());
+        const std::size_t from = at_;
+        if (peek().is("<")) skipTemplateArguments();
+        step.text += spelledTokens(from, at_);
         return true;
     }
     return consume("++") || consume("--");

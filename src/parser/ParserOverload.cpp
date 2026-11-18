@@ -738,6 +738,30 @@ std::vector<syntax::NodeId> Parser::withDefaults(const Expr &e, const std::vecto
     return whole;
 }
 
+// Whether a held class's arguments name a read's own local class (`vector<$read$f::S>`), which clang reads as dependent.
+static bool overReadLocal(const Type *t) {
+    for (const TemplateArg &arg : t->templateArgs()) {
+        const Type *u = arg.isType ? arg.type : nullptr;
+        while (u != nullptr && (u->isPointer() || u->isReference())) u = u->isPointer() ? u->pointee() : u->referent();
+        if (u != nullptr && (u->tag().compare(0, 6, "$read$") == 0 || (u->isStructOrUnion() && overReadLocal(u)))) return true;
+    }
+    return false;
+}
+
+// A read's class held incomplete (`readHeld_`) has no members to convert by, to be a member or to be a local of.
+void Parser::refuseHeldClass(const Type *a, const Type *b) const {
+    if (!patternUses_ || readHeld_.empty()) return;
+    const Type *both[2] = { a == nullptr || !a->isReference() ? a : a->referent(), b == nullptr || !b->isReference() ? b : b->referent() };
+    if (both[0] != nullptr && both[1] != nullptr && both[0]->unqualified() == both[1]->unqualified()) return;
+    for (int i = 0; i < 2; i++)
+        if (both[i] != nullptr && readHeld_.count(both[i]->unqualified()) != 0 && !both[i]->unqualified()->isComplete()) {
+            // A class over the read's own local class is dependent ([temp.dep.type]): never made at the definition.
+            if (overReadLocal(both[i]->unqualified())) throw SubstitutionFailure("the members of a class specialization over the template's own local class");
+            tmpl_.want(both[i]->unqualified());
+            throw SubstitutionFailure("the members of a class specialization the program has not asked for yet");
+        }
+}
+
 void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
                              const std::string &what) const {
     if (patternBody_ && (dependentType(to) || dependentOperand(from.type()))) return;
@@ -747,6 +771,7 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
 
     // Copying ignores the const at the top.
     if (ft->unqualified() == to->unqualified()) return;
+    refuseHeldClass(ft, to);
 
     if (ft->unqualified()->isScopedEnumeration()) refuseScopedConversion(ft, to, pos);
     if (ft->isArithmetic() && to->unqualified()->isEnumeration() && !rules().integerConvertsToEnumeration()) {

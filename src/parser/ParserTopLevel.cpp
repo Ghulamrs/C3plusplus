@@ -970,6 +970,7 @@ void Parser::topLevel(Program &program) {
         return;
     }
     const Signature *member = nullptr;
+    std::string definedSymbol;
     if (memberOf != nullptr) {
         std::string key = d.qualifier + "::" + d.name;   // "Point::~Point" too
         // **A member function template specialization declares itself here.**
@@ -1015,7 +1016,8 @@ void Parser::topLevel(Program &program) {
                 else
                     ok = itaniumMemberTemplateName(d.qualifier, memberOf, d.name,
                           patternFn, memberTemplateArgs_, constThis, refThis, &sym, &why);
-                if (!ok)
+                if (!ok && patternBody_) sym = "$pattern$" + key + "$" + fnType->describe();      // read, never emitted
+                else if (!ok)
                     src_.fail(d.pos, "'" + key + "' cannot be given a name the "
                                      "linker can hold: " + why);
                 if (!c2.empty()) constructorC2_[sym] = c2;
@@ -1112,13 +1114,15 @@ void Parser::topLevel(Program &program) {
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.
-        currentFunction_ = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params, variadic,
+        const bool own = patternBody_ && absoluteName.empty() && cLinkage_ == 0 && !namespaceStack_.empty();   // a read's std::remove, by its own key
+        currentFunction_ = lookup_.lookupSignature(own ? namespacePrefix() + d.name
+                                                       : absoluteName.empty() ? d.name : absoluteName, params, variadic,
                                            d.pos).symbol;
+        if (own) definedSymbol = currentFunction_;
     }
     // Set for a member's body too, unlike the friend question above, because a local
     // class inside a member function is spelled by wrapping that function's name.
     // **Taken by value**: `member` points into a vector any declaration can move.
-    std::string definedSymbol;
     if (member != nullptr) {
         definedSymbol = member->symbol;
         currentFunction_ = definedSymbol;
@@ -1230,6 +1234,11 @@ void Parser::topLevel(Program &program) {
                         target = b.type;
                 if (target == nullptr)
                     if (const Member *m = memberOf->findMember(entry)) target = m->type;
+                if (target == nullptr && leftOutBase(memberOf)) {      // a read's `: B<T>{x}`, its base left out
+                    parseInitialiser();
+                    if (!consume(",")) break;
+                    continue;
+                }
                 if (target == nullptr)
                     src_.fail(epos, "'" + entry + "' is neither a member of '" + d.qualifier +
                                     "' nor a direct base of it");
@@ -1291,6 +1300,11 @@ void Parser::topLevel(Program &program) {
                     break;
                 }
 
+            // A read's `: B<T>(x)` names the base its class left out: the arguments read, the entry dropped.
+            if (!isBase && memberOf->findMember(entry) == nullptr && leftOutBase(memberOf)) {
+                if (!consume(",")) break;
+                continue;
+            }
             if (isBase) {
                 if (baseArgs.count(baseKey))
                     src_.fail(epos, "'" + entry + "' is initialised twice");
@@ -1348,7 +1362,7 @@ void Parser::topLevel(Program &program) {
                                             " constructor of '" + mc->describe() +
                                             "'");
                         ctorIndex = static_cast<std::size_t>(ctor - &lookup_.functions_[0]);
-                        lookup_.functions_[ctorIndex].used = true;
+                        if (!patternUses_) lookup_.functions_[ctorIndex].used = true;
                     }
                     valueInit[entry] = ctorIndex;
                 }
@@ -1554,7 +1568,9 @@ void Parser::topLevel(Program &program) {
     // whatever its size.
     const bool returnsAsMember = memberOf != nullptr && !inStaticMember_;
     int sretSlot = 0;
-    if (d.type->isStructOrUnion() && abi_.returnsIndirectly(*d.type, target_, returnsAsMember)) {
+    // A read's member returning its dependent class by value: how it comes back is the instance's to say.
+    if (d.type->isStructOrUnion() && !(patternBody_ && dependentType(d.type)) &&
+        abi_.returnsIndirectly(*d.type, target_, returnsAsMember)) {
         frameSize_ += 8;
         frameSize_ = alignTo(frameSize_, 8);
         sretSlot = frameSize_;

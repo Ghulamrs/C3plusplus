@@ -955,6 +955,8 @@ ExprPtr Parser::conditionalNode() {
 
     const Type *ta = a->type();
     const Type *tb = b->type();
+    // A read's `?:` with a dependent arm has no type until substitution: held, as a dependent operator is.
+    if (dependentOperand(ta) || dependentOperand(tb)) return zeroOf(dependentResult());
     const Type *result = nullptr;
 
     // **[expr.cond]/2: a throw-expression arm takes the other arm's type** - `b ? 7 : throw 1` is an int (1.27,
@@ -1283,7 +1285,8 @@ ExprPtr Parser::expr() {
         const syntax::NodeId l = syn(n);
         ExprPtr right = decay(assign());
         const syntax::NodeId rs = syn(right);
-        const Type *t = right->type();
+        // [temp.dep.expr]/1: a dependent left operand may find an `operator,` for its type, so the whole waits.
+        const Type *t = dependentOperand(n->type()) ? dependentResult() : right->type();
         ExprPtr c(new Comma(std::move(n), std::move(right)));
         c->setType(t);
         n = note(std::move(c), syntax::Kind::Comma, ",", pos, {l, rs});

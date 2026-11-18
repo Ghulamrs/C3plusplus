@@ -56,11 +56,16 @@ int Type::microsoftInheritanceModel() const {
     return 0;
 }
 
-static thread_local bool dependentSizesNamed = false;
+static thread_local bool dependentSizesNamed = false, dependentLaidOut = false, dependentMet = false;
 void Type::nameDependentSizes(bool on) { dependentSizesNamed = on; }
-static void refuseDependent(Kind k) {
-    if (dependentSizesNamed && k >= Kind::PackExpansion && k != Kind::MemberPointer)
-        throw SubstitutionFailure("the size of a dependent type");
+Type::DependentLayout::DependentLayout(bool on) : was(dependentLaidOut), saw(dependentMet) { dependentLaidOut = on; dependentMet = false; }
+Type::DependentLayout::~DependentLayout() { dependentLaidOut = was; dependentMet = saw; }
+bool Type::DependentLayout::met() const { return dependentMet; }
+// Whether a read is asking a size no pattern has: refused by name, but for a class's layout, which notes it.
+static bool dependentSize(bool dependent) {
+    if (!dependent || !dependentSizesNamed) return false;
+    if (!dependentLaidOut) throw SubstitutionFailure("the size of a dependent type");
+    return dependentMet = true;
 }
 
 int Type::size(const Target &t) const {
@@ -79,8 +84,8 @@ int Type::size(const Target &t) const {
             length_ * static_cast<long long>(pointee_->size(t));
         return total > 2147483647LL ? 2147483647 : static_cast<int>(total);
     }
-    if (kind_ == Kind::Struct || kind_ == Kind::Union) return size_;
-    refuseDependent(kind_);
+    if (kind_ == Kind::Struct || kind_ == Kind::Union) return dependentSize(dependentLayout_), size_;
+    if (dependentSize(kind_ >= Kind::PackExpansion && kind_ != Kind::MemberPointer)) return 0;
     return t.sizeOf(kind_);
 }
 
@@ -89,8 +94,8 @@ int Type::align(const Target &t) const {
     if (kind_ == Kind::MemberPointer) return t.microsoftNames() ? 4 : t.alignOf(Kind::Pointer);
     if (isReference()) return pointee_->align(t);
     if (kind_ == Kind::Array) return pointee_->align(t);
-    if (kind_ == Kind::Struct || kind_ == Kind::Union) return align_;
-    refuseDependent(kind_);
+    if (kind_ == Kind::Struct || kind_ == Kind::Union) return dependentSize(dependentLayout_), align_;
+    if (dependentSize(kind_ >= Kind::PackExpansion && kind_ != Kind::MemberPointer)) return 1;
     return t.alignOf(kind_);
 }
 

@@ -1,0 +1,5 @@
+tests/syntax/template-read-marks.cpp:4:5: (function "g" (var "int v") (block (return (name "v"))))
+tests/syntax/template-read-marks.cpp:9:5: (function "main" (block (return (int "0"))))
+tests/syntax/template-read-marks.cpp:5:24: (read (function "comma" (var "template parameter x") (var "int k") (block (return (call (name "g" dependent) (comma "," (assign "+=" (name "x" dependent) (int "1")) (name "k")))))))
+tests/syntax/template-read-marks.cpp:6:24: (read (function "member" (var "template parameter b") (var "int k") (block (return (binary "+" (call (member ".template cv<int>" (name "b" dependent)) (name "k")) (call (member ".cv" (name "b" dependent)) (name "k")))))))
+tests/syntax/template-read-marks.cpp:8:42: (read (function "f" (block (expr (assign "=" (name "nb" unfound) (int "1"))) (return (binary "+" (call (name "g" dependent) (name "nb" unfound)) (member "->nb" (this "this")))))))

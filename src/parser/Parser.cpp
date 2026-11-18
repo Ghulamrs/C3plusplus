@@ -781,7 +781,7 @@ void Parser::leaveScope() {
     for (std::size_t i = scopeStarts_.back(); i < locals_.size(); i++) {
         const Local &l = locals_[i];
         if (l.offset <= 0 || !l.staticName.empty() || l.isParameter || inParams_ || l.sharesSlot) continue;
-        if (patternBody_ && dependentType(l.type)) continue;     // a pattern's local has no slot to give back
+        if (slotless(l.type)) continue;     // a pattern's local has no slot to give back
         const Type *stored = l.type->isReference() ? types_.pointerTo(l.type->referent()) : l.type;
         freeSlots_.push_back(FreeSlot{ stored, l.offset, objectAlign(stored, target_) });
     }
@@ -815,7 +815,7 @@ int Parser::allocateFrameSlot(const Type *type, int alignAtLeast) {
     // what it refers to. This is the one place the difference shows.
     const Type *stored = type->isReference()
                        ? types_.pointerTo(type->referent()) : type;
-    if (patternBody_ && dependentType(stored)) return frameSize_;     // a pattern's local: a `var`, and no slot
+    if (slotless(stored)) return frameSize_;     // a pattern's local: a `var`, and no slot
     int align = objectAlign(stored, target_);
     if (alignAtLeast > align) align = alignAtLeast;
     frameSize_ += stored->size(target_);
@@ -834,7 +834,7 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
     refuseWeakAlignas(alignAtLeast, type, pos);
     // A frame slot is only as aligned as the stack it hangs from; past that the
     // frame is realigned by the hosts' prologues, and the C6000's is not yet.
-    const int typeAlign = type->isReference() || (patternBody_ && dependentType(type)) ? 0 : type->align(target_);
+    const int typeAlign = type->isReference() || slotless(type) ? 0 : type->align(target_);
     if ((alignAtLeast > target_.stackAlign() || typeAlign > target_.stackAlign()) && !target_.realignsFrame())
         src_.fail(pos, "'alignas(" + std::to_string(alignAtLeast > typeAlign ? alignAtLeast : typeAlign) + ")' on a "
                        "local is not supported yet on " + target_.name() + ": the stack is kept " +
@@ -861,7 +861,7 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
                        ? types_.pointerTo(type->referent()) : type;
     fnVars_.push_back(::Local{ name, stored, offset, inParams_, std::string(),
                               currentBlock() });
-    const int storedAlign = patternBody_ && dependentType(stored) ? 0 : objectAlign(stored, target_);     // a pattern's: none to ask
+    const int storedAlign = slotless(stored) ? 0 : objectAlign(stored, target_);     // a pattern's: none to ask
     fnVars_.back().align = alignAtLeast > storedAlign ? alignAtLeast : storedAlign;
     fnVars_.back().serial = localSerial_;
     if (type->isReference()) fnVars_.back().declared = type;
@@ -895,7 +895,7 @@ void Parser::tlsVar(Var *v, bool viaWrapper, bool external) {
     // function is already running, and on Windows its guard would call it again.
     if (currentFunction_ == "__tls_init" && tlsHere_.count(v->symbol()) != 0) viaWrapper = false;
     v->setViaWrapper(viaWrapper);
-    if (external) tlsReached_.insert(v->symbol());
+    if (external && !patternUses_) tlsReached_.insert(v->symbol());
 }
 
 void Parser::tlsDefining(const std::string &symbol, bool external) {

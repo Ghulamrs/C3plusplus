@@ -815,6 +815,1417 @@ no `tests/cases` program was added (the gates are the self-host and `identical.s
 **Not done**: the signature's expression reader (eight shapes), not started; commit 4 not started.
 src/ lines: 94,877 before, 94,886 after.
 
+**M8.1, commit 4 begun: the class doors read under `-check=templates`, 2026-11-18** (lane m8k, branch `m8-e`
+from `3a922049` - m8-d merged with main `156a6b46`; one lane-hour; code `0a9076aa`). **What is read**: a class
+template's member bodies, an out-of-line member, a partial specialization's member bodies and an alias's
+type-id, each where it is declared, by `Templates::readDeclaration` with a door (`ReadClass`, `ReadOutOfLine`,
+`ReadPartial`, `ReadAlias`) - the function door's read, layer and all: the parameters bound to themselves, the
+read's own `Lookup` layer, a `Program` of its own, specializations and temporaries' numbers put back. **The
+class's read is `instantiateClass`'s own**, taken out whole as `readClassBody` (one implementation: the
+instantiation calls it with its binding, the read with the parameters themselves and a tag of that read alone,
+`C<$T0>$read<mark>`); while a class door's read lasts, the pattern's `C<T>` is that class (`readPattern_`), so
+`Box<T>::get` and a member's `Box<T>` find its members. Each held member body is then replayed in a trial of
+its own - one refused leaves the others read - and an out-of-line member is read from its `start` by
+`topLevel`. **The replay is still what emits**: the class doors run under `-check=templates` alone (the
+function door in every compile, as m8j left it), so a compile without the flag differs from `3a922049` by the
+extraction only, which the gates below hold. What a refusal thrown through the class's read left set - the
+class stack, the instantiating arguments, the held bodies, `inTemplateArgs_` (a `>` ended `r > 0` in the next
+function), the parameters' bindings (kept by the read and unbound by it, refused or not) - is put back by the
+read; found by the count over the cases, 70 of which failed under the flag before it was.
+
+**Read / not read by door**, Linux `~/m8kn` (the committed code), `boxkit/m8k-count.sh` and `m8k-self.sh`.
+Before this lane no class door was read at all (every body below was the replay's alone):
+
+| door | `tests/cases` (900 units reach the count): bodies / read / unread | same / text / shape / unreplayed | the self-host (103 of 103): bodies / read / unread | same / text / shape / unreplayed |
+| --- | --- | --- | --- | --- |
+| function (m8j's, unchanged) | 3,478 / 3,379 / 99 | 14 / 455 / 8 / 2,902 | 7,512 / 7,323 / 189 | 0 / 1,127 / 0 / 6,196 |
+| class members | 4,728 / 2,755 / 1,973 | 442 / 268 / 0 / 2,045 | 16,745 / 12,652 / 4,093 | 2,508 / 1,846 / 0 / 8,298 |
+| out-of-line members | 22 / 0 / 22 | - | 0 | - |
+| partial specializations' members | 1,737 / 251 / 1,486 | 11 / 25 / 0 / 215 | 3,186 / 1,054 / 2,132 | 6 / 103 / 0 / 945 |
+| alias type-ids (no body: read or refused) | 7 / 7 / 0 | - | 0 | - |
+
+A class whose own read is refused counts once, as "the class: ..." (its bodies are not known then), so `bodies`
+is a floor. No read body differs from its replay in shape at a class door. **Not read, by reason** (cases /
+self-host): the class: a base class has to be complete - a dependent base, `struct D : B<T>` (666 / 826, and 4
+partials); the size of a dependent type - a data member `T v;` laid out, in the class (278 / 514; partials 62 /
+101; out-of-line 6) and in a member body (326 / 885; partials 16 / 96); the pseudo-destructor does not name
+the type of this object (168 / 396); the class: "expected" a token (163 / 204); has no member called (40 / 352);
+no function called takes these arguments (85 / 198); was not declared (20 / 176); the class: is declared twice
+(11 / 127); an in-class initialiser of a static member of dependent type (84 / 102); a template parameter in
+this place of a signature (44 / 99, and 14 in the class); incomplete type (class 69 / 85, body 10 / 88,
+out-of-line 11); the arms of `?:` (partials 16 / 96); a class specialization the program has not asked for
+(3 / 26). **A fault of the read, not a wall**: a partial's class read ends "struct `X<$T0>$read` is defined
+twice" for every partial of a class whose primary was read (1,388 / 1,835 of the partials' unread - all of
+`<type_traits>`' `remove_reference`, `is_reference`, `iterator_traits`, `hash` ...): the partial's tokens are
+read by `structOrUnionSpecifier` under the read's tag and meet a definition - not found in the hour. And the
+out-of-line door reads 0 of 22: the class before it is refused (a data member of dependent type), so the
+member never gets its turn; the door stands on the class's.
+
+**What the class doors' reads leave** (the flag against no flag, `-S`, Linux): 1,235 cases the same and **4
+differ** - `library-cppparse-pieces`, `map-set-comparator`, `map-set-node-stability`,
+`member-template-body-unchosen` - each in one Itanium name, `St4pairIT_T0_E` written `St4pairIKT_T0_E`: the
+pattern's shallow `pair<$T0,$T1>` is interned in the unit's type table by its tag and keeps the arguments of
+whoever asks first, and `map`'s class read asks for `pair<const K, V>` before the unit does. The `Lookup` layer
+does not hold the type table; commit 5 cannot turn the class read on until it does (a type-table mark, or the
+shallow class keyed by its arguments' qualifiers). The self-host under the flag was not compared in the hour.
+
+**Left of commit 4**, in the order the counts give: (1) the class's layout over a dependent member - `T v;`
+takes no size in the read (the function door's `nameDependentSizes` answer, carried into `ParserClass`'s
+layout), which opens the out-of-line door with it; (2) a dependent base, kept unlaid in the read; (3) the
+partial's "defined twice"; (4) the type table in the layer (the 4 cases); (5) member templates - not started,
+no door; (6) an alias's type-id is read (7 of 7) but held against nothing - an alias makes no body to compare.
+The signature's expression reader (eight shapes): not started.
+
+**The self-host under the flag** (Linux `~/m8kn`, `boxkit/m8k-selfsame.sh`, measured after the paragraph above
+was written): `-S` with `-check=templates` against without, **34 of 103 the same, 69 differ** (3,948 lines),
+the same one fault - `make_pair`'s `St4pairIT_T0_E` and its kin renamed by the pattern class the read interned
+first. It is the flag's output alone; without the flag nothing differs (below).
+
+**Gates** on the final tree (`0a9076aa`), each box built from clean; REF built fresh from `3a922049` in its own
+kept tree (Linux `~/m8kr`, Windows `work\m8kr`; NEW `~/m8kf`, `work\m8kf`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` in
+its `__TIME__` string (its diff opened: one `.byte` line, `23:03:48` against `23:04:03`); `run.sh` 1233 passed,
+0 failed; `typed.sh` 876 passed, 0 failed, 1 not for this host (other=38 name=8); `tests/subst.sh bodies` 0
+failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52; the two `.templates` records re-recorded - each gains
+its class-members lines and nothing else); self-compile stage 0 103 of 103; exclusions 0 uncited, 0 stale
+(**`3a922049` itself reads 11 uncited, 11 stale** - the merge with main moved seven `ParserTemplate.cpp`, three
+`Templates.cpp` and one `Constexpr.cpp` citation; re-pointed here with this lane's own); comment cap 0; memory
+gate held; ast-residue +0 on all seven; `ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, the box shared with three other gates): the self-host's `-S`, REF against NEW, 102 of
+103 the same and `Driver` (2 lines); static gates rc 0; `names.sh` 884 passed, 0 failed; `overload.sh` 46
+agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **4,796 the same, 0 differ** of
+12,390 when the hour ended (the step was stopped there by its PID - the rest is the wave gate's);
+`tools\windows\self-compile.cmd`, alone in a tree of its own (`work\m8ks`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts above are the measure); no `tests/cases` program was
+added. src/ lines: 95,217 before, 95,326 after.
+
+**M8.1, commit 4, second step: the class doors' own faults, a dependent member and a dependent base,
+2026-11-18** (lane m8l, branch `m8-e` from `edeb7535`; one lane-hour; code `381643e3`). Still under
+`-check=templates` alone; the replay is what emits. **Four mends.** (1) *The type table*: a pattern class the
+class door's read is first to ask for (`pair<$T0,$T1>`, asked as `pair<const K, V>` by `map`) is noted
+(`readShallow_`) and gives its arguments and namespace back when the read ends, so the unit's first asker
+names it as it always did - the class is still interned, it keeps nothing of the read's. (2) *A partial's
+"defined twice"*: the read's tag was `C<$T0>$read<mark>` with `mark` the syntax tree's size, which the read
+itself puts back - a partial with as many parameters as its primary took the primary's tag and met its
+definition; the tag takes a serial of the read's own (`readSerial_`). (3) *A dependent data member*: in a
+read's class (`Parser::readLayout_`, set by `readClassBody` for a read only) a member whose size no pattern
+has is laid out as nothing (`Type::DependentLayout`: size 0, align 1 while the member is placed), and the
+class is marked (`setDependentLayout`), so its own size asked in a body is refused by the same name as
+before, "the size of a dependent type" - never a number. (4) *A dependent base*: `struct D : B<T>` in a
+read's class leaves the base out (it is no class yet) and marks the class the same way; a member it would
+bring is then refused by name in the body that names it.
+
+**Read / not read by door**, Linux `~/m8ln` (the committed sources), `boxkit/m8l-count.sh`, `m8l-self.sh`;
+before is m8k's table above:
+
+| door | `tests/cases` before: bodies / read | after: bodies / read / unread | the self-host before | after: bodies / read / unread |
+| --- | --- | --- | --- | --- |
+| function (unchanged) | 3,478 / 3,379 | 3,478 / 3,379 / 99 | 7,512 / 7,323 | 7,512 / 7,323 / 189 |
+| class members | 4,728 / 2,755 | 12,175 / 7,529 / 4,646 | 16,745 / 12,652 | 29,421 / 20,794 / 8,627 |
+| out-of-line members | 22 / 0 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 1,737 / 251 | 607 / 442 / 165 | 3,186 / 1,054 | 1,796 / 1,389 / 407 |
+| alias type-ids | 7 / 7 | 7 / 7 / 0 | 0 | 0 |
+
+(`bodies` is a floor while a class is refused whole, so the class door's rose as its classes were read and the
+partials' fell as 1,388 / 1,835 "defined twice" classes became their few bodies.) Read bodies against their
+replays, cases: class members 1,083 the same, 553 in text, **2 in shape**, 5,891 unreplayed; the self-host
+3,722 / 2,861 / 0 / 14,211. **Gone** (cases / self-host): the class: a base has to be complete (666 / 826), the
+class: the size of a dependent type (278 / 514, partials 62 / 101), a partial's "defined twice" (1,388 / 1,835).
+**Not read, by reason, after**: no function called takes these arguments (2: 1,768 / 2,652; 4: 408 / 612; 3:
+136 / 204; 1: 91 / 259) - REF's own wall (85 / 198 there), now met in the classes it could not read: an
+unqualified call of the class's own member with a member access as an argument, `void set(const S &o) {
+assign(o.p, o.n); }`, where `this->assign(o.p, o.n)` and `assign(s, k)` both read, and a parameter `C *` fails as `const C *`
+does - so it is the argument: `o.p` through a reference to the class being read looks dependent, and the
+call is resolved over it instead of held (probes in Linux `~/m8l-probe`; not confirmed, not mended); the size of a dependent type in a body (641 / 1,398; partials 16 / 96);
+a template parameter in this place of a signature (589 / 915; partials 68 / 102); the arms of `?:` (342 / 555;
+partials 16 / 96); the pseudo-destructor (168 / 396); the class: "expected" a token (162 / 204); declares no
+member with these parameters (59 / 101, and as many in partials); in-class initialiser of a static member
+(84 / 102); has no member called (40 / 352); was not declared (27 / 311); incomplete type (the class 69 / 85,
+a body 14 / 178, out-of-line's class 11); the class: declared twice (11 / 127); needs a complete type (4 / 90).
+
+**The flag against no flag** (`-S`, Linux): the cases **0 differ** of 1,239 (4 before); the self-host **102 of
+103 the same and `Driver`** in its `__TIME__` line alone (its diff opened: one `.byte` line; 69 differed
+before).
+
+**Left of commit 4**: (1) the unqualified own-member call above - the largest reason by far, and one root;
+(2) a dependent size in a body, and the signature's "this place" (the expression reader's shapes); (3) the
+pseudo-destructor over a dependent type (`explicitDestructorCall` compares `named` with `plain`; in a read
+either may be dependent - one condition, not made because the function door shares the line and the gates
+were already running); (4) "has no member" through a base left out; (5) a door for member templates - not
+started; (6) the out-of-line door's 14 (11 an incomplete class, 3 "declares no member"). The signature's
+expression reader: not started.
+
+**Gates** on the final tree (`381643e3`), each box built from clean; REF built fresh from `edeb7535` in its own
+kept tree (Linux `~/m8lr`, Windows `work\m8lr`; NEW `~/m8ln`, `work\m8ln`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` in
+its `__TIME__` string (diff opened: one `.byte` line); `run.sh` 1233 passed, 0 failed; `typed.sh` 876 passed,
+0 failed, 1 not for this host; `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52;
+`template-class.templates` re-recorded - its class-members line reads 4 of 6 where it read 0 of 3, and the
+dependent-size line is gone; `template-variadic`'s is unchanged); self-compile stage 0 103 of 103; exclusions
+0 uncited, 0 stale (31 citations re-pointed); comment cap 0; memory gate held; ast-residue +0 on all seven;
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean - both builds passed the driver's nine-minute
+cap on the shared box and ended on the box, the executables made): the self-host's `-S`, REF against NEW, 102
+of 103 the same and `Driver` (its `__TIME__` line); the flag against no flag, cases 1,239 the same, 0 differ,
+and the self-host 102 and `Driver` (diff opened: one `DB` line of the time); static gates rc 0; `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against
+REF, **12,390 the same, 0 differ** (the whole compare, inside the hour); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8ls`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts are the measure); no `tests/cases` program was added.
+src/ lines: 95,326 before, 95,368 after.
+
+**A patch measured and not committed** (`boxkit/m8l-left.patch`, two conditions; Linux only, the Windows
+gates were already running on the final tree): (a) `explicitDestructorCall` lets a pseudo-destructor through
+in a read when the named type or the object's is dependent; (b) `memberCallWith` holds a member call whose
+arguments are dependent (`patternBody_ && argsDependent_`), as the function-template paths do - the root of
+"no function called takes these arguments": `o.n` through a reference to the class being read is dependent,
+and the ordinary member call resolved over it. Both lines are the function door's too, so they change every
+compile's read and want the whole gate. On Linux `~/m8lx` (built clean): cases class members **10,026 of
+12,175 read** (7,529 committed), the function door 3,380 of 3,478, the flag against no flag 0 differ;
+`identical.sh` against REF 5,304 compared, 0 differ; the self-host's `-S` against REF 102 and `Driver`; the
+self-host's flag against no flag 102 and `Driver`;
+`typed.sh` 876 / 0; `run.sh` 1233 / 0; self-compile 103 of 103. The next lane's first step.
+
+**M8.1, commit 4, third step: the expression reader's reasons in a read's body, 2026-11-18** (lane m8m, branch
+`m8-e` from `1e5937b7`; one lane-hour; code `54dcea46`, `516d1faa`, `d5ebe843`). Still under `-check=templates`
+alone; the replay is what emits. **`54dcea46`** is m8l's measured patch as it was: a pseudo-destructor over a
+dependent type, and a member call over a dependent argument, held in a read (`516d1faa` moves its comment into
+the group above it - the comment cap said 1 over). **`d5ebe843`**, six holds, each `patternBody_` alone: a
+dependent `sizeof` is a dependent value (the signature's "in this place" refusal is the signature's again); a
+`?:` with a dependent arm is held as a dependent operator is; `new T` asks no size; a member returning its
+dependent class by value asks the ABI nothing; a pack parameter (`Args... a`) asks no alignment; and a read's
+class laid out over a dependent member (`Type::dependentLayout()`, a nested `Node` holding a `T`) is dependent
+to `dependentType`. The three size sites were found by `catch throw SubstitutionFailure` under gdb in Linux
+`~/m8mx` (`Abi::returnsIndirectly`, `newExpression`, `declare`).
+
+**Read / not read by door**, Linux, `boxkit/m8m-count.sh`, `m8m-self.sh`; before is `54dcea46` (m8l's
+`~/m8lx`, the same sources):
+
+| door | `tests/cases` before: bodies / read / unread | after | the self-host before | after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,380 / 98 | 3,478 / 3,389 / 89 | 7,512 / 7,324 / 188 | 7,512 / 7,324 / 188 |
+| class members | 12,175 / 10,026 / 2,149 | 12,208 / 11,617 / 591 | 29,421 / 24,754 / 4,667 | 29,883 / 28,002 / 1,881 |
+| out-of-line members | 22 / 8 / 14 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 607 / 442 / 165 | 607 / 526 / 81 | 1,796 / 1,389 / 407 | 1,796 / 1,587 / 209 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+**Gone** (cases, class members): the size of a dependent type 641 -> 16 (partials 16 and the function door 25
+are left), a template parameter in this place of a signature 589 -> 0, the arms of `?:` 342 -> 0; and, by
+`54dcea46` against m8l's table (`1e5937b7`), the pseudo-destructor 168 -> 0 and no function called takes these
+arguments 2,403 -> 72. **Not read, by reason,
+after** (cases): the class: "expected" a token (162); the in-class initialiser of a static member (84); the
+class: an incomplete type (69); no function called takes these 2 arguments (68); declares no member with these
+parameters (59, and 59 in partials); has no member called (40); was not declared (27); the size of a dependent
+type (16 class members, 16 partials, 25 the function door). The self-host after: has no member called (352),
+was not declared (311), an incomplete type (223), the class: "expected" (204), declared twice (127), the size of a
+dependent type (104 the function door, 96 partials).
+
+**The flag against no flag** (`-S`): the cases **0 differ** of 1,239 on both boxes; the self-host **102 of 103
+the same and `Driver`** in its `__TIME__` line alone on both (diffs opened: one `.byte` / `DB` line of the time).
+
+**Gates** on the final tree (`d5ebe843`), each box built from clean; REF built fresh from `1e5937b7` in its own
+kept tree (Linux `~/m8mr`, Windows `work\m8mr`; NEW `~/m8mf`, `work\m8mf`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (its
+`__TIME__` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52; both
+`.templates` records unchanged); `typed.sh` 876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0
+failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap 0, memory gate held, ast-residue +0,
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean, 103 sources, its log read whole): static gates
+rc 0; the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` line); `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 in the first half run again alone, and the second half's 6,190 among 6,327 the same); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8mt`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts are the measure); no `tests/cases` program was added.
+**What the lane did wrong**: a file copied into the gated Linux tree under a running gate (`54dcea46`'s
+comment fix) made the self-host step relink `cxx3.exe` beneath `identical.sh` ("Permission denied", 200
+false differences) - that run was stopped and the final tree gated from clean; and the Windows compare's two
+halves were started side by side over one log, so the first half was run again under names of its own.
+
+**Left of commit 4**: has no member / not declared through a base left out (40 / 27); the class: "expected" a
+token (162, the class door's own parse); the in-class static initialiser (84); declares no member with these
+parameters (59 + 59); a door for member templates - not started; the out-of-line door's 14; the last dependent
+sizes (an array `new T[n]`'s element, partials').
+src/ lines: 95,368 before, 95,381 after.
+
+**M8.1, commit 4, fourth step: three of the class doors' reasons, 2026-11-18** (lane m8n, branch `m8-e` from
+`9830a16e`; one lane-hour; code `d3767911`). Still under `-check=templates` for the class doors; the replay is what
+emits. The reasons were read whole, not by their quote-stripped census, by a probe patch (`boxkit/m8n-why.patch`:
+each refusal's text and place under `CXX3_WHY`), on `<type_traits>`, `<utility>`, `<memory>` and `<string>`
+alone. **Three holds**, each in a read only (`patternBody_`): (1) *the class: expected '('* is `<type_traits>`'
+`is_arithmetic : _arith_or<is_integral<T>::value, T>` and `is_fundamental`'s twin - a dependent class's member
+named as a value in a template argument, which the expression reader took for a type and a functional cast; it
+is held as an unresolved name (`depPrimary`, `X<args>::name` not followed by `(`, `<` or `::`); (2) *an in-class
+initialiser of a static member* is `integral_constant`'s `static const T value = v;` - over a dependent `T` it is
+read and folded to nothing; (3) *a name the class does not find when a dependent base was left out*
+(`Type::dependentBase`, set beside `dependentLayout` by m8l's left-out base): `S::x`, an unqualified name, and
+`o.x` / `p->x` are held as dependent in such a class (the replay finds them in the base; [temp.dep]/3 would look
+for the unqualified ones nowhere, so this follows the replay, not the standard).
+`e394cc44` moves (1)'s comment onto its line (the comment cap said 1 over at `d3767911`: the new line split a
+three-line group from its one-line `if`; comments alone, and the file has no `__LINE__`).
+
+**Read / not read by door**, Linux `~/m8nn` (`d3767911`), `boxkit/m8n-count.sh`, `m8n-self.sh`; before is m8m's
+after (`d5ebe843`, the same sources as `9830a16e`):
+
+| door | `tests/cases` before: bodies / read / unread | after | the self-host before | after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,389 / 89 | 3,478 / 3,389 / 89 | 7,512 / 7,324 / 188 | 7,512 / 7,324 / 188 |
+| class members | 12,208 / 11,617 / 591 | 12,044 / 11,699 / 345 | 29,883 / 28,002 / 1,881 | 29,679 / 28,104 / 1,575 |
+| out-of-line members | 22 / 8 / 14 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 607 / 526 / 81 | 607 / 526 / 81 | 1,796 / 1,587 / 209 | 1,796 / 1,587 / 209 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+(`bodies` is a floor while a class is refused whole: the 246 classes read now count their bodies, 82, where each
+counted one.) Read class-member bodies against their replays: 1,158 the same, 1,190 in text, 2 in shape, 9,349
+unreplayed. **Gone** (cases, class members): the class: "expected" 162 -> 1 (`expected a name`, one case), the
+in-class initialiser 84 -> 0. **Not changed**: has no member called (40) and was not declared (27) - neither is
+through a left-out base, so hold (3) met none of them in the cases. Their roots, read with the probe on
+`deque-both-ends` (`<map>`/`<set>`'s `__tree`): `order::less(...)`, where `order` names `__tree_order<..., C>` - a
+class over dependent arguments, shallow and without members - is "has no member called"; and `KeyOf::get(...)`,
+where `KeyOf` is the class's type parameter, is "was not declared" (the ordinary reader knows `T::name` only in
+the signature's expression reader). Both are one condition each at `primaryNode`'s two refusals; not made, the
+gates being under way. **Not read, by reason, after**
+(cases): the class: an incomplete type (69); no function called takes these 2 arguments (68); declares no member
+with these parameters (59, and 59 in partials) - all `<utility>`'s `pair(const pair<const T1, T2> &)` and the
+partial's `pair(const pair<T1, T2> &)` at their replay, the class read and only the member's definition not
+matched against its declaration (not mended); has no member called (40); was not declared (27); the size of a
+dependent type (16 class members, 16 partials, 25 the function door); an incomplete type in a body (16); declared
+twice (11); a class specialization not asked for (9). The self-host after: has no member called (352) and was not
+declared (311), an incomplete type (223), declared twice (127), no function takes these 2 arguments (102),
+declares no member (101 + 101). **On Windows** (`work\m8nn`, x86_64-windows, the first
+count by door there): the function door the same, 3,478 / 3,389 / 89; the class doors read 15 of 935 and 1 of 245
+partials - 843 and 240 refused as "the class: cannot be given a name the linker can hold: this type has no
+Microsoft linkage name yet", the read's class `C<$T0>$read<n>` meeting the Microsoft mangler. A wall of the
+Windows names alone, which the Linux counts do not see; commit 5 has to give a read's class a Microsoft name (or
+ask for none) before the class doors can be measured there.
+
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8n-count.sh`; its "1" is the
+script's own slot line, which carries the word), and 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` (diff opened: one `.byte` line of the time) on Linux, 102 of 103 and `Driver` on Windows (diff opened: one `DB` line of the time).
+
+**Gates** on the final code (`d3767911`), each box built from clean; REF built fresh from `9830a16e` in its own
+kept tree (Linux `~/m8nr`, Windows `work\m8nr`; NEW `~/m8nn`, `work\m8nn`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (2
+lines, its `__TIME__` `.byte` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004
+/ 52); `typed.sh` 876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage
+0 103 of 103; static gates on `e394cc44`'s sources (Linux `~/m8nc`): exclusions rc 0, comment cap 0, memory gate
+held, ast-residue +0, `ide/generate.py --check` up to date. Windows (cl /W4 /WX clean, 103 sources, 0 warnings,
+its log read whole): static gates rc 0 on `e394cc44` (`work\m8nc`; at `d3767911` the comment cap said 1); the
+self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` `DB` line, diff opened); `names.sh`
+884 passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against
+REF, **12,390 the same, 0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8ns`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; no
+`tests/cases` program was added. **What the lane did wrong**: `tools/comment-lines` was run once on the Mac (a
+text scan, to find the group) - the gate of record is the boxes' run above.
+
+**Left of commit 4**: the pair constructors' "declares no member" (59 + 59, one root); `X::m` over a dependent class
+and `T::f` over a type parameter (40 / 27, the roots above); the class's incomplete type (69); no function takes
+these 2 arguments (68); a door for member templates - not started; the out-of-line door's 14; the last
+dependent sizes; and the Windows class doors' Microsoft name for a read's class.
+src/ lines: 95,381 before, 95,421 after.
+
+**M8.1, commit 4, fifth step: a read's class named for Microsoft, two holds and the pair constructors, 2026-11-18**
+(lane m8o, branch `m8-e` from `8120dc24`; one lane-hour; code `0a837e09`). Still under `-check=templates` for the
+class doors; the replay is what emits. **Four mends**, each in a read only (`patternBody_`). (1) *A read's class
+has no Microsoft name*: `C<$T0>$read<n>`'s members, static members and the special members the compiler writes
+(`Linkage::memberSymbol`, `staticMemberSymbol`, five sites in `Classes.cpp` through `readName`) take a `$pattern$`
+name where the Microsoft mangler has none, as `functionSymbol` already did - one name per signature (`fn->describe()`),
+so overloads stay apart and a definition still finds its declaration. (2) *`order::less` over a dependent class*
+(`__tree_order<..., C>`, shallow, no members) and (3) *`KeyOf::get` over a type parameter*: `primaryNode`'s `S::x`
+over a scope `dependentType` answers for is held as a dependent value (`waits`). (4) *`<utility>`'s pair
+constructors*: the class door registered its class for `C<$T0>` (`readPattern_`) only after the class's body was
+read, so a member declared `pair(const pair<const T1, T2> &)` met the shallow pattern class and its replayed
+definition the read's class - "declares no member with these parameters"; the class is now found from its head on
+(`readingTag_` / `readingRead_`, the read's tag looked up while its body is read). And a partial's read registered
+nothing that is its own: its key was spelled from its own parameters (`pair<$T0,$T1>` for `pair<const T1, T2>`) - the
+primary's key - so the partial's `pair<T1, T2>` became the partial; a partial now registers no key.
+
+**Read / not read by door**, before `8120dc24` (Linux: m8n's after, the same sources; Windows: `work\m8nn`'s count
+summed by door, and the self-host measured in `work\m8or` here), after `0a837e09` (Linux `~/m8on`, `boxkit/m8o-count.sh`,
+`m8o-self.sh`; Windows `work\m8on`, `m8o-win.sh bodies` / `self` and `m8o-wsum2.sh`):
+
+| door | Linux cases before / after: bodies / read / unread | Linux self-host before / after | Windows cases before / after | Windows self-host before / after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,389 / 89; 3,478 / 3,395 / 83 | 7,512 / 7,324 / 188; 7,512 / 7,325 / 187 | 3,478 / 3,389 / 89; 3,478 / 3,395 / 83 | 7,512 / 7,324 / 188; 7,512 / 7,325 / 187 |
+| class members | 12,044 / 11,699 / 345; 12,041 / 11,805 / 236 | 29,679 / 28,104 / 1,575; 29,678 / 28,692 / 986 | 935 / 15 / 920; 934 / 434 / 500 | 3,481 / 0 / 3,481; 3,551 / 1,989 / 1,562 |
+| out-of-line members | 22 / 8 / 14; 22 / 8 / 14 | 0 | 22 / 0 / 22; 22 / 1 / 21 | 0 |
+| partial specializations' members | 607 / 526 / 81; 607 / 585 / 22 | 1,796 / 1,587 / 209; 1,796 / 1,688 / 108 | 245 / 1 / 244; 259 / 179 / 80 | 493 / 0 / 493; 493 / 292 / 201 |
+| alias type-ids | 7 / 7 / 0 | 0 | 7 / 7 / 0 | 0 |
+
+(Windows reaches the count in 881 of 1,239 cases, Linux in 900; a class refused whole counts once, so Windows'
+`bodies` is a floor far below Linux's while most classes are refused.) **Gone** (Linux cases): has no member called
+(40), was not declared (27), declares no member with these parameters (59 + 59 in partials); the self-host's has no
+member (352) and was not declared (311) likewise. **Not read, by reason, after** (Linux cases): the class: an
+incomplete type (69); no function called takes these 2 arguments (68); needs a complete type (24, 4 before - bodies
+that now reach further); the size of a dependent type (16 + 16, and 25 the function door); an incomplete type in a
+body (16); declared twice (11). The self-host: needs a complete type (266), an incomplete type (223), declared twice
+(127), no function takes 2 arguments (102). **Windows, still a Microsoft name** (cases): 410 class members, 77
+partials and 7 out-of-line refused as "this type has no Microsoft linkage name" - two sites (1)'s mend did not reach,
+a constructor written in the class (`ParserClass.cpp`, `'C::C'`) and a member template (`ParserTopLevel.cpp`);
+the self-host 1,440 class members and 201 partials the same way.
+**A patch measured and not committed** (`boxkit/m8o-name.patch`, two lines: those two sites take the same
+`$pattern$` name in a read; its Windows build, `work\m8ox` beside the gate chain on the shared box, passed the
+driver's nine-minute cap and ended on the box, the executable made): the Windows cases then read **exactly as
+Linux's** - class members 12,041 / 11,805 / 236, partials 607 / 585 / 22, out-of-line 22 / 8 / 14, the function
+door 3,478 / 3,395 / 83, and the same reasons at the top (69, 68, 24, 16 + 16). Not gated (the gates were already
+running on `0a837e09`); the next lane's first step, with the whole gate - the member-template line is the
+function door's too.
+
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8o-count.sh`; its "1" is the script's
+own slot line), 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` on Linux (diff opened: one `.byte` line of the time), 102 of 103 and `Driver` on Windows (diff opened: one `DB` line of the time, `11:06:17` against `11:07:00`).
+
+**Gates** on the final code (`0a837e09`), each box built from clean; REF built fresh from `8120dc24` in its own
+kept tree (Linux `~/m8or`, Windows `work\m8or`; NEW `~/m8og`, `work\m8on`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and -O2,
+**5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (2 lines,
+its `__TIME__` `.byte` line - the script removes the files, so this diff was not opened; the flag's was);
+`tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh` 876 passed, 0 failed,
+1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap
+0, memory gate rc 0, ast-residue +0, `ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, 103 sources, 0 warnings, its log read whole): static gates rc 0 (`work\m8on`); the
+self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` line); `names.sh` 884 passed, 0 failed;
+`overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF, **12,390 the same,
+0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own
+(`work\m8os`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; no
+`tests/cases` program was added. **What the lane did wrong**: two `grep`s on the Mac (text scans: one over
+`src/sema/Classes.cpp` for its first lines, one over this entry's own placeholders) - every other search ran on the
+Linux box.
+
+**Left of commit 4**: the Windows class doors' last Microsoft names (the patch above); the class's incomplete type
+(69); no function takes these 2 arguments (68); needs a complete type (24 / 266); a door for member templates - not
+started; the out-of-line door's 14; the last dependent sizes; a partial's own key (`pair<const $T0,$T1>`) for its
+`C<T>`, which is registered for no partial now.
+src/ lines: 95,421 before, 95,446 after.
+
+**M8.1, commit 4, sixth step: the Microsoft name at the last two sites, gated, 2026-11-18** (lane m8p, branch `m8-e`
+from `0972fdf8`; one lane-hour; code `224b8993`). Still under `-check=templates` for the class doors; the replay is
+what emits. `boxkit/m8o-name.patch` applied as its own commit: a constructor written in its class
+(`ParserClass.cpp`, `declareConstructor`) and a member template at the top level (`ParserTopLevel.cpp`) take a
+`$pattern$` name in a read where the Microsoft mangler has none, as m8o's `memberSymbol` and `functionSymbol` do.
+
+**Read / not read by door**, before `0972fdf8` (m8o's after: Linux `~/m8on`, Windows `work\m8on`), after `224b8993`
+(Linux `~/m8pn`, `boxkit/m8p-count.sh`, `m8p-self.sh`; Windows `work\m8pn`, `m8p-win.sh bodies` / `self`,
+`m8p-wsum2.sh` / `m8p-wsum3.sh`):
+
+| door | Linux cases before / after | Linux self-host before / after | Windows cases before / after | Windows self-host before / after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,395 / 83; 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187; 7,512 / 7,325 / 187 | 3,478 / 3,395 / 83; 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187; 7,512 / 7,325 / 187 |
+| class members | 12,041 / 11,805 / 236; 12,041 / 11,805 / 236 | 29,678 / 28,692 / 986; 29,678 / 28,692 / 986 | 934 / 434 / 500; 12,041 / 11,805 / 236 | 3,551 / 1,989 / 1,562; 29,678 / 28,692 / 986 |
+| out-of-line members | 22 / 8 / 14; 22 / 8 / 14 | 0 | 22 / 1 / 21; 22 / 8 / 14 | 0 |
+| partial specializations' members | 607 / 585 / 22; 607 / 585 / 22 | 1,796 / 1,688 / 108; 1,796 / 1,688 / 108 | 259 / 179 / 80; 607 / 585 / 22 | 493 / 292 / 201; 1,796 / 1,688 / 108 |
+| alias type-ids | 7 / 7 / 0 | 0 | 7 / 7 / 0 | 0 |
+
+**Windows reads as Linux does**, door by door, over the cases and the self-host: "this type has no Microsoft
+linkage name" is gone from both (410 + 77 + 7 in the cases, 1,440 + 201 in the self-host before). One reason
+differs by its count, not its door: the function door's dependent sizes, 26 on Windows against Linux's 25 and one
+`type_info` refusal (the function door is 83 unread on both). **Not read, by reason, after** (both boxes, cases):
+the class's incomplete type (69); no function called takes these 2 arguments (68); needs a complete type (24); the
+size of a dependent type (26 / 25 + 16 + 16); an incomplete type in a body (16); declared twice (11). The self-host:
+needs a complete type (266), an incomplete type (223), declared twice (127), dependent sizes (104 + 96 + 96), no
+function takes 2 arguments (102), the class's incomplete type (85).
+Linux's cases are as before, door by door and reason by reason (the patch changes only the Microsoft spelling).
+**Two patches measured and not committed** (beside the gate, on Linux only; the gate is `224b8993`'s):
+`boxkit/m8p-incomplete.patch` (`ParserType.cpp`, four lines: a read's data member of a dependent class no pattern
+has made - `C<int> c` over a template template parameter, `set`'s `__tree<...> tree_` - is laid out as nothing, as
+a dependent base is, and marks its class's layout dependent), `~/m8py`: class members **12,237 / 12,036 / 201**
+(from 236), out-of-line 22 / 9 / 13, partials 607 / 586 / 21; the class's incomplete type 69 to 26; what the classes
+now read whole meet next: an incomplete type in a body 16 to 24 (`__tree`'s `i`, a `__tree_node<$T0>`), the
+out-of-line door's "declares no member with these parameters" 3 to 9; flag against no flag 0 differ. Its self-host
+was not measured (stopped while it waited for a slot). With `boxkit/m8p-resize.patch` on top (`Overload::rankArgument`, two lines: in a read a parameter over the
+pattern's own takes any argument, ranked a conversion - the replay ranks it), `~/m8pz`: class members
+**12,237 / 12,108 / 129**, the 68 gone and none added; flag against no flag 0 differ. Both are the next lane's first
+commit, with the whole gate (`boxkit/m8p-incomplete-resize.patch` is the two together).
+**The reasons, read whole** (`boxkit/m8n-why.patch` over `224b8993`, `~/m8px`, `m8p-why.sh`): the 68 are
+`basic_string<$T0>::resize(n)`'s `resize(n, 0)` against `resize(size_type, C)` - an `int` ranked against the
+pattern's `C`; the 24 are `new __tree_node<$T0>` and `new __hash_node<$T0>` (`__tree:187`, `:194`,
+`__hash_table:87`, `:89`), a specialization no pattern has made; the body's incomplete type is a local of the same.
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8p-count.sh`; its "1" is the
+script's own slot line) and 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` on
+both (Linux: diff opened, one `.byte` line of the time; Windows: 2 lines, the files replaced by the next step before
+they were opened - REF against NEW's `Driver` diff, in the same place, was opened: one `DB` line of the time).
+
+**Gates** on `224b8993`, each box built from clean; REF built fresh from `0972fdf8` in its own kept tree (Linux
+`~/m8pr`, Windows `work\m8pr`; NEW `~/m8pn`, `work\m8pn`, names of one length). Linux (g++
+`-Werror` clean, 0 warnings): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0
+and -O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (its
+`__TIME__` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh`
+876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0, comment cap 0, memory gate rc 0, ast-residue +0,
+`ide/generate.py --check` up to date.
+Windows (cl /W4 /WX clean, 103 sources, 0 warnings, its log read whole; the NEW build ran first and alone, under six
+minutes): static gates rc 0 (`work\m8pn`); the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its
+`__TIME__` line); `names.sh` 884 passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five
+spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own
+(`work\m8ps`), **103 of 103**.
+**A defect, recorded and not retried**: the Windows REF build (`work\m8pr`, `0972fdf8`) passed the nine-minute cap -
+it was started beside the counts, `names.sh` and `overload.sh` on the shared box rather than alone; the driver's
+wait was ended at nine minutes and `build.cmd` ran on, its executable made at about twelve. Its log after the cap
+was not read; the REF gates above ran against that executable.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; the
+patches' self-host; no `tests/cases` program was added. **What the lane did wrong**: one Linux tree (`~/m8pn`) was
+shipped twice by two of the lane's own commands (an ssh left holding its session), and the first build failed in
+the deleted tree; a gate run started on that failure was stopped by its PIDs before it ran anything, and the tree
+was built again from clean. Linux's three slots were held by other lanes for most of the hour (the bodies step
+waited 18 minutes); the serial chain was split into parallel queued steps.
+
+**Left of commit 4**: the class's incomplete type (69 / 85; 26 with the patch); no function takes these 2 arguments (68 /
+102; 0 in the cases with the patch); needs a complete type (24 / 266); a partial's own key for its `C<T>`; the member-template door - not started;
+the out-of-line door's 14; the last dependent sizes. Unread is not 0 on either box, so commit 5 (the read on by
+default) waits.
+src/ lines: 95,446 before, 95,448 after.
+
+**M8.1, commit 4, seventh step: m8p's two patches, gated, and the 24 `new` measured, 2026-11-18** (lane m8q, branch
+`m8-e` from `06f4b8ae`; one lane-hour; code `f7bf0691`). Still under `-check=templates`; the replay is what emits.
+`boxkit/m8p-incomplete-resize.patch` applied as its own commit (`ParserType.cpp`: a read's data member of a dependent
+class no pattern has made is laid out as nothing and marks its class's layout dependent; `Overload::rankArgument`: in
+a read a parameter over the pattern's own parameters matches any argument as a conversion), with
+`tests/cases/template-class.templates` re-recorded - its class members read 8 of 8, from 4 of 6 (the bodies gate's
+one failure on the first run, the record holding the old count; the new record is byte for byte the run's output).
+
+**Read / not read by door** (bodies / read / unread), before `06f4b8ae` (m8p's `~/m8pn`, `work\m8pn`), after
+`f7bf0691` (Linux `~/m8qn`, `boxkit/m8q-count.sh`, `m8q-self.sh`; Windows `work\m8qn`, `m8q-win.sh bodies` / `self`,
+`m8q-wsum2.sh` / `m8q-wsum3.sh`). **Linux and Windows are the same door by door**, before and after, and reason by reason but the one m8p named:
+
+| door | cases before | cases after | self-host before | self-host after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,395 / 83 | 3,478 / 3,395 / 83 | 7,512 / 7,325 / 187 | 7,512 / 7,325 / 187 |
+| class members | 12,041 / 11,805 / 236 | **12,237 / 12,108 / 129** | 29,678 / 28,692 / 986 | **31,158 / 30,315 / 843** |
+| out-of-line members | 22 / 8 / 14 | 22 / 9 / 13 | 0 | 0 |
+| partial specializations' members | 607 / 585 / 22 | 607 / 586 / 21 | 1,796 / 1,688 / 108 | 1,796 / 1,688 / 108 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+Unread in all: the cases **355 to 246**, the self-host **1,281 to 1,138**. Gone: the class's incomplete type (69 to
+26 in the cases, 85 to 0 in the self-host), no function takes these 2 arguments (68 and 102 to 0). **Not read, by
+reason, after** - the cases: the class's incomplete type 26, needs a complete type 24, an incomplete type in a body
+24, the size of a dependent type 25 + 16 + 16 (26 on Windows: one `type_info`), not declared 14 + 2, declared twice
+11; the self-host: an incomplete type in a body 283, needs a complete type 266, declared twice 127, dependent sizes
+104 + 96 + 96, a specialization not asked for 36 + 25 + 24 + 8.
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ, on both boxes (Linux's `count.sh` "1" is
+the script's own slot line); the self-host 102 of 103 and `Driver` on both, each diff opened: one line of
+`__TIME__` (Linux `.byte`, Windows `DB` 11:59:14 against 12:00:38).
+
+**Gates** on `413e4f9d` (the code; `f7bf0691` adds the record alone and ran the bodies step), each box built from
+clean; REF built fresh from `06f4b8ae`, alone, in its own kept tree (Linux `~/m8qr`, about four minutes; Windows
+`work\m8qr`, after the NEW build, under three minutes; NEW `~/m8qn`, `work\m8qn`, names of one length). Linux (g++
+`-Werror` clean, 0 warnings): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0
+and -O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (2 lines, its
+`__TIME__`; the script removes the files, not opened); `tests/subst.sh bodies` 1 failed on the first run (`template-class`'s record, above), then, re-recorded, **0 failed** (5,119 over 876 units, 3,381 / 682 / 1,004 / 52); `typed.sh` 876 passed, 0
+failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; exclusions rc 0,
+comment cap 0, memory gate rc 0, ast-residue +0, `ide/generate.py --check` up to date. Windows (cl /W4 /WX clean,
+103 sources, no warning line in either log; NEW built first and alone): static gates rc 0; the self-host's `-S`,
+REF against NEW, 102 of 103 and `Driver` (opened: one `DB` line, 12:03:36 against 12:05:04); `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against REF,
+**12,390 the same, 0 differ** (6,200 and 6,190); `tools\windows\self-compile.cmd` (`work\m8qs`, `413e4f9d`) **103 of 103**.
+
+**Measured and not committed** (Linux only, beside the gate): `boxkit/m8q-new.patch` (`ParserExprNew.cpp`, seven
+lines: a read's `new __tree_node<V>(v)` over a class no pattern has made reads its operands and stands as a zero
+pointer, as a read's `T(x)` over a dependent class does), `~/m8qx`: class members **12,237 / 12,132 / 105** - the 24
+"needs a complete type" gone and nothing else moved; flag 0; the self-host's class members **31,158 / 30,581 /
+577** (the 266 gone). An argument of dependent type matched as a conversion beside it (`~/m8qy`) moved nothing, and
+was dropped. With a read's local of such a class held as well (`ParserStmt.cpp`, `const_iterator i`; `~/m8qz`):
+function door 3,478 / 3,402 / 76, class members 12,237 / 12,154 / 83, two new `'delete' needs a pointer` (`delete
+at.n_` over the held local); `boxkit/m8q-held.patch` (the three: `new`, the local, `delete` of a dependent operand
+read as nothing), `~/m8qw`: the cases' function door **3,478 / 3,402 / 76**, class members **12,237 / 12,156 / 81**, nothing added; flag 0; the self-host's class members **31,158 / 30,864 / 294** (the 283 and the 266 gone; declared twice 127 and the dependent sizes lead now). Unread with it: the cases 191, the self-host 589. It is the next lane's first commit, with the whole gate (Windows not measured).
+
+**Left of commit 4**: in the cases 246 and the self-host 1,138 (191 and 589 with `m8q-held.patch`); the class's incomplete type 26;
+the dependent sizes; a partial's own key for its `C<T>`; the member-template door - not started; the out-of-line
+door's 13. Unread is not 0 on either box, so commit 5 (the read on by default) waits.
+src/ lines: 95,448 before, 95,452 after.
+
+**M8.1, commit 4, eighth step: m8q's held patch, a read's closure names, and the root of "declared twice", 2026-11-18**
+(lane m8r, branch `m8-e` from `89911b67`; code `6a92fe79`, `62a9aa96`). Still under `-check=templates`; the replay is
+what emits. `boxkit/m8q-held.patch` as its own commit (`6a92fe79`: a read's `new` of a dependent class no pattern has
+made reads its operands and is a zero; a read's local of one is held; a read's `delete` of a dependent operand is its
+operand typed void), written so it adds no raw `new` and no `ExprPtr` word - as first committed (`faf61e4a`) it raised
+the memory gate 1,053 to 1,054 and the residue's `ExprPtr` 2,016 to 2,018, which m8q's static step reported as rc 0
+(it printed `tail`'s status: a defect of the script, mended in `boxkit/m8rf-linux.sh`). **The coordinator's owed
+item** (`62a9aa96`, `ParserExprLambda.cpp`, `ParserType.cpp`): a function template's read named its closures and
+local classes first, so `lambda-returning-lambda`'s `tw::$_0` became `tw$3::$_0` in the -g text; a read's are now
+`$read$tw::$_0` and take no name an instantiation will.
+
+**Read / not read by door**, before `89911b67` (m8q's `~/m8qn`, `work\m8qn`), after `faf61e4a` (Windows `work\m8rn`,
+`m8r-win.sh bodies` / `self`): the cases' function door 3,478 / 3,395 / 83 to **3,478 / 3,402 / 76**, class members
+12,237 / 12,108 / 129 to **12,237 / 12,156 / 81**, out-of-line 22 / 9 / 13, partials 607 / 586 / 21, aliases 7 / 7 / 0
+- unread **246 to 191**; the self-host's class members 31,158 / 30,315 / 843 to **31,158 / 30,864 / 294**, function
+7,512 / 7,325 / 187, partials 1,796 / 1,688 / 108 - unread **1,138 to 589**; 103 of 103 compiled. These are m8q's
+`~/m8qw` on Linux, reason by reason; Linux's counts on the gated tree were still running at the hour (below).
+
+**"Declared twice" has its root** (`boxkit/m8n-why.patch` over `faf61e4a`, `~/m8rx`): all 11 in the cases are
+`map:105` and `unordered_map:87`, `insert(const value_type &)` against `insert(const pair<K, V> &)` - value_type being
+`pair<const K, V>`. `Templates::specializationKey` spelled a template parameter's argument without its cv, so
+`pair<const $T0,$T1>` and `pair<$T0,$T1>` were one key and one class; and a partial's own key would have been its
+primary's, which is why the class door registers none. `boxkit/m8r-cvkey.patch` (the cv in the key, and a partial
+read keyed by its written arguments) is measured as `~/m8rw` - not finished at the hour; not committed, since the
+key is the replay's too and wants identical.sh.
+
+**Gates on `faf61e4a`** (REF built fresh from `89911b67`, alone, in Linux `~/m8rr` and Windows `work\m8rr`; NEW
+`~/m8rn`, `work\m8rn`, built alone after it on Linux, before it on Windows): Linux g++ `-Werror` 0 warnings; `subst.sh
+bodies` 0 failed (5,119 over 876 units); exclusions 0, comment cap 0. Windows cl /W4 /WX clean; the cases' `-S` with the
+flag against without 1,239 the same, 0 differ; the self-host's flag against no flag and REF against NEW 102 of 103 and
+`Driver` (both `fc` opened: one `DB` line of `__TIME__`); `names.sh` 884 passed, 0 failed; `overload.sh` 46 agreed, 0
+differed. **Owed at the hour** (running, results in the files named in `boxkit/m8r-handover.md`): Linux identical.sh,
+self-host REF against NEW and flag, typed, run, selfc, the counts; Windows the five spellings' halves and
+self-compile; the final tree `62a9aa96` built and its static gates on both boxes (`~/m8rf`, `work\m8rf`), and its -g
+text against REF (`~/m8ry`, `m8rf-win.sh same` with `GF=-g`). The member-template door, the out-of-line 13 and the
+dependent sizes were not started. Unread is not 0, so commit 5 waits: 191 in the cases and 589 in the self-host, of
+which "declared twice" (11 / 127) is the cv key above and the dependent sizes (25 + 16 + 16 / 104 + 96 + 96) lead.
+src/ lines: 95,452 before, 95,467 after.
+
+**M8.1, commit 4, ninth step: m8r's gates read, the cv key, the member-template door and the out-of-line 13, 2026-11-18**
+(lane m8s, branch `m8-e` from `4c042137`; code `a71bb801`, `a1617ff1`, `80d93293`). Still under `-check=templates`; the
+replay is what emits. **m8r's gates, read as they landed** (Linux on `faf61e4a` against REF `89911b67`): `identical.sh`
+tms6747, arm64-darwin, x86_64-linux at -O0 and -O2 **5,304 compared, 0 differ**; `typed.sh` 876 passed, 0 failed;
+`run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; the self-host's `-S` REF against NEW 102 and `Driver`;
+the -g text of `62a9aa96` against REF on the four targets at -O0 (`~/m8ry`), 841 of 4,420 differ, every one the tree's
+name in a `.file` line (`m8rr` against `m8ry`) but `lambda-returning-lambda`'s five, which are the owed item itself
+(`tw$2::$_0`, `tw$3::$_0` back to `tw::$_0`, `tw$2::$_0`). **Two failures, mended first**: on the final tree (`~/m8rf`,
+62a9aa96 with the cv key, shipped from the worktree) `make comments` rc 2 - `62a9aa96`'s comment in
+`ParserExprLambda.cpp` was four lines (`a1617ff1`, comment only) - and `tools/exclusions --check` **rc 1: 57 uncited,
+57 stale**, the refusal sites' lines moved under the citations by the commit-4 steps, unseen because m8q's and m8r's
+static step printed `tail`'s status (the Windows script's `exclusions rc` is `tail`'s too); re-pointed by
+`boxkit/m8s-repoint.py` (each file's stale citations paired in order with its uncited sites) on the final tree.
+**The cv key** (`a71bb801`, `boxkit/m8r-cvkey.patch` as its own commit): `Templates::specializationKey` keeps a
+template parameter's cv, and a partial's read is keyed by its written arguments. The cases' "declared twice" (11) and
+the self-host's (127) are gone, and the classes that were one key are read apart - more bodies, fewer unread.
+**The member-template door** (`80d93293`): a class template's member templates are read inside its class's read, over
+their own parameters numbered past the class's (`$T<n+i>`, so `pair<T, U>` in `template <class U>` is not
+`pair<$T0,$T0>`), and a plain class's once the class is complete (`Templates::readMemberTemplates`,
+`readMemberTemplatesOf`, the door `member-templates`); the body is replayed by `replayMemberTemplate`, the half of
+`instantiateMemberTemplate` that sets the member-template state and replays, taken out whole and called by both.
+**The out-of-line 13** had one root: the class door keyed its read `Box<$T0,0>` and `Counted<{}>` (the read's values
+and packs are empty), where the out-of-line qualifier `Box<T, N>` spells `Box<$T0,$P1>` and `Counted<Ns...>`
+`Counted<{$T0...}>`; the read is keyed as its members write it now. With it a read's `int v[N]` (an array of dependent
+length, the "has an incomplete type" 26 + 4) is laid out as nothing, as a dependent class member is (`ParserType.cpp`).
+`constructor-template.templates` (member templates 5 of 5) and `template-out-of-line.templates` (out-of-line 7 of 7)
+recorded; the two old records hold.
+
+**Read / not read by door** (bodies / read / unread). Before: m8r's after (`work\m8rn`, `~/m8qw`). The cv key: Linux
+`~/m8rw` and `~/m8rf`, Windows `work\m8sn` - **the same door by door**. The door: Linux `~/m8sm` (Windows not measured,
+below):
+
+| door | cases before | cv key | door | self-host before | cv key | door |
+| --- | --- | --- | --- | --- | --- | --- |
+| function | 3,478 / 3,402 / 76 | the same | the same | 7,512 / 7,325 / 187 | the same | the same |
+| class members | 12,237 / 12,156 / 81 | 12,565 / 12,495 / 70 | **12,574 / 12,525 / 49** | 31,158 / 30,864 / 294 | 34,924 / 34,757 / 167 | 34,925 / 34,757 / 168 |
+| out-of-line members | 22 / 9 / 13 | 22 / 9 / 13 | **22 / 21 / 1** | 0 | 0 | 0 |
+| partial specializations' members | 607 / 586 / 21 | the same | the same | 1,796 / 1,688 / 108 | the same | the same |
+| alias type-ids | 7 / 7 / 0 | the same | the same | 0 | 0 | 0 |
+| member templates | - | - | **497 / 438 / 59** | - | - | **1,510 / 1,364 / 146** |
+
+Unread: the cases **191, 180, 206** (147 in the five doors that were there), the self-host **589, 462, 609** (463 in
+the five); 103 of 103 compiled every time. **Not read, by reason, after**: the size of a dependent type leads - the
+cases 25 + 16 + 16 + 47 (member templates), the self-host 104 + 96 + 96 + 114 (410 of 609); then not declared (14 + 2
++ 3; 32 + 32 + 1), a specialization not asked for (9 + 4 + 2; 36 + 26 + 24 + 8), no static member function through a
+template-id (6 + 4 + 2 + 1 in the cases), a value with no address (26 in the self-host); the out-of-line's last one is a
+pack (`Ns...` alone).
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ (Linux `~/m8sm`; Windows `work\m8sn` on the
+cv key); the self-host 102 of 103 and `Driver`, its `__TIME__` line (Linux `~/m8sm`; Windows `work\m8sn`).
+On Windows the door's tree (`work\m8sm`) reads as Linux door by door, the cases' dependent sizes 26 to Linux's 25 (the
+`type_info` one m8p named).
+
+**Gates.** REF built fresh from `4c042137`, alone, in its own kept tree (Linux `~/m8sr`; Windows `work\m8sr`, after
+the NEW build); NEW names of one length. **The cv key, `a71bb801`** - Linux `~/m8sn` (g++ `-Werror` clean):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2, **8,840
+compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103; `subst.sh bodies` 0 failed (5,119 over 876 units); the self-host's `-S` REF against NEW, and with the flag against
+without, 102 and `Driver`; memory gate rc 0, residue +0, `ide/generate.py` up to date; exclusions rc 1 and comment cap rc 2, the two
+failures above, mended by `a1617ff1` and `01c133e7`. Windows `work\m8sn` (cl /W4 /WX clean): the cases' flag 0 differ;
+the self-host's flag and REF against NEW 102 and `Driver` (`fc` opened: one `DB` line of `__TIME__`); the five
+spellings at -O0 and -O2 against REF, **12,390 the same, 0 differ** (6,200 and 6,190). **The door, `80d93293`** (Linux `~/m8sm`,
+g++ `-Werror` clean; the comment-only `a1617ff1` not in it): `tools/identical.sh` REF against NEW for tms6747,
+arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2, **8,840 compared, 0 differ** (the replay path's
+`replayMemberTemplate` is the same code moved); `subst.sh bodies` with the four records **0 failed** (5,119 over 876
+units, unchanged); the self-host's `-S` REF against NEW, and with the flag against without, 102 and `Driver`; Windows
+`work\m8sm` the cases' flag 1,239 the same, 0 differ, the self-host 103 of 103. **The final sources**
+(`01c133e7`, Linux `~/m8sf`, each gate's own exit code): exclusions rc 0 (0 uncited, 0 stale), comment cap rc 0,
+memory gate rc 0, ast-residue +0 rc 0, `ide/generate.py --check` rc 0. **A defect**: the Windows build of `work\m8sm`
+passed the 9-minute cap on the shared box (the m8sn halves beside it) and was not retried; the exe it went on to make
+(a fresh tree, /WX) gave the Windows counts.
+**Owed at the hour**: on `80d93293` `typed.sh`, `run.sh`, self-compile and the Windows five spellings, for the wave
+gate.
+
+**Left of commit 4**, and so of commit 5's condition (`unread` 0 over the cases and the self-host, identical.sh 0 -
+the second holds at every step): unread **206** in the cases and **609** in the self-host. The size of a dependent
+type is half and more (104 and 410): `Type::size` already refuses it by name in a read (`nameDependentSizes`), so
+what is owed is the sites in a read's body that ask - a local's slot, `sizeof(T)`, `p + n` over `T *` - answering
+"dependent" without the size; then not declared (19 / 65), a specialization not asked for (15 / 94), the member
+templates' own 59 / 146, the out-of-line door's last one (a pack, `Ns...` alone).
+src/ lines: 95,467 before, 95,548 after.
+
+**M8.1, commit 4, tenth step: m8s's owed gates, and the dependent sizes found at one site, 2026-11-18**
+(lane m8t, branch `m8-e` from `a655d85a`; code `7e11157a`, `a8915e8d`, `6edec0f1`, `0e86e621`, `763f1661`). Still under
+`-check=templates`; the replay is what emits. **m8s's owed gates on `80d93293`** (its sources are `a655d85a`'s; REF
+trees Linux `~/m8tr`, Windows `work\m8tr`, each built alone): `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed,
+0 failed; self-compile stage 0 103 of 103 (130 s); Windows built under the cap (cl /W4 /WX clean, about 3 minutes) and
+its five spellings at -O0 and -O2 against `a71bb801` (`work\m8sn`, read only) **12,390 the same, 0 differ** (6,200 and
+6,190).
+
+**Where the size was asked.** `gdb` with `catch throw` over seven cases (`boxkit/m8t-bt.sh`) put every "the size of a
+dependent type" at one site: `Parser::allocateFrameSlot` asking `objectAlign` of a pack parameter's type (`Ts...
+rest`, `Kind::PackExpansion`), which `dependentType` does not answer, from `declare` in a function's parameter list -
+in the function door's reads and in member-template and member bodies replayed by a class's read. m8s's stride probe
+moved nothing because the pointer sites are not reached first. **Three steps.** `7e11157a`: `Parser::slotless` - a
+read's type that is dependent or a pack's expansion - at the four frame-slot sites (`allocateFrameSlot`, `declare`'s
+alignment and its debug record, `leaveScope`); the cases' dependent sizes 104 to 1, the self-host's 410 to 0.
+`a8915e8d`: a read's object of dependent type called by its name (`F f; f();`, a member `comp_(a, b)`) is a call
+through it, where it went to overload resolution as "'f' was not declared". `6edec0f1`: a read's `V<I>::f(x)` over a
+dependent class is dependent ([temp.dep.type]), where the read's `V<$P0>` had no member under its tag ("has no static
+member function"). `0e86e621`: three citations `a8915e8d`'s line moved, re-pointed.
+
+**Read / not read, before (`a655d85a`) and after (`0e86e621`)**, Linux; Windows reads door by door as Linux on
+`a8915e8d`. The cases: functions 3,478 / 3,402 / 76 to 3,478 / 3,414 / 64; class members 12,574 / 12,525 / 49 to
+12,574 / 12,533 / 41; out-of-line 22 / 21 / 1 unchanged; partials 607 / 586 / 21 to 607 / 587 / 20; member templates
+497 / 438 / 59 to 497 / 447 / 50; **unread 206 to 176**. The self-host: functions 7,512 / 7,325 / 187 unchanged; class
+members 34,925 / 34,757 / 168 to 34,925 / 34,758 / 167; partials 1,796 / 1,688 / 108 unchanged; member templates
+1,510 / 1,364 / 146 to 1,510 / 1,397 / 113; **unread 609 to 575**. The dependent sizes did not become reads: behind the
+slot each met the next wall, **a pattern over a parameter pack in a read** (`std::forward<Args>(args)...`;
+`ParserTemplate.cpp`'s `bindPatternMember`, which refuses a pack that stands for itself): about 100 in the cases, 409 in
+the self-host. Then a specialization not asked for (15 / 94), a local name in a signature's expression (9 in the
+cases), not declared (5 / 32), a value with no address (26 in the self-host), a dependent base in a mem-initialiser
+("neither a member nor a direct base", 6 / 12).
+
+**The flag against no flag** (`-S`): the cases 1,239 the same, 0 differ (Linux `~/m8tn` on `0e86e621`; Windows
+`work\m8tn` on `a8915e8d`); the self-host 102 of 103 and `Driver`, its `__TIME__` line (Windows `a8915e8d`).
+
+**Gates.** REF `a655d85a` built fresh and alone (Linux `~/m8tr`, Windows `work\m8tr`). Linux `~/m8tn` on `0e86e621`
+(g++ `-Werror` clean): exclusions rc 0, comment cap rc 0, memory gate rc 0, ast-residue rc 0 (+0), `ide/generate.py`
+rc 0 - each its own exit code; `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and
+x86_64-windows at -O0 and -O2, **8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0
+failed; self-compile stage 0 103 of 103 (126 s); `subst.sh bodies` 0 failed (5,120 over 876 units) once `763f1661` re-recorded `template-variadic.templates` (the old record failed: its three reads' reason moved from the size to the pack); the self-host's `-S` REF against NEW 102 and `Driver`. Windows `work\m8tn` on `a8915e8d` (cl /W4 /WX clean):
+five spellings against REF **12,390 the same, 0 differ** (6,200 and 6,190). Windows `work\m8tf` on `0e86e621` (cl /W4
+/WX clean, built alone): the static gates each rc 0 by its own status; the cases and the self-host read door by door
+as Linux (176, 575); the cases' flag 1,239 the same, 0 differ; the self-host's flag 102 and `Driver`; the five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ** (6,200 and 6,190). **Two defects.** Windows'
+static step printed `tail`'s status for exclusions, so its rc 0 on `a8915e8d` hid three stale citations Linux found
+(mended by `0e86e621`; `boxkit/m8t-win4.sh` reads `PIPESTATUS`). A Linux rebuild from shipped sources kept a stale
+object (the tar kept the Mac's mtime, older than the object): its first gates were discarded and re-run from touched
+sources.
+
+**A probe, not committed** (`boxkit/m8t-pack.patch`, Linux `~/m8tp` over `0e86e621`): `bindPatternMember` reading a
+read's pattern once over the pack as itself leaves the unread counts as they are (176) and the flag 0 differ, and moves
+the wall a token on - "expected a type" (`std::forward<Args>(args)...`, the pack's name as a template argument inside
+the copied pattern; 44 + 16 + 16 + 12 in the cases) and "'args' is a parameter pack, written without the '...'" (20).
+**Left of commit 4**, and so of commit 5's condition (`unread` 0 over the cases and the self-host, identical.sh 0 - the
+second holds at every step): unread **176** in the cases and **575** in the self-host; the pack pattern in a read is
+three in five of both (about 100 and 409), then a specialization not asked for (15 / 94), the rest by reason above.
+src/ lines: 95,548 before, 95,553 after.
+
+**M8.1, commit 4, eleventh step: a pack pattern in a read, a left-out base, a read's own names, 2026-11-18**
+(lane m8u, branch `m8-e` from `5702b99a`; code `2b12fc0b`, `208ade05`, `aee4dca3`, `295c2773`, `d98e3d1d`, `e7d3e017`,
+`26eb822a`). Still under `-check=templates`; the replay is what emits. REF `5702b99a` built fresh and alone (Linux
+`~/m8ur`, Windows `work\m8ur`). **Six steps.** `2b12fc0b`: m8t's probe finished - `bindPatternMember` reads a read's
+pattern once, the pack's name in the copy bound as its own parameter (a type name, or a non-type parameter's
+reference) with its `packs_` entry shadowed for the copy, and `dependentType` follows a read's `Kind::PackExpansion` to
+its pattern, so `args` in `std::forward<Args>(args)...` is dependent; cases unread 176 to 71, self-host 575 to 167.
+`208ade05`: a read's mem-initialiser naming the base its class left out (`: B<T>(x)`, `: B<T>{x}`, `leftOutBase`) reads
+its arguments and drops the entry; 71 to 65, 167 to 155. `aee4dca3`: a read's local name in an expression over its
+parameters is held as an unresolved name (a read spells nothing); 65 to 56. `295c2773`: a read's `rest...` over its
+function parameter pack is one argument as dependent as its pattern, and its `sizeof...(args)` a dependent count; 56
+to 45. `d98e3d1d`: 12 citations re-pointed, `template-variadic.templates` re-recorded (its three unread reads are read;
+two differ in shape from the replay, the pack read once against its members). `e7d3e017`: the `rest...` line holds no
+`ExprPtr` of its own (ast-residue on `295c2773` said 2016 to 2017, rc 1). `26eb822a`: a read's `std::remove` beside
+`using ::remove;` - the read declared `std::remove`, and both of `topLevel`'s `lookupSignature` calls followed the
+using-declaration from the unqualified key to `::remove` ("was not declared"; `gdb` on `Source::fail`,
+`boxkit/m8u-why.sh`) - is asked for by the key `declareFunction` gave it; 45 to 40, 155 to 123.
+
+**Read / not read, before (`5702b99a`) and after (`26eb822a`)**, Linux; Windows the same totals. The cases: functions
+3,478 / 3,414 / 64 to 3,478 / 3,465 / 13; class members 12,574 / 12,533 / 41 to 12,574 / 12,554 / 20; out-of-line 22 /
+21 / 1 to 22 / 22 / 0; partials 607 / 587 / 20 to 607 / 604 / 3; member templates 497 / 447 / 50 to 497 / 493 / 4;
+**unread 176 to 40**. The self-host: functions 7,512 / 7,325 / 187 to 7,512 / 7,460 / 52; class members 34,925 /
+34,758 / 167 to 34,925 / 34,862 / 63; partials 1,796 / 1,688 / 108 to 1,796 / 1,788 / 8; member templates 1,510 /
+1,397 / 113 to 1,510 / 1,510 / 0; **unread 575 to 123**. Shape (a read whose tree differs from its replay's) rose with
+the reads, the cases' functions 13 to 48 and member templates 1 to 6: a pack read once against its members. **What is
+left, by reason**: a class specialization the program has not asked for (cases 16, self-host 94) - a design, M8.2's:
+the class cannot be unmade when the read ends, and a stand-in under the real tag would be found by the later
+instantiation; a value with no address (26 in the self-host), a read's `T &en = <dependent value>` in
+`bindReference` (`boxkit/m8u-bindref.patch`, not built); the size of a dependent type, reached behind the pack (cases
+4: `nontype-pack-deduction`, `nontype-pack-types`, `lambda-returning-lambda`); a pack beside other arguments (3), a
+qualified name in a signature's expression (3), and singles.
+
+**The flag against no flag** (`-S`, the cases): 1,239 the same, 0 differ, at every step on Linux; on Windows
+`295c2773` and `26eb822a` 1,239 / 0, the self-host 102 and `Driver` (its `__TIME__`).
+
+**Gates.** REF `5702b99a` fresh and alone (Linux `~/m8ur`, Windows `work\m8ur`, cl /W4 /WX clean). Linux `~/m8uk` =
+`26eb822a` built fresh and alone (g++ `-Werror` clean): exclusions rc 0, memory gate rc 0, ast-residue rc 0 (+0),
+`ide/generate.py` rc 0, **comment cap rc 2** (`26eb822a`'s comment made a group of four; `9511b1be` folds it into its
+line); `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2,
+**8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103
+of 103 (94 s); `subst.sh bodies` 0 failed (5,120 over 876 units); the self-host's `-S` REF against NEW 102 and
+`Driver`. The same on `~/m8uf` (`295c2773`'s sources): identical 8,840 / 0, typed 876 / 0, run 1233 / 0, selfc 103 /
+103, bodies 0 failed, ast-residue rc 1 (mended by `e7d3e017`). Windows `work\m8uf` (`295c2773`, cl /W4 /WX clean):
+five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ**. Windows `work\m8uk` (`26eb822a`, cl /W4 /WX
+clean, built alone): exclusions, memory, residue, generate rc 0 each by its own status, comments rc 1 (the same group);
+the cases and the self-host read door by door as Linux (40, 123); the cases' flag 1,239 / 0; the self-host's flag 102
+and `Driver`; five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ** (6,200 and 6,190). **`9511b1be`**
+(the comment folded, six citations back by one): Linux `~/m8uk` rebuilt from the touched source, every static gate rc 0
+by its own status, cases unread 40 and flag 0 differ, self-host unread 123; Windows `work\m8um` built alone (cl /W4
+/WX clean), every static gate rc 0, the cases' flag 1,239 / 0, the function door 13 unread as Linux. Windows' ast-residue counts ExprPtr 0 on every tree (-2016; Linux counts 2016):
+its rc 0 there says nothing, the Linux figure is the gate's. **Two defects of the lane's own**: `295c2773` raised the
+residue by one `ExprPtr` and `26eb822a` the comment cap by one group - each found by the static gate on its tree and
+mended by the next commit; the long gates ran on `26eb822a`, and `9511b1be` after it moves a comment alone.
+**Left of commit 4**, and so of commit 5's condition (unread 0 over the cases and the self-host, identical.sh 0):
+unread **40** and **123**; the specialization not asked for is two in five of the first and three in four of the
+second. src/ lines: 95,553 before, 95,602 after.
+
+**M8.1, commit 4, twelfth step: the small reasons, and the design for a class a read may not make, 2026-11-18**
+(lane m8v, branch `m8-e` from `a9d212f3`; code `2a53681d`, `31499903`, `f676397d`, `fecc58d7`, `44137b11`,
+`fb5a767e`; `b4acc7ca` and `bb063b66` the citations). Still under `-check=templates`; the replay is what emits. REF `a9d212f3` built fresh and alone (Linux
+`~/m8vr`, Windows `work\m8vr`). **Six steps, each its own commit.** `2a53681d`: m8u's patch, built - a read's
+reference bound to a dependent value or over a dependent referent (`T &en = f(x);`) is held as its referent's
+address, what it binds to being substitution's; the self-host's 26 "a value with no address to bind to" and the
+cases' one "would take a converted copy" (`template-sfinae-misc`) are read: 123 to 97, 40 to 39. `31499903`: the
+dependent sizes behind the pack, two sites found by `gdb` on the throw (`boxkit/m8v-throw.sh`) - `pointerAdd`'s
+stride over a dependent element (`T a[] = { Vs..., T() }`, the initialiser's step to each element) is left to
+substitution in a read, and a read's closure over a capture of dependent type is laid out under
+`Type::DependentLayout` and marked, as a class door's member is; 39 to 35 (`nontype-pack-deduction`,
+`nontype-pack-types` twice, `lambda-returning-lambda`). `f676397d`: "a qualified name other than `T::name`" was
+`R2::den < R2::num` in `<ratio>`'s `ratio_less` - `depPrimary` took the `<` after `T::name` for a member template's
+arguments; with no `template` before it the name is no template ([temp.names]/4) and `<` is less-than, in a
+signature as in a read. **A refusal stricter than the standard, so it goes for every signature**: `f<T>` returning
+`enable_if<T::num < 3, int>::type` and `g(V<T::num < 3> *)` are named `_Z1fI1AEN9enable_ifIXltsrT_3numLi3EEiE4typeES2_`
+and `_Z1gI1AEvP1VIXltsrT_3numLi3EEE`, clang 19.1.5's names letter for letter (`boxkit/m8v-lt.cpp`, cxx3 on Linux,
+clang `--target=x86_64-linux-gnu` on the Windows box; REF refuses it; not added as a case - REF against NEW would
+differ on it); 35 to 32, 97 to 96. `fecc58d7`: a pack expanded beside other arguments (`List<Ns..., 4>`,
+`Max<Ns..., ...>`, `Box<A..., ...>`) is taken in a read - as dependent as the expansion alone, and a read spells no
+name - while a signature's still refuses it by name; 32 to 28, the self-host unchanged. `44137b11`: a read's
+`T(a, b)` over its own parameter reads every argument (a constructor's call if `T` is a class, substitution's to
+say) where `functionalCast` said "would need a constructor, and `T` is not a class"; 28 to 27
+(`template-sfinae-leading-decltype`). `fb5a767e`: a read of a literal operator template (`template <char... Cs> int
+operator"" _count()`) takes no parameters, as its specialization does - its own list is checked where it is declared
+([over.literal]/5) - where `checkLiteralOperator` asked /3's list of it; 27 to 25 (`user-defined-literal`, two).
+
+**Read / not read, before (`a9d212f3`) and after (`fb5a767e`)**, Linux and Windows the same door by door. The
+cases: functions 3,478 / 3,465 / 13 to 3,478 / 3,474 / 4; class members 12,574 / 12,554 / 20 to 12,570 / 12,554 /
+16 (four bodies fewer: a class whose head was refused counted one, and read it holds none); out-of-line 22 / 22 /
+0, unchanged; partials 607 / 604 / 3 to 606 / 604 / 2; member templates 497 / 493 / 4 to 497 / 494 / 3; **unread 40
+to 25**. The self-host: functions 7,512 / 7,460 / 52 to 7,512 / 7,486 / 26; class members 34,925 / 34,862 / 63 to
+34,924 / 34,862 / 62; partials 1,796 / 1,788 / 8, unchanged; member templates 1,510 / 1,510 / 0; **unread 123 to
+96**. **What is left, by reason**: a class specialization the program has not asked for - cases 16 of 25, the
+self-host 94 of 96 - the design below; and singles, each named: the cases' 9 (`expected` a comma, the pattern `twice(xs)...` among a
+call's arguments; an integer to an enumeration, a non-type pack of an enumeration's type; a cast between unrelated classes; a
+call that would instantiate its callee; a member function template's argument not worked out; an array length 0; a
+using-declaration in a class; a base not defined yet; and `function-try-block`, "cannot name the type of this" on
+Linux and "the size of a dependent type" on Windows) and the self-host's 2 ("was not declared", "needs a pointer to
+a struct or union": `x->m` over an `auto` local of dependent type, `OptPipeline`; `postfix`'s `->` has no dependent
+hold).
+
+**The design: a class specialization a read may not make** (no code; the count it would move is the cases' 16 and the
+self-host's 94, of 25 and 96 unread). **What it is.** A read reaches `instantiateClass` for an argument list that names
+no parameter (`V<3>`, a library class over the program's own types) whose tag the unit has not made. Making it is
+`readClassBody`: the interned `Type` completed in place, the type name declared, its members' `Signature`s entered,
+its held bodies queued as the unit's. The read's `Lookup` layer gives back the names and the owed bodies when the read
+ends; it does not give back the `Type`'s completion or what `Classes` recorded of it - so m8j refused it by name.
+**What the read needs from such a class, measured** (`boxkit/m8v-named.patch`, a probe on Linux `~/m8vs`, not
+committed: the class held *incomplete* under its real tag - the shape `instantiateClass` already gives a template
+declared and not defined - for the program's own ask to complete in place): the cases' 16 become 11 read and 5 not (4
+a conversion to or from the class, 1 a static member's name); the self-host's 94 become 29 read and 65 not (49 "has
+an incomplete type" - an object of the class declared, or a member reached - and 16 a conversion); the cases' `-S`
+with the flag against without 1,239 the same, 0 differ (the self-host's `-S` was not compared). So a read needs **its
+name alone in 11 of 16 and 29 of 94**, and in the rest **its members**: their names (which decide the parse -
+`C::type x;` has no `typename` to say what `type` is, rightly, because `C` is not dependent), their types (the
+conversions: constructors, conversion functions, bases) and that it is complete. **Its layout it does not need** for
+the tree - a read keeps no slot - unless a constant asks its size, which none of the probe's leftover reasons names
+(an "incomplete type" may hide one). Not measured: which tags they are
+(a line breakpoint in the -O2 build did not hold), and whether each is made later in its unit.
+
+**The options.**
+(a) *A class read as a pattern of its own* - the class door run with the arguments bound, into the read's layer, gone
+after. The door leaves nothing (flag 0 differ), but what it reads is a pattern under a `$` tag nothing else can name.
+This class has its real tag, and the type table is not in the layer: either the `Type` is completed and then put back
+(a journal over `Type`, `Classes`' specials and vtable record, static members, constants folded - every table
+`readClassBody` writes, where one missed is a silent difference), or it is made under a tag of the read's own - and
+is then a different `Type` from the one the program's earlier declarations already point at, so every conversion
+between the two fails inside the read. Two or three lanes; made again by every read that asks (nothing outlives the
+layer); and all of it is deleted at M8.5, when the class is made at the definition for good.
+(b) *A deferred check, replayed when the class is asked for* - the read stops, the declaration is noted under the
+tag, and the program's own `instantiateClass` of that tag reads it again. One lane. The second read stands later than
+the declaration, so names declared in between are visible to it: the replay's own fault today, but the opposite of
+what M8.5 binds, so M8.5 takes it out again. A body whose class is never asked for stays unread and is never
+instantiated either (its replay is what asks). And under M8.2 the first instantiation of such a body can come before
+the class exists, so it still falls back to replay.
+(c) *A lookup that answers "dependent" for it.* Its members are then unknown and every expression over it is held.
+It cannot serve the uses the probe left: with no `typename` written, a read cannot tell `C::type x;` from an
+expression, so it either builds a wrong tree quietly or refuses - the same 5 and 65. And it calls dependent a name
+M8.5 has to bind at the definition. Its sound half is the probe's: where only the name is needed the class is
+**incomplete**, which is true, not dependent, which is not.
+(d) *The class made at the definition, for good* - what the design expects: section 3.4's end state ("non-dependent
+names are checked at the definition") and M8.5's row ("non-dependent names bound when the body is read at M8.1")
+need the class complete at the read, as clang makes it ([temp.inst]/1; [temp.point]/3 puts it before the declaration
+that holds the reference). It was built once: m8i's seating (`789e7b4a`, `askedByPattern_` and `madeWhereAsked`,
+four lines; the self-host's `-S` with the flag against without went from 8 of 103 differing to 0 on both boxes) and
+deleted by m8j for the layer. Its cost is not lines: a class cxx3 refuses to build, named in a template the program
+never instantiates, becomes an error at the definition (clang's answer for a real error, a regression for a refusal
+of ours), and the seating is a patch the replay's emission order needs and substitution will not.
+**What M8.2's row expects** is the interim, not the end: "a shape the substitution does not cover falls back to
+replay by name, counted by `-check=templates`" - an unread body is provided for there, and M8.6 (the deletion) is
+where that provision ends. m8j's refusal says "M8.2's to make by substitution"; M8.2's row is function templates,
+and a class by substitution is M8.3's.
+
+**Recommended: the incomplete class now, the rest refused by name; (d) as M8.5's first step; not (a), not (b).**
+(a) and (b) are each machinery M8.5 deletes, and (a)'s failure is silent. **The steps, as lanes.**
+*Lane 1* (Opus, one hour): `m8v-named.patch` gated - a read's unasked class held incomplete under its tag, by the one
+helper the `!decl.defined` branch already is; where the read then needs more it refuses by one name of its own ("the
+members of a class specialization the program has not asked for yet") in place of the two general messages, so the
+count keeps one reason. Gate: the flag against no flag 0 over the cases and the self-host on both boxes, identical.sh
+0, names.sh, and m8j's measure of what a read leaves extended to the type table (the `Type`s a read interned, by
+tag: each completed by the program's later ask, or never named again). Its one known hazard is m8k's: the interned
+`Type` keeps the arguments of whoever asks first, here the read's. Expected: the cases' 16 to 5, the self-host's
+94 to 65.
+*Lane 2* (Opus, one hour): the measure (d) stands on - for each tag still refused, whether its unit makes it later
+(expected: every one a replay reaches), and the unit's `-S` with the class made at the read under m8i's seating
+against without; the tags listed in the plan.
+*Lane 3* (Fable - it changes what compiles; M8.5's first step, and before M8.6): the class made at the definition
+for good, m8i's seating back under the read, the class entered below the layer; each case `run.sh` or `identical.sh`
+turns is read against clang. The reason's count goes to 0 and its refusal is deleted.
+
+**Whether commit 5 can come once only these remain: yes**, on three conditions. Commit 5's "unread 0" was written
+when unread meant a shape the read could not take yet; these are bodies the read declines because making the class
+is not M8.1's to do. A read that declines leaves nothing - the function door has run with no flag since `241cd65b`
+with unread never 0 (99 then, 4 now) and identical.sh 0 at m8j's gate and at each lane's since - so what on-by-default risks is what a
+read *leaves*, and that is gated by the flag against no flag and identical.sh, not by the unread count. The
+conditions: (1) every body still unread is a refusal by name under a **recorded ceiling** per corpus, which
+`tests/subst.sh` fails on if it rises or a new reason appears (after lane 1: the class's members, and the singles
+above, each named); (2) identical.sh 0 and the five Windows spellings 0 on the tree with the class doors read with
+no flag - never yet run: the flag against no flag is its stand-in; (3) `-dump=syntax` names an unread body with its
+reason where it shows the others once. What it costs until lane 3: M8.2 replays these bodies (its row's fallback,
+counted), and M8.5 cannot check them at the definition.
+
+**The flag against no flag** (`-S`, the cases): 1,239 the same, 0 differ at every step on Linux (the probes and both
+gated trees) and on Windows at `fecc58d7` and `fb5a767e`; the self-host 102 the same and `Driver` (2 lines, its
+`__TIME__`, as before) on both.
+
+**Gates.** REF `a9d212f3` fresh and alone (Linux `~/m8vr`, Windows `work\m8vr`, cl /W4 /WX clean). Two rounds, each
+tree built fresh and alone. **`fecc58d7`** (Linux `~/m8vk`, g++ `-Werror` clean; Windows `work\m8vk`, cl clean):
+Linux exclusions (after `b4acc7ca`'s one citation), comment cap, memory gate, ast-residue (ExprPtr 2016, +0) and
+`ide/generate.py` rc 0 each by its own status; `tools/identical.sh` REF against NEW for tms6747, arm64-darwin,
+x86_64-linux and x86_64-windows at -O0 and -O2 **8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed;
+`run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103 (117 s); `subst.sh bodies` 0 failed (5,120 over 876
+units; no `.templates` record changed); the self-host's `-S` REF against NEW 102 and `Driver`. Windows: the five
+spellings at -O0 and -O2 against REF **12,390 the same, 0 differ** (6,200 and 6,190); every static gate rc 0 (its
+ast-residue counts ExprPtr 0, which says nothing - Linux's is the gate); the counts door by door as Linux.
+**`fb5a767e`** (Linux `~/m8vf`, Windows `work\m8vf`; `bb063b66` re-points 9 citations): Linux every static gate rc 0
+by its own status (ExprPtr 2016, +0); identical.sh **8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed;
+`run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103 (66 s); `subst.sh bodies` 0 failed (no `.templates`
+record changed); the self-host's `-S` REF against NEW 102 and `Driver`; the cases unread 25, flag 0 differ; the
+self-host 96. Windows (cl /W4 /WX clean, built alone): the five spellings at -O0 and -O2 against REF **12,390 the
+same, 0 differ** (6,200 and 6,190); the cases' flag 1,239 / 0; the self-host's flag 102 and `Driver`; the cases and
+the self-host read door by door as Linux (25, 96); exclusions, comment cap, memory gate, residue and generate rc 0
+each. **Not run**: `names.sh` and `overload.sh` (not in m8u's gate either); no case added for `T::num < x` in a
+signature (the probe is `boxkit/m8v-lt.cpp`) - owed with commit 5, when REF and NEW both read it. **Probes kept in
+`boxkit`**: `m8v-named.patch` (the design's measure), `m8v-throw.sh` / `m8v-why.sh` (gdb on a read's refusals).
+src/ lines: 95,602 before, 95,608 after.
+**Left of commit 4**: unread **25** in the cases and **96** in the self-host; the class a read may not make is 16
+and 94 of them (lane 1 of the design: 5 and 65), the singles 9 and 2. **Commit 5 can come next** on the design's
+three conditions - it does not wait for unread 0.
+
+## M8.1, commit 5: the class doors read with no flag, under a recorded ceiling (lane m8w, 2026-11-18)
+
+Branch `m8-e` from `a18490df`: `75a431ce` (the design's first lane), `35a868ef` (the ceiling in `tests/subst.sh`),
+`c5448cb9` (`-dump=syntax` names an unread body), `bc20fad0` (**commit 5**), `0c9690a8` (the ceiling's records and 3
+citations re-pointed), and one comment moved for the cap after it. The coordinator's decision, under the user's
+standing instruction: commit 5 comes before unread reaches 0, on m8v's three conditions.
+
+**Lane 1 - a read's unasked class held incomplete** (`75a431ce`, `boxkit/m8v-named.patch` as measured): where a read
+reaches `instantiateClass` for an argument list that names no parameter and a tag the unit has not made, the class is
+interned under its real tag and left incomplete - the shape a template declared and not defined already has - for the
+program's own ask to complete in place; a read that needs its members is refused there by the general names ("has an
+incomplete type", a conversion's "is A and this is B"). The one name of their own the design asked for is **not
+done**: the two messages are counted as they are, and the ceiling holds each.
+
+**Read / not read by door** (bodies / read / unread; `-check=templates`, Linux and Windows the same door by door).
+
+| door | `tests/cases` before (`a18490df`) | after | the self-host before | after |
+|---|---|---|---|---|
+| functions | 3,478 / 3,474 / 4 | 3,478 / 3,474 / 4 | 7,512 / 7,486 / 26 | 7,512 / 7,486 / 26 |
+| class members | 12,570 / 12,554 / 16 | 12,568 / 12,561 / 7 | 34,924 / 34,862 / 62 | 34,923 / 34,882 / 41 |
+| out-of-line | 22 / 22 / 0 | 22 / 22 / 0 | - | - |
+| partials' members | 606 / 604 / 2 | 606 / 606 / 0 | 1,796 / 1,788 / 8 | 1,796 / 1,796 / 0 |
+| aliases | 7 / 7 / 0 | 7 / 7 / 0 | - | - |
+| member templates | 497 / 494 / 3 | 497 / 494 / 3 | 1,510 / 1,510 / 0 | 1,510 / 1,510 / 0 |
+| **unread** | **25** | **14** | **96** | **67** |
+
+**Not read, by reason.** Before: "a class specialization the program has not asked for yet" 16 in the cases (9 a
+class member, 4 the class, 2 a partial's member, 1 a function) and 94 in the self-host (36, 26, 8, 24); the singles 9
+and 2. After, the cases' 14: 4 a conversion to or from the incomplete class (class members), 1 a static member's name
+in it (a function), and the 9 singles - `expected`, an integer to an enumeration, `type_info` of a dependent type
+(Linux's host; Windows' is "the size of a dependent type"), three member templates (a cast between unrelated
+classes, a call with a dependent argument, a template argument not worked out), three classes (an array length 0, a
+using-declaration of a base's member function, a base not defined yet). The self-host's 67: **49 "has an incomplete
+type"** (25 the class, 24 a function), **16 a conversion** (class members), and the 2 singles (`was not declared`,
+`needs a pointer to a struct or union`). As m8v's probe measured (16 to 5, 94 to 65).
+
+**The ceiling** (`35a868ef`, records `0c9690a8`): `tests/subst.sh bodies` sums the cases' refusals by door and reason
+and its new step `self` does the same over the compiler's 103 sources (in the default steps); each is held against
+`tests/subst-cases.ceiling` (**14 in 11 reasons**) and `tests/subst-self.ceiling` (**67 in 5 reasons**) - a reason
+the record does not hold or a count above its record fails, a count below prints "record again"
+(`SUBST_RECORD=1`). Recorded on Linux `~/m8wf`; the cases' record is the Linux host's (the one `type_info` line), so
+`subst.sh` on a Windows host would name that reason - owed if the gate ever runs there.
+**`-dump=syntax`** (`c5448cb9`): after the tree, one line a declined body, at the body's place - `file:line:col:
+(unread "door: reason")`, the reason as the count has it (`Tree::noteUnread`, `tallyRead` given the body's token).
+Shown on `inheriting-constructors`: `...cpp:40:20: (unread "class-members: the class: a using-declaration inside a
+class is not supported yet here ...")`, 21 lines where REF dumps 20; `tests/syntax.sh` 3 passed, 0 failed, no record
+changed. A read body itself is still not in the dump (its nodes die with the read) - row 5's "shows each body once"
+is not done by this.
+**Commit 5** (`bc20fad0`): `readDeclaration` and `readMemberTemplatesOf` no longer ask `checkBodies_` - the class,
+its out-of-line members, a partial, an alias and a member template are read once where they are declared in every
+compile; never from inside a read, as before. `-check=templates` stays the comparison and the count. **Taken, and
+identical**: see the gates. Not done of row 5: "a dependent name marked on its `name` node, `typename`/`template`
+kept as payload".
+
+**Gates.** REF `a18490df` built fresh and alone on both boxes (Linux `~/m8wr`, Windows `work\m8wr`); every NEW tree
+built fresh, one build at a time, g++ `-Werror` and cl /W4 /WX clean. **Lane 1 alone** (`75a431ce`; Linux `~/m8wn`,
+Windows `work\m8wn`): the cases 25 to 14 and the self-host 96 to 67 on both boxes, the flag against no flag 0
+differ (Linux 1,239; Windows 1,239 / 0); `tools/identical.sh` REF against NEW on four targets at -O0 and -O2 **8,840
+compared, 0 differ**; Windows five spellings **12,390 the same, 0 differ** (6,200 and 6,190); the self-host's `-S`
+REF against NEW 102 and `Driver` on both. Its typed.sh, run.sh and static gates were not run apart - they ran on
+the tree below, which holds it. **Commit 5** (`bc20fad0`, the class doors with no flag; Linux `~/m8wf`, Windows
+`work\m8wf`): **identical** - identical.sh for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and
+-O2 **8,840 compared, 0 differ**; Windows' five spellings (masm, gnu, x86_64-linux, arm64-darwin, tms6747) at -O0
+and -O2, text and diagnostics, **12,390 the same, 0 differ** (6,200 and 6,190); the self-host's 103 sources' `-S`
+REF against NEW with no flag **102 the same and `Driver`**, whose diff was opened on both boxes and is the one
+`__TIME__` string (Linux `.byte ... 49, 57` against `51, 51`; Windows `$_L_str_141`), so **0 of 103**. Linux also:
+`typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103 of 103 (145 s);
+`subst.sh bodies self` 0 failed under the ceiling (14 and 67; 5,120 replayed over 876 units, no `.templates` record
+changed); `syntax.sh` 3 passed, 0 failed; the flag against no flag 0 differ; exclusions, memory gate, ast-residue
+(ExprPtr 2016, +0) and `ide/generate.py` rc 0 each by its own status - and **`make comments` rc 2** (Syntax.h:83,
+this lane's comment between `roots` and `dump`). Windows also: the cases' flag 1,239 / 0, the self-host's flag 102
+and `Driver`; the counts door by door as Linux; **`names.sh` 884 passed, 0 failed; `overload.sh` 46 agreed with
+clang, 0 differed** (m8v had not run them). **`4057b4de`** moves that one comment (no token of code): Linux `~/m8wg`
+built fresh, every static gate rc 0 by its own status (comments 0 over the cap), `syntax.sh` 3 / 0, `subst.sh bodies
+self` 0 failed, identical.sh **8,840 compared, 0 differ**, the self-host's `-S` REF against NEW 102 and `Driver`
+(its `__TIME__`); Windows' static gates with the header copied into
+`work\m8wf` rc 0 each (ast-residue counts ExprPtr 0 there, which says nothing). **Not run on `4057b4de`'s own build**:
+Windows' five spellings, names.sh and overload.sh (they ran on `bc20fad0`), and typed.sh, run.sh and the
+self-compile on Linux. **Two defects of the lane's own**: `m8w-linux.sh` was replaced on the Linux box
+while a chain was reading it, which ended that chain after `~/m8wn`'s build (its counts were run again by hand); and
+the comment cap above, found by the gate and mended.
+src/ lines: 95,608 before, 95,630 after.
+**Left**: unread **14** in the cases and **67** in the self-host, every one a refusal by name under the ceiling; the
+design's lane 2 (which tags, and the class made at the read under m8i's seating, measured) and lane 3 (the class
+made at the definition, M8.5's first step) take the 5 and 65; the one name for the incomplete class's refusals; a
+case for `T::num < x` in a signature (owed since m8v; `boxkit/m8v-lt.cpp`).
+
+## M8.1: the items commit 5 left - one name for the held class, a read body in the dump, the dependent mark, `T::num < x` (lane m8y, 2026-11-18)
+
+Branch `m8-e` from `904fe621`: `002f278c` (one name), `a302b3a6` (the dump and the marks), `40f8f34a` (the case), and
+the records re-made on the final tree after them.
+
+**First, the gates m8w did not re-run on `4057b4de`** (its tree is `904fe621`'s: the plan alone differs). REF
+`904fe621` built fresh and alone (Linux `~/m8yr`, g++ `-Werror` clean; Windows `work\m8yr`, cl /W4 /WX clean), and
+`a18490df` again on Windows (`work\m8ya`) as the five spellings' base. Linux: `typed.sh` **876 passed, 0 failed**;
+`run.sh` **1233 passed, 0 failed**; self-compile stage 0 **103 of 103** (132 s). Windows: `names.sh` **884 passed, 0
+failed**; `overload.sh` **46 agreed with clang, 0 differed**; the five spellings at -O0 and -O2, `904fe621` against
+`a18490df`: **12,390 the same, 0 differ** (6,200 and 6,190), text and diagnostics.
+
+**One name for the held class** (`002f278c`). `Templates::instantiateClass` notes each class a read holds incomplete
+in `Parser::readHeld_`; `Parser::refuseHeldClass` refuses "the members of a class specialization the program has not
+asked for yet" where a read needs such a class's members - a member or a local of it, a conversion or a reference
+binding to or from it, a static member's name in it - in place of the general "has an incomplete type", "is A and
+this is B" and "has no static member". It asks only inside a read, so no program's output moves. **Not read, by
+reason**: the cases' 14 in 11 reasons to 14 in 11 - **5 under the one name** (4 class members, 1 a
+function) and the 9 singles as before; the self-host's 67 in 5 to 67 in 5 - **65 under the one name** (25
+the class, 24 a function, 16 class members) and the 2 singles. The ceilings re-recorded on the final tree (Linux
+`~/m8yf`): `tests/subst-cases.ceiling` 14 in 11 lines and `tests/subst-self.ceiling` 67 in 5 - a line is a door and a
+reason, so the one name stands on two lines in the cases (class members, functions) and three in the self-host (the
+class, class members, functions). No count rose; the five general messages became one, as the design asked.
+
+**A read body in `-dump=syntax`, and the dependent mark** (`a302b3a6`, row 5's two halves). Each body a read took is
+shown once, after the live tree, as `file:line:col: (read (function ...))` (`Tree::noteRead` from `tallyRead`, the
+node kept dead as before - no reader of the tree sees it); a body declined keeps its `(unread "...")` line. A name
+node made in a read whose expression's type waits for the arguments is marked `dependent`, and a written `typename`
+is kept on it as `typename` (`Node::marks`, `Parser::markReadName`, at the primary name and at a call's callee).
+`tests/syntax/template-read.cpp` (recorded) shows both: `(read (function "twice" (var "template parameter x")
+(block ... (call (name "g" dependent) (name "x" dependent)) (call (name "T::type" typename dependent) (name "k"))
+...)))`. The three earlier syntax records do not change (a mark is set only in a read, whose nodes the live tree never
+holds). **Not done of row 5**: `template` after `.`, `->` or `::` is not kept (the name's spelling stops at the
+keyword in the primary's walk; changing that walk changes the live tree's names, so it waits for M8.2's reader); a
+`typename` in a declaration's type is a `var` node's spelled type, not a name node; a member name over a dependent
+object (`x.m`) is held by `dependentPostfix` and makes no name node to mark; a pack's name (`rest` in
+`template-variadic`'s `total(rest...)`, whose `.templates` shape line now shows the marks) is left unmarked - its
+type is the expansion's, which `dependentOperand` does not count.
+
+**`T::num < x` in a signature** (`40f8f34a`): `tests/cases/template-dependent-less.cpp` - a return type's
+`enable_if<T::num < 3, int>` and its negation chosen between, and a parameter's `V<T::num < 3> *` - prints `1 2 1
+0`, clang's answer (`-x c++ -std=c++11 -pedantic-errors`, the Windows box), by cxx3 on Linux and on Windows. **Found on the
+way**: the body `return V<T::num < 3>::value();` (a static member function of a class template-id whose argument is
+dependent, called in a template's body) is refused "'g<A>' ... is outside the SSA lowering: the name 'V', of another
+kind" - the case was written round it; the refusal is the SSA lowering's, by name, and is owed a case of its own.
+
+**Gates on the round** (`40f8f34a`, whose records `9a891287` re-made; REF `904fe621` as above; each NEW tree built
+fresh and alone after REF, g++ `-Werror` and cl /W4 /WX clean). The two iteration trees came first on Linux: item 2
+alone (`~/m8yn`: unread 14 and 67, the reasons renamed, no `.templates` record moved) and items 2 and 3 (`~/m8yd`:
+the three syntax records unchanged, `template-read` as shown). **The final** (Linux `~/m8yf`, Windows `work\m8yf`):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2
+**8,850 compared, 0 differ** (8,840 and the new case's 10); Windows' five spellings at -O0 and -O2 against REF, text
+and diagnostics, **12,400 the same, 0 differ** (6,200 and 6,200); the self-host's 103 sources' `-S` REF against NEW
+**102 the same and `Driver`**, whose two lines are its `__TIME__` bytes (`12:39:49` against `12:40:03`), so 0 of 103;
+`run.sh` **1234 passed, 0 failed**; the cases' `-S` with `-check=templates` against without **1,240 the same, 0
+differ** on both boxes; `names.sh` **885 passed, 0 failed** and `overload.sh` **46 agreed, 0 differed** (Windows);
+`subst.sh bodies self` on the record step **1 failed** - `template-variadic.templates`, whose shape line spells the
+read with its marks now - re-recorded in `9a891287`, the ceilings 14 and 67 under it; Windows' static gates with the
+re-pointed `EXCLUSIONS.md` copied in, each rc 0 (exclusions, comment cap 0 over, memory gate, residue, generate).
+Linux, on `~/m8yf` with the records in place: exclusions, comment cap (0 over), memory gate, ast-residue (ExprPtr
+2016, +0) and `ide/generate.py` rc 0 each by its own status; `syntax.sh` **4 passed, 0 failed**; `subst.sh bodies
+self` **0 failed** (5,124 replayed over 877 units; the cases 14 under 14 in 11, the self-host 103 of 103 and 67 under
+67 in 5); self-compile stage 0 **103 of 103** (156 s); `typed.sh` **877 passed, 0 failed** (untyped other=38 name=8, as REF). **Two defects of the lane's own**: a Windows
+chain written against the wrong tree name (`m8y-wplan2.sh`; its parent stopped by PID before any step ran, its
+build left to finish, the chain written again as `m8y-wplan3.sh`), and `m8y-linux.sh` sent to the Linux box a second
+time while chains read it - the same bytes (md5 `e71fca6e` both sides), so no chain read another script, but the
+rule is broken in form.
+
+src/ lines: 95,630 before, 95,677 after.
+
+**What M8.1 still owes before it closes.** (1) **Fable's reading of the dependent-name marking** (row M8.1's stop,
+before M8.2 builds on it), on `a302b3a6`'s `template-read` record. (2) **Unread 14 and 67 under the ceiling** - the
+design's lane 2 (which tags the held classes are, and the unit's `-S` with the class made at the read under m8i's
+seating, measured) and lane 3 (the class made at the definition, M8.5's first step, Fable) take the 5 and 65 under
+the one name; the singles (9 and 2) each a step of its own. Row M8.1 can close with them outstanding, as commit 5
+did, since a read declines and leaves nothing - but M8.2 then replays those bodies, counted. (3) The `template`
+disambiguator as payload, and the member name's mark (above). (4) `subst.sh` on a Windows host names the Linux host's
+`type_info` reason (m8w's note). (5) The lowering refusal above as a case.
+
+**What M8.2 starts with** (the design's next row: substitution for function templates). Its input is what this round
+makes visible: the function door's read body (the node `tallyRead` keeps in `declRead_` and the dump now shows once),
+with its dependent names marked. Its first step: keep that body alive as the pattern (`pattern` beside `dead`, as the
+signature's), and behind `-templates=subst` build a free function template's typed body from it under a `Binding`
+with the Typer, the shapes it does not cover falling back to replay by name and counted by `-check=templates`; the
+commit that does it deletes M8.1-early's stand-in (`substituteFunction`, `substituted`, `Typer::typeBody`,
+`TypedTree::retype`, the census's sibling roots, `subst.sh`'s on-against-off steps) as the row says. Its gate is
+row M8.2's: identical.sh replay against subst on the covered shapes, names.sh, overload.sh, the self-host under the
+flag.
+
+## M8.1: the design's lanes 2 and 3 met, the held class over a read's own local class, one name for a dependent throw, the ceiling host-free (lane m8z2, 2026-11-18)
+
+Branch `m8-e` from `a51eab69`, with lane m8z's uncommitted work in the worktree: `e179edc2` (the local class named
+apart), `3bcbfa65` (one throw name), `3cda1af1` (the open case), `43f308e5` (the new case), `8cf51148` (the record).
+
+**Lane m8z (Fable, stopped at the user's word, 2026-11-18)**: its chains stopped by their own PIDs on both boxes, its
+trees removed, its REF of `a51eab69` (Linux `~/m8zr`, Windows `work\m8zr`, built fresh and clean) reused here. Of its
+work, **continued**: the one throw name and `tests/open/template-dependent-static-call` (redone, below). **Set aside as
+`boxkit/m8z-lane3.patch`**, not landed: lane 3 as m8z wrote it - the wanted class made where the read's declaration
+stands and the read made again over it (`Templates::makeWanted`) - took the cases' unread 14 to 9 (the held class's 5
+to 0), the flag against no flag 0 differ on both boxes, but the self-host's 65 became **152 behind them** (50 constexpr
+member bodies, 75 range-for, 25 a local class defined twice by the read made again) and on Windows 25 of 103 sources
+died (rc 127). **Lane 2's measure** is m8z's (`boxkit/m8z-tags.sh` over that patch, Linux): the cases make 2 held
+classes in 2 units - `lock_guard<std::mutex>` (asked later) and `Sum<{0}>` (never); the self-host 177 in 29 units, 8
+tags, 125 asked later: `vector<opt::Block>`, `<opt::Edge>`, `<opt::Effects>`, `<const opt::Region *>` (25 made, 22
+asked later each), `map<string, int>` (24, 22), `vector<bool>` (24, 12), `lock_guard<std::mutex>` (4, 4) and
+**`vector<$read$build::Throw>` (25 made, 0 asked later)**.
+
+**Where the design is wrong.** Lane 2 expected every held tag to be one a replay reaches, and (d) makes each at the
+definition. `vector<$read$build::Throw>` is neither: `OptCore.h`'s member template `build<EffectsFn>` declares a local
+`struct Throw` and a `std::vector<Throw>`, and a class over a template's own local class is **dependent** - the local
+class belongs to the templated function and is made again with each specialization, so clang instantiates
+`vector<Throw>` per `build<F>`, never at the definition. No program asks for a `$read$` tag; making it is what defined
+the local class twice in m8z's patch (its 25). **Lane 3 must read a held class whose arguments name a read's local class
+(or closure) as dependent**, and make only the rest at the definition. `e179edc2` names it apart so the count can see
+it: "the members of a class specialization over the template's own local class" (`overReadLocal`, beside
+`Parser::refuseHeldClass`). In the self-host it moves nothing - in `build`'s body the read stops first at an earlier
+held class - so `tests/cases/template-local-class-held` (`Box<L> b;` over a local `L` in a function template; clang
+`4 10`, Windows box) holds it: unread 1 under the new name with the flag, the program's own `Box<f<int>::L>` built.
+
+**One name for a dependent throw** (`3bcbfa65`, item 2): a read's `throw` of a value whose type waits for the
+arguments is refused "a throw of a value whose type waits for the arguments" in `Parser::throwStatement` before the
+type_info and the size are asked - where the Itanium path said type_info and the Microsoft path its own, so the cases'
+ceiling read differently by host. m8z wrote it as a second function with the refusal caught; that raised
+`tools/ast-residue` (StmtPtr 639 to 641, ExprPtr 2016 to 2018 - design 12.2 lets it only fall), so it is two lines of
+`throwStatement` here, which also keeps a read from asking `size()` of a dependent type (lane m8b's exit). The count
+did not move (the cases' one throw, under the new name).
+
+**`V<T::num < 3>::value()` in a template body** (`3cda1af1`, item 3): refused by the SSA lowering ("the name 'V', of
+another kind", `src/ir/Lowering.cpp` - not this lane's file), so it is `tests/open/template-dependent-static-call`:
+clang (`-x c++ -std=c++11 -pedantic-errors`, Windows box) prints `1 0`; cxx3 refuses on both boxes (`open.sh`: 1 still
+differs).
+
+**Not read, by reason**: before (`a51eab69`) the cases 14 in 11 and the self-host 67 in 5; after (`8cf51148`, recorded
+on Linux `~/m8z2f` with `SUBST_RECORD=1`, the same bytes as written) **the cases 15 in 12** - the 14 as before, the
+type_info line now the one throw name, and the new case's one under the local-class name - and **the self-host 67 in
+5**, unchanged. The ceilings do not come down: lane 3 did not land.
+
+**Gates** (REF `a51eab69`, m8z's, built fresh and clean on both boxes; NEW `8cf51148` built fresh and alone - Linux
+`~/m8z2f` g++ `-Werror` clean, Windows `work\m8z2f` cl /W4 /WX clean - and `29fba9be`'s comment move rebuilt on
+Linux). **Linux**: `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at
+-O0 and -O2 **8,860 compared, 0 differ** (on `8cf51148` and again on `29fba9be`); the self-host's 103 sources' `-S`
+REF against NEW **102 the same and `Driver`**, its `__TIME__` bytes (`13:39:06` against `13:39:13`), so 0 of 103;
+`run.sh` **1235 passed, 0 failed** (both trees); `typed.sh` **878 passed, 0 failed** (untyped other=38 name=8, as
+REF); self-compile stage 0 **103 of 103** (75 s); `syntax.sh` **4 passed, 0 failed**; `subst.sh bodies self` **0
+failed** (5,126 replayed over 878 units; the cases 15 under 15 in 12, the self-host 103 of 103 and 67 under 67 in 5);
+the cases' `-S` with `-check=templates` against without **1,241 the same, 0 differ**; `open.sh` 1 still differs;
+on `29fba9be` exclusions, comment cap (0 over), memory gate, ast-residue (ExprPtr 2016, StmtPtr 639, +0) and
+`ide/generate.py` rc 0 each by its own status (`8cf51148`'s comment cap was 1 over - three lines over the one line
+the throw's check left under them - which `29fba9be` mends). **Windows** (`8cf51148`'s binary; `29fba9be`'s file in
+the tree for the static step): the five spellings at -O0 and -O2 against REF, text and diagnostics, **12,398 the same
+and 12 that differ** - `posix-headers` and `windows-h-layout` refused on the targets not theirs, whose `#error`
+caret stands one column further right under a tree path one letter longer (`m8z2f` against `m8zr`, shown by
+`boxkit/m8z2-d1.sh`), so none of the compiler's; `names.sh` **886 passed, 0 failed**; `overload.sh` **46 agreed, 0
+differed**; the flag against no flag **1,241 the same, 0 differ**; `typed.sh` **859 passed, 0 failed** (20 not for
+this host); static rc 0 each (ast-residue counts nothing there - Linux's is the gate). **The ceiling is host-free**:
+`subst.sh bodies self` with `SUBST_RECORD=1` on Windows writes both ceilings byte for byte as Linux's, and the cases'
+passes there; at REF it fails on Windows ("the size of a dependent type", the Microsoft path's throw). Four
+`.templates` records (`constructor-template`, `template-class`, `template-out-of-line`, `template-variadic`) and
+`syntax.sh`'s four records fail on Windows at REF and NEW alike - a host difference of those records, owed. `run.sh` on Windows (`CXX1=./cxx3-msvc.exe`) does not run there: 359 passed, 876 failed - the 355
+refusals as recorded and 2 programs printing, every other program failing to build or run, which is the suite's
+link step on that host (REF was not measured; winpass is Windows' run gate, the coordinator's).
+
+src/ lines: 95,677 before, 95,690 after.
+
+**What M8.1 still owes.** (1) Lane 3 (the class made at the definition), with a held class over a read's local class
+or closure read as dependent, and the 152 m8z's patch uncovered (constexpr member bodies, range-for) met, before the
+5 and 65 go to 0; (2) the singles (9 in the cases, 2 in the self-host); (3) Fable's reading of the dependent-name
+marking; (4) `template` as payload and the member name's mark; (5) the lowering's refusal of a class template-id's
+static member call over a dependent argument (`tests/open/template-dependent-static-call`), M3's file.
+
+## M8.1: lane 3 measured with the correction and set aside again, five singles read (lane m8z3, 2026-11-18)
+
+Branch `m8-e` from `e11346bf`: `62cdff85`, `350f4244`, `a7a0a545` (the singles), `a5006585` (EXCLUSIONS re-pointed),
+`6404350b` (the cases' ceiling), this entry.
+
+**Lane 3 with m8z2's correction, measured** (`boxkit/m8z3-lane3.patch`: m8z's `boxkit/m8z-lane3.patch` on `e11346bf`,
+and `Parser::refuseHeldClass` wanting a held class only when `overReadLocal` is false - a class over the read's own
+local class stays dependent and is never made at the definition). Linux `~/m8z3a` (`SUBST_RECORD=1`) and Windows
+`work\m8z3a`: **the 25 Windows sources that died are gone** - 103 of 103 compile; they were m8z's local class
+defined twice, `vector<$read$build::Throw>` made below the read and the read made again over it. The cases' unread 15
+to 10 (the held class's 5 to 0). **The self-host's 67 became 152**: the 65 held-class reads gone, and behind them
+**50** `a constexpr member's body the program has not asked for yet`, **75** `a range-based 'for' needs an array or a
+class with 'begin' and 'end'` (both class-members) and **25** under the local-class name (member-templates, the
+correction's, read as dependent). Each is one header read in each of the 25 units that include `OptCore.h`: the 25
+local-class reads are `build<EffectsFn>`'s `vector<Throw>`; the 75 and 50 are three and two member bodies of
+`FlowOf<Entry>` - range-fors over a made `vector<Block>`'s elements (`for (int e : blocks[b].succs)`) and two calls of a
+constexpr member. **Not landed**: the unread would rise (152 > 67), against the brief's first condition. What
+lane 3 still needs, measured: a read's constexpr member body made where the class is (or the fold left to the
+replay), and a range-for over a made class's element read as the replay reads it - then 152 is 25 + 2, under 67.
+
+**The singles, by reason** (9 in the cases, 2 in the self-host before). Read now - five, each a read checking a rule
+its parameters decide:
+- `template-angle-split` (`the class: an array length must be positive, not 0`): `U m[sizeof(U) - 5]` - a class
+  read's bound over its parameters is laid out as nothing, as `int v[N];` is (`Parser::arraySuffix`).
+- `template-template-parameter` (`the class: '' is not defined yet - a base class has to be complete`): `struct
+  Derived : C<int>` over a template template parameter - `$TT0<int>` left out as a dependent base is.
+- `inheriting-constructors` (`the class: a using-declaration inside a class is not supported yet here`): `using
+  Holder<T>::Holder;` over a left-out base waits for the arguments, as the base does.
+- `nontype-pack-types` (`'' is '' and this is '' - C++ converts an integer to an enumeration only with a cast`):
+  a read's non-type parameter had no type (an int); it has its declared type now, as a value's has
+  (`Templates::bindTemplateParameters`, [temp.param]/5) - `template <Colour C>`'s `{ C, Red }`.
+- `ssa-parameter-pack` (`expected ''`): `add3(twice(xs)...)` - a read's pattern over its function parameter pack is
+  one argument as dependent as its pattern (`Parser::parseArguments`).
+Left, with the reason each waits: `block-scope-typedef` (`a call with a dependent argument, which would instantiate
+its callee`: `f<U>()` - the dependent-name marking, item 3), `constructor-template-in-member-template` (`a cast from ''
+to '' - the two classes are unrelated`: `(Mx<K, K>)lhs` over a dependent `V<K>`) and `template-id-qualified-and-deduced`
+(`cannot be worked out from this call`: `dot(v)` deducing `N` from a dependent `Vec<N>`) - both deduction against a
+dependent argument, item 3's too; `function-try-block` (`a throw of a value whose type waits for the arguments`, m8z2's
+one name, kept: a dependent throw read as nothing would add an `Ast.h` statement, which `tools/ast-residue` lets only
+fall); `template-local-class-held` (the local-class name, dependent by design). The self-host's two, `'' was not
+declared` (`OptJumps.cpp`) and `'' needs a pointer to a struct or union` (`OptPipeline.cpp`), not met this hour.
+
+**Not read, by reason**: before (`e11346bf`) the cases 15 in 12 reasons and the self-host 67 in 5; after (`6404350b`,
+recorded on Linux `~/m8z3f` with `SUBST_RECORD=1`, and on Windows the same bytes) **the cases 10 in 7** - the held
+class's 5, the three member-template reads above, m8z2's dependent throw and the local-class one - and **the
+self-host 67 in 5**, unchanged (the held class's 65, `OptJumps` and `OptPipeline`). With lane 3 (not landed) the
+cases would be 5 and the self-host 152.
+
+**Gates** (REF `e11346bf` built fresh from `git archive` on both boxes, Linux `~/m8z3r` and Windows `work\m8z3r`; NEW
+`a5006585`'s sources - the ceiling commit after them changes no source - built fresh in `~/m8z3f` (g++ `-Werror`
+clean) and `work\m8z3f` (cl /W4 /WX clean); both trees' paths of one length). **Linux**: `tools/identical.sh` REF
+against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2 **8,860 compared, 0 differ**;
+the self-host's 103 sources' `-S` REF against NEW **102 the same and `Driver`**, its `__TIME__` bytes (`14:22:40`
+against `14:22:48`), so 0 of 103; `run.sh` **1235 passed, 0 failed**; `typed.sh` **878 passed, 0 failed** (untyped
+other=38 name=8, as REF); self-compile stage 0 **103 of 103** (77 s); `syntax.sh` **4 passed, 0 failed**; `subst.sh
+bodies self` **0 failed** (5,126 replayed over 878 units; the cases 10 under 10 in 7, the self-host 103 of 103 and 67
+under 67 in 5); the `.templates` records re-made, none changed; the cases' `-S` with `-check=templates` against
+without **0 differ**; `open.sh` 1 still differs; exclusions (31 citations re-pointed, 0 uncited, 0 stale), comment
+cap (0 over), memory gate, ast-residue (ExprPtr 2016, StmtPtr 639, +0) and `ide/generate.py` rc 0 each by its own
+status. **Windows**: the five spellings at -O0 and -O2 against REF, text and diagnostics, **12,410 the same, 0 differ** (equal paths: m8z2's 12 caret columns gone); `names.sh` **886
+passed, 0 failed**; `overload.sh` **46 agreed, 0 differed**; the flag against no flag **1,241 the same, 0 differ**;
+`typed.sh` **859 passed, 0 failed** (20 not for this host); static rc 0 each; `subst.sh bodies self` with
+`SUBST_RECORD=1` writes both ceilings byte for byte as committed; its four `.templates` records and `syntax.sh`'s four
+fail there as m8z2 measured them at REF and NEW alike (a host difference of those records, owed; REF not re-run).
+
+src/ lines: 95,690 before, 95,704 after.
+
+**What M8.1 still owes.** (1) Lane 3 (`boxkit/m8z3-lane3.patch`, correction in): the five `FlowOf<Entry>` bodies it
+uncovers - a constexpr member's body made where the class is, or its fold left to the replay; a range-for over a
+made class's element read as the replay reads it - before the cases' 5 and the self-host's 65 go to 0 and 152 to 27;
+(2) the singles left: three deductions and calls over a dependent argument (with item 3), the dependent throw, and
+the self-host's two; (3) Fable's reading of the dependent-name marking; (4) `template` as payload and the member
+name's mark; (5) `tests/open/template-dependent-static-call`, M3's file.
+
+## M8.1: FlowOf<Entry>'s five bodies read, and lane 3 set aside a third time - the self-host's code changed (lane m8z4, 2026-11-18)
+
+Branch `m8-e` from `52e04f1e`: this entry alone. Lane 3 with the three reads below, its 19 EXCLUSIONS citations
+re-pointed and both ceilings re-recorded, was committed as `6e5ee35c`, `10b069e8`, `f0d21552`, gated, and taken off the
+branch again when the last gate failed; it is kept whole as `boxkit/m8z4-lane3.patch` (against `52e04f1e`).
+
+**Why not landed: the self-host's `-S`, REF against NEW, 89 the same and 14 differ** (Driver's `__TIME__` and 13
+backend and optimizer units - SsaSelect, X86_64Windows, X86_64Linux, MirAlloc, MirWebs, the Opt* - 98 or 346 lines each: NEW emits `std::pair<const std::string, int>::~pair()`
+(`_ZNSt4pairIKSbIcEiED1Ev`) and what follows it, which REF does not - a class made at the read owes a member the
+program never asked for). Every other gate held (below). What lane 3 still needs: a class made below a read owes no
+member body until the program asks (the `seat_` log seats specializations, not the bodies they owe).
+
+**Lane 3, measured** (`boxkit/m8z3-lane3.patch`, m8z2's correction in): a class a read holds and then needs the members
+of is made where the read's declaration stands and the read made again; a class over the read's own local class
+stays dependent. **The five `FlowOf<Entry>` bodies** (`src/optimizer/OptCore.h`, read, not edited) it uncovered:
+- the 75, `a range-based 'for' needs an array or a class ...` (`succBlocks`, `predBlocks`, `joinPads`): the range
+  was `decltype(a dependent expression)`, not an element of a made class - `blocks[b]` is a subscript, and
+  `Parser::memberCallWith` asked `argsDependent_`, the arguments of whichever call was read last (a dependent
+  call in the read before), not its own. The subscript now asks of its own index (`ParserExpr.cpp`), and the range is the
+  made `vector<Block>`'s element, `const vector<int>`, read as the replay reads it.
+- the 50, `a constexpr member's body the program has not asked for yet` (`connect`'s and `dominators`' `const int
+  ... = static_cast<int>(v.size())`): no constexpr member at all - `Constexpr::instantiateForConstant` is asked of
+  every call a constant fold meets, and `size()` was a body still waiting. **Folded only in the replay**: a read's
+  tree is dead to every reader and the body cannot be replayed into the unit from inside the read's layer, so in a
+  read the fold answers "not a constant" and the replay, which asks again, folds it (`Constexpr.cpp`).
+- behind them `dominators`' `std::vector<bool> seen(n, false)`: `vector<bool>` held, met by `ParserStmt`'s `X q(a,
+  b)` path for a class with no constructor; that path now wants the held class (`refuseHeldClass`), as the
+  declaration's own check below it does.
+
+**Not read, by door and reason** (with lane 3; not landed, so the committed ceilings are `52e04f1e`'s). Before (`52e04f1e`): the cases 10 in 7 reasons, the self-host 67 in 5 (25 + 16
+class-members and 24 functions under the held class, OptJumps' and OptPipeline's one each). After (lane 3's tree,
+recorded on Linux `~/m8z4f` with `SUBST_RECORD=1`): **the cases 5 in 5** (the three member-template reads, the
+dependent throw, the local-class one) and **the self-host 52 in 4** - 25 member-templates (`build<EffectsFn>`'s
+`vector<Throw>`, dependent by design), OptJumps' `'' was not declared` (`include/memory:98`, `make_shared`'s read),
+OptPipeline's `'' needs a pointer to a struct or union` (`rounds<G>`'s `g->add`), and **25 class-members `'' was not
+declared - a prototype must come first` at `OptCore.h:301` (`dominators`) on Linux only**: Windows `work\m8z4b` reads
+the same sources at 27 in 3 and `OptCore.h` alone reads `dominators` on both hosts - a host difference owed (the
+ceiling holds Linux's, the higher). 103 of 103 sources compile on both boxes.
+
+**The singles, set aside** (`boxkit/m8z4-singles.patch`): `memberCallWith` asking of its own arguments everywhere,
+not only for a subscript - `rounds<G>`'s `g->add` is `operator->` after `g(new G())` set the flag. Its Windows build
+was capped at 9 minutes under the gates' load (a defect of the box's load, not retried), so it is not measured.
+
+**Gates of lane 3's tree** (REF `52e04f1e` built fresh from `git archive`, Linux `~/m8z4r`, Windows `work\m8z4r`; NEW `6e5ee35c`'s
+sources built fresh, Linux `~/m8z4f` g++ `-Werror` clean, Windows `work\m8z4b` cl /W4 /WX clean; paths of one
+length). **Linux**: run.sh **1235 passed, 0 failed**; typed.sh **878 passed, 0 failed**; syntax.sh **4 passed, 0
+failed**; subst.sh bodies self **0 failed** (cases 5 under 5, self-host 103 of 103 and 52 under 52); the `.templates`
+records re-made, none changed; open.sh 1 still differs; exclusions (19 re-pointed, 0 uncited, 0 stale), comment cap
+(0 over), memory gate, ast-residue (+0 each) and ide/generate.py rc 0 each. **Windows**: names.sh **886 passed, 0
+failed**; overload.sh **46 agreed, 0 differed**; typed.sh **859 passed, 0 failed** (20 not this host); the
+five spellings at -O0 and -O2 against REF, text and diagnostics, **12,410 the same, 0 differ**; the flag against
+no flag **1,241 the same, 0 differ**; static rc 0 each; `subst.sh bodies self` with `SUBST_RECORD=1` writes the
+cases' ceiling byte for byte as committed and the self-host's as 27 in 3 (the Linux-only 25 above); its four
+`.templates` records fail there as m8z2 and m8z3 measured them (the host difference already owed).
+**Linux, the rest**: `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows
+at -O0 and -O2 **8,860 compared, 0 differ**; the cases' `-S` with `-check=templates` against without **0 differ**
+(902 of 1241 reached the count); self-compile stage 0 **103 of 103** (137 s); **the self-host's `-S` REF against NEW
+14 of 103 differ** (above) - the one gate failed.
+
+src/ lines: 95,704 before and after (lane 3's tree 95,827).
+
+**What M8.1 still owes.** (0) Lane 3 (`boxkit/m8z4-lane3.patch`): no member body owed for a class made below a
+read until the program asks, then the self-host's `-S` 0 of 103; (1) the Linux-only 25 at `OptCore.h:301`; (2) `boxkit/m8z4-singles.patch` measured and
+landed (OptPipeline's), and OptJumps' `make_shared` read; (3) the cases' five: three deductions and calls over a
+dependent argument (with item 3), the dependent throw, the local class (dependent by design); (4) Fable's reading of
+the dependent-name marking; (5) `template` as payload and the member name's mark; (6)
+`tests/open/template-dependent-static-call`, M3's file.
+
+## M8.1: lane 3 landed - a class made below a read seats its implicit members where the program asks (lane m8z5, 2026-11-18)
+
+Branch `m8-e` from `4263ed20`: `81ea4832` (lane 3, m8z4's `boxkit/m8z4-lane3.patch` with the fault mended) and this
+entry. src/ 95,704 -> 95,849 lines (+156 -11 over nine files; the mend itself 25 lines in `Templates.h`,
+`Templates.cpp`, `Classes.cpp`).
+
+**What m8z4's 14 were: order, not bodies.** Measured on Linux (`~/m8z5a`, the patch as m8z4 left it, against REF
+`~/m8z5r` = `4263ed20`): Optimizer, OptJumps and OptValues emit the same symbol set as REF (566, 374, 455 symbols, the
+sorted lists identical); each diff is one block moved - `pair<const string,int>`'s `D1 D2 C1(&&) C2(&&)` and
+`map<string,int>`'s with it (173 or 224 lines, so 346 or 448 changed), or `opt::MOperand::MOperand()` (132), or
+`Str::Str()` (49). `Classes::defineImplicitFunctions` defines the used implicit members in the order of
+`lookup_.functions_`, and a class `makeWanted` makes at the read declares its specials there, ahead of everything the
+program declares between the read and its own first ask; the seat log moved the specialization, never the functions.
+**The mend**: `makeClass` notes the range of functions its making declared beside its seat; `asked` gives each of
+them the seat `functions_.size()` at the program's ask; `Templates::seatedOrder` puts a seated function just ahead of
+the first function declared after its ask, and `defineImplicitFunctions` walks that order (then what the pass itself
+declares, in index order, as before). Nothing is owed that REF did not owe: the four units read 0 lines against REF.
+
+**The Linux-only 25** (`'' was not declared - a prototype must come first`, `OptCore.h:301`, `FlowOf<Entry>::
+dominators`): a `[&]` closure called inside a class template's member whose nested class holds the parameter. A probe
+(`boxkit/m8z5-p1.cpp`, variants p2-p4) is unread on Linux with the call and with `Block` holding `E`; read with either
+taken away (`return 0;` for the call, `struct B { int idom; };`). Not mended this lane, nor why Windows reads it.
+
+**H2, set aside** as `boxkit/m8z5-h2.patch`: `dependentType` takes a struct or enumeration under a read's tag
+(`$read$f::L`, `C<$T0>$read3::D`) as dependent, a read function's own enumeration gets a tag of the read's
+(`$read$f::E`: REF refuses `read-dependent-local` with "'E' is defined twice" - the read and the replay shared one
+interned type), and a function read's array bound over a parameter is refused by name ("an array whose bound depends
+on a template parameter"), never folded with 0. Three cases with clang's answer (`read-dependent-member` 223,
+`-local` 222, `-bound` "307 507"). Its Windows build passed 9 minutes under the gate's load and was not retried: no
+gate has seen it.
+
+**Unread by door and reason** (the ceilings, re-recorded on Linux `~/m8z5f` with `SUBST_RECORD=1`, the same as
+m8z4's measure of the patch): before (`4263ed20`) cases 10 in 7, self 67 in 5; after cases 5 in 5, self 52 in 4 -
+class-members 25 "'' was not declared - a prototype must come first" (the 25 above), member-templates 25 "over the
+template's own local class", 1 "'' needs a pointer to a struct or union", 1 "'' was not declared".
+
+**Gates** (REF `4263ed20` built fresh and alone on each box, `~/m8z5r` / `work\m8z5r`, NEW `~/m8z5f` / `work\m8z5f`):
+**the self-host's `-S`, REF against NEW, 102 of 103 the same on Linux and on Windows, the one Driver's `__TIME__`**;
+Linux - `identical.sh` 8,860 compared / 0 differ (four targets, -O0 and -O2), run 1235/0, typed 878/0, selfc
+103/103, syntax 4/0, subst 0 failed (bodies: 5126 replayed over 878 units, 52 differ in shape), the flag 0 differ,
+open 1 (as before), static gates rc 0 each (exclusions 0 uncited 0 stale and 0 re-pointed, comments, memory,
+ast-residue, ide); Windows - five spellings 12,410 / 0 differ (6,200 + 6,210), the flag 1241/0, names 886/0, overload 46/0,
+typed 859/0, cl /W4 /WX clean, static rc 0 each, subst: ceilings cases 5 in 5, self 27 in 3 (Linux 52 in 4: the 25,
+a host difference), 4 `.templates` records failing as at m8z4, m8z3 and m8z2 (host).
+
+**Next**: (1) the 25 (the probe above); (2) H2 from `boxkit/m8z5-h2.patch`, built and gated; (3) the review's H1 and M3
+(a floor on `read`, every case unit counted); (4) `boxkit/m8z4-singles.patch`; (5) the cases' five and the review's M1-M7.
+
+## M8.1: H2 landed, the ceiling made sound, and the Linux-only 25 read (lane m8z6, 2026-11-18)
+
+Branch `m8-e` from `d6f4b538`: `24799adb` (H2 from `boxkit/m8z5-h2.patch` unchanged, an Itanium name mended, `tests/subst.sh`),
+`e2c89714` (the ceilings re-recorded, EXCLUSIONS re-pointed: 14) and this entry. src/ 95,849 -> 95,873 lines (+25 -1 in
+`ParserTemplate.cpp`, `ParserType.cpp`, `Mangle.cpp`).
+
+**H2.** `dependentType` takes a class or enumeration under a read's tag (`$read$f::L`, `C<$T0>$read3::D`) as dependent, a
+read function's enumeration is tagged `$read$f::E`, and a function read's array bound over a parameter is refused by name
+("an array whose bound depends on a template parameter"), never folded with 0. Its three cases, clang's answers:
+`read-dependent-member` 223, `read-dependent-local` 222, `read-dependent-bound` "307 507" - right on both boxes. The
+Windows build, alone, took about 2 minutes (m8z5's capped one ran under the gate's load). **What the Itanium targets
+found**: `read-dependent-member` wrote `g(C<int,1>::E)` as `_Z1gN8C<int,1>1EE` on x86_64-linux, arm64-darwin and the
+C6000 (REF too: no case had an enumeration of a class specialization in a signature), and the assembler refused it.
+`Mangle.cpp`'s `enumeration` now writes a specialization scope through `prefix`, `_Z1gN1CIiLi1EE1EE` (c++filt:
+`g(C<int, 1>::E)`, beside its sibling `_Z1gN1CIiLi1EE1DE`); an enumeration in a plain class or a namespace is spelled
+as before.
+
+**M3: what `tests/subst.sh` enforces now.** The ceiling files hold, beside each reason's count, each door's sums
+(`door <name> bodies= read= unread= shape=`) and each body whose read differs in shape from its replay, by place
+(`shape <file:line:col>`, every unit, not only the four with a `.templates` record). It fails on: a reason not
+recorded or above its count (as before); **a door's `read` below its record** (a body moving from read to unread, or a
+door that stops reading); a door's `shape` above its record; **a shape at a place not recorded**; and, for the cases as
+for the self-host, **a unit that reaches no count** (one whose `.notarget` names this host's target is excused:
+`windows-h-layout` on Linux). Crossed on purpose on Linux (a door's read one above what it reads, one recorded shape
+taken away): both fail by name, rc 1. And a run whose self step lost its units to a second run sharing `$OUT` failed
+four floors ("read 1949, below the floor of 35148") where the old ceiling would have passed it as "below the record".
+Not done: (c), a reason being one message with its names taken out, so a body can still trade places with another
+under one reason at one count - the door's read floor bounds it, the reason does not. **`make test`**: not added. The
+wave gate runs it whole (`tools/wave-gate`, leg `subst`); its run and typed steps would repeat make test's run.sh and
+typed.sh four more times; and its four `.templates` records fail on Windows (the host difference owed since m8z2).
+When that is mended, `tests/subst.sh bodies self` belongs in make test, and the rest stays in the wave gate.
+
+**The Linux-only 25** (`'' was not declared - a prototype must come first`, class-members, `OptCore.h:301`): not the
+host but the ABI. One Linux build reads the probe at `-arch x86_64-windows` and refuses it at x86_64-linux,
+arm64-darwin and tms6747. The shape is smaller than m8z5 had it: a `[&]` or `[=]` closure calling any member of a
+captured `std::vector<int>` (`post[x]`, `post.size()`, `post.at(x)`), called, in a member of a class template - no
+nested class needed; a closure over an `int[3]`, or over a class template of the file's own, is read. Not rooted
+further. **H2 reads it**: the closure is the read's own class now, dependent, so `in(0, 1)` is left to the
+instantiation and nothing is resolved over it at the read - every probe read on every target, and the self-host's 25 with them.
+
+**Unread by door and reason** (Linux, the ceilings): before (`d6f4b538`) cases 5 in 5 - member-templates 3 (a member
+function template not worked out from the call; a call with a dependent argument; a cast between unrelated classes),
+functions 1 (a throw of a dependent value), 1 (a class specialization over the template's own local class); self 52
+in 4 - class-members 25 (the 25), member-templates 25 (the local class), functions 1 ("needs a pointer to a struct or
+union"), 1 ("was not declared"). After: cases 6 in 5 - member-templates the same 3, functions 1 (the throw), **2 "an
+array whose bound depends on a template parameter"** (`read-dependent-bound`, and `nontype-pack-expansion`, which the
+read had folded with 0); the local class's 1 is read. Self 27 in 3 - **member-templates 25 "has no begin and end ...
+so a range-based for"** (the 25 the local class held: a range-based `for` over the now dependent local class, the
+review's M4 refusal), functions 1 and 1 as before; the class-members 25 are read. Windows, the same ceilings measured there: cases 6 in 5, self 27 in 3, every door's sums and the 51 and 3 shapes as on Linux - **the host difference of the self-host is gone**.
+
+**Gates** (REF `d6f4b538` from `git archive`, Linux `~/m8z6r`, Windows `work\m8z6r`; NEW `~/m8z6n`, `work\m8z6n`; each
+built alone, paths of one length; g++ `-Werror` and cl /W4 /WX clean): **Linux** - run 1238/0, typed 881/0, syntax
+4/0, subst bodies self 0 failed (879 of 879 case units counted, 5136 replayed over 881 units, 54 differ in shape; self
+103 of 103), the four `.templates` records re-made the same, open 1 (as before), static rc 0 each (exclusions 0
+uncited 0 stale after 14 re-pointed, comments 0 over, memory, ast-residue +0, ide); `identical.sh` REF against NEW on tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2 8,890 compared, **16 differ, all the two new cases** (`read-dependent-local` 10, REF refusing it with "'E' is defined twice"; `read-dependent-member` 6, the Itanium name on three targets) and 0 among the rest; the cases' `-S` with `-check=templates` against without 0 differ (905 of 1244 reached the count); **the self-host's `-S` REF against NEW 102 of 103 the same, Driver's `__TIME__` the one**; self-compile stage 0 103 of 103 (127 s). **Windows** - the five spellings at -O0 and -O2 against REF, text and diagnostics, 12,424 the same, **16 differ, the same 16**; **the self-host's `-S` REF against NEW 102 of 103, Driver's `__TIME__` the one**; names 888 passed, 1 failed - `read-dependent-local`, three name families none of them H2's (a local enumeration written as at namespace scope, the closure's `$_0`, `T_` where clang substitutes `S1_`), recorded in its `.nonames`, after which the three cases pass; overload 46/0; typed 862/0 (20 not this host); static rc 0 each; subst bodies self: 850 of 850 case units counted, the ceilings held, the four `.templates` records failing as at m8z2-m8z5 (host).
+
+**What M8.1 still owes**: the review's H1 (`staticMemberRef`'s `usedStaticMembers_` without `!patternUses_`, a
+case printing `main`); M3 (c); M1, M2, M4-M7 (M4's range-based `for` over a dependent range now holds 25 of the 27);
+`boxkit/m8z4-singles.patch`; the four `.templates` records on Windows; why the Itanium targets refused the 25 and the
+Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-call`.
+
 ### M8.1 commits 1-3 landed, 2026-11-18 (the coordinator)
 
 - Commits 1-3 (lanes m8b-m8j): the count (`-check=templates`), the signature kept at the declaration, and a function
@@ -830,3 +2241,194 @@ src/ lines: 94,877 before, 94,886 after.
   The first gate of this tree (m81i) failed only on the unwind mend's 31 unnamed x86_64-windows differences (the frame 8
   bytes larger, its unwind bytes and frame offsets moved); m81g and m81h were void (a Linux build stopped under load).
 - tests/wave-expected.txt emptied (31 rows were this wave's). Commit 4 (the class doors) continues on m8-e.
+
+### The Fable review's H1 landed: a read marks nothing used, 2026-11-18 (the coordinator)
+
+- The one Fable run the user allowed (review m8rev, boxkit/m8rev-review.md: 2 high, 7 medium, 3 low) found H1: a pattern's
+  read marked a static data member used, so a template never instantiated that names `Box<int>::s` emitted its dynamic
+  initialiser - on main 95e06424 the case printed `init ran` twice (clang: once). Lane h1 (63ed234d) marks only outside a
+  read at four sites: staticMemberRef, an external thread_local's wrapper, a copied string's label, a mem-initialiser's
+  constructor; case tests/cases/template-unused-static-init (clang's .expected; its class half is read once m8-e lands).
+- **Gate: tools/wave-gate h1g -w 95e06424 at 099f3fb0: 40 passed, 0 failed, 4 not run** (the fixed points, not owed); the
+  only output difference is the new case (the base build emits the initialiser). tests/wave-expected.txt emptied.
+- H2, M1-M7 and L1-L3 are M8's lanes' (m8z6 on m8-e: H2 and M3 first).
+
+### m8-e merged with main 15254936, checked before its gate, 2026-11-18 (lane mw11)
+
+- **The merge** (887ec84a on `m8-f`, from c7208333 and main's 116 commits since 3a922049): two conflicts, both in documents -
+  this file took both sides (m8-e's commit 4 and H2 entries, then main's commits 1-3 and H1); docs/EXCLUSIONS.md's 18
+  hunks differed only in line numbers, m8-e's side taken and 13 citations re-pointed by tools/exclusions on Linux
+  (b4b2c60e, 0 uncited, 0 stale). The eleven source files both sides changed merged without a conflict; H1's four
+  `!patternUses_` guards and M8's read doors stand side by side. src/ lines: 95,873 (m8-e) and main's walker deletion -> 94,228.
+- **Built**: g++ -Werror (Linux) and cl /W4 /WX (Windows, first and alone) clean.
+- **identical.sh** against REF main 15254936, four targets at -O0 and -O2: 9,100 compared, 26 differ on Linux; Windows's five
+  spellings 12,520, 26 differ - on both all M8's own: read-dependent-local 10 (main refuses it), template-dependent-less 10
+  (main refuses `T::num < 3` in a signature), read-dependent-member 6 (the Itanium name of a class specialization's
+  enumeration; Itanium targets only). The self-host's -S against REF: 101 of 102 the same on each box, Driver by its
+  `__TIME__` (102 sources: main deleted Walker.cpp).
+- **Suites**: Linux run 1246/0 (template-unused-static-init passes, its class half read), typed 902/0, syntax 4/0, open 1
+  (as before), the four `.templates` records the same; Windows names 910/0, overload 46/0, typed 883/0. Static gates rc 0
+  each: exclusions 0/0, comments 0 over, memory, ide, ast-residue 2012/635/158/357/0/9/717 on both REF and NEW (+0 from
+  M8; main's baseline says ast-lines 722, main measures 717).
+- **Not held: tests/subst.sh self** (cases hold: 6 unread under 6, 51 shapes of 51). Every self door's bodies fell with main's
+  sources (functions 7512 -> 7404, class-members 35148 -> 34628, member-templates 1535 -> 1515, partial-members 1796 ->
+  1766), and so its reads under their floors; two counts rose, so the ceilings were not re-recorded: unread 27 -> 28
+  (`make_owned`, moved by main from Ast.h to Owned.h, is unread "'' was not declared" in X86_64Linux.cpp, which includes
+  Owned.h after optimizer/Optimizer.h - a pack parameter named `args` is unread there, one named `a` is read) and
+  class-members shape 57 -> 58 (not yet placed); the function door's shape place moved Ast.h:131:20 -> Owned.h:8:20.
+  Owed by M8's next lane before the gate.
+
+### subst.sh self made to hold after the merge with main, 2026-11-18 (lane m8g1)
+
+- **The unread that rose, 27 -> 28, and the one before it** (7b84327e): `packParameter` (ParserClass.cpp) records an
+  instantiation's function parameter pack under its written name in `packs_`, and nothing undoes it. A later read of a
+  template whose own pack has that name found the stale binding in `packPatternEnd`/`bindPatternMember`, renamed it
+  `args$0` and refused "'args$0' was not declared" - Owned.h's `make_owned` after `std::function`'s `operator()(Args...
+  args)` in X86_64Linux.cpp, and (m8-e's one) `<memory>`'s `make_shared` in OptJumps.cpp. A parameter named `a` met no
+  stale name. Mend in the read: `Templates::readDeclaration` saves `packs_`, clears it for the read and restores it, so
+  nothing outside a read changes. Case template-read-pack-name (clang -std=c++11 on Windows: `3 2`; cxx3 the same on both
+  boxes) with its `.templates` record: 3 functions read of 3, where the unmended tree read 2.
+- **The class-members shape 57 -> 58, named**: the body is `include/map:92:8`, `map::operator[]` - its read holds `V()`
+  as a cast over a dependent V, its replay for a class V as a class temporary (`(call (name "V"))`). It is the same body
+  that differs in 22 other units; the 58th unit is Tms6747.cpp, which main's sources (Tms6747.h without Walker.h, with
+  Regions.h) now make replay `map<..., class>::operator[]`. A read cannot know V's kind, so it is not mended here; the
+  record stays at m8-e's 57 and subst.sh self fails by that line alone, owed to the coordinator's ruling.
+- **Re-recorded** (0b995713, then 31a53fc2 re-pointing 3 Templates.cpp citations): self floors fell door by door by the
+  bodies main's sources removed - functions 108 removed, floor 7510 -> 7403 (107: the mend reads one more), class-members
+  520 and 520, member-templates 20 and 20, partial-members 30 and 30; unread 27 -> 26; function-door shape place
+  Ast.h:131:20 -> Owned.h:8:20; class-members shape kept at 57. Cases floors up, the new case's two shape places added.
+- **Gates at 31a53fc2**: identical.sh against REF 66f06d01 - Linux four targets 9,110 compared, 0 differ; Windows five
+  spellings 12,530, 0 differ (the new case the same on both). Linux run 1247/0, typed 903/0; Windows names 911/0, overload
+  46/0. subst.sh bodies self: Linux 1 failed, the class-members shape 58 alone; Windows 6 failed - that line and the five
+  `.templates` records, which differ from cxx3-msvc's output by CR alone (as at m8z5). Static gates rc 0 on both boxes.
+- **The class-members shape recorded at 58** (coordinator's ruling, 2026-11-18): no new shape - the same known body,
+  `include/map:92:8` (`map::operator[]`, `V()` read as a cast where the replay makes a temporary), counted in one more
+  unit, Tms6747.cpp, which main's changes made include it. The read cannot know V's kind (owed to M8.2's binding). The
+  record lists no class-door places, so the count alone moves. The coordinator judges this rule; it is not a user's
+  ratchet. Windows' five `.templates` records that differ by CR alone stay as they are, owed.
+
+### M8.1 commits 4 and 5 landed, with H2 and the merge with main, 2026-11-19 (the coordinator)
+
+- Commit 4 (the class doors read: class members, out-of-line members, partials, member templates, aliases) and commit 5
+  (the doors read with no flag, under recorded ceilings tests/subst.sh enforces), lanes m8k-m8z6 and m8g1; the Fable
+  review's H2 (dependent nested/local classes, closures, enums; a value-dependent bound) and its M3 (the ceiling a sound
+  gate: floors on read, shape compared over every unit, every case unit counted); an Itanium name for a class
+  specialization's enumeration; a stale pack name across reads mended. Unread: cases 6, self-host 26 (Linux = Windows).
+- Merged with main 15254936 by lane mw11 (two document conflicts; no merge fault); against main only M8's own cases differ.
+  The self ceilings' floors fell by exactly the bodies main's sources removed; class-members shape 57 -> 58 is the
+  coordinator's ruling (no new shape: map::operator[]'s known body in one more unit, Tms6747.cpp).
+- **Gate: tools/wave-gate m81k -w 15254936 at 776fc5c8: 39 passed, 1 failed, 4 not run** (the fixed points, not owed).
+  The one FAIL was identwin "named and the same": read-dependent-member's three x86_64-windows rows named a difference
+  that is not there (the Itanium fix does not touch a Microsoft name). Those rows taken out; the gate's own got list
+  against the rows left, checked by the coordinator: 6 and 6, the same. Landed on that.
+- Owed: the Windows CRLF compare (branch m8-crlf, the user's ask - lands with the next M8 wave); M1, M2, M4-M7, L1-L3 of
+  the review; M3 (c); boxkit/m8z4-singles.patch; tests/open/template-dependent-static-call.
+
+## M8.1: the review's M5, M6, M1, M2 and M4, and what the mark means (M7) (lane m8h1, 2026-11-19)
+
+Branch `m8-g` from `0177b5cc`: `6184e0a2` (M5), `1c721fd0` (M6), `91ede77c` (M1), `139213de` (M2), `7700d6b4` and `01dd0dc7` (M4's
+case), `fbe8007b` (the cases ceiling, the syntax record), `9c769fc3` (EXCLUSIONS: 11 re-pointed) and this entry. src/ 94,232 -> 94,287 lines (+63 -8 in `ParserDependent.cpp`, `ParserExpr.cpp`,
+`ParserOperator.cpp`, `ParserType.cpp`, `Parser.h`, `syntax/Syntax.h`, `syntax/Syntax.cpp`). Every clang answer below is
+clang 19.1.5 `-x c++ -std=c++11 -pedantic-errors -nostdinc++ -isystem include` on the Windows box.
+
+- **M5** (`Parser::expr`): a comma whose left operand has a dependent type has a dependent type ([temp.dep.expr]/1), so
+  `g((x += 1, k))` reads `(call (name "g" dependent) (comma "," ...))` where `g` was unmarked and resolved to `g(int)`.
+  Case `template-read-comma`, clang `3 5`. (An overloaded `operator,` is refused at its declaration, so no case can show
+  the type it would give.)
+- **M6** (`Parser::refuseUntypedMember`, from `unqualifiedSpecifiers`' two template-id paths): a class template-id whose
+  argument tokens name a bound type or non-type parameter, followed by `::name` where a type is read and no `typename`
+  was written, is refused by name, as `T::type` is: "'Sel<(N>3)>::type' names a member of a class whose arguments depend
+  on 'N', and whether that is a type depends on them - write 'typename ...'" - at the read and at the replay alike, so the
+  program is refused as clang refuses it ("missing 'typename' prior to dependent type name"). A template-id naming a
+  class being defined (the current instantiation, `Own<N>::type` inside `Own`) is exempt. Cases
+  `template-typename-dependent-id` (`.error`) and `template-typename-not-needed` - what clang takes with no `typename`:
+  the current instantiation's member, `k = Sel<(N > 3)>::s(k)`, `Sel<sizeof(T) == 4>::c`, `Sel<true>::type`,
+  `sizeof(Sel<(N > 1)>::c)` - clang `8 3`. **Found**: `Sel<(N > 3)>::s(k);` as a statement is refused, by REF too
+  ("'Sel<1>' has no member type called 's'": `atTypeName` says a class template-id starts a declaration) - a refusal
+  stricter than the standard, now `tests/open/template-static-call-statement` (clang `s 7`, `7`); its mend is in the
+  statement builder's question, lane m6d-s4h's file, not touched.
+- **M1** (`Parser::unfoundResult`, `markReadName`, `syntax::Unfound`): which names change - exactly an *unqualified* name
+  that no scope declares, read in a class whose base was left out (`primaryNode`'s last `leftOutBase(nullptr)`): it
+  stays read (no body moves to unread) but its node is marked `unfound`, never `dependent`; clang refuses it
+  ([temp.dep]/3: unqualified lookup looks in no dependent base), `tests/open/template-left-out-base-unqualified`
+  (REFUSE; cxx1's replay finds `nb` and prints 1, as before - the over-acceptance M8.5 is to refuse, now visible in the
+  tree). Unchanged, and right to be: `this->nb`, `C::nb` and a mem-initialiser naming the base - members of an unknown
+  specialization ([temp.dep.expr]/5), still `dependent` (case `template-left-out-base-qualified`, clang `4`); a call
+  `g(nb)` over the unfound name still waits (`g` dependent), since nothing in it may be bound at the definition.
+  Not made a hard refusal: a read declines by name and the replay decides, so a refusal from a read would be an
+  unread body, not a refused program; and the self-host and `include/` are not measured against it yet.
+- **M2** (`Parser::dependentPostfix`): after `.template` / `->template` over a dependent object, the member node keeps
+  `template` and the written arguments: `(member ".template cv<int>" (name "b" dependent))` against `(member ".cv" ...)`
+  for `b.cv(k)` - the two are two trees now. Case `template-read-member-template`, clang `4.5`. Not done: the review's
+  second half, `conv<int>(k)` (a function template-id with non-dependent arguments) reading `(name "conv")` - the
+  primary's name builder, owed.
+- **M4**: `tests/cases/template-read-shapes.cpp`, ten valid shapes, each in a template of its own, instantiated
+  (clang `3 3 3 4` / `1 8 4 1 11 1`), each unread by its reason: range-for over `T` and over `const T &` (2, "a
+  range-based 'for' needs an array or a class with 'begin' and 'end'"), `T::s;` and `T::f(k);` (2, "names a member of
+  the template parameter ... depends on the argument"), `int (T::*pm) = 0;` ("'T' is not a class"), a local class
+  holding a `T` and `alignof(T)` (2, "the size of a dependent type"), `dynamic_cast<T *>(&x)` ("casts to a pointer to a
+  class ... and 'T' is neither"), `int a[N];` ("has an incomplete type" - not H2's bound message) and `char
+  b[sizeof(T)];` ("an array whose bound depends on a template parameter"). Two are out: `T::template X<int>::s;` (a
+  member class template is refused whole, "not supported yet") and **`T{};`, which under `-check=templates` refuses the
+  whole unit** ("expected a name", REF too; without the flag it compiles) - owed, as it would fail subst.sh's count.
+  None is mended: range-for and the expression statements are decided in the statement builders (lane m6d-s4h's).
+- **M7, what the mark means, and what M8.2 needs it to mean.** `dependent` on a name node is *the expression's type waits
+  for the arguments* (type-dependent, [temp.dep.expr]) - `markReadName` sets it on a name, and on a call's callee from
+  the call's type - and nothing more; it is not [temp.dep]'s *dependent name*. It is on every local and parameter of
+  dependent type, on members of the current instantiation, and it is absent where an argument is only value-dependent
+  (`g(N)`). `typename` records a written `typename`; `unfound` (M1) a name no scope has. **M8.2 reads `dependent` as
+  type-dependent only.** What M8.2 needs before it binds a call at the definition, and does not have: (1) a
+  `dependent-name` mark set only on an unqualified callee with a type-dependent argument ([temp.dep]/1) and on a name
+  qualified by a dependent scope; (2) on such a callee, the functions unqualified lookup found at the definition
+  ([temp.dep.candidate]: those, and ADL from both contexts); (3) the explicit arguments of a function template-id
+  (M2's second half). Until (1)-(3) land, M8.2 binds at the definition only a name with no mark, and replays every body
+  whose tree holds an `unfound` name, a `dependent` callee, or a member template-id.
+
+**Unread by door and reason** (Linux, `tests/subst.sh bodies self`). Before (`0177b5cc`): cases 6 in 5 - functions 3
+(a throw of a dependent value 1, an array bound 2), member-templates 3 (1 each: a member function template not worked
+out, a call with a dependent argument, a cast between unrelated classes); self 26 in 2 - member-templates 25 (range-based
+`for` over a dependent range), functions 1 ("needs a pointer to a struct or union"). After: **self 26 in 2, the same
+bodies, every door's read and shape as recorded** (M5, M6, M1 and M2 moved no body of the compiler's own); cases 17 in
+12 - the old 6 unchanged, and the new cases' 11: `template-read-shapes` 10 in 7 reasons (above; the bound reason 2 -> 3)
+and `template-typename-not-needed` 1 ("has no member type called", the same in REF). The cases ceiling was re-recorded
+for those alone: functions bodies 3490 -> 3503, read 3487 -> 3489, unread 3 -> 14; class-members 12570 -> 12575;
+member-templates 497 -> 498 and 494 -> 495; no shape, no old count up.
+
+**Gates** (REF `0177b5cc` from `git archive`, Linux `~/m8h1r`, Windows `work\m8h1r`; NEW `~/m8h1n`, `work\m8h1n` at
+`7700d6b4`'s source - the later commits change cases and records only; each built alone, paths of one length; g++ `-Werror`
+and cl /W4 /WX clean). **Linux**: `identical.sh` REF against NEW on tms6747, arm64-darwin, x86_64-linux and x86_64-windows
+at -O0 and -O2 **9,160 compared, 0 differ** (it leaves out a `.error` case; the new cases compile the same under both);
+**the self-host's `-S` REF against NEW 101 of 102 the same, Driver's `__TIME__` the one**; self-compile stage 0 102 of 102
+(159 s); run 1253/0; typed 908/0; syntax 5/0 (the new `template-read-marks` read by hand); subst bodies self 0 failed
+with the committed ceilings (906 of 906 case units counted, self 102 of 102); open 34 differ, 2 agree - the same two
+REF closes, and the two new entries OPEN as recorded; static gates rc 0 each (exclusions 0 uncited 0 stale after 11
+re-pointed, comments 0 over, memory, ast-residue, ide). **Windows**: the five spellings at -O0 and -O2 against REF, text and
+diagnostics, **12,580 the same, 10 differ - all `template-typename-dependent-id`**, which REF accepts and NEW refuses (M6,
+its `.error`); **the self-host's `-S` REF against NEW 101 of 102, Driver's `__TIME__` the one**; names 915 passed, 1
+failed - `template-left-out-base-qualified`'s inline constructor of `B` emitted (CLAUDE.md's rule; `1cf65309` takes the
+constructor out, and it passes; the cases ceiling's class-members 12575 -> 12574 with it, `6660c1ef`, and subst.sh holds
+on Linux again); overload 46/0; typed 889/0 (20 not this host); syntax 5/0 and **subst bodies self 0 failed** (874 of 874
+case units, 17 under 17, self 26 under 26, shapes 53 and 3) - the CRLF fix holds; static rc 0 each. **run.sh on Windows:
+906 of the printing cases "fail" by CR alone** - `tests/run.sh` diffs `.expected` against output a Windows build writes
+with CRLF (the m8-crlf fix covered subst.sh and syntax.sh); the 343 refusals pass; a host difference of the suite, owed
+(`tr -d '\r'` at its `diff`), not of this round. Self-compile (`tools/windows/self-host.cmd`, stage 0, after the chains: its stage 0 re-runs
+`msvc\build.cmd`, which cannot replace a `cxx3-msvc.exe` the chains hold open): 102 of 102 sources, stage 1 built.
+
+**Owed**: M2's `conv<int>(k)`; the statement builders' three refusals (`Sel<...>::s(k);`, `T::f(k);`/`T::s;`, range-for
+over a dependent range - 25 of the self-host's 26); M1's refusal (M8.5); M7's (1)-(3) (M8.2); the review's M3 (c), L1-L3;
+`boxkit/m8z4-singles.patch`; run.sh's CR compare on Windows; `T{};` under `-check=templates` (a unit refused).
+
+### The Fable review's M items and the Windows CRLF compare landed, 2026-11-19 (the coordinator)
+
+- Lane m8h1: the review's M5 (a comma over a dependent operand is dependent), M6 (`typename` required for
+  `X<dependent>::type`, refused as clang refuses it; not stricter than clang where none is needed), M1 (an unqualified name
+  not found under a left-out base marked `unfound`; `this->nb`, `C::nb` stay dependent; the unqualified case open), M2
+  (`.template cv<int>` kept in the tree), M4 (ten common shapes, each unread by its reason), M7 stated for M8.2 - each with
+  a case from clang 19.1.5. Unread: self-host 26 unchanged; cases 6 -> 17, all eleven new from the new cases.
+- The user's ask, branch m8-crlf: tests/subst.sh's .templates compare and tests/syntax.sh strip CR on both sides - on
+  Windows syntax.sh 4/0 and subst.sh bodies 0 failed (they failed there alone before).
+- **Gate: tools/wave-gate m8gg -w 487fd9cb at 839a1c5e: 40 passed, 0 failed, 4 not run** (the fixed points, not owed).
+- Owed: run.sh compares output without stripping CR on Windows (all printing cases fail there; the Windows legs of the
+  gate are winpass, not run.sh); `T{};` under -check=templates refuses the unit, a static call as a statement refused
+  (both in REF too); `T::f(k);` and range-for in the statement builders (M6d's); M2's `conv<int>(k)`; M1's name refused
+  outright (M8.5); M7's mark and the functions found at the definition (M8.2).

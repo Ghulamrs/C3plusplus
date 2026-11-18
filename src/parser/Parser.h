@@ -229,8 +229,12 @@ private:
     bool patternOnly_ = false;
     // M8.1: a function template's body is being read at its declaration - a dependent local takes no slot, a pattern no linker name.
     bool patternBody_ = false;
+    bool readLayout_ = false;       // a class door's read is laying its class out: Type::DependentLayout
     // M8.1: a use met in a pattern's own tokens marks nothing; a replay that read asks for marks as any replay does.
     bool patternUses_ = false;
+    // M8.1: the classes a read held incomplete under their tags; what needs one's members is refused by one name.
+    std::set<const Type *> readHeld_;
+    void refuseHeldClass(const Type *a, const Type *b = nullptr) const;
     // M8.1: a pattern is read into a program of its own (`unit_` is the unit's meanwhile), its labels off a count of its own.
     Program *unit_ = nullptr;
     int patternStrings_ = 0;
@@ -829,6 +833,7 @@ private:
     syntax::Kind statementKindAhead(std::string *text) const;
     bool definesType(std::size_t from) const;
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
+    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten);
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e && kind == syntax::Kind::Call && !defaultGroups_.empty()) {
@@ -1665,6 +1670,8 @@ private:
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;
+    // A read's local whose type is dependent or a pack's expansion (`Ts... rest`): no slot, no size, no alignment.
+    bool slotless(const Type *t) const { return patternBody_ && (dependentType(t) || t->kind() == Kind::PackExpansion); }
     bool dependentArgs(const std::vector<TemplateArg> &args) const;
     // **Expression SFINAE**: an expression over a pattern's parameters, read as a tree that types
     // nothing (ParserDependent.cpp). `angle` stops at an argument list's `>`; `comma` lets `,` in.
@@ -1679,10 +1686,14 @@ private:
     const DepExpr *depNode(DepExpr e);
     void depRefuse(std::size_t pos, const std::string &what);
     std::string depText(std::size_t from, std::size_t to) const;
+    std::string spelledTokens(std::size_t from, std::size_t to) const;
     // An expression of dependent type in a pattern's body: what an operand is, the type its result has, one postfix step.
     bool dependentOperand(const Type *t, bool pointers = true) const;
     const Type *dependentResult();
+    const Type *unfoundResult(const std::string &name);
     bool dependentPostfix(const Type *object, PostfixStep &step);
+    bool leftOutBase(const Type *cls) const;
+    void refuseUntypedMember(const std::string &name, std::size_t from);
     bool argsDependent_ = false;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;

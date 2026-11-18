@@ -21,7 +21,7 @@ const Type *Parser::ptrdiffType() {
 
 ExprPtr Parser::pointerAdd(ExprPtr p, ExprPtr n) {
     const Type *pt = p->type();
-    long long stride = pt->pointee()->size(target_);
+    long long stride = slotless(pt->pointee()) ? 1 : pt->pointee()->size(target_);   // a read's dependent stride is substitution's
     const Type *pd = ptrdiffType();
 
     ExprPtr size(new Num(stride));
@@ -684,6 +684,8 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         }
         ExprPtr v = decay(assign());
         operand = syn(v);
+        // A read's `T(a, b)` over its parameter is a constructor's call if `T` is a class: substitution's to say.
+        while (patternBody_ && dependentType(to) && consume(",")) decay(assign());
         if (peek().is(","))
             src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
                                   "constructor, and '" + to->describe() +
@@ -1131,6 +1133,7 @@ ExprPtr Parser::primary(Program *program) {
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
         noteCallee(call[0], r.get());
+        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"));
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -1151,7 +1154,22 @@ ExprPtr Parser::primary(Program *program) {
         call.insert(call.end(), values.begin(), values.end());
         return note(std::move(r), syntax::Kind::Call, "{}", tokens_[k + 1].pos, call);
     }
-    return note(std::move(r), syntax::Kind::Name, name, pos);
+    const bool written = tokens_[start].is("typename");
+    r = note(std::move(r), syntax::Kind::Name, name, pos);
+    markReadName(syn(r), r ? r->type() : nullptr, written);
+    return r;
+}
+
+// M8.1 row 5: a name in a template body read at its declaration whose meaning waits for the arguments is marked so.
+void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten) {
+    if (!patternBody_ || !id.valid()) return;
+    const DepExpr *e = t != nullptr ? t->dependentExpr() : nullptr;
+    if (e != nullptr && e->text == "a name not found, which a left-out base may not declare") {
+        syntaxTree_.mark(id, syntax::Unfound);
+        return;
+    }
+    syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::Dependent : 0) |
+                                                   (typenameWritten ? syntax::Typename : 0)));
 }
 
 // The operator a name spells after `operator`, from token k - `+`, `()`, `[]` - added to `name`; the token after it.
@@ -1932,10 +1950,11 @@ ExprPtr Parser::primaryNode(Program *program) {
         const Type *held = l != nullptr ? l->type : (g != nullptr ? g->type : nullptr);
         // A name that holds something callable rather than naming a function:
         // a function pointer, or an object whose `(` is [over.call].
-        auto callable = [](const Type *t) {
+        // In a read, one of dependent type too (`F f; f();`): which call it is is substitution's.
+        auto callable = [this](const Type *t) {
             if (t != nullptr && t->isReference()) t = t->referent();
             return t != nullptr && (t->isFunctionPointer() || t->isFunction() ||
-                                    t->unqualified()->isStructOrUnion());
+                                    t->unqualified()->isStructOrUnion() || (patternBody_ && dependentType(t)));
         };
         bool callsThroughObject = callable(held);
         // **A data member holding something callable, called by its bare name**: [class.mfct.non-static]
@@ -2235,7 +2254,9 @@ ExprPtr Parser::primaryNode(Program *program) {
             if (next == nullptr && cls != nullptr) break;
             cls = next;                        // a namespace leaves it null for the next step
         }
-        if (cls != nullptr && peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident)
+        if (cls != nullptr && peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident) {
+            // In a read, `order::less` over a dependent class and `KeyOf::get` over a type parameter wait for the arguments.
+            const bool waits = patternBody_ && dependentType(cls);
             if (cls->isStructOrUnion()) {
                 const std::string member = peekAt(k + 1).text;
                 if (const Member *m = cls->findMember(member)) {
@@ -2247,9 +2268,18 @@ ExprPtr Parser::primaryNode(Program *program) {
                               "of '" + cls->tag() + "' and needs an object here - only "
                               "sizeof and decltype may name it with none");
                 }
+                if (leftOutBase(cls) || waits) {
+                    at_ += k + 2;
+                    return zeroOf(dependentResult());
+                }
                 src_.fail(peekAt(k + 1).pos, "'" + cls->tag() + "' has no member called '" +
                                          member + "'");
             }
+            if (waits) {
+                at_ += k + 2;
+                return zeroOf(dependentResult());
+            }
+        }
         // [temp.variadic]/5: a pack is written with the `...` that expands it, never bare.
         if (packs_.count(name) != 0)
             src_.fail(pos, "'" + name + "' is a parameter pack, and here it is written without the "
@@ -2268,6 +2298,7 @@ ExprPtr Parser::primaryNode(Program *program) {
                                       static_cast<long long>(bare.size()) + 1));
             return n;
         }
+        if (leftOutBase(nullptr)) return zeroOf(unfoundResult(name));
         src_.fail(pos, "'" + name + "' was not declared");
     }
 
@@ -2418,6 +2449,9 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
                               const std::string &what, const std::string &object) {
     const Type *referent = ref->referent();
     const Type *it = init->type();
+    // A read's `T &en = f(x);` over a dependent value or referent: what it binds to is substitution's.
+    if (patternBody_ && (dependentType(referent) || dependentOperand(it))) return zeroOf(types_.pointerTo(referent));
+    refuseHeldClass(referent, it);
 
     // **A reference to a function holds the function's address** - [dcl.init.ref]/5 binds it to a
     // function lvalue of the same type, and `&f` already is that address.
@@ -2824,8 +2858,9 @@ ExprPtr Parser::explicitDestructorCall(ExprPtr &object, std::size_t pos) {
 
     // **[expr.pseudo]: a scalar has nothing to destroy**, and the only effect
     // is that the operand is evaluated - the pointer, or the object's address.
+    // A read's `p->~T()` over a parameter: which type the name means is substitution's to hold.
     if (!plain->isStructOrUnion()) {
-        if (named != plain)
+        if (named != plain && !(patternBody_ && (dependentType(named) || dependentType(plain))))
             src_.fail(pos, "the pseudo-destructor '~" + name + "' does not name "
                            "the type of this object, which is '" +
                            plain->describe() + "'");
@@ -3055,6 +3090,8 @@ ExprPtr Parser::postfix() {
                                    "on");
                 std::vector<ExprPtr> args;
                 args.push_back(std::move(index));
+                // The index is the call's one argument: a read asks of it, not of the arguments of the call read last.
+                argsDependent_ = dependentOperand(args[0]->type());
                 // The type is read out first: `n` is moved into the call, and
                 // the order the two arguments are evaluated in is not fixed.
                 const Type *objectType = n->type();
@@ -3159,6 +3196,7 @@ ExprPtr Parser::postfix() {
                 continue;
             }
             const Member *m = in->findMember(name);
+            if (!m && leftOutBase(in)) { n = zeroOf(dependentResult()); continue; }
             if (!m) src_.fail(pos, "'" + in->describe() + "' has no member '" + name + "'");
             if (m->ambiguous) refuseAmbiguousMember(in, *m, pos);
             checkAccessible(obj, *m, pos);
@@ -3249,6 +3287,7 @@ ExprPtr Parser::postfix() {
                 continue;
             }
             const Member *m = in->findMember(name);
+            if (!m && leftOutBase(in)) { n = zeroOf(dependentResult()); continue; }
             if (!m) src_.fail(pos, "'" + in->describe() + "' has no member '" + name + "'");
             if (m->ambiguous) refuseAmbiguousMember(in, *m, pos);
             checkAccessible(obj, *m, pos);
@@ -3602,6 +3641,12 @@ ExprPtr Parser::unaryNode() {
             src_.fail(peek().pos, "'sizeof...' takes the name of a parameter "
                                   "pack");
         auto pack = packs_.find(peek().text);
+        const Local *own = pack == packs_.end() && patternBody_ ? lookup_.findLocal(peek().text) : nullptr;
+        if (own != nullptr && own->type->kind() == Kind::PackExpansion) {    // a read's `sizeof...(args)`: how many is substitution's
+            at_++;
+            expect(")");
+            return zeroOf(dependentResult());
+        }
         if (pack == packs_.end())
             src_.fail(peek().pos, "'" + peek().text + "' is not a parameter "
                                   "pack");
@@ -3681,6 +3726,8 @@ ExprPtr Parser::unaryNode() {
                                    "', which is a bit-field");
             measured = operand->type();
         }
+        // A read's body holds a dependent `sizeof` as a dependent value: its number is substitution's.
+        if (patternBody_ && dependentType(measured)) return zeroOf(dependentResult());
         // **A dependent `sizeof` outside a template argument or a `decltype`** - an array bound, a
         // `noexcept` - is the one the expression reader is not reached from.
         if (patternOnly_ && (measured->kind() == Kind::TemplateParam ||
