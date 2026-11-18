@@ -174,7 +174,7 @@ public:
     // M8.1 commit 4's doors read the same way under -check=templates: `which` is the out-of-line member or the partial.
     enum ReadDoor { ReadFunction, ReadClass, ReadOutOfLine, ReadPartial, ReadAlias, ReadMember, ReadDoors };
     void readDeclaration(const TemplateDecl &decl, ReadDoor door = ReadFunction, std::size_t which = 0);
-    void tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody);
+    void tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody, std::size_t at);
     // The class door's member templates, each read over its own parameters numbered past the class's `outer`.
     void readMemberTemplates(const std::string &readTag, std::size_t outer, Program *pattern);
     // A class's own member templates, once the class is complete: each read as a function template is.

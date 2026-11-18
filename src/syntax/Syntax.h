@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 class Source;
@@ -82,11 +83,14 @@ public:
     // Every live root - a node no other node holds - in creation order, as an S-expression a line.
     // Every live root, in creation order.
     std::vector<NodeId> roots() const;
+    // A template body a read declined (M8.1): the dump names it after the tree, where and why.
+    void noteUnread(std::size_t pos, const std::string &why) { unread_.push_back(std::make_pair(pos, why)); }
     void dump(std::string &out, const Source &src) const;
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
 private:
     void dumpNode(std::string &out, NodeId id) const;
     std::vector<Node> nodes_;
+    std::vector<std::pair<std::size_t, std::string> > unread_;
     std::vector<NodeId> children_;
     StringTable strings_;
 };

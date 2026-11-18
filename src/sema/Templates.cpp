@@ -458,8 +458,10 @@ void Templates::holdBodies(std::size_t mark) {
     }
 }
 
-// One read's verdict: a body's `function` node with a block made after `mark`, or the reason there is none.
-void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody) {
+static const char *const readDoorNames[] = { "functions", "class-members", "out-of-line", "partial-members", "aliases", "member-templates" };
+
+// One read's verdict: a body's `function` node with a block made after `mark`, or the reason there is none - noted at token `at`.
+void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool wantsBody, std::size_t at) {
     syntax::NodeId read;
     for (std::size_t i = p_.syntaxTree_.size(); wantsBody && why.empty() && i > mark && !read.valid(); i--) {
         const syntax::NodeId id(static_cast<std::uint32_t>(i));
@@ -473,6 +475,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
         for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
             why.replace(a + 1, b - a - 1, "");
         declUnread_[door][why.substr(0, 100)]++;
+        p_.syntaxTree_.noteUnread(p_.tokens_[at < p_.tokens_.size() ? at : 0].pos, std::string(readDoorNames[door]) + ": " + why.substr(0, 100));
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
@@ -588,7 +591,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                         refused = f.why;
                     }
                     p_.current_ = &pattern;
-                    tallyRead(door, from, refused, true);
+                    tallyRead(door, from, refused, true, bodies[b].start);
                 }
                 if (door != ReadOutOfLine) readMemberTemplates(readTag, params.size(), &pattern);
                 tallied = door != ReadOutOfLine;
@@ -634,7 +637,9 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         owedBodies_ = hadOwed;
         p_.syntaxTree_.kill(mark);
     }
-    if (!tallied) tallyRead(door, mark, why, door != ReadAlias);
+    const std::size_t at = door == ReadPartial ? decl.partials[which].bodyAt : door == ReadOutOfLine ? decl.outOfLine[which].start :
+                           door == ReadAlias ? decl.aliasAt : decl.afterParams;
+    if (!tallied) tallyRead(door, mark, why, door != ReadAlias, at);
 }
 
 // The member templates registered under `tag` and defined in its class.
@@ -677,7 +682,7 @@ void Templates::readMemberTemplates(const std::string &readTag, std::size_t oute
         }
         p_.memberTemplateBody_ = wasBody;
         p_.current_ = pattern;
-        tallyRead(ReadMember, from, refused, true);
+        tallyRead(ReadMember, from, refused, true, mt.afterParams);
     }
 }
 
@@ -705,13 +710,12 @@ std::string Templates::bodiesReport() const {
                       " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
         out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
-    static const char *const doors[ReadDoors] = { "functions", "class-members", "out-of-line", "partial-members", "aliases", "member-templates" };
     for (int door = 0; door < ReadDoors; door++) {
         long unread = 0;
         for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i) unread += i->second;
         // A door the unit never came to prints nothing: the function door's lines are the record's.
         if (door != ReadFunction && declTally_[door][0] + unread == 0) continue;
-        const std::string head = door == ReadFunction ? "" : std::string(" ") + doors[door];
+        const std::string head = door == ReadFunction ? "" : std::string(" ") + readDoorNames[door];
         out += "-check=templates declarations" + (door == ReadFunction ? std::string(": functions=") : head + ": bodies=") +
                std::to_string(declTally_[door][0] + unread) + " read=" + std::to_string(declTally_[door][0]) +
                " unread=" + std::to_string(unread) + " same=" + std::to_string(declTally_[door][1]) + " text=" + std::to_string(declTally_[door][2]) +

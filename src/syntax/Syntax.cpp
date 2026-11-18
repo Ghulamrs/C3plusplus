@@ -182,6 +182,11 @@ void Tree::dump(std::string &out, const Source &src) const {
         dumpNode(out, NodeId(static_cast<std::uint32_t>(i)));
         out += '\n';
     }
+    for (std::size_t i = 0; i < unread_.size(); i++) {
+        out += src.where(unread_[i].first) + ": (unread ";
+        quoted(out, unread_[i].second);
+        out += ")\n";
+    }
 }
 
 }   // namespace syntax
