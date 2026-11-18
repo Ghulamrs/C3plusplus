@@ -329,6 +329,12 @@ const DepExpr *Parser::depPrimary(bool angle) {
             }
         }
         if (const Local *l = lookup_.findLocal(name)) {
+            if (l->trailingParam < 0 && patternBody_) {      // a read's `A<n>` over a local: held by name, never spelt
+                at_++;
+                n.op = DepExpr::UnresolvedName;
+                n.name = n.text = name;
+                return depNode(n);
+            }
             if (l->trailingParam < 0) depRefuse(pos, "a local name");
             at_++;
             n.op = DepExpr::FunctionParam;
