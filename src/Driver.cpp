@@ -29,6 +29,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -87,6 +88,9 @@ const std::size_t kThreadFrom = 4;
 
 // **The line every run of this compiler prints**, and the one thing in the output that is not about the program being compiled.
 const char *Driver::bannerLine() { return CXX1_BANNER; }
+
+// -check=prune was asked: one flag of the command line, read by every job.
+static bool checkPruneAsked = false;
 
 // **The directory the running program is in.** A released compiler is unpacked
 // somewhere nobody chose at build time, so the headers it ships with cannot be
@@ -1147,6 +1151,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             return false;
         } else if (std::strcmp(argv[i], "-check=ssa") == 0 || std::strcmp(argv[i], "--check=ssa") == 0) {
             checkSsa_ = true;
+        } else if (std::strcmp(argv[i], "-check=prune") == 0) {
+            checkPruneAsked = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1).
             const char *what = std::strchr(argv[i], '=') + 1;
@@ -1350,6 +1356,72 @@ bool Driver::parseArguments(int argc, char **argv) {
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
 
+// A function's names in the IR: its calls' symbols, its addr operands, its pads' type_info chains and its spec list.
+static void namesOf(const ir::Function &f, std::vector<std::string> &out) {
+    for (std::size_t c = 1; c < f.calls.size(); c++) out.push_back(f.calls[c].symbol);
+    for (std::size_t i = 1; i < f.insts.size(); i++) {
+        out.push_back(f.insts[i].sym);
+        out.insert(out.end(), f.insts[i].syms.begin(), f.insts[i].syms.end());
+    }
+    out.insert(out.end(), f.spec.begin(), f.spec.end());
+}
+
+// **-check=prune** (M6d S1): the prune's closure taken over the IR as lowered, from the unit's holding records, against
+// what the parser's prune kept and dropped. Equal kept sets: everything kept is reached, nothing dropped is named.
+static void checkPrune(const ir::Module &m, const TypeTable &types, std::vector<std::string> &faults) {
+    const UnitData &d = m.data;
+    const std::set<std::string> held(d.held.begin(), d.held.end());
+    const std::size_t nf = m.functions.size();
+    std::map<std::string, std::size_t> bySymbol;
+    for (std::size_t i = 1; i < nf; i++) {
+        bySymbol[m.functions[i].symbol] = i;
+        if (!m.functions[i].laid.alias.empty()) bySymbol[m.functions[i].laid.alias] = i;
+    }
+    for (std::size_t i = 0; i < d.globals.size(); i++) bySymbol[d.globals[i].symbol] = nf + i;
+    std::vector<bool> reached(nf + d.globals.size(), false);
+    std::set<std::string> every;
+    std::vector<std::string> named;
+    std::vector<std::size_t> work;
+    named.push_back(d.initFunction);
+    for (const MicrosoftThrow &t : d.msThrows) {
+        if (!t.thrown) continue;
+        named.push_back(t.destructor);
+        for (const MicrosoftThrow::Catchable &c : t.catchables) named.push_back(c.copyCtor);
+    }
+    for (std::size_t i = 1; i < nf; i++)
+        if (held.count(m.functions[i].symbol) == 0) { reached[i] = true; work.push_back(i); }
+    for (std::size_t i = 0; i < d.globals.size(); i++)
+        if (!d.globals[i].held) { reached[nf + i] = true; work.push_back(nf + i); }
+    for (;;) {
+        for (const std::string &s : named) {
+            every.insert(s);
+            const std::map<std::string, std::size_t>::const_iterator f = bySymbol.find(s);
+            if (f != bySymbol.end() && !reached[f->second]) { reached[f->second] = true; work.push_back(f->second); }
+        }
+        named.clear();
+        if (work.empty()) break;
+        const std::size_t i = work.back();
+        work.pop_back();
+        if (i < nf) { namesOf(m.functions[i], named); continue; }
+        named.push_back(d.globals[i - nf].prefixWord);
+        for (const GlobalPiece &p : d.globals[i - nf].init) named.push_back(p.symbol);
+    }
+    for (std::size_t i = 1; i < nf; i++)
+        if (!reached[i]) faults.push_back("-check=prune: the parser kept the function " + m.functions[i].symbol + ", which nothing in the IR names");
+    for (std::size_t i = 0; i < d.globals.size(); i++)
+        if (!reached[nf + i]) faults.push_back("-check=prune: the parser kept the object " + d.globals[i].symbol + ", which nothing in the IR names");
+    for (const StringLit &sl : d.strings)
+        if (every.count(sl.label) == 0 && !sl.copied) faults.push_back("-check=prune: the parser kept the literal " + sl.label + ", which nothing in the IR names");
+    for (const TypeId id : d.rtti) {
+        MicrosoftRtti n; std::string why;
+        if (microsoftClassRttiNames(types.type(id), &n, &why) && every.count(n.locator) == 0 && every.count(n.descriptor) == 0 &&
+            every.count(n.baseDescriptor) == 0 && every.count(n.array) == 0 && every.count(n.hierarchy) == 0)
+            faults.push_back("-check=prune: the parser kept the run-time description " + n.descriptor + ", which nothing in the IR names");
+    }
+    for (const std::string &s : d.dropped)
+        if (!s.empty() && every.count(s) != 0) faults.push_back("-check=prune: the IR names " + s + ", which the parser dropped");
+}
+
 // **The SSA lowering over every body** (M3b.1), a function outside counted with its reason; then at `level` 1 and up
 // the SSA passes (M3b.4). `report` is -check=ssa's text, `failures` the verifier's count after lowering and each pass,
 // `dumped` the IR as lowered or after the pass `dumpAfter` names.
@@ -1527,6 +1599,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
+    // Taken before any pass: the inliner removes calls, and the kept set may not depend on the level.
+    if (checkPruneAsked && outside.empty()) checkPrune(into, types, outside);
     std::string out;
     const int failed = report ? ir::verify(into, types, out) : 0;
     ir::PassLog log(report, dumpAfter);

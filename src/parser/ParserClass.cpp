@@ -2008,15 +2008,18 @@ void Parser::pruneUnusedInline(Program &program) {
     std::vector<Function> kept;
     for (std::size_t i = 0; i < nf; i++)
         if (reached[i]) kept.push_back(std::move(program.functions[i]));
+        else { data.dropped.push_back(program.functions[i].symbol()); data.dropped.push_back(program.functions[i].alias()); }
     program.functions.swap(kept);
     std::vector<Global> keptGlobals;
     for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
         if (reached[nf + i]) keptGlobals.push_back(std::move(program.module.data.globals[i]));
+        else data.dropped.push_back(program.module.data.globals[i].symbol);
     program.module.data.globals.swap(keptGlobals);
     // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
     std::vector<StringLit> keptStrings;
     for (StringLit &sl : program.module.data.strings)
         if (everyName.count(sl.label) != 0 || sl.copied) keptStrings.push_back(std::move(sl));
+        else data.dropped.push_back(sl.label);
     program.module.data.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<TypeId> rtti;
@@ -2027,6 +2030,7 @@ void Parser::pruneUnusedInline(Program &program) {
             everyName.count(n.descriptor) || everyName.count(n.baseDescriptor) ||
             everyName.count(n.array) || everyName.count(n.hierarchy))
             rtti.push_back(id);
+        else for (const std::string *s : { &n.locator, &n.descriptor, &n.baseDescriptor, &n.array, &n.hierarchy }) data.dropped.push_back(*s);
     }
     program.module.data.rtti.swap(rtti);
 }
