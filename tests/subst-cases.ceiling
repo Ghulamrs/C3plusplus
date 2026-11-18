@@ -1,12 +1,7 @@
-1 class-members | the class: '' is not defined yet - a base class has to be complete, because the derived object conta
-1 class-members | the class: a using-declaration inside a class is not supported yet here - of a base's member functio
-1 class-members | the class: an array length must be positive, not 0
 4 class-members | the members of a class specialization the program has not asked for yet
 1 member-templates | '' is a member function template and '' cannot be worked out from this call: '' does not give a valu
 1 member-templates | a call with a dependent argument, which would instantiate its callee
 1 member-templates | a cast from '' to '' - the two classes are unrelated and '' has no conversion function to '', so the
-1 | '' is '' and this is '' - C++ converts an integer to an enumeration only with a cast, where C does i
 1 | a throw of a value whose type waits for the arguments
-1 | expected ''
 1 | the members of a class specialization over the template's own local class
 1 | the members of a class specialization the program has not asked for yet
