@@ -1509,3 +1509,60 @@ the copied pattern; 44 + 16 + 16 + 12 in the cases) and "'args' is a parameter p
 second holds at every step): unread **176** in the cases and **575** in the self-host; the pack pattern in a read is
 three in five of both (about 100 and 409), then a specialization not asked for (15 / 94), the rest by reason above.
 src/ lines: 95,548 before, 95,553 after.
+
+**M8.1, commit 4, eleventh step: a pack pattern in a read, a left-out base, a read's own names, 2026-11-18**
+(lane m8u, branch `m8-e` from `5702b99a`; code `2b12fc0b`, `208ade05`, `aee4dca3`, `295c2773`, `d98e3d1d`, `e7d3e017`,
+`26eb822a`). Still under `-check=templates`; the replay is what emits. REF `5702b99a` built fresh and alone (Linux
+`~/m8ur`, Windows `work\m8ur`). **Six steps.** `2b12fc0b`: m8t's probe finished - `bindPatternMember` reads a read's
+pattern once, the pack's name in the copy bound as its own parameter (a type name, or a non-type parameter's
+reference) with its `packs_` entry shadowed for the copy, and `dependentType` follows a read's `Kind::PackExpansion` to
+its pattern, so `args` in `std::forward<Args>(args)...` is dependent; cases unread 176 to 71, self-host 575 to 167.
+`208ade05`: a read's mem-initialiser naming the base its class left out (`: B<T>(x)`, `: B<T>{x}`, `leftOutBase`) reads
+its arguments and drops the entry; 71 to 65, 167 to 155. `aee4dca3`: a read's local name in an expression over its
+parameters is held as an unresolved name (a read spells nothing); 65 to 56. `295c2773`: a read's `rest...` over its
+function parameter pack is one argument as dependent as its pattern, and its `sizeof...(args)` a dependent count; 56
+to 45. `d98e3d1d`: 12 citations re-pointed, `template-variadic.templates` re-recorded (its three unread reads are read;
+two differ in shape from the replay, the pack read once against its members). `e7d3e017`: the `rest...` line holds no
+`ExprPtr` of its own (ast-residue on `295c2773` said 2016 to 2017, rc 1). `26eb822a`: a read's `std::remove` beside
+`using ::remove;` - the read declared `std::remove`, and both of `topLevel`'s `lookupSignature` calls followed the
+using-declaration from the unqualified key to `::remove` ("was not declared"; `gdb` on `Source::fail`,
+`boxkit/m8u-why.sh`) - is asked for by the key `declareFunction` gave it; 45 to 40, 155 to 123.
+
+**Read / not read, before (`5702b99a`) and after (`26eb822a`)**, Linux; Windows the same totals. The cases: functions
+3,478 / 3,414 / 64 to 3,478 / 3,465 / 13; class members 12,574 / 12,533 / 41 to 12,574 / 12,554 / 20; out-of-line 22 /
+21 / 1 to 22 / 22 / 0; partials 607 / 587 / 20 to 607 / 604 / 3; member templates 497 / 447 / 50 to 497 / 493 / 4;
+**unread 176 to 40**. The self-host: functions 7,512 / 7,325 / 187 to 7,512 / 7,460 / 52; class members 34,925 /
+34,758 / 167 to 34,925 / 34,862 / 63; partials 1,796 / 1,688 / 108 to 1,796 / 1,788 / 8; member templates 1,510 /
+1,397 / 113 to 1,510 / 1,510 / 0; **unread 575 to 123**. Shape (a read whose tree differs from its replay's) rose with
+the reads, the cases' functions 13 to 48 and member templates 1 to 6: a pack read once against its members. **What is
+left, by reason**: a class specialization the program has not asked for (cases 16, self-host 94) - a design, M8.2's:
+the class cannot be unmade when the read ends, and a stand-in under the real tag would be found by the later
+instantiation; a value with no address (26 in the self-host), a read's `T &en = <dependent value>` in
+`bindReference` (`boxkit/m8u-bindref.patch`, not built); the size of a dependent type, reached behind the pack (cases
+4: `nontype-pack-deduction`, `nontype-pack-types`, `lambda-returning-lambda`); a pack beside other arguments (3), a
+qualified name in a signature's expression (3), and singles.
+
+**The flag against no flag** (`-S`, the cases): 1,239 the same, 0 differ, at every step on Linux; on Windows
+`295c2773` and `26eb822a` 1,239 / 0, the self-host 102 and `Driver` (its `__TIME__`).
+
+**Gates.** REF `5702b99a` fresh and alone (Linux `~/m8ur`, Windows `work\m8ur`, cl /W4 /WX clean). Linux `~/m8uk` =
+`26eb822a` built fresh and alone (g++ `-Werror` clean): exclusions rc 0, memory gate rc 0, ast-residue rc 0 (+0),
+`ide/generate.py` rc 0, **comment cap rc 2** (`26eb822a`'s comment made a group of four; `9511b1be` folds it into its
+line); `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2,
+**8,840 compared, 0 differ**; `typed.sh` 876 passed, 0 failed; `run.sh` 1233 passed, 0 failed; self-compile stage 0 103
+of 103 (94 s); `subst.sh bodies` 0 failed (5,120 over 876 units); the self-host's `-S` REF against NEW 102 and
+`Driver`. The same on `~/m8uf` (`295c2773`'s sources): identical 8,840 / 0, typed 876 / 0, run 1233 / 0, selfc 103 /
+103, bodies 0 failed, ast-residue rc 1 (mended by `e7d3e017`). Windows `work\m8uf` (`295c2773`, cl /W4 /WX clean):
+five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ**. Windows `work\m8uk` (`26eb822a`, cl /W4 /WX
+clean, built alone): exclusions, memory, residue, generate rc 0 each by its own status, comments rc 1 (the same group);
+the cases and the self-host read door by door as Linux (40, 123); the cases' flag 1,239 / 0; the self-host's flag 102
+and `Driver`; five spellings at -O0 and -O2 against REF **12,390 the same, 0 differ** (6,200 and 6,190). **`9511b1be`**
+(the comment folded, six citations back by one): Linux `~/m8uk` rebuilt from the touched source, every static gate rc 0
+by its own status, cases unread 40 and flag 0 differ, self-host unread 123; Windows `work\m8um` built alone (cl /W4
+/WX clean), every static gate rc 0, the cases' flag 1,239 / 0, the function door 13 unread as Linux. Windows' ast-residue counts ExprPtr 0 on every tree (-2016; Linux counts 2016):
+its rc 0 there says nothing, the Linux figure is the gate's. **Two defects of the lane's own**: `295c2773` raised the
+residue by one `ExprPtr` and `26eb822a` the comment cap by one group - each found by the static gate on its tree and
+mended by the next commit; the long gates ran on `26eb822a`, and `9511b1be` after it moves a comment alone.
+**Left of commit 4**, and so of commit 5's condition (unread 0 over the cases and the self-host, identical.sh 0):
+unread **40** and **123**; the specialization not asked for is two in five of the first and three in four of the
+second. src/ lines: 95,553 before, 95,602 after.
