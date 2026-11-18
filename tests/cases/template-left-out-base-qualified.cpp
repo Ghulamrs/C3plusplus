@@ -3,7 +3,7 @@
 // specialization ([temp.dep.expr]/5), looked up at the instantiation. The
 // unqualified `nb` is tests/open/template-left-out-base-unqualified.
 #include <cstdio>
-template <class T> struct B { int nb; B() : nb(0) {} int nbf() { return 2; } };
+template <class T> struct B { int nb; int nbf() { return 2; } };
 int g(int v) { return v; }
 template <class T> struct C : B<T> {
     int f() { this->nb = 1; return g(this->nb) + C::nb + this->nbf(); }
