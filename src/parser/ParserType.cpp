@@ -1297,7 +1297,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(d.pos, "'virtual' describes a function, and '" +
                                  d.name + "' is a data member");
 
-            if (!d.type->isComplete())
+            // A read's `C<T> c;` over a class no pattern has made is laid out as nothing, as a dependent base is.
+            const bool heldMember = readLayout_ && !d.type->isComplete() && dependentType(d.type);
+            if (!d.type->isComplete() && !heldMember)
                 src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
             checkNotAbstract(d.type, d.pos, "the member '" + d.name + "'");
             // **What a reference member occupies is a pointer**, and asking the type
@@ -1374,7 +1376,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (kind == Kind::Union) { if (endBits > widestBits) widestBits = endBits; }
             else bitCursor = endBits;
             msUnitBits = 0;          // a member that is not a bitfield closes the unit
-            dependentLaid = dependentLaid || laid.met();
+            dependentLaid = dependentLaid || laid.met() || heldMember;
             if (!consume(",")) break;
         }
         if (!heldBody) expect(";");

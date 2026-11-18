@@ -44,6 +44,8 @@ std::string Overload::refQualifierMixRefusal(RefQual written, RefQual other) {
 
 Rank Overload::rankArgument(const Expr &arg, const Type *param) {
     const Type *given = arg.type();
+    // A read's `resize(n, 0)` against `resize(size_type, C)`: a parameter over the pattern's own takes any argument.
+    if (p_.patternBody_ && p_.dependentType(param)) return Rank::Conversion;
 
     // A reference parameter binds or it does not; there is no conversion to
     // rank.
