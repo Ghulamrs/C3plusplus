@@ -2252,3 +2252,28 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
 - **Gate: tools/wave-gate h1g -w 95e06424 at 099f3fb0: 40 passed, 0 failed, 4 not run** (the fixed points, not owed); the
   only output difference is the new case (the base build emits the initialiser). tests/wave-expected.txt emptied.
 - H2, M1-M7 and L1-L3 are M8's lanes' (m8z6 on m8-e: H2 and M3 first).
+
+### m8-e merged with main 15254936, checked before its gate, 2026-11-18 (lane mw11)
+
+- **The merge** (887ec84a on `m8-f`, from c7208333 and main's 116 commits since 3a922049): two conflicts, both in documents -
+  this file took both sides (m8-e's commit 4 and H2 entries, then main's commits 1-3 and H1); docs/EXCLUSIONS.md's 18
+  hunks differed only in line numbers, m8-e's side taken and 13 citations re-pointed by tools/exclusions on Linux
+  (b4b2c60e, 0 uncited, 0 stale). The eleven source files both sides changed merged without a conflict; H1's four
+  `!patternUses_` guards and M8's read doors stand side by side. src/ lines: 95,873 (m8-e) and main's walker deletion -> 94,228.
+- **Built**: g++ -Werror (Linux) and cl /W4 /WX (Windows, first and alone) clean.
+- **identical.sh** against REF main 15254936, four targets at -O0 and -O2: 9,100 compared, 26 differ on Linux; Windows's five
+  spellings 12,520, 26 differ - on both all M8's own: read-dependent-local 10 (main refuses it), template-dependent-less 10
+  (main refuses `T::num < 3` in a signature), read-dependent-member 6 (the Itanium name of a class specialization's
+  enumeration; Itanium targets only). The self-host's -S against REF: 101 of 102 the same on each box, Driver by its
+  `__TIME__` (102 sources: main deleted Walker.cpp).
+- **Suites**: Linux run 1246/0 (template-unused-static-init passes, its class half read), typed 902/0, syntax 4/0, open 1
+  (as before), the four `.templates` records the same; Windows names 910/0, overload 46/0, typed 883/0. Static gates rc 0
+  each: exclusions 0/0, comments 0 over, memory, ide, ast-residue 2012/635/158/357/0/9/717 on both REF and NEW (+0 from
+  M8; main's baseline says ast-lines 722, main measures 717).
+- **Not held: tests/subst.sh self** (cases hold: 6 unread under 6, 51 shapes of 51). Every self door's bodies fell with main's
+  sources (functions 7512 -> 7404, class-members 35148 -> 34628, member-templates 1535 -> 1515, partial-members 1796 ->
+  1766), and so its reads under their floors; two counts rose, so the ceilings were not re-recorded: unread 27 -> 28
+  (`make_owned`, moved by main from Ast.h to Owned.h, is unread "'' was not declared" in X86_64Linux.cpp, which includes
+  Owned.h after optimizer/Optimizer.h - a pack parameter named `args` is unread there, one named `a` is read) and
+  class-members shape 57 -> 58 (not yet placed); the function door's shape place moved Ast.h:131:20 -> Owned.h:8:20.
+  Owed by M8's next lane before the gate.
