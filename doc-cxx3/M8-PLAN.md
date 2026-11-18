@@ -2306,3 +2306,20 @@ Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-c
   unit, Tms6747.cpp, which main's changes made include it. The read cannot know V's kind (owed to M8.2's binding). The
   record lists no class-door places, so the count alone moves. The coordinator judges this rule; it is not a user's
   ratchet. Windows' five `.templates` records that differ by CR alone stay as they are, owed.
+
+### M8.1 commits 4 and 5 landed, with H2 and the merge with main, 2026-11-19 (the coordinator)
+
+- Commit 4 (the class doors read: class members, out-of-line members, partials, member templates, aliases) and commit 5
+  (the doors read with no flag, under recorded ceilings tests/subst.sh enforces), lanes m8k-m8z6 and m8g1; the Fable
+  review's H2 (dependent nested/local classes, closures, enums; a value-dependent bound) and its M3 (the ceiling a sound
+  gate: floors on read, shape compared over every unit, every case unit counted); an Itanium name for a class
+  specialization's enumeration; a stale pack name across reads mended. Unread: cases 6, self-host 26 (Linux = Windows).
+- Merged with main 15254936 by lane mw11 (two document conflicts; no merge fault); against main only M8's own cases differ.
+  The self ceilings' floors fell by exactly the bodies main's sources removed; class-members shape 57 -> 58 is the
+  coordinator's ruling (no new shape: map::operator[]'s known body in one more unit, Tms6747.cpp).
+- **Gate: tools/wave-gate m81k -w 15254936 at 776fc5c8: 39 passed, 1 failed, 4 not run** (the fixed points, not owed).
+  The one FAIL was identwin "named and the same": read-dependent-member's three x86_64-windows rows named a difference
+  that is not there (the Itanium fix does not touch a Microsoft name). Those rows taken out; the gate's own got list
+  against the rows left, checked by the coordinator: 6 and 6, the same. Landed on that.
+- Owed: the Windows CRLF compare (branch m8-crlf, the user's ask - lands with the next M8 wave); M1, M2, M4-M7, L1-L3 of
+  the review; M3 (c); boxkit/m8z4-singles.patch; tests/open/template-dependent-static-call.
