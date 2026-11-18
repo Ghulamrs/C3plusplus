@@ -176,6 +176,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
     ssaUnwindHelpSlot_ = 0;
     if (usesFunclets() && landingPads_) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
+    if (ssaUnwindHelpSlot_ != 0 && ssaOutgoing(f) == 0) cur += 8;   // no call: the word stays off rsp+0, dispUnwindHelp > 0
     return static_cast<int>(roundUp(cur, 16));
 }
 
