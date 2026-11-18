@@ -2417,3 +2417,18 @@ with CRLF (the m8-crlf fix covered subst.sh and syntax.sh); the 343 refusals pas
 **Owed**: M2's `conv<int>(k)`; the statement builders' three refusals (`Sel<...>::s(k);`, `T::f(k);`/`T::s;`, range-for
 over a dependent range - 25 of the self-host's 26); M1's refusal (M8.5); M7's (1)-(3) (M8.2); the review's M3 (c), L1-L3;
 `boxkit/m8z4-singles.patch`; run.sh's CR compare on Windows; `T{};` under `-check=templates` (a unit refused).
+
+### The Fable review's M items and the Windows CRLF compare landed, 2026-11-19 (the coordinator)
+
+- Lane m8h1: the review's M5 (a comma over a dependent operand is dependent), M6 (`typename` required for
+  `X<dependent>::type`, refused as clang refuses it; not stricter than clang where none is needed), M1 (an unqualified name
+  not found under a left-out base marked `unfound`; `this->nb`, `C::nb` stay dependent; the unqualified case open), M2
+  (`.template cv<int>` kept in the tree), M4 (ten common shapes, each unread by its reason), M7 stated for M8.2 - each with
+  a case from clang 19.1.5. Unread: self-host 26 unchanged; cases 6 -> 17, all eleven new from the new cases.
+- The user's ask, branch m8-crlf: tests/subst.sh's .templates compare and tests/syntax.sh strip CR on both sides - on
+  Windows syntax.sh 4/0 and subst.sh bodies 0 failed (they failed there alone before).
+- **Gate: tools/wave-gate m8gg -w 487fd9cb at 839a1c5e: 40 passed, 0 failed, 4 not run** (the fixed points, not owed).
+- Owed: run.sh compares output without stripping CR on Windows (all printing cases fail there; the Windows legs of the
+  gate are winpass, not run.sh); `T{};` under -check=templates refuses the unit, a static call as a statement refused
+  (both in REF too); `T::f(k);` and range-for in the statement builders (M6d's); M2's `conv<int>(k)`; M1's name refused
+  outright (M8.5); M7's mark and the functions found at the definition (M8.2).
