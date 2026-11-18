@@ -33,7 +33,7 @@ public:
     // Folds the arguments and pushes a frame; false when the call cannot fold.
     bool enterConstexprCall(const Call &c, const ConstexprFn **fn,
                             std::size_t pos) const;
-    Return *singleReturn(Stmt &body) const;
+    const Expr *singleReturnValue(const Stmt &body) const;
     bool foldArgument(const Expr &a, ConstexprSlot *slot, std::size_t pos) const;
     bool foldObject(const Expr &e, ConstObject *out, std::size_t pos) const;
     bool foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, std::size_t pos) const;

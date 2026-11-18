@@ -1977,17 +1977,18 @@ void Parser::topLevel(Program &program) {
         const std::size_t c1 = definedSymbol.find("C1E");
         if (c1 != std::string::npos) constant_.constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
     } else if (constexprFunction && body != nullptr) {
-        ConstexprFn fn;
-        if (Return *r = constant_.singleReturn(*body)) fn.value = r->takeValue();
-        if (fn.value == nullptr)
+        const Expr *value = constant_.singleReturnValue(*body);
+        if (value == nullptr)
             src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "
                              "body has to be a single return statement and "
                              "nothing else - that restriction is what lets its "
                              "value be worked out while compiling");
+        ConstexprFn fn;
+        fn.value = value;
         fn.pos = d.pos;
         for (std::size_t i = 0; i < paramSlots.size(); i++)
             fn.slots.push_back(paramSlots[i].offset);
-        constant_.constexprFns_[definedSymbol] = std::move(fn);
+        constant_.constexprFns_[definedSymbol] = fn;
     }
     currentClass_ = nullptr;
     currentFunction_.clear();

@@ -257,16 +257,18 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
 
 // **[expr.const]/3: a named integral constant is a constant expression**, which is the
 // rule that lets C++ write `const int n = 4; int a[n];`. Only integral, because that
-// is what fold() answers in. Below it: the one `return` a constexpr body may be.
-Return *Constexpr::singleReturn(Stmt &body) const {
-    Stmt *at = &body;
+// is what fold() answers in. Below it: the one expression a constexpr body may be.
+const Expr *Constexpr::singleReturnValue(const Stmt &body) const {
+    const Stmt *at = &body;
     for (;;) {
-        Block *b = dynamic_cast<Block *>(at);
+        const Block *b = dynamic_cast<const Block *>(at);
         if (b == nullptr) break;
         if (b->body().size() != 1) return nullptr;
         at = b->body()[0].get();
     }
-    return dynamic_cast<Return *>(at);
+    const Return *r = dynamic_cast<const Return *>(at);
+    if (r == nullptr || !r->hasValue()) return nullptr;
+    return &r->value();
 }
 
 bool Constexpr::constantInitialiser(const Type *t, const Init &in,
