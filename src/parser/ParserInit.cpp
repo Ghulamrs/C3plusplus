@@ -1308,7 +1308,9 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
         emitDestructors(out, aliveFrom, d.pos);
         alive_.resize(aliveFrom);
     }
-    registerDestruction(d, symbol, helper, out);
+    std::vector<Effect> registered;
+    registerDestruction(d, symbol, helper, registered);
+    appendEffects(registered, out);
     return out;
 }
 
@@ -1440,7 +1442,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
 // that calls the destructor on the object - measured from cl and clang.
 void Parser::registerDestruction(const Declared &d, const std::string &symbol,
                                  const std::string &helper,
-                                 std::vector<StmtPtr> &into) {
+                                 std::vector<Effect> &into) {
     const Type *cls = d.type->unqualified();
     const Signature *dtor = destructorOf(cls);
     if (dtor == nullptr) return;
@@ -1472,9 +1474,8 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
         current_->module.data.usesDsoHandle = true;
 
         // __cxa_thread_atexit and _tlv_atexit take the same three arguments, measured from clang.
-        into.push_back(StmtPtr(new ExprStmt(
-            runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
-                        types_.intType(), std::move(args)))));
+        into.push_back(Effect{ runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
+                                           types_.intType(), std::move(args)), 0 });
         return;
     }
 
@@ -1509,8 +1510,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
                                                  false);
     std::vector<ExprPtr> args;
     args.push_back(functionAddress(helper, helperType));
-    into.push_back(StmtPtr(new ExprStmt(
-        runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit", types_.intType(), std::move(args)))));
+    into.push_back(Effect{ runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit", types_.intType(), std::move(args)), 0 });
 }
 
 // A file-scope object with a constructor, or a static data member of one,
@@ -1862,7 +1862,7 @@ void Parser::staticTemporary(const Declared &d, const std::string &symbol, bool 
     }
     Declared o = d;
     o.type = t->unqualified();
-    std::vector<StmtPtr> unused;    // the registration the lowering makes; only the helper is wanted here
+    std::vector<Effect> unused;    // the registration the lowering makes; only the helper is wanted here
     registerDestruction(o, g.temporary, helper, unused);
     staticGuards_[symbol].temporaryHelper = helper;
 }

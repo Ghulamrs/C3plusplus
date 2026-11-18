@@ -60,6 +60,7 @@ public:
 
 private:
     typedef sema::Local Local;
+    typedef sema::Effect Effect;
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
     struct FreeSlot { const Type *stored; int offset; int align; };
@@ -1135,9 +1136,9 @@ private:
     // A member of this type, or an array of one, has a destructor to run.
     bool memberHasDestructor(const Type *t) const;
     // The base-object destructor of `cls`'s base `which`, on `this` - D2, or cl's `??1`.
-    StmtPtr baseDestructorCall(const Type *cls, std::size_t which, int thisSlot, std::size_t pos);
+    Effect baseDestructorCall(const Type *cls, std::size_t which, int thisSlot, std::size_t pos);
     // The class's own base-object destructor, on `this` and not through its vtable.
-    StmtPtr selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos);
+    Effect selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos);
     // A constructor the compiler writes, `steps` in order with `done[i]` what step i finishes (no owner:
     // nothing) - each guarding the steps after it. Written on its own, so no enclosing `try` is its own.
     StmtPtr guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done, std::size_t pos,
@@ -1410,7 +1411,6 @@ private:
                          std::size_t to = static_cast<std::size_t>(-1));
     // `valueInit` is the `{}` half of [dcl.init]/8: the object is zeroed before
     // the constructor runs, and only where nobody wrote that constructor.
-    typedef sema::Effect Effect;
     Effect constructLocal(const Declared &d, int offset,
                           std::vector<ExprPtr> args, bool copyInit = false,
                           bool valueInit = false);
@@ -1493,7 +1493,7 @@ private:
                                                  const std::string &helper);
     void registerDestruction(const Declared &d, const std::string &symbol,
                              const std::string &helper,
-                             std::vector<StmtPtr> &into);
+                             std::vector<Effect> &into);
     ExprPtr functionAddress(const std::string &symbol, const Type *fnType);
     // A file-scope object with a constructor, and a static data member of one.
     void dynamicInitialise(Declared &d, const std::string &symbol,

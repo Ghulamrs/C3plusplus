@@ -792,9 +792,9 @@ void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
         if (a.member >= 0)
             classes_.memberDestructor(into, a.owner->tag(), a.owner, a.offset, static_cast<std::size_t>(a.member), pos);
         else if (a.base >= 0)
-            into.push_back(baseDestructorCall(a.owner, static_cast<std::size_t>(a.base), a.offset, pos));
+            into.push_back(effectStatement(baseDestructorCall(a.owner, static_cast<std::size_t>(a.base), a.offset, pos)));
         else
-            into.push_back(selfDestructorCall(a.owner, a.offset, pos));
+            into.push_back(effectStatement(selfDestructorCall(a.owner, a.offset, pos)));
         return;
     }
     const Signature *dtor = destructorOf(a.cls);
@@ -1665,8 +1665,8 @@ int Parser::arrayCookie(const Type *elem) const {
     return align > words ? align : words;
 }
 
-StmtPtr Parser::baseDestructorCall(const Type *cls, std::size_t which, int thisSlot,
-                                   std::size_t pos) {
+Parser::Effect Parser::baseDestructorCall(const Type *cls, std::size_t which, int thisSlot,
+                                          std::size_t pos) {
     const Type::BaseSpec &spec = cls->bases()[which];
     const Type *base = spec.type;
     const Signature *dtor = destructorOf(base);
@@ -1700,12 +1700,12 @@ StmtPtr Parser::baseDestructorCall(const Type *cls, std::size_t which, int thisS
                                       : classes_.vttForBase(cls, base));
         params.push_back(vttType());
     }
-    return StmtPtr(new ExprStmt(completeCall(base->tag(), symbol, nullptr, types_.get(Kind::Void),
-                                             params, false, pos, std::move(args), false, 0)));
+    return Effect{ completeCall(base->tag(), symbol, nullptr, types_.get(Kind::Void),
+                                params, false, pos, std::move(args), false, 0), 0 };
 }
 
 // [except.ctor]/2: a delegating constructor's object is complete once its target returns.
-StmtPtr Parser::selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos) {
+Parser::Effect Parser::selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos) {
     const Signature *dtor = destructorOf(cls);
     markUsed(dtor);
     std::string symbol = dtor->symbol;
@@ -1716,8 +1716,8 @@ StmtPtr Parser::selfDestructorCall(const Type *cls, int thisSlot, std::size_t po
     std::vector<ExprPtr> args;
     args.push_back(std::move(me));
     const std::vector<const Type *> params(1, self);
-    return StmtPtr(new ExprStmt(completeCall(cls->tag(), symbol, nullptr, types_.get(Kind::Void),
-                                             params, false, pos, std::move(args), false, 0)));
+    return Effect{ completeCall(cls->tag(), symbol, nullptr, types_.get(Kind::Void),
+                                params, false, pos, std::move(args), false, 0), 0 };
 }
 
 StmtPtr Parser::guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done,
