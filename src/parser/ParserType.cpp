@@ -1298,8 +1298,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(d.pos, "'virtual' describes a function, and '" +
                                  d.name + "' is a data member");
 
-            // A read's `C<T> c;` over a class no pattern has made is laid out as nothing, as a dependent base is.
-            const bool heldMember = readLayout_ && !d.type->isComplete() && dependentType(d.type);
+            // A read's `C<T> c;` over a class no pattern has made, or its `int v[N];`, is laid out as nothing, as a dependent base is.
+            const bool heldMember = readLayout_ && !d.type->isComplete() && (dependentType(d.type) || d.type->isArray());
             if (!d.type->isComplete() && !heldMember)
                 src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
             checkNotAbstract(d.type, d.pos, "the member '" + d.name + "'");
@@ -1636,8 +1636,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     else if (deferSpecializationBodies_ && insideSpecialization)
         // Nested in a specialization being made: compiled where called, with the specialization's own.
         pendingBodies_.insert(pendingBodies_.end(), mine.begin(), mine.end());
-    else
+    else {
         replayInlineBodies(std::move(mine));
+        if (!type->isSpecialization() && !insideSpecialization) tmpl_.readMemberTemplatesOf(tag);
+    }
     return type;
 }
 

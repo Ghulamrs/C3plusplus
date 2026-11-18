@@ -525,13 +525,17 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         try {
             Parser::Trial trial(&p_);
             const std::vector<long long> values(binding.size(), 0);
-            if (door == ReadFunction || door == ReadAlias) bindTemplateParameters(params, binding, values, Packs(), &undo);
+            if (door == ReadFunction || door == ReadAlias || door == ReadMember) bindTemplateParameters(params, binding, values, Packs(), &undo);
             p_.patternOnly_ = p_.patternBody_ = p_.patternUses_ = true;
             if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
             p_.current_ = &pattern;
             if (door == ReadFunction) {
                 p_.at_ = decl.afterParams;
                 p_.topLevel(pattern);
+            } else if (door == ReadMember) {
+                const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, Packs(params.size()));
+                const std::string display = specializationKey(decl.isConstructor ? decl.ownerLocal : decl.name, args);
+                replayMemberTemplate(decl, display, decl.ownerTag + "::" + display, args, nullptr, false);
             } else if (door == ReadAlias) {
                 p_.at_ = decl.aliasAt;
                 Parser::StorageClass sc;
@@ -542,7 +546,12 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 // The class over its own parameters, under a tag of this read alone; `C<T>` finds it while the read lasts.
                 const Packs packs(params.size());
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, packs);
-                const std::string tag = specializationKey(decl.name, args);
+                // Keyed as its own members write it: `Box<T, N>` is `Box<$T0,$P1>`, `Counted<Ns...>` is `Counted<{$T0...}>`.
+                std::vector<TemplateArg> written = args;
+                for (std::size_t i = 0; i < written.size(); i++)
+                    if (params[i].isPack) { written[i].pack.assign(1, binding[i]); written[i].expandsParam = static_cast<int>(i); }
+                    else if (!written[i].isType) { written[i].isParam = true; written[i].paramIndex = static_cast<int>(i); }
+                const std::string tag = specializationKey(decl.name, written);
                 std::vector<Parser::PendingBody> bodies;
                 const std::string readTag = tag + "$read" + std::to_string(readSerial_++);
                 // From its head on, not from its end, so a member's declaration and its replayed definition see one class;
@@ -581,10 +590,11 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     p_.current_ = &pattern;
                     tallyRead(door, from, refused, true);
                 }
+                if (door != ReadOutOfLine) readMemberTemplates(readTag, params.size(), &pattern);
                 tallied = door != ReadOutOfLine;
             }
         } catch (const SubstitutionFailure &f) {
-            why = (door == ReadFunction || door == ReadAlias || tallied ? "" : "the class: ") + f.why;
+            why = (door == ReadFunction || door == ReadAlias || door == ReadMember || tallied ? "" : "the class: ") + f.why;
             tallied = false;
         }
         readPattern_.clear();
@@ -627,6 +637,50 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
     if (!tallied) tallyRead(door, mark, why, door != ReadAlias);
 }
 
+// The member templates registered under `tag` and defined in its class.
+std::vector<TemplateDecl> Templates::memberTemplatesUnder(const std::string &tag) const {
+    std::vector<TemplateDecl> mine;
+    for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator m = memberTemplates_.lower_bound(tag + "::");
+         m != memberTemplates_.end() && m->first.compare(0, tag.size() + 2, tag + "::") == 0; ++m)
+        for (std::size_t t = 0; t < m->second.size(); t++)
+            if (m->second[t].defined && !m->second[t].outOfLineBody) mine.push_back(m->second[t]);
+    return mine;
+}
+
+void Templates::readMemberTemplatesOf(const std::string &tag) {
+    if (!checkBodies_ || p_.patternUses_) return;
+    const std::vector<TemplateDecl> mine = memberTemplatesUnder(tag);
+    for (std::size_t t = 0; t < mine.size(); t++)
+        if (mine[t].classParams.empty()) readDeclaration(mine[t], ReadMember);
+}
+
+void Templates::readMemberTemplates(const std::string &readTag, std::size_t outer, Program *pattern) {
+    const std::vector<TemplateDecl> mine = memberTemplatesUnder(readTag);
+    for (std::size_t t = 0; t < mine.size(); t++) {
+        const TemplateDecl &mt = mine[t];
+        const std::size_t from = p_.syntaxTree_.size();
+        const bool wasBody = p_.memberTemplateBody_;
+        std::string refused;
+        try {
+            Parser::Trial one(&p_);
+            std::vector<const Type *> binding;
+            for (std::size_t i = 0; i < mt.params.size(); i++) binding.push_back(p_.types_.templateParam(static_cast<int>(outer + i)));
+            const std::vector<long long> values(binding.size(), 0);
+            const Packs packs(mt.params.size());
+            const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
+            Parser::BoundParams bound(&p_);
+            bindTemplateParameters(mt.params, binding, values, packs, &bound.undo);
+            const std::string display = specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args);
+            replayMemberTemplate(mt, display, mt.ownerTag + "::" + display, args, nullptr, false);
+        } catch (const SubstitutionFailure &f) {
+            refused = f.why;
+        }
+        p_.memberTemplateBody_ = wasBody;
+        p_.current_ = pattern;
+        tallyRead(ReadMember, from, refused, true);
+    }
+}
+
 void Templates::holdDeclarations() {
     if (!checkBodies_) return;
     for (int door = 0; door < ReadDoors; door++)
@@ -651,7 +705,7 @@ std::string Templates::bodiesReport() const {
                       " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
         out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
-    static const char *const doors[ReadDoors] = { "functions", "class-members", "out-of-line", "partial-members", "aliases" };
+    static const char *const doors[ReadDoors] = { "functions", "class-members", "out-of-line", "partial-members", "aliases", "member-templates" };
     for (int door = 0; door < ReadDoors; door++) {
         long unread = 0;
         for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i) unread += i->second;
@@ -1914,6 +1968,45 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     return made;
 }
 
+// One member template's body replayed as the specialization `display` of `key`, its parameters already bound.
+void Templates::replayMemberTemplate(const TemplateDecl &mt, const std::string &display, const std::string &key,
+                                     const std::vector<TemplateArg> &args, const Type *patternFn, bool declOnly) {
+    const bool wasInst = p_.memberTemplateInst_;
+    const std::string wasOf = p_.memberTemplateOf_;
+    const std::string wasName = p_.memberTemplateName_;
+    const std::vector<TemplateArg> wasArgs = p_.memberTemplateArgs_;
+    const Type *wasPattern = p_.memberTemplatePattern_;
+    p_.memberTemplateInst_ = true;
+    p_.memberTemplateOf_ = mt.name;
+    p_.memberTemplateName_ = display;
+    p_.memberTemplateArgs_ = args;
+    p_.memberTemplateAccess_ = mt.memberAccess;
+    p_.memberTemplatePattern_ = patternFn;
+
+    std::vector<Parser::PendingBody> one(1);
+    one[0].tag = mt.ownerTag;
+    one[0].start = mt.afterParams;
+    one[0].local = mt.ownerLocal.empty() ? mt.ownerTag : mt.ownerLocal;
+    one[0].key = key;
+    one[0].which = Parser::PendingBody::npos();
+    // Defined at namespace scope: replayed as written there, `C::f` read in the namespace it was written in.
+    if (mt.outOfLineBody) { one[0].freeFunction = true; one[0].tag.clear(); }
+    struct Restore {
+        Parser *p; bool inst; std::string of, name; std::vector<TemplateArg> args; const Type *pattern;
+        bool statik, declOnly; std::vector<std::string> ns;
+        ~Restore() {
+            p->memberTemplateInst_ = inst; p->memberTemplateOf_ = of; p->memberTemplateName_ = name;
+            p->memberTemplateArgs_ = args; p->memberTemplatePattern_ = pattern;
+            p->memberTemplateStatic_ = statik; p->memberTemplateDeclOnly_ = declOnly; p->namespaceStack_ = ns;
+        }
+    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern, p_.memberTemplateStatic_,
+               p_.memberTemplateDeclOnly_, p_.namespaceStack_ };
+    p_.memberTemplateStatic_ = mt.staticMember;
+    p_.memberTemplateDeclOnly_ = declOnly;
+    if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
+    p_.replayInlineBodies(one);
+}
+
 // The specialization these arguments ask for, made if it is new.
 const Parser::Signature *Templates::instantiateMemberTemplate(
     const TemplateDecl &mt, const std::vector<const Type *> &binding,
@@ -1961,42 +2054,9 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     std::string patternName;
     const Type *patternFn = p_.readTemplateDeclaration(mt, pattern, values, &patternName);
 
-    const bool wasInst = p_.memberTemplateInst_;
-    const std::string wasOf = p_.memberTemplateOf_;
-    const std::string wasName = p_.memberTemplateName_;
-    const std::vector<TemplateArg> wasArgs = p_.memberTemplateArgs_;
-    const Type *wasPattern = p_.memberTemplatePattern_;
-    p_.memberTemplateInst_ = true;
-    p_.memberTemplateOf_ = mt.name;
-    p_.memberTemplateName_ = display;
-    p_.memberTemplateArgs_ = args;
-    p_.memberTemplateAccess_ = mt.memberAccess;
-    p_.memberTemplatePattern_ = patternFn;
-
-    std::vector<Parser::PendingBody> one(1);
-    one[0].tag = mt.ownerTag;
-    one[0].start = mt.afterParams;
-    one[0].local = mt.ownerLocal.empty() ? mt.ownerTag : mt.ownerLocal;
-    one[0].key = key;
-    one[0].which = Parser::PendingBody::npos();
-    // Defined at namespace scope: replayed as written there, `C::f` read in the namespace it was written in.
-    if (mt.outOfLineBody) { one[0].freeFunction = true; one[0].tag.clear(); }
-    struct Restore {
-        Parser *p; bool inst; std::string of, name; std::vector<TemplateArg> args; const Type *pattern;
-        bool statik, declOnly; std::vector<std::string> ns;
-        ~Restore() {
-            p->memberTemplateInst_ = inst; p->memberTemplateOf_ = of; p->memberTemplateName_ = name;
-            p->memberTemplateArgs_ = args; p->memberTemplatePattern_ = pattern;
-            p->memberTemplateStatic_ = statik; p->memberTemplateDeclOnly_ = declOnly; p->namespaceStack_ = ns;
-        }
-    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern, p_.memberTemplateStatic_,
-               p_.memberTemplateDeclOnly_, p_.namespaceStack_ };
-    p_.memberTemplateStatic_ = mt.staticMember;
-    p_.memberTemplateDeclOnly_ = declOnly;
-    if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
     count(MemberTemplate);
     const std::size_t bodiesFrom = p_.syntaxTree_.size();
-    p_.replayInlineBodies(one);
+    replayMemberTemplate(mt, display, key, args, patternFn, declOnly);
     holdBodies(bodiesFrom);
     bound.unbindNow();
 
