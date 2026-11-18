@@ -1647,6 +1647,8 @@ private:
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;
+    // A read's local whose type is dependent or a pack's expansion (`Ts... rest`): no slot, no size, no alignment.
+    bool slotless(const Type *t) const { return patternBody_ && (dependentType(t) || t->kind() == Kind::PackExpansion); }
     bool dependentArgs(const std::vector<TemplateArg> &args) const;
     // **Expression SFINAE**: an expression over a pattern's parameters, read as a tree that types
     // nothing (ParserDependent.cpp). `angle` stops at an argument list's `>`; `comma` lets `,` in.
