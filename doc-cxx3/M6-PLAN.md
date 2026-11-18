@@ -3954,3 +3954,25 @@ decision.
 1 on a box whose three slots were held by two other gates. It is still one lane, as the first round proposed. (3) "one
 return and nothing else" asked of the syntax tree is S4's: it changes what is accepted (`{ { return x; } }`, a wrapped
 `noexcept` body), so it is not a step of identical output.
+
+### The next M6 wave landed - W8, R1, M6d rounds 1-4 (the C6000 walker deleted), S1, S2, S3's first half, 2026-11-18 (the coordinator)
+
+- C6000 walked 34 / 47 -> 0 / 0 (W8, R1; the last two refused by name, as on every target); the C6000 walker, Walker.h and
+  CXX1_C6X_WALKER deleted (M6d round 2), every backend's frame record and data on the IR (rounds 2-4), the prune on the IR
+  (S1), SlotUses (S2) and three statement casts (S3a) gone; the dead output S1 dropped (two elided move constructors,
+  initializer_list begin/end) named case by case. Cycles -O2 192,025,550 -> 149,248,103 against 458f8974's baseline.
+- Merged with main 703407e2 (M8.1 commits 1-3) by the coordinator; lane mw9 mended the one merge fault (Templates.cpp:477,
+  the dialect on UnitData) and re-pointed 17 citations; wf9 deleted four fields clang called unused (the Mac's -Werror
+  build) and moved eleven new cases' constructors out of line for names.sh. 914d70b6 (ExprPtr +1) reverted in e979bb65 and
+  kept as boxkit/m6d-s3b-constexpr-operand.patch, waiting on the user's word.
+- **The user's decision**, given directly ("Yes, write it", 2026-11-18): string-literal-array-reference at -O2 (70 -> 96)
+  accepted, owed to M6b's inliner (07f8b9e8).
+- **Gate: tools/wave-gate m6k -w 703407e2 at 9e430216: 42 passed, 2 failed, 0 not run** - the fixed points ran this time
+  (both boxes, -O0 and -O2: 102 of 102 the same through stage 3). The two FAILs were the case accepted after the gated
+  commit: cycles (it alone unowned) and baselines (tests/tms6747-cycles.txt changed after the gated commit). 07f8b9e8 adds
+  only that line, no code: tools/c6x-cycles --check over m6k's joined shards (847 cases) with 07f8b9e8's file, run by the
+  coordinator on Linux the way the gate runs it - rc 0, 71 worse all owed or accepted, 0 missing or stale. Landed at
+  07f8b9e8 on that. The first gate (m6j) failed mostly on disks over 70% (cleaned), plus the Mac build, names.sh and the
+  unnamed differences mended above.
+- tests/wave-expected.txt emptied (236 rows were this wave's). CLAUDE.md's "Reading this tree": every target goes through a
+  selector, no backend walks Ast.h.
