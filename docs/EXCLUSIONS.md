@@ -102,7 +102,7 @@ goes in the same commit.
 | `1'000`, a digit separator | C++14 | `src/Lexer.cpp:358` |
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:527` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
-| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2337` |
+| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2342` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3015`, `src/parser/ParserTopLevel.cpp:837` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
@@ -194,7 +194,7 @@ is left:
   `src/parser/ParserType.cpp:599`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3730`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3735`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -244,10 +244,10 @@ is left:
   when it had compiled and built nothing. `src/parser/ParserType.cpp:1074`
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
-  object to be a field of. `src/parser/ParserType.cpp:2320`
+  object to be a field of. `src/parser/ParserType.cpp:2321`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2267`
 - **one name holding both a static and a non-static member**, where overload
-  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2062`
+  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2067`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
@@ -262,7 +262,7 @@ is left:
 
 ## Conversion functions and operators
 
-- **`operator->*`** - `src/parser/ParserType.cpp:2499`
+- **`operator->*`** - `src/parser/ParserType.cpp:2500`
 - **an operator that can be named but not reached** - `operator&&`,
   `operator||` and `operator,`: refused at the declaration, because a function
   that links and can never be called is the half-built thing this project
@@ -270,7 +270,7 @@ is left:
   expression, asked of a one-line program each: `+ - * / % & | ^ << >> == != <
   <= > >=` binary, `+ - * & ! ~ ++ --` unary, `() [] = ->`, the ten compound
   assignments, and `operator new`, `operator delete` and the placement forms.
-  `src/parser/ParserType.cpp:2668`
+  `src/parser/ParserType.cpp:2669`
 
 ## Initialisation, and braces
 
@@ -313,7 +313,7 @@ many, or has no object of its own:
 - **a class or a template named with `::` alone in an *expression*** - `::S::k`,
   `::f<int>()`. A function, a variable and an enumerator are looked up absolutely
   since 2026-10-23 (M1 L11), and as a *type* `::Lexer *p;` works.
-  `src/parser/ParserExpr.cpp:1636`
+  `src/parser/ParserExpr.cpp:1641`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
   deduced one does not - `src/sema/Templates.cpp:953`
@@ -326,7 +326,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:739`
 - **postfix `++` / `--` on a bit-field** - the prefix form works.
   `src/parser/ParserOperator.cpp:854`
-- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1401`
+- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1406`
 - **`?:` with a `throw` arm and an arm of class type** - the class arm would want a temporary the
   `throw` arm never builds; throw in a statement of its own, or give the class arm to a variable
   first. `src/parser/ParserOperator.cpp:972`
@@ -451,8 +451,8 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 Two, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
-`src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1325`,
-`src/parser/ParserType.cpp:2275`; `tests/cases/refused.cpp` holds one.
+`src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1330`,
+`src/parser/ParserType.cpp:2276`; `tests/cases/refused.cpp` holds one.
 
     asm   export
 
@@ -489,7 +489,7 @@ between the two lists.**
 - **a pointer to a member of an incomplete class, on x86_64-windows** - the
   Microsoft ABI sizes one by the class's inheritance model, and an incomplete
   class takes cl's widest form. A class being defined with no base is single
-  and is taken (M1 L13). `src/parser/ParserType.cpp:2917`
+  and is taken (M1 L13). `src/parser/ParserType.cpp:2918`
 - **a `volatile` object with external linkage, on x86_64-windows** - cl
   decorates its name with the qualifier, `?g3HC` for `?g3HA`.
   `src/parser/ParserType.cpp:1951`
