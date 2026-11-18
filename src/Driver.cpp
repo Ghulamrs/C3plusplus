@@ -1368,64 +1368,60 @@ static void namesOf(const ir::Function &f, bool microsoft, std::vector<std::stri
     out.insert(out.end(), f.alsoNamed.begin(), f.alsoNamed.end());
 }
 
-// **-check=prune** (M6d S1): the prune's closure taken over the IR as lowered, from the unit's holding records, against
-// what the parser's prune kept and dropped. Equal kept sets: everything kept is reached, nothing dropped is named.
-static void checkPrune(const ir::Module &m, const TypeTable &types, bool microsoft, std::vector<std::string> &faults) {
-    const UnitData &d = m.data;
-    const std::set<std::string> held(d.held.begin(), d.held.end());
-    // Nothing held, nothing pruned: the parser's prune leaves such a unit whole, its unread literals too.
-    bool any = !held.empty();
-    for (const Global &g : d.globals) any = any || g.held;
-    if (!any) return;
-    const std::size_t nf = m.functions.size();
-    std::map<std::string, std::size_t> bySymbol;
-    for (std::size_t i = 1; i < nf; i++) {
-        bySymbol[m.functions[i].symbol] = i;
-        if (!m.functions[i].laid.alias.empty()) bySymbol[m.functions[i].laid.alias] = i;
-    }
-    for (std::size_t i = 0; i < d.globals.size(); i++) bySymbol[d.globals[i].symbol] = nf + i;
-    std::vector<bool> reached(nf + d.globals.size(), false);
-    std::set<std::string> every;
+// **The prune** (M6d S1): the unit's closure over the IR as lowered, from its holding records. A held function or
+// object is reached when a name of it is; names come from the functions lowered and the objects reached.
+struct Prune {
+    std::set<std::string> held, every, swept;
     std::vector<std::string> named;
-    std::vector<std::size_t> work;
-    named.push_back(d.initFunction);
-    for (const MicrosoftThrow &t : d.msThrows) {
-        if (!t.thrown) continue;
-        named.push_back(t.destructor);
-        for (const MicrosoftThrow::Catchable &c : t.catchables) named.push_back(c.copyCtor);
+    bool any = false;
+    bool reached(const std::string &symbol, const std::string &alias) const {
+        return !any || held.count(symbol) == 0 || every.count(symbol) != 0 || (!alias.empty() && every.count(alias) != 0);
     }
-    for (std::size_t i = 1; i < nf; i++)
-        if (held.count(m.functions[i].symbol) == 0) { reached[i] = true; work.push_back(i); }
-    for (std::size_t i = 0; i < d.globals.size(); i++)
-        if (!d.globals[i].held) { reached[nf + i] = true; work.push_back(nf + i); }
-    for (;;) {
-        for (const std::string &s : named) {
-            every.insert(s);
-            const std::map<std::string, std::size_t>::const_iterator f = bySymbol.find(s);
-            if (f != bySymbol.end() && !reached[f->second]) { reached[f->second] = true; work.push_back(f->second); }
+    // The names taken in, and those of every object they reach, until none is new.
+    void settle(const UnitData &d) {
+        for (bool more = true; more;) {
+            more = false;
+            every.insert(named.begin(), named.end());
+            named.clear();
+            for (const Global &g : d.globals) {
+                if ((g.held && every.count(g.symbol) == 0) || !swept.insert(g.symbol).second) continue;
+                named.push_back(g.prefixWord);
+                for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
+                more = true;
+            }
         }
-        named.clear();
-        if (work.empty()) break;
-        const std::size_t i = work.back();
-        work.pop_back();
-        if (i < nf) { namesOf(m.functions[i], microsoft, named); continue; }
-        named.push_back(d.globals[i - nf].prefixWord);
-        for (const GlobalPiece &p : d.globals[i - nf].init) named.push_back(p.symbol);
     }
-    for (std::size_t i = 1; i < nf; i++)
-        if (!reached[i]) faults.push_back("-check=prune: the parser kept the function " + m.functions[i].symbol + ", which nothing in the IR names");
-    for (std::size_t i = 0; i < d.globals.size(); i++)
-        if (!reached[nf + i]) faults.push_back("-check=prune: the parser kept the object " + d.globals[i].symbol + ", which nothing in the IR names");
-    for (const StringLit &sl : d.strings)
-        if (every.count(sl.label) == 0 && !sl.copied) faults.push_back("-check=prune: the parser kept the literal " + sl.label + ", which nothing in the IR names");
+};
+
+// What the closure did not reach leaves the unit: functions, objects, unread literals, a Microsoft class's unnamed records.
+// **-check=prune**: each kept and each dropped against what the parser's closure said (UnitData::dropped).
+static void pruneUnit(const Prune &pr, Program &program, UnitData &d, const TypeTable &types, std::vector<std::string> *faults) {
+    const std::set<std::string> parsers(d.dropped.begin(), d.dropped.end());
+    auto keep = [&](bool kept, const std::string &name) {
+        if (faults != nullptr && !name.empty() && kept == (parsers.count(name) != 0))
+            faults->push_back("-check=prune: the IR's closure " + std::string(kept ? "keeps " : "drops ") + name + ", which the parser's " + (kept ? "dropped" : "kept"));
+        return kept;
+    };
+    std::vector<Function> functions;
+    for (Function &f : program.functions)
+        if (keep(pr.reached(f.symbol(), f.alias()), f.symbol())) functions.push_back(std::move(f));
+    program.functions.swap(functions);
+    std::vector<Global> globals;
+    for (Global &g : d.globals)
+        if (keep(!g.held || pr.every.count(g.symbol) != 0, g.symbol)) globals.push_back(std::move(g));
+    d.globals.swap(globals);
+    std::vector<StringLit> strings;
+    for (StringLit &sl : d.strings)
+        if (keep(pr.every.count(sl.label) != 0 || sl.copied, sl.label)) strings.push_back(std::move(sl));
+    d.strings.swap(strings);
+    std::vector<TypeId> rtti;
     for (const TypeId id : d.rtti) {
         MicrosoftRtti n; std::string why;
-        if (microsoftClassRttiNames(types.type(id), &n, &why) && every.count(n.locator) == 0 && every.count(n.descriptor) == 0 &&
-            every.count(n.baseDescriptor) == 0 && every.count(n.array) == 0 && every.count(n.hierarchy) == 0)
-            faults.push_back("-check=prune: the parser kept the run-time description " + n.descriptor + ", which nothing in the IR names");
+        if (keep(!microsoftClassRttiNames(types.type(id), &n, &why) || pr.every.count(n.locator) != 0 || pr.every.count(n.descriptor) != 0 ||
+                 pr.every.count(n.baseDescriptor) != 0 || pr.every.count(n.array) != 0 || pr.every.count(n.hierarchy) != 0, n.descriptor))
+            rtti.push_back(id);
     }
-    for (const std::string &s : d.dropped)
-        if (!s.empty() && every.count(s) != 0) faults.push_back("-check=prune: the IR names " + s + ", which the parser dropped");
+    d.rtti.swap(rtti);
 }
 
 // **The SSA lowering over every body** (M3b.1), a function outside counted with its reason; then at `level` 1 and up
@@ -1437,7 +1433,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
                             std::vector<std::string> &outside) {
     sema::Typer typer(parser);
     typer.emitInto(program);
-    const sema::Census c = sema::Typer::census(parser, program);
+    const sema::Census c = sema::Typer::census(parser, program, true);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, into);
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
@@ -1542,8 +1538,41 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         const std::map<std::string, sema::TypedId>::const_iterator i = splitBodies.find(key);
         return i == splitBodies.end() ? sema::TypedId() : i->second;
     });
+    // **The worklist** (M6d S1): a body or a compiler-written function is lowered once a name reaches it, in rounds
+    // until none is new; `placed` is each one's place in the unit's order, which the module's functions are put back in.
+    Prune prune;
+    prune.held.insert(into.data.held.begin(), into.data.held.end());
+    prune.any = !prune.held.empty();
+    for (const Global &g : into.data.globals) prune.any = prune.any || g.held;
+    prune.named.push_back(into.data.initFunction);
+    for (const MicrosoftThrow &t : into.data.msThrows) {
+        if (!t.thrown) continue;         // a type only caught needs its descriptor alone
+        prune.named.push_back(t.destructor);
+        for (const MicrosoftThrow::Catchable &k : t.catchables) prune.named.push_back(k.copyCtor);
+    }
+    prune.settle(into.data);
+    const bool microsoft = target.microsoftNames();
+    std::vector<bool> bodyDone(c.bodies.size(), false);
+    std::set<std::string> builtDone, deferred;
+    std::map<std::string, std::size_t> splitAt;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        const std::string split = typer.vttSplit(program.functions[c.bodies[r].second].symbol());
+        if (!split.empty()) splitAt[split] = r;
+    }
+    std::vector<std::pair<std::size_t, std::uint32_t> > placed;
+    std::size_t bodies = 0;
+    ir::Builder builder(lowering);
+    std::map<std::string, int> built, left;
+    int synthesised = 0, builtCount = 0;
+    for (bool more = true; more;) {
+    more = false;
+    for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        if (bodyDone[r] || c.bodies[r].second >= program.functions.size()) continue;
         const Function &fn = program.functions[c.bodies[r].second];
+        if (!prune.reached(fn.symbol(), fn.alias())) continue;
+        bodyDone[r] = true;
+        more = true;
+        bodies++;
         const sema::TypedId t = typer.typeBody(c.bodies[r].first, fn.symbol());
         ir::FunctionFacts facts;
         factsOf(fn, facts);
@@ -1570,19 +1599,32 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         }
         const ir::FuncId made = lowering.lower(t, facts, why);
         if (!made.valid() && why.empty()) why = "the lowering gave no reason";
-        if (why.empty()) { laidOf(fn, made); lowered++; continue; }
+        if (why.empty()) {
+            laidOf(fn, made);
+            lowered++;
+            placed.push_back(std::make_pair(r, made.v));
+            namesOf(into.functions[made.v], microsoft, prune.named);
+            prune.settle(into.data);
+            continue;
+        }
         reasons[why]++;
         outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     // **The compiler-written functions** (M3b.3): each built from its class's layout by the Builder, or left on the
     // parser's path with its reason, counted by kind.
-    ir::Builder builder(lowering);
-    std::map<std::string, int> built, left;
-    int synthesised = 0, builtCount = 0;
     for (std::size_t i = 0; i < program.functions.size(); i++) {
         const Function &fn = program.functions[i];
-        if (fn.synthesised().empty()) continue;
+        if (fn.synthesised().empty() || !prune.reached(fn.symbol(), fn.alias()) || builtDone.count(fn.symbol()) != 0) continue;
+        more = true;
+        // Itanium's C1 or D1 is built from its C2's or D2's body: reaching the one reaches the other, lowered a round before it.
+        const std::map<std::string, std::size_t>::const_iterator part = splitAt.find(fn.symbol());
+        if (part != splitAt.end() && !bodyDone[part->second] && deferred.insert(fn.symbol()).second) {
+            prune.named.push_back(program.functions[c.bodies[part->second].second].symbol());
+            prune.settle(into.data);
+            continue;
+        }
+        builtDone.insert(fn.symbol());
         synthesised++;
         ir::FunctionFacts facts;
         factsOf(fn, facts);
@@ -1600,13 +1642,32 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
             facts.paramTypes.push_back(TypeTable::id(fn.params()[p].type));
         std::string why;
         const ir::FuncId made = builder.build(facts, fn.synthesised(), why);
-        if (made.valid()) { laidOf(fn, made); built[fn.synthesised()]++; builtCount++; continue; }
+        if (made.valid()) {
+            laidOf(fn, made);
+            built[fn.synthesised()]++;
+            builtCount++;
+            placed.push_back(std::make_pair(c.bodies.size() + i, made.v));
+            namesOf(into.functions[made.v], microsoft, prune.named);
+            prune.settle(into.data);
+            continue;
+        }
         left[fn.synthesised() + " - " + why]++;
         outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
+    }
     // Taken before any pass: the inliner removes calls, and the kept set may not depend on the level.
-    if (checkPruneAsked && outside.empty()) checkPrune(into, types, target.microsoftNames(), outside);
+    if (outside.empty()) {
+        if (prune.any) pruneUnit(prune, program, into.data, types, checkPruneAsked ? &outside : nullptr);
+        // A function a later round reached stands where the unit's order has it, as when every body was lowered in turn.
+        if (placed.size() + 1 == into.functions.size()) {
+            std::sort(placed.begin(), placed.end());
+            std::vector<ir::Function> ordered;
+            ordered.push_back(std::move(into.functions[0]));
+            for (const std::pair<std::size_t, std::uint32_t> &at : placed) ordered.push_back(std::move(into.functions[at.second]));
+            into.functions.swap(ordered);
+        }
+    }
     std::string out;
     const int failed = report ? ir::verify(into, types, out) : 0;
     ir::PassLog log(report, dumpAfter);
@@ -1625,8 +1686,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     for (std::map<std::string, int>::const_iterator i = left.begin(); i != left.end(); ++i)
         out += "  synthesised outside (" + std::to_string(i->second) + "): " + i->first + "\n";
     char line[200], synth[120];
-    std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", c.bodies.size(), lowered,
-                  c.bodies.size() - lowered, lowered - failed, failed);
+    std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", bodies, lowered,
+                  bodies - lowered, lowered - failed, failed);
     std::snprintf(synth, sizeof synth, "-check=ssa synthesised: functions=%d lowered=%d outside=%d\n", synthesised, builtCount,
                   synthesised - builtCount);
     char passes[160];

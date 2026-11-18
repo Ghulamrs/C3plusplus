@@ -2005,34 +2005,19 @@ void Parser::pruneUnusedInline(Program &program) {
             for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
         }
     }
-    std::vector<Function> kept;
+    // Nothing leaves here: what this closure would drop is -check=prune's other half, the driver's closure the prune.
     for (std::size_t i = 0; i < nf; i++)
-        if (reached[i]) kept.push_back(std::move(program.functions[i]));
-        else { data.dropped.push_back(program.functions[i].symbol()); data.dropped.push_back(program.functions[i].alias()); }
-    program.functions.swap(kept);
-    std::vector<Global> keptGlobals;
-    for (std::size_t i = 0; i < program.module.data.globals.size(); i++)
-        if (reached[nf + i]) keptGlobals.push_back(std::move(program.module.data.globals[i]));
-        else data.dropped.push_back(program.module.data.globals[i].symbol);
-    program.module.data.globals.swap(keptGlobals);
-    // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
-    std::vector<StringLit> keptStrings;
-    for (StringLit &sl : program.module.data.strings)
-        if (everyName.count(sl.label) != 0 || sl.copied) keptStrings.push_back(std::move(sl));
-        else data.dropped.push_back(sl.label);
-    program.module.data.strings.swap(keptStrings);
-    // A Microsoft class keeps its five records where its vftable stayed or something names one.
-    std::vector<TypeId> rtti;
-    for (const TypeId id : program.module.data.rtti) {
-        const Type *cls = types_.type(id);
+        if (!reached[i]) data.dropped.push_back(program.functions[i].symbol());
+    for (std::size_t i = 0; i < data.globals.size(); i++)
+        if (!reached[nf + i]) data.dropped.push_back(data.globals[i].symbol);
+    for (const StringLit &sl : data.strings)
+        if (everyName.count(sl.label) == 0 && !sl.copied) data.dropped.push_back(sl.label);
+    for (const TypeId id : data.rtti) {
         MicrosoftRtti n; std::string why;
-        if (!microsoftClassRttiNames(cls, &n, &why) || everyName.count(n.locator) ||
-            everyName.count(n.descriptor) || everyName.count(n.baseDescriptor) ||
-            everyName.count(n.array) || everyName.count(n.hierarchy))
-            rtti.push_back(id);
-        else for (const std::string *s : { &n.locator, &n.descriptor, &n.baseDescriptor, &n.array, &n.hierarchy }) data.dropped.push_back(*s);
+        if (microsoftClassRttiNames(types_.type(id), &n, &why) && !everyName.count(n.locator) && !everyName.count(n.descriptor) &&
+            !everyName.count(n.baseDescriptor) && !everyName.count(n.array) && !everyName.count(n.hierarchy))
+            data.dropped.push_back(n.descriptor);
     }
-    program.module.data.rtti.swap(rtti);
 }
 
 // `static int total;` inside a class: one object shared by every object of the class,
