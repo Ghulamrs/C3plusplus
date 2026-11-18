@@ -875,6 +875,27 @@ bool Parser::pendingTemporaryAt(int slot) const {
     return false;
 }
 
+// M6d S2's oracle while both exist: the temporary's record against SlotUses' walk - the same answer, or an error.
+void Parser::checkSlotRecord(int slot, const Call *walked, std::size_t pos) {
+    const Temporary *rec = nullptr;
+    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+        if (pendingTemps_[i].slot == slot) rec = &pendingTemps_[i];
+    std::vector<syntax::NodeId> old, made;
+    if (walked != nullptr && !pendingReturnEmpty_.empty() && !memberTemplateInst_) {
+        for (std::size_t i = 1; i < walked->args().size(); i++) old.push_back(syn(walked->args()[i]));
+        for (std::size_t i = 0; i < old.size(); i++) if (!old[i].valid()) { old.clear(); break; }
+        const std::unordered_map<int, syntax::NodeId>::const_iterator d = temporaryDefaults_.find(slot);
+        if (d != temporaryDefaults_.end() && d->second.valid())
+            for (std::uint32_t i = 0; i < syntaxTree_.node(d->second).count; i++) made.push_back(syntaxTree_.child(d->second, i));
+    }
+    bool same = rec != nullptr && rec->plain == (walked != nullptr) && old.size() == made.size();
+    if (same && walked != nullptr) same = rec->builtBy == walked->resolved();
+    for (std::size_t i = 0; same && i < old.size(); i++) same = old[i].v == made[i].v;
+    if (!same)
+        src_.fail(pos, "internal: the record of the temporary 'return' builds in place differs from SlotUses' "
+                       "walk, in '" + currentFunction_ + "' (M6d S2)");
+}
+
 // **`return value;` for a class with a copy or move constructor of its own**: the caller's object is
 // constructed through the hidden pointer from the value, a local or parameter as an rvalue first -
 // [class.copy]/32 - and the value is destroyed as any object, its address never having been handed out.
@@ -928,6 +949,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                     SlotUses uses(slot);
                     both->left().accept(uses);
                     Call *ctor = constructorOfSlot(&both->left(), slot);
+                    checkSlotRecord(slot, uses.count == 1 ? ctor : nullptr, pos);
                     if (uses.count == 1 && ctor != nullptr) {
                         releaseTemporary(*value);
                         ExprPtr held(Var::local(".sret", sretSlot_));
@@ -1018,6 +1040,8 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
     ExprPtr call = completeCall(plain->tag(), ctor.symbol, nullptr,
                                 types_.get(Kind::Void), full, false, pos,
                                 std::move(all));
+    const std::uint32_t builtBy = call->resolved();
+    bool zeroed = false;
     if (zeroFirst) {
         ExprPtr fresh(Var::local("$tmp", slot));
         fresh->setType(plain);
@@ -1025,8 +1049,11 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
             ExprPtr seq(new Comma(std::move(chain), std::move(call)));
             seq->setType(types_.get(Kind::Void));
             call = std::move(seq);
+            zeroed = true;
         }
     }
+    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+        if (pendingTemps_[i].slot == slot) { pendingTemps_[i].builtBy = builtBy; pendingTemps_[i].plain = !zeroed; }
 
     // The object exists from the moment its constructor returns, and a cleanup
     // pad may run at any point after that - so the flag is set here rather

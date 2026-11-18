@@ -1196,6 +1196,10 @@ private:
         // `count` long: a braced list's backing array made inside an expression.
         bool exceptionStorage = false;
         long long count = 0;
+        // Built by constructTemporary through the constructor call `builtBy` (its Resolved index), and `plain`:
+        // nothing but that call names the slot - the record `return T(args);`'s elision asks.
+        std::uint32_t builtBy = 0;
+        bool plain = false;
         Temporary(int slot = 0, const Type *type = nullptr, int flag = 0)
             : slot(slot), type(type), flag(flag) {}
     };
@@ -1929,6 +1933,7 @@ private:
     // `return value;` built through the hidden pointer by the move or copy constructor; `*sret` is the answer.
     ExprPtr buildReturned(ExprPtr value, std::size_t pos, bool *named);
     bool pendingTemporaryAt(int slot) const;
+    void checkSlotRecord(int slot, const Call *walked, std::size_t pos);
     // **Copy-initialise a class into a slot somebody else owns**, as one
     // expression. `constructTemporary` and `materialiseCopy` each allocate a
     // slot of their own, and both arms of a `?:` have to build into one.
