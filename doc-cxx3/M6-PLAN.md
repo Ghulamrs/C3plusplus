@@ -3309,3 +3309,65 @@ older than commit c29ce92b) - all inside the 9-minute cap, none retried.
 1/2, names.sh, make test to its end, tms6747 SIM=0 and -O1, asm6x, ti-link, release-check, lldb/cdb (-g on x86 and arm64 now reads `f.laid` for locals and blocks), the fixed point; the guide's
 line on `backend/Walker.h` and tools/ssa-census's `c6x-walker` count (now always 0: a refusal is an error) are the coordinator's to
 retire; `emitData` on a module data record; `Inliner`'s remaining users.
+
+### M6d, third round: the data record on ir::Module, the Inliner's Ast.h half, and what the residue still is - lane m6d3, 2026-11-18
+
+From m6d-shell 11ced288. src/ 93,441 -> 93,261 lines (-180). REF is 11ced288's code built on Linux (`~/m6d2c-final.exe`); every step
+is the same text on four targets (tools/identical.sh, 1,808 tms6747 and 7,232 x86_64-linux, x86_64-windows and arm64-darwin compares) and
+the same `-g -S` text for every case on tms6747, x86_64-linux and arm64-darwin (boxkit/m6d3-gdiff.sh, REF's tree path written as the new one).
+
+**(1) The data record** (0b37cbad, src/ +317 -289). `src/UnitData.h` holds `Global`, `GlobalPiece`, `StringLit`, `TlsWrapper` and
+`UnitData` - objects, strings, the functions' symbols in order (`order`), the Microsoft throw and RTTI lists, the init functions,
+`usesDsoHandle`, the dialect - and `ir::Module::data` is it. The parser and `Classes` write `program.module.data`; `CodeGen::run`
+takes the `ir::Module`, and every generator's `emitData`, `emitGlobal`, TLS wrappers and COFF/MASM RTTI read `UnitData`. The C6000
+names no Ast.h type at all (`Tms6747.cpp` and `Backend.h` no longer include it); x86 and arm64 are handed the Ast.h `Function`s
+their shells still read by `CodeGen::setFunctions` - the frame record they have not moved to `ir::Laid`. `Program::thrown` had no
+reader and went. The header is in src/, not src/ir/: `Global::type` and `rtti` are `const Type *`, and the memory gate counts raw
+pointers under src/ir - moving them to `TypeId` is the record's next step, not hidden by the directory. (The commit also carries
+the removal of tools/c6x-walked.baseline, which belongs to (2).)
+
+**(2) The Inliner's Ast.h half, and the walked count** (3444ae95, src/ +3 -158). `Inliner` has one user, the SSA inliner
+(SsaInline.cpp), which asks `decide` alone: `summarize`, the node `Measurer`, `allows`, `eligible`, `size`, `leaf`, `largestFrame`
+and their maps are deleted, and Inliner.h no longer includes Ast.h. tools/ssa-census no longer counts `c6x-walker` lines (there is
+no walker; a body outside the selector is an error): the `walked` function, the `case` job, `CENSUS_SOURCES` and
+tools/c6x-walked.baseline go, and tools/wave-gate's census leg reads the `outside=` line alone (one job, not two).
+
+**(3) What the residue still is** (ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413, readers 14 -> 10, ast-lines 845 -> 739).
+No generator and no lowering reads a node: `ir::Lowering` reads the typed tree, and after e0af95aa (src/ +11 -16) not `Program`
+either - its string and object lists are `module_.data`'s, Lowering.cpp does not include Ast.h. The readers of nodes left are
+(a) the constant evaluator, `sema/Constexpr.cpp` (about 46 node casts: `fold` over `Expr`, a constexpr body's statements); (b) the parser's own
+shape tests and folds (about 120 casts); (c) two `Visitor`s in the parser - `SymbolsNamed` (ParserClass.cpp: which functions,
+objects and strings a kept body names, so the unreached are dropped - it decides what is emitted) and `SlotUses`
+(ParserExprNew.cpp); (d) `Overload`, `Entities` and `Templates`, which hold a default argument's or an initialiser's `Expr` for (a).
+The builders are the parser (about 1,680 of the ExprPtr words) and `Classes`' synthesised bodies (about 200). So the building half
+cannot go as a deletion: a statement node is read by `SymbolsNamed`, `SlotUses`, the evaluator's walk of a constexpr body and a
+handful of the parser's own casts, and those must first read the typed tree (or the IR: the reachability walk is a walk of `ir::Module` calls and `Addr`s). That is
+M6d's remaining design step, and it touches ParserClass.cpp's prune, which decides output.
+What nothing read went (5d5ca21a, src/ +4 -52): `Try::alsoCleanup`, `typeIndices`, `unwindHelpSlot`, `msExits` and
+`Block::unwindCleanup`, with their setters and the parser's calls. The frame slots and selector indices are still taken where they
+were (`msUnwindHelp()`, `typeIndexFor`), so frames are unchanged; whether a slot nobody reads may go is a change of output, owed.
+Seven refusals moved a line; docs/EXCLUSIONS.md's citations moved with them.
+
+**Still unread on Ast.h, not deleted this round** (accessors with no caller outside Ast.h): `Try::pointerSlot`/`selectorSlot`
+(constructor arguments at eight sites), `Switch::cases`/`defaultCase`, `Call::namedArgs`, `Postfix::increment`, `Block::scope` and
+`For::scope` (`setScope` has callers), `Function::setBody`. Readers left: Parser.h, ParserInternal.h, Classes.h, Constexpr.h,
+Entities.h, Linkage.h, Overload.h, Templates.h, SemaC.cpp, backend/Dwarf.h (`Local`, for x86's and arm64's -g).
+
+**Identical, by step** (Linux, REF 11ced288): step 1 tms6747 1,808/0 differ, x86+arm64 7,232/0, -g 888 same/358 refused alike/0
+differ (tms6747), 903/343/0 (x86_64-linux), 903/343/0 (arm64-darwin); step 2 1,808/0 and 7,232/0; steps 3A+3B (the final tree,
+built together) 1,808/0, 7,232/0 and -g 888/358/0, 903/343/0, 903/343/0. ast-residue after step 1 and 2: readers 11, ast-lines
+769; after step 3: readers 10, ast-lines 739; ExprPtr 2,016, StmtPtr 639, node-casts 165, node-refs 413 unchanged; visits 0.
+
+**Gates on the final tree** (Linux ~/m6d3, g++ -Werror clean; Windows work\m6d3x, cl /W4 /WX clean, twice): tms6747 SIM=1 -O2
+shards 1-3 (Linux) 425/0 and 4-6 (Windows) 425/0; -O0 shards 1-3 (Linux) 425/0 and 4-6 (Windows) 425/0; cycles over the six shards
+-O2 149,248,103 and -O0 307,812,480 = the base's, 18 and 4 worse unowned as at the base (the check fails as before, nothing written); the two cases refused
+as their .error on four targets at both levels; g-same 888/0; debug gdb 5/0; self-compile of C6xSelect, Tms6747, Regions (tms6747,
+-O0 and -O2) 6/0; c6x-declines 0; exclusions 0 uncited 0 stale, comment cap, memory gate, ast-residue (baseline recorded),
+ide --check hold; tools/ssa-census and tools/wave-gate pass `sh -n` and were not run.
+
+**Owed to the wave gate:** the source census (`outside=`) through the edited tools/ssa-census and wave-gate's census leg;
+run.sh, winpass (both spellings: the MASM and COFF RTTI and throw records now read `UnitData`), ssa.sh 1/2, names.sh, make
+test to its end, tms6747 SIM=0 and -O1, asm6x, ti-link, release-check, lldb/cdb, the fixed point. **Left of M6d:** x86's and arm64's
+frame record onto `ir::Laid` (then `setFunctions`, `Backend`'s `Function` and Dwarf.h's `Local` go); `UnitData`'s `const Type *`
+onto `TypeId`; the three statement readers above onto the typed tree or the IR, then the parser's and `Classes`' building half
+and Ast.h's nodes - the part that is a design, not a deletion; the unread accessors listed above; the dead frame slots.
