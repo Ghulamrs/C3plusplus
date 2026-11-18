@@ -183,6 +183,7 @@
     <ClInclude Include="..\src\Mangle.h" />
     <ClInclude Include="..\src\Name.h" />
     <ClInclude Include="..\src\Operator.h" />
+    <ClInclude Include="..\src\Owned.h" />
     <ClInclude Include="..\src\Preprocessor.h" />
     <ClInclude Include="..\src\Source.h" />
     <ClInclude Include="..\src\Type.h" />

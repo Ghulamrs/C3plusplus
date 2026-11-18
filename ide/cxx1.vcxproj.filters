@@ -133,6 +133,7 @@
     <ClInclude Include="..\src\Mangle.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Name.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Operator.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\Owned.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Preprocessor.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Source.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Type.h"><Filter>Header Files</Filter></ClInclude>

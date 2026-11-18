@@ -221,6 +221,7 @@
 		A6357074452FF76FBCDA06D5 /* Mangle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Mangle.h; path = "../src/Mangle.h"; sourceTree = "<group>"; };
 		2DA8CF60A538466FE3C8F3CD /* Name.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Name.h; path = "../src/Name.h"; sourceTree = "<group>"; };
 		6483FA6AFF7E1D15F6C026EF /* Operator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Operator.h; path = "../src/Operator.h"; sourceTree = "<group>"; };
+		A502F51FB3D5663554B59C2D /* Owned.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Owned.h; path = "../src/Owned.h"; sourceTree = "<group>"; };
 		2FB500085E7EEEBDFE98884D /* Preprocessor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Preprocessor.h; path = "../src/Preprocessor.h"; sourceTree = "<group>"; };
 		89135EFA2CE6CD9678C83164 /* Source.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Source.h; path = "../src/Source.h"; sourceTree = "<group>"; };
 		EFB2C2FE15E86CFA56F6C459 /* Type.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Type.h; path = "../src/Type.h"; sourceTree = "<group>"; };
@@ -326,6 +327,7 @@
 				2DA8CF60A538466FE3C8F3CD /* Name.h */,
 				374BD07A02DE1978CC0332E9 /* Operator.cpp */,
 				6483FA6AFF7E1D15F6C026EF /* Operator.h */,
+				A502F51FB3D5663554B59C2D /* Owned.h */,
 				D50718FBCC03E7BCB1F6DC50 /* Preprocessor.cpp */,
 				2FB500085E7EEEBDFE98884D /* Preprocessor.h */,
 				859ACBF2A15D1132F631212A /* Source.cpp */,
