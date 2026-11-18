@@ -218,7 +218,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1281`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2497`
+  `src/parser/ParserTopLevel.cpp:2504`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1332`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -230,7 +230,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:727`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:735`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:121`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:823`
@@ -289,7 +289,7 @@ is left:
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1356`
 - **a braced list for an array of a class with a destructor and no
   constructor** - `src/parser/ParserInit.cpp:1332`,
-  `src/parser/ParserStmt.cpp:246`
+  `src/parser/ParserStmt.cpp:249`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:726`
 ## Objects that would run code before `main`
 
@@ -360,7 +360,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
   Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1200`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1713`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1727`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -390,15 +390,15 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1177`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
-  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1056`
+  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1059`
 - **a switch's condition declaring an object of class type** - its value would be the
   conversion function's, and its destructor would run at the switch's end; an integer or an
-  enumeration declared there works. `src/parser/ParserStmt.cpp:1163`
+  enumeration declared there works. `src/parser/ParserStmt.cpp:1166`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
-  the handler's funclet. `src/parser/ParserStmt.cpp:980`
+  the handler's funclet. `src/parser/ParserStmt.cpp:983`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2410`
+  C++14. `src/parser/ParserTopLevel.cpp:2417`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -409,7 +409,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2209`
+  `src/parser/ParserStmt.cpp:2224`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -424,7 +424,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1789`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2201`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2215`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas

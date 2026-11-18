@@ -4139,3 +4139,54 @@ a second step and its own identical run did not fit the hour. (c) waits on (a): 
 `assemble`'s constructor body (`ConstexprCtor::body`, `runConstexpr`'s `Block`/`ExprStmt`) and `singleReturnValue`'s
 `Block`/`Return`; no statement class leaves Ast.h in this lane. **Owed to the wave gate:** winpass in both spellings,
 ssa.sh 1/2, names.sh, make test, and the ExprPtr ruling.
+
+### M6d S4, fourth lane: `typedef` a syntax kind of its own, and [dcl.constexpr]/3's one return asked of the syntax tree - lane m6d-s4d, 2026-11-18
+
+From m6d-s4b a3686e4b. src/ 93,596 -> 93,635 lines. REF is a3686e4b built from clean in the lane's own Linux tree
+(`~/m6d-s4d-ref.exe`); the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) `syntax::Kind::Typedef`** (2acbb8aa, src/ 93,596 -> 93,613). A typedef in a block, and an alias-declaration, that
+defines no class or enumeration (no `{` among its specifiers' tokens, `Parser::definesType`) is noted `Typedef` where it
+was `DeclStmt` (S4c's RESULTS said `ExprStmt`: a block's typedef reaches `declaration()`, which notes `DeclStmt`; a
+class or enumeration defined in one stays `DeclStmt`). The lowering takes it as the null statement it lowered to.
+Shown against REF: identical tms6747 1,820/0 (the new cases refused alike), x86_64-linux, x86_64-windows and
+arm64-darwin 7,280/0; `-g` 889/904/904 same and x86_64-windows 880, 0 differ (364/349/349/373 refused alike). **ast-residue**
+(Linux) unchanged: ExprPtr 2,014, StmtPtr 541, node-casts 153, node-refs 350, readers 9, ast-lines 717.
+**(2) The one return over syntax** (26a14a80, src/ 93,613 -> 93,635). `Constexpr::singleReturnValue(body, &why)` reads
+the definition's body - the `Function` node's last `Block` child, asked once that node is noted: one `Return`, and beside it
+only `Null`, `Typedef`, and `DeclStmt` whose word is `static_assert` or `using` (a using-directive; the block's
+using-declaration and namespace alias are refused before this, by their own names) - [dcl.constexpr]/3's list. The
+operand is the one the return builder's plain path took (`pendingPlainReturn_`, keyed to the return's node in
+`statement()` as `returnBuilt_` is): a return built through `before` or an unwind is refused as it was, and so is a body
+wrapped for a `throw(...)` list or a function try block. `singleReturnValue`'s Ast walk (two node casts) is gone; the
+refusal names clang's words where it has them. **Acceptance**, each a case with clang 19.1.5 `-x c++ -std=c++11
+-pedantic-errors`'s answer (Windows box): `constexpr-body-nested-refused` (`{ { return x; } }`, refused: "use of this
+statement in a constexpr function is a C++14 extension", the .error); accepted, clang's .expected: `constexpr-body-null-before`
+(6 10), `-null-after` (8 12), `-typedef` (6 21), `-alias` (9 24), `-static-assert` (10 18), `-noexcept-call` (6 22, the
+Itanium body wrapUp wraps in a `Try` - the syntax is still one return). Shown against REF: identical tms6747 1,820
+compared, 12 differ, x86_64-linux, x86_64-windows and arm64-darwin 7,280 compared, 44 differ - every one a new case's
+(the six accepted shapes; `-noexcept-call` only where REF refused it, not on x86_64-windows); `-g` 888/903/903 same and
+x86_64-windows 879, 7/7/7/6 differ, the same cases and `-nested-refused`; no other case's text moved. First committed as
+9119e4ea, whose static run found StmtPtr 541 -> 542 (a `StmtPtr` local in `block()` holding the body's node): amended
+before any gate counted, the body then asked of the `Function` node. **ast-residue** (Linux): ExprPtr 2,014, StmtPtr
+541, node-casts 153 -> 151, node-refs 350 -> 348, readers 9, ast-lines 717; baseline lowered by hand (node-casts,
+node-refs; ExprPtr left 2,012). EXCLUSIONS.md: 10 citations the two steps moved re-pointed (lines moved, words kept);
+0 uncited, 0 stale.
+
+**Gates on the final tree** (26a14a80, and the entry's commit for exclusions and the baseline): Linux g++ -Werror
+clean (each step built); Windows cl /W4 /WX clean - step 1 a full build with the tar in 1 min 20 s (work\m6d-s4dx,
+started first and alone), 9119e4ea a delta in 70 s, 26a14a80 a full build in 4 min 9 s (work\m6d-s4dy, beside the
+stopped chain's last shard); run.sh 1,247 passed, 0 failed (the seven new cases among them); tests/tms6747.sh SIM=1
+shards 1-3 on Linux at -O2 428/0 and -O0 428/0, shards 4-6 on Windows at -O2 428/0 and -O0 428/0 (work\m6d-s4dy); self-compile of the five changed files
+(Constexpr.cpp, ParserStmt.cpp, ParserTopLevel.cpp, Lowering.cpp, Syntax.cpp): x86_64-linux -O2 text the same as REF's,
+Lowering.cpp and Syntax.cpp also tms6747 -O0 and -O2 the same, the other three refused by both alike there (`std::fma`
+undeclared; stack arguments outside the C6000 selector); exclusions 0/0 after the re-point, comment cap, memory gate,
+ide --check pass; ast-residue lower but for ExprPtr 2,014 against the baseline's 2,012 (4cf6bcf5's, unchanged here).
+
+**Not done, and why.** (3) `ConstexprCtor::body` over effects: not started. `assemble`'s member initialisers, the
+delegating call and the base calls are still statements (`memberInits`, `delegateCall`, the base `Block`s and their
+`guardSubobject` wraps), so the constructor's steps are not yet a list of effects to hand over; that conversion is the
+next lane's first step, then `runConstexpr(const Stmt &)` goes. (4) waits on (3). No statement class leaves Ast.h in this
+lane. **The ExprPtr mark**: the coordinator relayed the user's "allow +2" (ExprPtr 2,014 for 4cf6bcf5); the lane did not
+write `tools/ast-residue.baseline` - the tool keeps the user-approved mark to the coordinator and `--record` refuses a raise.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test (syntax.sh among it), the mark.
