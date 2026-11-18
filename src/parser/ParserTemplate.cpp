@@ -1106,8 +1106,8 @@ void Parser::templateArguments(const TemplateDecl &decl,
                                      "this names something");
                 a.pack.push_back(d.type);
             }
-            // `List<Ns..., 4>` in a signature is `JXspT_ELi4EE`: an expansion beside other arguments, not spelled here.
-            if (a.expandsParam >= 0 && a.pack.size() != 1)
+            // `List<Ns..., 4>` in a signature is `JXspT_ELi4EE`: an expansion beside other arguments, not spelled here; a read spells nothing.
+            if (a.expandsParam >= 0 && a.pack.size() != 1 && !patternUses_)
                 src_.fail(expandedAt, "a parameter pack expanded beside other arguments in a template's "
                                       "signature, '" + decl.name + "<" + p.name + "..., ...>', is not "
                                       "supported yet - the expansion alone is");
