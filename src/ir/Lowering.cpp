@@ -5747,6 +5747,7 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj.v))));
         if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 0));
         ops.insert(ops.begin(), virtualCallee(ops[0], called.type, called.vslot));
+        F().alsoNamed.push_back(called.symbol);
         CallInfo info;
         info.signature = called.type;
         info.namedArgs = static_cast<int>(ft.params().size());
@@ -5918,6 +5919,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         ops.push_back(result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, object.v))));
         if (r.indirect) {
             ops.insert(ops.begin(), virtualCallee(ops[0], r.type, r.vslot));
+            F().alsoNamed.push_back(info.symbol);      // the slot is read: the function the parser's tree calls is named alone
             info.symbol.clear();
         }
     } else if (direct || staticThrough) {
@@ -6939,6 +6941,7 @@ Lowering::Val Lowering::deleteDestroying(sema::TypedId id, const sema::NewFacts 
     if (f.dslot >= 0) {
         if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 1));
         ops.insert(ops.begin(), virtualCallee(ops[0], f.dtorSig, f.dslot));
+        F().alsoNamed.push_back(info.symbol);
         info.symbol.clear();
     }
     if (ops.size() != ft.params().size() + (info.symbol.empty() ? 1 : 0)) outside("a destructor of another shape");
