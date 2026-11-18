@@ -1230,6 +1230,11 @@ void Parser::topLevel(Program &program) {
                         target = b.type;
                 if (target == nullptr)
                     if (const Member *m = memberOf->findMember(entry)) target = m->type;
+                if (target == nullptr && leftOutBase(memberOf)) {      // a read's `: B<T>{x}`, its base left out
+                    parseInitialiser();
+                    if (!consume(",")) break;
+                    continue;
+                }
                 if (target == nullptr)
                     src_.fail(epos, "'" + entry + "' is neither a member of '" + d.qualifier +
                                     "' nor a direct base of it");
@@ -1291,6 +1296,11 @@ void Parser::topLevel(Program &program) {
                     break;
                 }
 
+            // A read's `: B<T>(x)` names the base its class left out: the arguments read, the entry dropped.
+            if (!isBase && memberOf->findMember(entry) == nullptr && leftOutBase(memberOf)) {
+                if (!consume(",")) break;
+                continue;
+            }
             if (isBase) {
                 if (baseArgs.count(baseKey))
                     src_.fail(epos, "'" + entry + "' is initialised twice");
