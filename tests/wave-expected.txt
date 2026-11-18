@@ -3,3 +3,39 @@
 # x86_64-linux, x86_64-windows (both spellings), arm64-darwin; <level> 0, 1 or 2. identical, identlnx, identwin,
 # identa64 and emit pass only when the outputs that differ from the wave's base (-w) are exactly these rows; cycles
 # lets a WORSE row through only for a case named here at tms6747 2. A wave empties this file when it lands.
+read-dependent-local tms6747 0 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local tms6747 1 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local tms6747 2 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-linux 0 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-linux 1 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-linux 2 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-windows 0 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-windows 1 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local x86_64-windows 2 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local arm64-darwin 0 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local arm64-darwin 1 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+read-dependent-local arm64-darwin 2 M8.1 H2 (24799adb): a local class of the templated function is dependent - main refuses this case ('E' is defined twice)
+template-dependent-less tms6747 0 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less tms6747 1 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less tms6747 2 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-linux 0 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-linux 1 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-linux 2 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-windows 0 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-windows 1 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less x86_64-windows 2 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less arm64-darwin 0 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less arm64-darwin 1 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+template-dependent-less arm64-darwin 2 M8.1 (f676397d): `T::num < x` is less-than in any signature - main refuses the case
+read-dependent-member tms6747 0 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member tms6747 1 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member tms6747 2 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-linux 0 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-linux 1 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-linux 2 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-windows 0 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-windows 1 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member x86_64-windows 2 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member arm64-darwin 0 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member arm64-darwin 1 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
+read-dependent-member arm64-darwin 2 M8.1 H2 (24799adb): the Itanium name of a class specialization's enumeration, _Z1gN1CIiLi1EE1EE (main wrote _Z1gN8C<int,1>1EE, which the assembler refuses)
