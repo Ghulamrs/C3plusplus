@@ -430,12 +430,12 @@ StmtPtr Parser::declarationBody() {
                 bindStaticReference(d, symbol, pieces, hasInit, &body, true);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
-                current_->globals.push_back(Global{ symbol, symbol,
+                current_->module.data.globals.push_back(Global{ symbol, symbol,
                                                     types_.pointerTo(d.type->referent()),
                                                     std::move(pieces), hasInit,
                                                     !sharedStaticLocal(symbol), false });
-                current_->globals.back().isInline = sharedStaticLocal(symbol);
-                current_->globals.back().isThreadLocal = quals.isThreadLocal;
+                current_->module.data.globals.back().isInline = sharedStaticLocal(symbol);
+                current_->module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!body.empty())
                     inits.push_back(guardOnce(symbol, std::move(body)));
                 continue;
@@ -532,14 +532,14 @@ StmtPtr Parser::declarationBody() {
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
             // An inline function's static local is one object for the program: external, in a
             // COMDAT, under the ABI's name (1.28, 2026-10-22, review of 1.25, item 14).
-            current_->globals.push_back(Global{ symbol, symbol, d.type,
+            current_->module.data.globals.push_back(Global{ symbol, symbol, d.type,
                                                 std::move(pieces), hasInit,
                                                 !sharedStaticLocal(symbol),
                                                 locals_[at].isConst &&
                                                     dynamic.value == nullptr && !dynamic.isList });
-            current_->globals.back().isInline = sharedStaticLocal(symbol);
-            current_->globals.back().align = quals.alignAs;
-            current_->globals.back().isThreadLocal = quals.isThreadLocal;
+            current_->module.data.globals.back().isInline = sharedStaticLocal(symbol);
+            current_->module.data.globals.back().align = quals.alignAs;
+            current_->module.data.globals.back().isThreadLocal = quals.isThreadLocal;
             if (dynamic.value != nullptr || dynamic.isList) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;
@@ -1001,6 +1001,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     leaveScope();
     Block *whole = new Block(std::move(setup));
     whole->setScope(-1);
+    builtForParts_ = -1;
     return StmtPtr(whole);
 }
 
@@ -1083,6 +1084,7 @@ StmtPtr Parser::forStatement() {
     // What the init-statement builds lives to the end of the for statement and no further.
     const std::size_t aliveAtEntry = alive_.size();
 
+    builtForParts_ = -1;
     if (atRangeFor()) return rangeForStatement(scope);
 
     StmtPtr init;
@@ -1118,6 +1120,7 @@ StmtPtr Parser::forStatement() {
     leaveBlock();
     leaveScope();
     if (alive_.size() == aliveAtEntry) {
+        builtForParts_ = (init != nullptr ? 1 : 0) | (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
         For *f = new For(std::move(init), std::move(cond), std::move(step), std::move(body));
         f->setScope(scope);
         return StmtPtr(f);
@@ -1136,6 +1139,7 @@ StmtPtr Parser::forStatement() {
                                      : wrapCleanups(std::move(steps), built, aliveAtEntry, pos);
     alive_.resize(aliveAtEntry);
     hoistedForParts_ = 1 | partsAfterInit;
+    builtForParts_ = -1;
     Block *b = new Block(std::move(steps));
     b->setScope(scope);
     return StmtPtr(b);
@@ -1240,6 +1244,7 @@ StmtPtr Parser::caseLabel() {
 
     StmtPtr body = atDeclarationStart() ? declaration() : statement();
 
+    builtCase_ = CaseFacts{ value, isDefault, caseIds_ };
     Case *node = new Case(value, isDefault, caseIds_++, std::move(body));
     StmtPtr owned(node);
     SwitchCtx &sw = switches_.back();
@@ -1472,11 +1477,11 @@ StmtPtr Parser::block(bool functionTry) {
         const std::size_t aliveBefore = alive_.size();
         blockOwesFrom_ = regionFrom;
         blockStatementAt_ = at_;
-        body.push_back(atDeclarationStart() ? declaration() : statement());
+        bool madeTry = false;
+        body.push_back(atDeclarationStart() ? declaration() : statement(&madeTry));
         // **A `try` is not covered by a cleanup region, it answers for
         // itself.**
-        if (dynamic_cast<const Try *>(body.back().get()) != nullptr)
-            tryAt.push_back(body.size() - 1);
+        if (madeTry) tryAt.push_back(body.size() - 1);
         for (std::size_t k = 0; k < statementTemps_.size(); k++)
             temps.push_back(statementTemps_[k]);
         statementTemps_.clear();
@@ -1535,7 +1540,8 @@ syntax::Kind Parser::statementKindAhead(std::string *text) const {
     return syntax::Kind::ExprStmt;
 }
 
-StmtPtr Parser::statement() {
+StmtPtr Parser::statement(bool *madeTry) {
+    if (madeTry != nullptr) *madeTry = false;
     std::size_t pos = peek().pos;
     // An `else if` chain is one statement under another, each arm a level.
     const Nesting deep(this, pos, "statement");
@@ -1545,6 +1551,9 @@ StmtPtr Parser::statement() {
     const bool throws = peek().is("throw");
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
+    if (madeTry != nullptr) *madeTry = kind == syntax::Kind::Try && builtTry_;
+    const int builtFor = kind == syntax::Kind::For ? builtForParts_ : -1;
+    const bool builtCase = (kind == syntax::Kind::Case || kind == syntax::Kind::Default) && builtCase_.id >= 0;
     if (kind == syntax::Kind::Other) return s;
     // `throw e;` is an expression statement whose expression is the throw.
     if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
@@ -1560,16 +1569,14 @@ StmtPtr Parser::statement() {
         listBuilt_[noted->syntax().v] = listsAt_[static_cast<std::uint32_t>(pendingReturnBraces_)];
     pendingReturnBraces_ = 0;
     pendingReturnEmpty_.clear();
-    if (const For *f = dynamic_cast<const For *>(noted.get()))
-        forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
+    if (builtFor >= 0) forParts_[noted->syntax().v] = builtFor;
     // The init hoisted in front of the loop, which is no longer the statement the parser returned: its parts as written.
     if (kind == syntax::Kind::For && hoistedForParts_ != 0) forParts_[noted->syntax().v] = hoistedForParts_;
     hoistedForParts_ = 0;
     if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
-    if (const Case *c = dynamic_cast<const Case *>(noted.get()))
-        caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
+    if (builtCase) caseFacts_[noted->syntax().v] = builtCase_;
     return noted;
 }
 
@@ -1878,7 +1885,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                                      false, cpos, std::move(ctorArgs)))));
                     Block *copyBlock = new Block(std::move(copying));
                     copyBlock->setScope(-1);
-                    copyBlock->setUnwindCleanup();
                     steps.push_back(StmtPtr(copyBlock));
                 } else if (caught->unqualified()->isPointer()) {
                     // **A pointer caught is the pointer __cxa_begin_catch hands back** on the Itanium
@@ -2011,8 +2017,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             StmtPtr padLabelled(new Label(endCatchLabel, unwindPad(std::move(padSteps))));
             Try *region = new Try(std::move(guarded), std::move(padLabelled),
                                   padPtr, padSel, std::vector<std::string>());
-            // **Only where the row will carry types.**
-            if (!enclosingChain.empty()) region->setAlsoCleanup();
             steps.push_back(StmtPtr(region));
         } else {
             steps.push_back(std::move(handlerBody));
@@ -2050,7 +2054,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // The runtime's scratch word, which the personality routine finds through the
         // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
         // like any other, so where it lives is decided where every local's is.
-        t->setUnwindHelpSlot(msUnwindHelp());
+        msUnwindHelp();
         std::vector<std::pair<std::string, std::string> > gotoExits;
         // A goto to a label inside this `try` statement never leaves its funclet, so it needs no exit.
         for (const std::pair<std::string, std::string> &e : msExit.gotos) {
@@ -2058,13 +2062,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             for (const LabelDef &l : labels_) inside = inside || (l.name == e.second && l.pos >= pos);
             if (!inside) gotoExits.push_back(e);
         }
-        if (msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty())
-            return StmtPtr(t);
-        std::vector<std::string> exits;
-        for (const std::string *e : { &msExit.ret, &msExit.brk, &msExit.cont })
-            if (!e->empty()) exits.push_back(*e);
-        for (const std::pair<std::string, std::string> &e : gotoExits) exits.push_back(e.first);
-        t->setMsExits(std::move(exits));
+        builtTry_ = msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty();
+        if (builtTry_) return StmtPtr(t);
         // **Where a handler's early exit carries on**: the funclet handed back one
         // of these labels, and the parent does here what the handler could not.
         std::vector<StmtPtr> after;
@@ -2163,8 +2162,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // **Every segment of the body carries this `try`'s catch types.**
     for (std::size_t i = 0; i < segments.size(); i++) {
         segments[i]->setTypes(types);
-        segments[i]->setTypeIndices(indices);
-        segments[i]->setAlsoCleanup();
     }
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(new Label(chainLabel, std::move(chain)));
@@ -2173,10 +2170,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     guarded.push_back(std::move(body));
     Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,
                      selectorSlot, std::move(types));
-    t->setTypeIndices(indices);
-    // The call site needs a trailing filter-0 action, or phase 2 installs no
-    // pad where no handler matched and these destructors never run.
-    if (unwindsHere) t->setAlsoCleanup();
+    builtTry_ = true;
     return StmtPtr(t);
 }
 

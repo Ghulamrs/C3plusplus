@@ -29,6 +29,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -1354,6 +1355,66 @@ bool Driver::parseArguments(int argc, char **argv) {
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
 
+// A function's names in the IR: its calls' symbols, its addr operands, its pads' type_info chains and its spec list.
+static void namesOf(const ir::Function &f, bool microsoft, std::vector<std::string> &out) {
+    for (std::size_t c = 1; c < f.calls.size(); c++) out.push_back(f.calls[c].symbol);
+    for (std::size_t i = 1; i < f.insts.size(); i++) {
+        out.push_back(f.insts[i].sym);
+        // A Microsoft pad's descriptor is the throw list's to lay down (UnitData::msThrows), not a name of its class's records.
+        if (!microsoft) out.insert(out.end(), f.insts[i].syms.begin(), f.insts[i].syms.end());
+    }
+    out.insert(out.end(), f.spec.begin(), f.spec.end());
+}
+
+// **The prune** (M6d S1): the unit's closure over the IR as lowered, from its holding records. A held function or
+// object is reached when a name of it is; names come from the functions lowered and the objects reached.
+struct Prune {
+    std::set<std::string> held, every, swept;
+    std::vector<std::string> named;
+    bool any = false;
+    bool reached(const std::string &symbol, const std::string &alias) const {
+        return !any || held.count(symbol) == 0 || every.count(symbol) != 0 || (!alias.empty() && every.count(alias) != 0);
+    }
+    // The names taken in, and those of every object they reach, until none is new.
+    void settle(const UnitData &d) {
+        for (bool more = true; more;) {
+            more = false;
+            every.insert(named.begin(), named.end());
+            named.clear();
+            for (const Global &g : d.globals) {
+                if ((g.held && every.count(g.symbol) == 0) || !swept.insert(g.symbol).second) continue;
+                named.push_back(g.prefixWord);
+                for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
+                more = true;
+            }
+        }
+    }
+};
+
+// What the closure did not reach leaves the unit: functions, objects, unread literals, a Microsoft class's unnamed records.
+static void pruneUnit(const Prune &pr, Program &program, UnitData &d, const TypeTable &types) {
+    std::vector<Function> functions;
+    for (Function &f : program.functions)
+        if (pr.reached(f.symbol(), f.alias())) functions.push_back(std::move(f));
+    program.functions.swap(functions);
+    std::vector<Global> globals;
+    for (Global &g : d.globals)
+        if (!g.held || pr.every.count(g.symbol) != 0) globals.push_back(std::move(g));
+    d.globals.swap(globals);
+    std::vector<StringLit> strings;
+    for (StringLit &sl : d.strings)
+        if (pr.every.count(sl.label) != 0 || sl.copied) strings.push_back(std::move(sl));
+    d.strings.swap(strings);
+    std::vector<TypeId> rtti;
+    for (const TypeId id : d.rtti) {
+        MicrosoftRtti n; std::string why;
+        if (!microsoftClassRttiNames(types.type(id), &n, &why) || pr.every.count(n.locator) != 0 || pr.every.count(n.descriptor) != 0 ||
+            pr.every.count(n.baseDescriptor) != 0 || pr.every.count(n.array) != 0 || pr.every.count(n.hierarchy) != 0)
+            rtti.push_back(id);
+    }
+    d.rtti.swap(rtti);
+}
+
 // **The SSA lowering over every body** (M3b.1), a function outside counted with its reason; then at `level` 1 and up
 // the SSA passes (M3b.4). `report` is -check=ssa's text, `failures` the verifier's count after lowering and each pass,
 // `dumped` the IR as lowered or after the pass `dumpAfter` names.
@@ -1364,7 +1425,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     sema::Typer typer(parser);
     typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
-    ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
+    ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, into);
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
     lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
@@ -1438,10 +1499,27 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         facts.noexcept_ = fn.isNoexcept();
+        facts.spec = fn.exceptionSpec();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();
         if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         facts.returns = TypeTable::id(fn.returns());
+    };
+    // The parser's frame of `fn` onto its IR function (ir::Laid), which every generator's shell and -g's locals read.
+    auto laidOf = [&into](const Function &fn, ir::FuncId id) {
+        ir::Laid &d = into.functions[id.v].laid;
+        for (const Param &p : fn.params()) { ir::LaidParam q; q.type = TypeTable::id(p.type); q.offset = p.offset; d.params.push_back(q); }
+        for (const Local &l : fn.locals()) {
+            ir::LaidLocal q;
+            q.name = l.name; q.staticName = l.staticName; q.type = TypeTable::id(l.type);
+            q.offset = l.offset; q.scope = l.scope; q.serial = l.serial; q.isParam = l.isParam;
+            q.align = l.align; if (l.declared != nullptr) q.declared = TypeTable::id(l.declared);
+            d.locals.push_back(q);
+        }
+        d.blocks = fn.blocks(); d.blockAts = fn.blockPositions();
+        d.returns = TypeTable::id(fn.returns()); d.sretSlot = fn.sretSlot(); d.pads = fn.hasLandingPads();
+        d.alias = fn.alias(); d.name = fn.name();
+        d.regSave = fn.regSaveSlot(); d.frameAlign = fn.frameAlign(); d.hasThis = fn.hasThis(); d.named = fn.hasDisplayName();
     };
     std::map<std::string, int> reasons;
     int lowered = 0;
@@ -1451,8 +1529,41 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         const std::map<std::string, sema::TypedId>::const_iterator i = splitBodies.find(key);
         return i == splitBodies.end() ? sema::TypedId() : i->second;
     });
+    // **The worklist** (M6d S1): a body or a compiler-written function is lowered once a name reaches it, in rounds
+    // until none is new; `placed` is each one's place in the unit's order, which the module's functions are put back in.
+    Prune prune;
+    prune.held.insert(into.data.held.begin(), into.data.held.end());
+    prune.any = !prune.held.empty();
+    for (const Global &g : into.data.globals) prune.any = prune.any || g.held;
+    prune.named.push_back(into.data.initFunction);
+    for (const MicrosoftThrow &t : into.data.msThrows) {
+        if (!t.thrown) continue;         // a type only caught needs its descriptor alone
+        prune.named.push_back(t.destructor);
+        for (const MicrosoftThrow::Catchable &k : t.catchables) prune.named.push_back(k.copyCtor);
+    }
+    prune.settle(into.data);
+    const bool microsoft = target.microsoftNames();
+    std::vector<bool> bodyDone(c.bodies.size(), false);
+    std::set<std::string> builtDone, deferred;
+    std::map<std::string, std::size_t> splitAt;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        const std::string split = typer.vttSplit(program.functions[c.bodies[r].second].symbol());
+        if (!split.empty()) splitAt[split] = r;
+    }
+    std::vector<std::pair<std::size_t, std::uint32_t> > placed;
+    std::size_t bodies = 0;
+    ir::Builder builder(lowering);
+    std::map<std::string, int> built, left;
+    int synthesised = 0, builtCount = 0;
+    for (bool more = true; more;) {
+    more = false;
+    for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        if (bodyDone[r] || c.bodies[r].second >= program.functions.size()) continue;
         const Function &fn = program.functions[c.bodies[r].second];
+        if (!prune.reached(fn.symbol(), fn.alias())) continue;
+        bodyDone[r] = true;
+        more = true;
+        bodies++;
         const sema::TypedId t = typer.typeBody(c.bodies[r].first, fn.symbol());
         ir::FunctionFacts facts;
         factsOf(fn, facts);
@@ -1464,8 +1575,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         facts.specFilter = typer.specFilter(facts.recordKey);
         facts.noexceptWrap = typer.noexceptWrap(facts.recordKey);
         facts.ctorTry = typer.ctorTry(facts.recordKey);
-        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
-                                                          !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
+        facts.wrappedBody = facts.specFilter.empty() && (typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
+                                                          !facts.noexceptWrap && !facts.ctorTry);
         const TypeId declared = typer.declaredReturnOf(c.bodies[r].first, fn.symbol());
         if (declared.valid()) facts.returns = declared;
         std::string why;
@@ -1477,20 +1588,34 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
             if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) facts.localAligns[l.serial] = l.align;
         }
-        if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
-        if (why.empty()) { lowered++; continue; }
+        const ir::FuncId made = lowering.lower(t, facts, why);
+        if (!made.valid() && why.empty()) why = "the lowering gave no reason";
+        if (why.empty()) {
+            laidOf(fn, made);
+            lowered++;
+            placed.push_back(std::make_pair(r, made.v));
+            namesOf(into.functions[made.v], microsoft, prune.named);
+            prune.settle(into.data);
+            continue;
+        }
         reasons[why]++;
         outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     // **The compiler-written functions** (M3b.3): each built from its class's layout by the Builder, or left on the
     // parser's path with its reason, counted by kind.
-    ir::Builder builder(lowering);
-    std::map<std::string, int> built, left;
-    int synthesised = 0, builtCount = 0;
     for (std::size_t i = 0; i < program.functions.size(); i++) {
         const Function &fn = program.functions[i];
-        if (fn.synthesised().empty()) continue;
+        if (fn.synthesised().empty() || !prune.reached(fn.symbol(), fn.alias()) || builtDone.count(fn.symbol()) != 0) continue;
+        more = true;
+        // Itanium's C1 or D1 is built from its C2's or D2's body: reaching the one reaches the other, lowered a round before it.
+        const std::map<std::string, std::size_t>::const_iterator part = splitAt.find(fn.symbol());
+        if (part != splitAt.end() && !bodyDone[part->second] && deferred.insert(fn.symbol()).second) {
+            prune.named.push_back(program.functions[c.bodies[part->second].second].symbol());
+            prune.settle(into.data);
+            continue;
+        }
+        builtDone.insert(fn.symbol());
         synthesised++;
         ir::FunctionFacts facts;
         factsOf(fn, facts);
@@ -1507,10 +1632,32 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         for (std::size_t p = (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0); p + (facts.msFlag ? 1 : 0) < fn.params().size(); p++)
             facts.paramTypes.push_back(TypeTable::id(fn.params()[p].type));
         std::string why;
-        if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
+        const ir::FuncId made = builder.build(facts, fn.synthesised(), why);
+        if (made.valid()) {
+            laidOf(fn, made);
+            built[fn.synthesised()]++;
+            builtCount++;
+            placed.push_back(std::make_pair(c.bodies.size() + i, made.v));
+            namesOf(into.functions[made.v], microsoft, prune.named);
+            prune.settle(into.data);
+            continue;
+        }
         left[fn.synthesised() + " - " + why]++;
         outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
+    }
+    }
+    // Taken before any pass: the inliner removes calls, and the kept set may not depend on the level.
+    if (outside.empty()) {
+        if (prune.any) pruneUnit(prune, program, into.data, types);
+        // A function a later round reached stands where the unit's order has it, as when every body was lowered in turn.
+        if (placed.size() + 1 == into.functions.size()) {
+            std::sort(placed.begin(), placed.end());
+            std::vector<ir::Function> ordered;
+            ordered.push_back(std::move(into.functions[0]));
+            for (const std::pair<std::size_t, std::uint32_t> &at : placed) ordered.push_back(std::move(into.functions[at.second]));
+            into.functions.swap(ordered);
+        }
     }
     std::string out;
     const int failed = report ? ir::verify(into, types, out) : 0;
@@ -1530,8 +1677,8 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     for (std::map<std::string, int>::const_iterator i = left.begin(); i != left.end(); ++i)
         out += "  synthesised outside (" + std::to_string(i->second) + "): " + i->first + "\n";
     char line[200], synth[120];
-    std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", c.bodies.size(), lowered,
-                  c.bodies.size() - lowered, lowered - failed, failed);
+    std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", bodies, lowered,
+                  bodies - lowered, lowered - failed, failed);
     std::snprintf(synth, sizeof synth, "-check=ssa synthesised: functions=%d lowered=%d outside=%d\n", synthesised, builtCount,
                   synthesised - builtCount);
     char passes[160];
@@ -1595,16 +1742,6 @@ bool Driver::compile(const Job &job) {
         parser.syntaxTree().dump(dumped, src);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
-    if (dumpTyped_) {
-        const std::string dumped = sema::Typer::dump(parser, program);
-        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-    }
-    if (checkTyped_) {
-        int differ = 0;
-        const std::string report = sema::Typer::check(parser, program, src, &differ);
-        std::fwrite(report.data(), 1, report.size(), stdout);
-        if (differ != 0) return false;
-    }
     // **On x86 a `volatile` access is marked in MIR and every pass keeps it** (R8); arm64's and the C6000's generators have
     // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
     const bool marks = std::strncmp(backend_->name(), "x86_64", 6) == 0;
@@ -1620,21 +1757,32 @@ bool Driver::compile(const Job &job) {
                      job.input.c_str(), optimize_);
     }
     // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 and arm64 the only thing selected.
-    // tms6747 selects a function its selector's subset holds, the walker the rest (M6a); CXX1_C6X_WALKER: the walker all.
-    const bool c6x = targetIsTi() && std::getenv("CXX1_C6X_WALKER") == nullptr;
+    // tms6747 selects every function too, or refuses it by name (M6d: no walker); its shell reads the IR's function.
+    const bool c6x = targetIsTi();
     if (selects || c6x || dumpSsa_ || checkSsa_) {
         std::string dumped;
         std::vector<std::string> outside;
         int failures = 0;
         const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
+        // The typed tree's dump and check count the functions the driver's prune kept (M6d S1).
+        if (dumpTyped_) {
+            const std::string typed = sema::Typer::dump(parser, program);
+            std::fwrite(typed.data(), 1, typed.size(), stdout);
+        }
+        if (checkTyped_) {
+            int differ = 0;
+            const std::string typed = sema::Typer::check(parser, program, src, &differ);
+            std::fwrite(typed.data(), 1, typed.size(), stdout);
+            if (differ != 0) return false;
+        }
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-        // Where the generator selects, a function outside the lowering is an error naming it: there is no other path.
-        for (const std::string &o : selects ? outside : std::vector<std::string>())
+        // Where the generator selects, a function outside the lowering is an error naming it: the C6000 too (M6d).
+        for (const std::string &o : selects || c6x ? outside : std::vector<std::string>())
             std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), o.c_str());
-        if (selects && !outside.empty()) return false;
+        if ((selects || c6x) && !outside.empty()) return false;
     }
 
     bool ok = true;
@@ -1649,7 +1797,8 @@ bool Driver::compile(const Job &job) {
         if (selects || c6x) gen->setSsa(&program.module, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
-        gen->run(program);
+        for (const Function &fn : program.functions) program.module.data.order.push_back(fn.symbol());
+        gen->run(program.module);
     }
     if (dumpMir_) std::fwrite(mir.str().data(), 1, mir.str().size(), stdout);
     std::string text = made.str();

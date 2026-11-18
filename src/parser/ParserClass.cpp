@@ -521,7 +521,7 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
     const int pointerSlot = allocateFrameSlot(voidPtr);
     const int selectorSlot = allocateFrameSlot(types_.intType());
-    const int helpSlot = msUnwindHelp();
+    msUnwindHelp();     // the runtime's scratch word keeps its slot in the frame
     functionHasPads_ = true;
 
     std::vector<StmtPtr> out;
@@ -550,7 +550,6 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
         Try *t = new Try(std::move(guarded), nullptr, pointerSlot,
                          selectorSlot, std::vector<std::string>());
         t->setCleanup(StmtPtr(b));
-        t->setUnwindHelpSlot(helpSlot);
         out.push_back(StmtPtr(t));
     }
     return out;
@@ -626,7 +625,7 @@ StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
         Try *t = new Try(std::move(body), nullptr, allocateFrameSlot(voidPtr),
                          allocateFrameSlot(types_.intType()), std::vector<std::string>());
         t->setCleanup(StmtPtr(b));
-        t->setUnwindHelpSlot(msUnwindHelp());
+        msUnwindHelp();
         return StmtPtr(t);
     }
     int targetPtr = 0, targetSel = 0;
@@ -727,7 +726,6 @@ StmtPtr Parser::unwindPad(std::vector<StmtPtr> steps) {
     steps.pop_back();
     Block *inner = new Block(std::move(steps));
     inner->setScope(-1);
-    inner->setUnwindCleanup();
     std::vector<StmtPtr> outer;
     outer.push_back(StmtPtr(inner));
     outer.push_back(std::move(last));
@@ -1857,71 +1855,10 @@ void Parser::pruneUnchosenCandidates(Program &program) {
     }
 }
 
-namespace {
-
-// Every symbol a body names: a call, and a variable or function used as a value.
-class SymbolsNamed final : public Visitor {
-public:
-    std::vector<std::string> *out;
-    explicit SymbolsNamed(std::vector<std::string> *o) : out(o) {}
-    void visit(const Num &) override {}
-    void visit(const Var &n) override { out->push_back(n.symbol()); }
-    void visit(const StrLit &e) override { out->push_back(e.label()); }
-    void visit(const Goto &) override {}
-    void visit(const Break &) override {}
-    void visit(const Continue &) override {}
-    void visit(const FuncletLeave &) override {}
-    void visit(const Call &n) override {
-        out->push_back(n.symbol());
-        if (n.callee() != nullptr) n.callee()->accept(*this);
-        for (const ExprPtr &a : n.args()) a->accept(*this);
-    }
-    void visit(const VaStart &n) override { n.list().accept(*this); }
-    void visit(const VaArg &n) override { n.list().accept(*this); }
-    void visit(const Assign &n) override { n.target().accept(*this); n.value().accept(*this); }
-    void visit(const Unary &n) override { n.operand().accept(*this); }
-    void visit(const Binary &n) override { n.lhs().accept(*this); n.rhs().accept(*this); }
-    void visit(const Postfix &n) override { n.target().accept(*this); }
-    void visit(const Cast &n) override { n.value().accept(*this); }
-    void visit(const Comma &n) override { n.left().accept(*this); n.right().accept(*this); }
-    void visit(const Conditional &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this); n.elseArm().accept(*this);
-    }
-    void visit(const MemberAccess &n) override { n.object().accept(*this); }
-    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
-    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
-    void visit(const Block &n) override { for (const StmtPtr &s : n.body()) s->accept(*this); }
-    void visit(const If &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this);
-        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
-    }
-    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
-    void visit(const For &n) override {
-        if (n.init() != nullptr) n.init()->accept(*this);
-        if (n.cond() != nullptr) n.cond()->accept(*this);
-        if (n.step() != nullptr) n.step()->accept(*this);
-        n.body().accept(*this);
-    }
-    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const Case &n) override { n.body().accept(*this); }
-    void visit(const Label &n) override { n.body().accept(*this); }
-    void visit(const Try &n) override {
-        for (const std::string &t : n.types()) out->push_back(t);
-        for (const StmtPtr &s : n.body()) s->accept(*this);
-        if (n.hasPad()) n.pad().accept(*this);
-        if (n.cleanup() != nullptr) n.cleanup()->accept(*this);
-        for (const MsHandler &h : n.handlers())
-            if (h.body != nullptr) h.body->accept(*this);
-    }
-};
-
-}
-
 // **An inline function, or a vtable group with no key function, nothing here uses is not emitted** -
-// [basic.def.odr]/3, and what clang, g++ and cl do. Reached from every function and global not held;
-// a symbol is dropped only if it was held and nothing reachable names it or its alias.
-void Parser::pruneUnusedInline(Program &program) {
+// [basic.def.odr]/3, and what clang, g++ and cl do. What may be left out is recorded here; the driver's closure over
+// the IR (M6d S1) leaves it out where no name reaches it.
+void Parser::recordHeld(Program &program) {
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
         if (lookup_.functions_[i].fromTemplate) discardableInline_.erase(lookup_.functions_[i].symbol);
     // What the compiler writes is inline by [class.copy] and [class.dtor]: reached, or not emitted.
@@ -1951,86 +1888,10 @@ void Parser::pruneUnusedInline(Program &program) {
             if (n.compare(4, k.size(), k) == 0) return false;
         return true;
     };
-    if (held.empty()) {
-        bool any = false;
-        for (const Global &g : program.globals) any = any || heldGlobal(g);
-        if (!any) return;
-    }
-    // A node is a function (its index) or a global (its index past the functions).
-    const std::size_t nf = program.functions.size();
-    std::map<std::string, std::size_t> bySymbol;
-    for (std::size_t i = 0; i < nf; i++) {
-        bySymbol[program.functions[i].symbol()] = i;
-        if (!program.functions[i].alias().empty()) bySymbol[program.functions[i].alias()] = i;
-    }
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        bySymbol[program.globals[i].symbol] = nf + i;
-    std::vector<bool> reached(nf + program.globals.size(), false);
-    std::set<std::string> everyName;
-    std::vector<std::string> named;
-    named.push_back(program.initFunction);
-    for (const MicrosoftThrow &t : program.msThrows) {
-        if (!t.thrown) continue;         // a type only caught needs its descriptor alone
-        named.push_back(t.destructor);
-        for (const MicrosoftThrow::Catchable &c : t.catchables) named.push_back(c.copyCtor);
-    }
-    std::vector<std::size_t> work;
-    for (std::size_t i = 0; i < nf; i++)
-        if (held.count(program.functions[i].symbol()) == 0) {
-            reached[i] = true;
-            work.push_back(i);
-        }
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        if (!heldGlobal(program.globals[i])) {
-            reached[nf + i] = true;
-            work.push_back(nf + i);
-        }
-    for (;;) {
-        for (const std::string &s : named) {
-            everyName.insert(s);
-            const std::map<std::string, std::size_t>::const_iterator f = bySymbol.find(s);
-            if (f != bySymbol.end() && !reached[f->second]) {
-                reached[f->second] = true;
-                work.push_back(f->second);
-            }
-        }
-        named.clear();
-        if (work.empty()) break;
-        const std::size_t i = work.back();
-        work.pop_back();
-        if (i < nf) {
-            SymbolsNamed collect(&named);
-            program.functions[i].body().accept(collect);
-        } else {
-            const Global &g = program.globals[i - nf];
-            named.push_back(g.prefixWord);
-            for (const GlobalPiece &p : g.init) named.push_back(p.symbol);
-        }
-    }
-    std::vector<Function> kept;
-    for (std::size_t i = 0; i < nf; i++)
-        if (reached[i]) kept.push_back(std::move(program.functions[i]));
-    program.functions.swap(kept);
-    std::vector<Global> keptGlobals;
-    for (std::size_t i = 0; i < program.globals.size(); i++)
-        if (reached[nf + i]) keptGlobals.push_back(std::move(program.globals[i]));
-    program.globals.swap(keptGlobals);
-    // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
-    std::vector<StringLit> keptStrings;
-    for (StringLit &sl : program.strings)
-        if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
-    program.strings.swap(keptStrings);
-    // A Microsoft class keeps its five records where its vftable stayed or something names one.
-    std::vector<const Type *> rtti;
-    for (const Type *cls : program.rtti) {
-        MicrosoftRtti n;
-        std::string why;
-        if (!microsoftClassRttiNames(cls, &n, &why) || everyName.count(n.locator) ||
-            everyName.count(n.descriptor) || everyName.count(n.baseDescriptor) ||
-            everyName.count(n.array) || everyName.count(n.hierarchy))
-            rtti.push_back(cls);
-    }
-    program.rtti.swap(rtti);
+    UnitData &data = program.module.data;
+    data.held.assign(held.begin(), held.end());
+    for (Global &g : data.globals) g.held = heldGlobal(g);
+    for (StringLit &sl : data.strings) sl.copied = copiedStrings_.count(sl.label) != 0;
 }
 
 // `static int total;` inside a class: one object shared by every object of the class,
@@ -2166,8 +2027,8 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
             constant_.refuseConstexprClassObject(full, d.pos);
         }
     }
-    current_->globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
-    current_->globals.back().isInline = true;
+    current_->module.data.globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
+    current_->module.data.globals.back().isInline = true;
 }
 
 // `int Counter::total = 0;` at file scope - the definition the declaration inside the
@@ -2202,7 +2063,7 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' was declared '" +
                          s->type->describe() + "' and this defines it as '" +
                          d.type->describe() + "'");
-    for (const Global &g : program.globals)
+    for (const Global &g : program.module.data.globals)
         if (g.symbol == s->symbol)
             src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' is defined "
                              "twice");
@@ -2228,11 +2089,11 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
             dynamicInitialise(m, s->symbol, helper, owner->isSpecialization());
             expect(";");
             // Not isConst whatever the member says: the constructor writes it.
-            program.globals.push_back(Global{ full, s->symbol, s->type,
+            program.module.data.globals.push_back(Global{ full, s->symbol, s->type,
                                               std::vector<GlobalPiece>(), false,
                                               false, false });
-            program.globals.back().isInline = owner->isSpecialization();
-            program.globals.back().isThreadLocal = threadLocal;
+            program.module.data.globals.back().isInline = owner->isSpecialization();
+            program.module.data.globals.back().isThreadLocal = threadLocal;
             if (threadLocal) tlsDynamic_.insert(s->symbol);
             return;
         }
@@ -2249,11 +2110,11 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         bindStaticReference(m, s->symbol, pieces, hasInit, &initSink());
         leaveInitFunction(outer, s->symbol);
         expect(";");
-        program.globals.push_back(Global{ m.name, s->symbol,
+        program.module.data.globals.push_back(Global{ m.name, s->symbol,
                                           types_.pointerTo(s->type->referent()),
                                           std::move(pieces), hasInit, false, false });
-        program.globals.back().isInline = owner->isSpecialization();
-        program.globals.back().isThreadLocal = threadLocal;
+        program.module.data.globals.back().isInline = owner->isSpecialization();
+        program.module.data.globals.back().isThreadLocal = threadLocal;
         if (threadLocal && !hasInit) tlsDynamic_.insert(s->symbol);
         return;
     }
@@ -2301,13 +2162,13 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
     }
     expect(";");
 
-    program.globals.push_back(Global{ d.qualifier + "::" + d.name, s->symbol,
+    program.module.data.globals.push_back(Global{ d.qualifier + "::" + d.name, s->symbol,
                                       s->type, std::move(pieces), hasInit, false,
                                       s->type->isConst() && !stored });
     // A template's static member is defined by every unit that uses it, and
     // the linker keeps one - a weak object, as its vtable is.
-    program.globals.back().isInline = owner->isSpecialization();
-    program.globals.back().isThreadLocal = threadLocal;
+    program.module.data.globals.back().isInline = owner->isSpecialization();
+    program.module.data.globals.back().isThreadLocal = threadLocal;
     if (threadLocal && stored) tlsDynamic_.insert(s->symbol);
 }
 
@@ -2364,7 +2225,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
         n->setType(s.type);
         return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, 1, s.value, owner));
     }
-    if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
+    if (unevaluated_ == 0 && !patternUses_) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
     v->setSymbol(s.symbol);
     // Through the wrapper unless this unit has already defined it with a constant initialiser - a

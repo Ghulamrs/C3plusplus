@@ -5,6 +5,7 @@
 // same IR (design section 2). Types are TypeId handles into the front end's TypeTable (R6.3); no raw pointer here.
 
 #include "../Type.h"
+#include "../UnitData.h"
 #include "../syntax/SyntaxId.h"
 
 #include <cstddef>
@@ -49,7 +50,8 @@ struct CallInfo {
     bool variadic, hasThis, sret, noexcept_;
     int namedArgs;
     int resultAlloca;       // a class returned by value: the frame object it comes back into, -1 for none
-    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1) {}
+    bool byName;            // a destructor the program called by name: the object's storage outlives it ([basic.life]/5)
+    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1), byName(false) {}
 };
 
 struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; Value() : index(0) {} };
@@ -81,7 +83,38 @@ struct Inst {
 // `funclet`: the Microsoft pad - a handler's, or a cleanup's - whose funclet this block is emitted inside, 0 for the body's own (M3-IR 3.6).
 struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId term; bool pad; std::uint32_t funclet; Block() : pad(false), funclet(0) {} };
 
-struct AllocaInfo { TypeId type; int align; std::string name; AllocaInfo() : align(0) {} };
+// `serial`: the parser's serial of the local this object is (Local::serial), -1 for a temporary or an inlined callee's object.
+struct AllocaInfo { TypeId type; int align; std::string name; int serial; AllocaInfo() : align(0), serial(-1) {} };
+
+// **The parser's frame of a function** (M6d): the parameters' slots, the result's, -g's variables and blocks - what a
+// shell reads beside the body, as records. Driver.cpp fills it from Ast.h's Function once the function is lowered.
+struct LaidParam { TypeId type; int offset; LaidParam() : offset(0) {} };
+struct LaidLocal {
+    std::string name, staticName;
+    TypeId type;
+    TypeId declared;                        // a reference's own type, for -g: `type` is the pointer it is stored as
+    int offset, scope, serial, align;       // align: the slot's, alignas included
+    bool isParam;
+    LaidLocal() : offset(0), scope(0), serial(-1), align(0), isParam(false) {}
+};
+struct Laid {
+    std::vector<LaidParam> params;
+    std::vector<LaidLocal> locals;
+    std::vector<int> blocks;                // each lexical block's parent
+    std::vector<std::size_t> blockAts;      // where each opens
+    TypeId returns;                         // as declared, qualifiers kept
+    int sretSlot, regSave, frameAlign;      // regSave: a variadic function's register save area; frameAlign: 16, or what a local asked
+    bool pads;                              // the parser's own landing pads
+    bool hasThis, named;                    // as the parser has it; named: a display name was given
+    std::string alias, name;
+    Laid() : sretSlot(0), regSave(0), frameAlign(16), pads(false), hasThis(false), named(false) {}
+    // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
+    int blockAt(std::size_t pos) const {
+        int found = 0;
+        for (std::size_t i = 1; i < blockAts.size(); i++) if (blockAts[i] == pos) found = found == 0 ? static_cast<int>(i) : -1;
+        return found > 0 && pos != 0 ? found : 0;
+    }
+};
 
 struct Function {
     std::string symbol, displayName;
@@ -91,6 +124,7 @@ struct Function {
     std::vector<ValueId> params;
     ValueId sret;
     std::vector<AllocaInfo> frame;
+    Laid laid;
     BlockId entry;
     std::vector<BlockId> blocks;
     std::vector<std::string> spec;
@@ -115,6 +149,7 @@ struct Function {
 
 struct Module {
     std::vector<Function> functions;    // index 0 none
+    UnitData data;                      // what is laid down beside the code (UnitData.h)
     Module() { functions.push_back(Function()); }
     // The function of a symbol, or none.
     FuncId find(const std::string &symbol) const;

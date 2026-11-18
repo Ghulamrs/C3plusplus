@@ -449,11 +449,11 @@ void Parser::topLevel(Program &program) {
                 noteThreadLocal(prev != nullptr ? *prev : lookup_.globals_.back(), prev != nullptr, quals.isThreadLocal,
                                 d.name, defines ? !hasInit : true, !internal, defines, d.pos);
                 if (defines)
-                    program.globals.push_back(Global{ gname, symbol,
+                    program.module.data.globals.push_back(Global{ gname, symbol,
                                                       types_.pointerTo(d.type->referent()),
                                                       std::move(pieces), hasInit,
                                                       internal, false });
-                if (defines) program.globals.back().isThreadLocal = quals.isThreadLocal;
+                if (defines) program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!consume(",")) break;
                 inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -558,10 +558,10 @@ void Parser::topLevel(Program &program) {
                                         d.name, true, !internal, true, d.pos);
                     // Not isConst: the constructor writes it, so it cannot
                     // be laid down read-only - unless it was folded, and no constructor runs.
-                    program.globals.push_back(Global{ gname, symbol, d.type, folded,
+                    program.module.data.globals.push_back(Global{ gname, symbol, d.type, folded,
                                                       quals.isConstexpr, internal, quals.isConstexpr });
-                    program.globals.back().align = quals.alignAs;
-                    program.globals.back().isThreadLocal = quals.isThreadLocal;
+                    program.module.data.globals.back().align = quals.alignAs;
+                    program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                     if (quals.isVolatile) lookup_.globals_[lookup_.globalIndex_[gname]].isVolatile = true;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
@@ -692,15 +692,15 @@ void Parser::topLevel(Program &program) {
                 if (sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) {
                     if (!prev->emitted) {
                         prev->emitted = true;
-                        program.globals.push_back(Global{ d.name, prev->symbol,
+                        program.module.data.globals.push_back(Global{ d.name, prev->symbol,
                                                           d.type, pieces, hasInit,
                                                           internalLinkage(sc),
                                                           prev->isConst });
-                        program.globals.back().isThreadLocal = quals.isThreadLocal;
+                        program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                     } else {
-                        for (Global &g : program.globals)
+                        for (Global &g : program.module.data.globals)
                             if (g.name == d.name) {
-                                g.type = both;
+                                g.type = TypeTable::id(both);
                                 if (hasInit) { g.init = pieces; g.hasInit = true; }
                                 break;
                             }
@@ -740,11 +740,11 @@ void Parser::topLevel(Program &program) {
             const ThreadLocalObject tlo(this, quals.isThreadLocal);
             if (dynamic) dynamicInitialiseScalar(gname, symbol, d.type, dynamicScalar);
             if (definesHere) {
-                program.globals.push_back(Global{ gname, symbol, d.type,
+                program.module.data.globals.push_back(Global{ gname, symbol, d.type,
                                                   std::move(pieces), hasInit,
                                                   internal, objectIsConst && !dynamic });
-                program.globals.back().align = quals.alignAs;
-                program.globals.back().isThreadLocal = quals.isThreadLocal;
+                program.module.data.globals.back().align = quals.alignAs;
+                program.module.data.globals.back().isThreadLocal = quals.isThreadLocal;
                 refuseWeakAlignas(quals.alignAs, d.type, d.pos);
             }
             if (!consume(",")) break;
@@ -1361,7 +1361,7 @@ void Parser::topLevel(Program &program) {
                                             " constructor of '" + mc->describe() +
                                             "'");
                         ctorIndex = static_cast<std::size_t>(ctor - &lookup_.functions_[0]);
-                        lookup_.functions_[ctorIndex].used = true;
+                        if (!patternUses_) lookup_.functions_[ctorIndex].used = true;
                     }
                     valueInit[entry] = ctorIndex;
                 }
@@ -1624,8 +1624,7 @@ void Parser::topLevel(Program &program) {
             // takes, so the chain is the pad itself with nothing to test.
             std::vector<std::string> types;
             types.push_back(std::string());
-            std::vector<int> indices;
-            indices.push_back(typeIndexFor(std::string()));
+            typeIndexFor(std::string());     // the catch-all takes its selector index here
 
             // `__cxa_begin_catch` first, as clang's `__clang_call_terminate` does:
             // the exception is being handled, and the runtime is told so before
@@ -1647,7 +1646,6 @@ void Parser::topLevel(Program &program) {
             guarded.push_back(std::move(body));
             Try *t = new Try(std::move(guarded), StmtPtr(padBlock), pointerSlot,
                              selectorSlot, types);
-            t->setTypeIndices(indices);
             body = StmtPtr(t);
         }
 
@@ -2285,8 +2283,8 @@ Program Parser::parse() {
         const std::map<std::string, int>::const_iterator a = frameAligns_.find(f.symbol());
         if (a != frameAligns_.end()) f.setFrameAlign(a->second);
     }
-    pruneUnusedInline(program);
-    program.dialect = dialect();
+    recordHeld(program);
+    program.module.data.dialect = dialect();
     return program;
 }
 

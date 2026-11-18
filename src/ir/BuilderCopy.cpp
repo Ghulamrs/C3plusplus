@@ -112,7 +112,18 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
         // A virtual base with a copy or move of its own was copied whole by C1: the "^V" record under this C2's shared key.
         if (!assigning && m.inVirtualBase != nullptr && recorded("^" + m.inVirtualBase->unqualified()->tag(), *m.inVirtualBase->unqualified(), 0, symbol, sig)) done = true;
         if (done) continue;
-        if (m.width != 0 || m.type->isReference()) l.outside(what + " of a class with a bit-field or reference member");
+        if (m.width != 0 && m.name.empty()) continue;      // padding: no member to copy
+        if (m.type->isReference() ? assigning : m.width != 0 && !l.scalar(*m.type->unqualified()))
+            l.outside(what + " of a class with a bit-field or reference member");
+        if (m.type->isReference() || m.width != 0) {
+            // A reference member's address is copied; a bit-field's value goes into its unit beside the other fields.
+            const TypeId held = m.width != 0 ? l.tid(*m.type->unqualified()) : l.tid(*l.types_.pointerTo(m.type->referent()));
+            const TypeId unit = l.tid(*l.types_.pointerTo(&l.T(held)));
+            const ValueId to = into(l.this_, m.offset, unit), from = into(that, m.offset, unit);
+            if (m.width != 0) l.bitStore(Lowering::Val(to, held), m, l.bitRead(Lowering::Val(from, held), m));
+            else l.store(to, l.load(from, held));
+            continue;
+        }
         long long elems = 1;
         TypeId et = l.tid(*m.type);
         for (; l.T(et).isArray(); et = l.tid(*l.T(et).pointee())) {

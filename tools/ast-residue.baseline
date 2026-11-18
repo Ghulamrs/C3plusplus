@@ -1,7 +1,7 @@
-ExprPtr 2016
-StmtPtr 639
-node-casts 165
-node-refs 413
-visits 124
-readers 14
-ast-lines 850
+ExprPtr 2012
+StmtPtr 635
+node-casts 158
+node-refs 357
+visits 0
+readers 9
+ast-lines 722

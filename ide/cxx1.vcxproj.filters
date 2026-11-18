@@ -58,7 +58,6 @@
     <ClCompile Include="..\src\backend\Spelling.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\SsaSelect.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Tms6747.cpp"><Filter>Source Files\backend</Filter></ClCompile>
-    <ClCompile Include="..\src\backend\Walker.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\X86_64Linux.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\X86_64Windows.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xMir.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
@@ -134,9 +133,11 @@
     <ClInclude Include="..\src\Mangle.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Name.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Operator.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\Owned.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Preprocessor.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Source.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Type.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\UnitData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Version.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\parser\Parser.h"><Filter>Header Files\parser</Filter></ClInclude>
     <ClInclude Include="..\src\parser\ParserInternal.h"><Filter>Header Files\parser</Filter></ClInclude>
@@ -150,7 +151,6 @@
     <ClInclude Include="..\src\backend\Regions.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Spelling.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Tms6747.h"><Filter>Header Files\backend</Filter></ClInclude>
-    <ClInclude Include="..\src\backend\Walker.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\X86_64Linux.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\X86_64Windows.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\C6xMir.h"><Filter>Header Files\optimizer</Filter></ClInclude>

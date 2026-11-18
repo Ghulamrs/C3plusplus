@@ -108,7 +108,6 @@
     <ClCompile Include="..\src\backend\Spelling.cpp" />
     <ClCompile Include="..\src\backend\SsaSelect.cpp" />
     <ClCompile Include="..\src\backend\Tms6747.cpp" />
-    <ClCompile Include="..\src\backend\Walker.cpp" />
     <ClCompile Include="..\src\backend\X86_64Linux.cpp" />
     <ClCompile Include="..\src\backend\X86_64Windows.cpp" />
     <ClCompile Include="..\src\optimizer\C6xMir.cpp" />
@@ -184,9 +183,11 @@
     <ClInclude Include="..\src\Mangle.h" />
     <ClInclude Include="..\src\Name.h" />
     <ClInclude Include="..\src\Operator.h" />
+    <ClInclude Include="..\src\Owned.h" />
     <ClInclude Include="..\src\Preprocessor.h" />
     <ClInclude Include="..\src\Source.h" />
     <ClInclude Include="..\src\Type.h" />
+    <ClInclude Include="..\src\UnitData.h" />
     <ClInclude Include="..\src\Version.h" />
     <ClInclude Include="..\src\parser\Parser.h" />
     <ClInclude Include="..\src\parser\ParserInternal.h" />
@@ -200,7 +201,6 @@
     <ClInclude Include="..\src\backend\Regions.h" />
     <ClInclude Include="..\src\backend\Spelling.h" />
     <ClInclude Include="..\src\backend\Tms6747.h" />
-    <ClInclude Include="..\src\backend\Walker.h" />
     <ClInclude Include="..\src\backend\X86_64Linux.h" />
     <ClInclude Include="..\src\backend\X86_64Windows.h" />
     <ClInclude Include="..\src\optimizer\C6xMir.h" />

@@ -390,7 +390,7 @@ void Parser::emitString(const std::string &name, std::vector<InitStep> &path,
     long long len = type->length();
     const std::string &text = s->text();
     requireStringFits(type, s, pos);
-    copiedStrings_.insert(s->label());
+    if (!patternUses_) copiedStrings_.insert(s->label());   // a pattern's label is a count of its own
     for (long long i = 0; i < len; i++) {
         path.push_back(InitStep{ nullptr, i });
         long long ch = i < static_cast<long long>(text.size())
@@ -1169,7 +1169,7 @@ void Parser::finishDynamicInit(Program &program) {
                                          false, 0, 0, std::vector<::Local>()));
     program.functions.back().setSynthesised("init function");
     program.functions.back().setSymbol(symbol);
-    program.initFunction = symbol;
+    program.module.data.initFunction = symbol;
 }
 
 // **`__tls_init`, the per-thread twin of the function above**, measured from clang: Itanium runs it
@@ -1177,11 +1177,11 @@ void Parser::finishDynamicInit(Program &program) {
 // byte of its own; the Microsoft CRT runs it once per thread from .CRT$XDU and keeps the guard itself.
 void Parser::finishTlsInit(Program &program) {
     for (const std::string &s : tlsDefined_)
-        program.tlsWrappers.push_back(TlsWrapper{ s, true, tlsDynamic_.count(s) != 0, false });
+        program.module.data.tlsWrappers.push_back(TlsWrapper{ s, true, tlsDynamic_.count(s) != 0, false });
     for (const std::string &s : tlsReached_)
-        if (tlsDefined_.count(s) == 0) program.tlsWrappers.push_back(TlsWrapper{ s, false, false, false });
+        if (tlsDefined_.count(s) == 0) program.module.data.tlsWrappers.push_back(TlsWrapper{ s, false, false, false });
     for (const std::string &s : tlsInternalDynamic_)
-        program.tlsWrappers.push_back(TlsWrapper{ s, true, true, true });
+        program.module.data.tlsWrappers.push_back(TlsWrapper{ s, true, true, true });
     if (tlsInit_.empty()) return;
     tlsInitStatements_ = tlsInit_.size();
     std::vector<StmtPtr> body;
@@ -1191,9 +1191,9 @@ void Parser::finishTlsInit(Program &program) {
         for (std::size_t i = 0; i < tlsInit_.size(); i++) body.push_back(std::move(tlsInit_[i]));
     } else {
         const Type *byte = types_.get(Kind::UChar);
-        program.globals.push_back(Global{ "__tls_guard", "__tls_guard", byte,
+        program.module.data.globals.push_back(Global{ "__tls_guard", "__tls_guard", byte,
                                           std::vector<GlobalPiece>(), false, true, false });
-        program.globals.back().isThreadLocal = true;
+        program.module.data.globals.back().isThreadLocal = true;
         auto guard = [&]() {
             Var *g = Var::global("__tls_guard");
             g->setSymbol("__tls_guard");
@@ -1224,7 +1224,7 @@ void Parser::finishTlsInit(Program &program) {
                                          false, 0, 0, std::vector<::Local>()));
     program.functions.back().setSynthesised("tls init");
     program.functions.back().setSymbol("__tls_init");
-    program.tlsInitFunction = "__tls_init";
+    program.module.data.tlsInitFunction = "__tls_init";
 }
 
 // `&f` for a function named by its linkage symbol, the shape a designator
@@ -1430,7 +1430,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     ExprPtr handleAddr(new Unary('&', std::move(handle)));
     handleAddr->setType(voidPtr);
     args.push_back(std::move(handleAddr));
-    current_->usesDsoHandle = true;
+    current_->module.data.usesDsoHandle = true;
     out.push_back(StmtPtr(new ExprStmt(runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
                                                    types_.intType(), std::move(args)))));
     return out;
@@ -1470,7 +1470,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
         ExprPtr handleAddr(new Unary('&', std::move(handle)));
         handleAddr->setType(voidPtr);
         args.push_back(std::move(handleAddr));
-        current_->usesDsoHandle = true;
+        current_->module.data.usesDsoHandle = true;
 
         // __cxa_thread_atexit and _tlv_atexit take the same three arguments, measured from clang.
         into.push_back(StmtPtr(new ExprStmt(
@@ -1625,10 +1625,10 @@ StmtPtr Parser::guardTemplateMember(const std::string &symbol,
                                  : "_ZGV" + symbol.substr(symbol.compare(0, 2, "_Z") == 0 ? 2 : 0);
     dynInitOnce_[symbol] = guard;
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
-    current_->globals.push_back(Global{ guard, guard, guardType,
+    current_->module.data.globals.push_back(Global{ guard, guard, guardType,
                                         std::vector<GlobalPiece>(), false,
                                         false, false });
-    current_->globals.back().isInline = true;
+    current_->module.data.globals.back().isInline = true;
     // The first byte is what Itanium reads; the whole int on Microsoft.
     const Type *readAs = types_.get(ms ? Kind::Int : Kind::UChar);
     Var *seen = Var::global(guard);
@@ -1689,8 +1689,8 @@ StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> 
     const std::string guard = symbol + (target_.microsoftNames() ? "$tguard" : ".tguard");
     staticGuards_[symbol].guard = guard;
     const Type *byte = types_.get(Kind::UChar);
-    current_->globals.push_back(Global{ guard, guard, byte, std::vector<GlobalPiece>(), false, true, false });
-    current_->globals.back().isThreadLocal = true;
+    current_->module.data.globals.push_back(Global{ guard, guard, byte, std::vector<GlobalPiece>(), false, true, false });
+    current_->module.data.globals.back().isThreadLocal = true;
     auto flag = [&]() {
         Var *g = Var::global(guard);
         g->setSymbol(guard);
@@ -1735,10 +1735,10 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
     staticGuards_[symbol].guard = guard;
     staticGuards_[symbol].aborts = !ms || !inHandlerBody_;
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
-    current_->globals.push_back(Global{ guard, guard, guardType,
+    current_->module.data.globals.push_back(Global{ guard, guard, guardType,
                                         std::vector<GlobalPiece>(), false,
                                         !shared, false });
-    current_->globals.back().isInline = shared;
+    current_->module.data.globals.back().isInline = shared;
     const Type *guardPtr = types_.pointerTo(guardType);
     auto guardAddr = [&]() {
         Var *g = Var::global(guard);
@@ -1831,11 +1831,11 @@ void Parser::staticLocalWithConstructor(Declared &d,
     locals_[early ? mine : locals_.size() - 1].isConst = d.type->isConst();
     markThreadLocal(early ? mine : locals_.size() - 1, tlsObject_);
     // Not `isConst`: the constructor writes it, so it cannot live in .rodata.
-    current_->globals.push_back(Global{ symbol, symbol, d.type,
+    current_->module.data.globals.push_back(Global{ symbol, symbol, d.type,
                                         std::vector<GlobalPiece>(), false,
                                         !sharedStaticLocal(symbol), false });
-    current_->globals.back().isInline = sharedStaticLocal(symbol);
-    current_->globals.back().isThreadLocal = tlsObject_;
+    current_->module.data.globals.back().isInline = sharedStaticLocal(symbol);
+    current_->module.data.globals.back().isThreadLocal = tlsObject_;
     inits.push_back(guardOnce(symbol, std::move(body)));
 }
 
@@ -1850,13 +1850,13 @@ void Parser::staticTemporary(const Declared &d, const std::string &symbol, bool 
     std::string helper;
     g.temporary = linkage_.referenceTemporary(d.name, symbol, t, local, helper);
     const bool shared = local && sharedStaticLocal(symbol);
-    current_->globals.push_back(Global{ g.temporary, g.temporary, t->unqualified(), std::vector<GlobalPiece>(), false, !shared, false });
-    current_->globals.back().isInline = shared;
-    current_->globals.back().isThreadLocal = tlsObject_;
+    current_->module.data.globals.push_back(Global{ g.temporary, g.temporary, t->unqualified(), std::vector<GlobalPiece>(), false, !shared, false });
+    current_->module.data.globals.back().isInline = shared;
+    current_->module.data.globals.back().isThreadLocal = tlsObject_;
     if (!t->isStructOrUnion() || destructorOf(t->unqualified()) == nullptr) return;
     if (!target_.microsoftNames()) {
         markUsed(destructorOf(t->unqualified()));
-        current_->usesDsoHandle = true;
+        current_->module.data.usesDsoHandle = true;
         return;
     }
     Declared o = d;

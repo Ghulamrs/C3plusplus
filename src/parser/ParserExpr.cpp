@@ -1470,7 +1470,7 @@ ExprPtr Parser::primaryNode(Program *program) {
             for (int k = 0; k < width; k++) bytes.push_back(static_cast<char>((u >> (8 * k)) & 0xFF));
         for (int k = 0; k < width; k++) bytes.push_back('\0');
 
-        program->strings.push_back(StringLit{ label, bytes, width });
+        program->module.data.strings.push_back(StringLit{ label, bytes, width });
         ExprPtr n(new StrLit(label, text));
         // const char[N] in C++, char[N] in C: the dialect's.
         n->setType(types_.arrayOf(rules().stringLiteralElement(elem),
@@ -2287,7 +2287,7 @@ ExprPtr Parser::primaryNode(Program *program) {
             const std::size_t cut = bare.rfind("::");
             if (cut != std::string::npos) bare = bare.substr(cut + 2);
             const std::string label = ".L.str." + std::to_string(stringLabel()++);
-            program->strings.push_back(StringLit{ label, bare + '\0', 1 });
+            program->module.data.strings.push_back(StringLit{ label, bare + '\0', 1 });
             ExprPtr n(new StrLit(label, bare));
             n->setType(types_.arrayOf(types_.withConst(types_.charType()),
                                       static_cast<long long>(bare.size()) + 1));

@@ -898,7 +898,7 @@ void Parser::tlsVar(Var *v, bool viaWrapper, bool external) {
     // function is already running, and on Windows its guard would call it again.
     if (currentFunction_ == "__tls_init" && tlsHere_.count(v->symbol()) != 0) viaWrapper = false;
     v->setViaWrapper(viaWrapper);
-    if (external) tlsReached_.insert(v->symbol());
+    if (external && !patternUses_) tlsReached_.insert(v->symbol());
 }
 
 void Parser::tlsDefining(const std::string &symbol, bool external) {

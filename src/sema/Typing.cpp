@@ -548,8 +548,8 @@ std::string Typer::microsoftThrowInfo(TypeId t) const {
     std::string why;
     if (!microsoftThrowNames(&thrown, thrown.size(p_.target_), &names, &why)) return std::string();
     microsoftThrowFinish(&names);
-    for (std::size_t i = 0; i < p_.current_->msThrows.size(); i++)
-        if (p_.current_->msThrows[i].info == names.info && p_.current_->msThrows[i].thrown) return names.info;
+    for (std::size_t i = 0; i < p_.current_->module.data.msThrows.size(); i++)
+        if (p_.current_->module.data.msThrows[i].info == names.info && p_.current_->module.data.msThrows[i].thrown) return names.info;
     return std::string();
 }
 
@@ -559,8 +559,8 @@ bool Typer::microsoftCatchDescriptor(TypeId t, std::string &descriptor, bool &is
     std::string why;
     if (!microsoftThrowNames(&caught, caught.size(p_.target_), &names, &why)) return false;
     microsoftThrowFinish(&names);
-    for (std::size_t i = 0; i < p_.current_->msThrows.size(); i++)
-        if (p_.current_->msThrows[i].descriptor == names.descriptor) { descriptor = names.descriptor; isConst = names.isConst; return true; }
+    for (std::size_t i = 0; i < p_.current_->module.data.msThrows.size(); i++)
+        if (p_.current_->module.data.msThrows[i].descriptor == names.descriptor) { descriptor = names.descriptor; isConst = names.isConst; return true; }
     return false;
 }
 

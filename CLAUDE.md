@@ -30,8 +30,8 @@ variables `CPP11_*`, the seal is `cxx1-N.dat`. **Self-hosting is the goal**: the
 Target` is the machine) -> `Abi.h`, `backend/Backend.h` -> a code generator. M2/M3 added `src/syntax/`
 (the syntax tree), `src/sema/` (the typed tree, `Classes`, `SemaC`), `src/ir/` (the SSA IR: `Lowering`,
 `Builder`, the per-kind files; `ir/opt/` its passes), `src/encoder/` (the in-process COFF assembler) and
-`src/optimizer/` (MIR's passes, the inliner's budgets, the `Mir*` allocator). **x86 is typed tree -> SSA ->
-`backend/SsaSelect.cpp` -> MIR; arm64-darwin and tms6747 still walk `Ast.h`** (`backend/Walker.h`) -
+`src/optimizer/` (MIR's passes, the inliner's budgets, the `Mir*` allocator). **Every target is typed tree -> SSA
+-> a selector -> MIR** (`backend/SsaSelect.cpp`, `A64Select.cpp`, `C6xSelect.cpp`); no backend walks `Ast.h` (M6d) -
 `docs/OPTIMIZER-IR.md` says which file does what. The suites' headers (`tests/run.sh`, `emit.sh`,
 `names.sh`, `overload.sh`, `ssa.sh`) say what each checks.
 

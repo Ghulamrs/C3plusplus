@@ -3,8 +3,8 @@
 #include "../Dialect.h"
 
 #include "../Abi.h"
-#include "../Ast.h"
 #include "../Type.h"
+#include "../ir/Ir.h"
 
 #include <iosfwd>
 #include <memory>
@@ -15,13 +15,11 @@
 class Source;
 namespace masm { struct Instruction; }
 
-namespace ir { struct Module; }
-
-// **The generator**, as the driver drives it; Regions and AstCodeGen (Walker.h) extend it in one chain (M3b.7 round 4 F).
+// **The generator**, as the driver drives it; Regions extends it in one chain (M3b.7 round 4 F).
 class CodeGen {
 public:
     virtual ~CodeGen() = default;
-    virtual void run(const Program &program) = 0;
+    virtual void run(const ir::Module &module) = 0;
     // **-front=ssa** (M3b.1): a function the module holds is selected from its SSA; a generator with no selector ignores it.
     virtual void setSsa(const ir::Module *module, const TypeTable *types) { (void)module; (void)types; }
     // **The structural door** (M4.4): a spelling that hands instructions to the encoder library as data appends them here, leaving a `\001k` line in its text.
@@ -41,6 +39,10 @@ public:
 enum class Segment { Code, Const, ConstRelocated, Data, Bss, TlsData, TlsBss };
 
 Segment segmentFor(const Global &g);
+
+// A parameter's slot in the parser's frame (ir::LaidParam), its type resolved; a function's, in order.
+struct FrameParam { const Type *type; int offset; };
+std::vector<FrameParam> laidParams(const ir::Function &f, const TypeTable &types);
 
 // **A thread_local's Itanium wrapper and initialiser**, `_ZTW` and `_ZTH` before the variable's own
 // encoding - what follows its `_Z`, or its name as a <source-name> where it has no `_Z`. Measured

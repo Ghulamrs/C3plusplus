@@ -50,13 +50,14 @@ public:
         plain_ = a_;
     }
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
     void setOptimize(int level) override;
     void setMirDump(std::ostream *to, const std::string &afterPass) override { mirDump_ = to; mirDumpAfter_ = afterPass; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
 
 protected:
+    const Type *laidType(TypeId t) const { return ssaTypes_->type(t); }      // a type of the parser's frame record (ir::Laid)
 
     virtual bool writesDwarf() const { return true; }
     // -g's records: CodeView for Microsoft's tools, DWARF elsewhere; the MASM path spells the same
@@ -80,11 +81,11 @@ protected:
     // is the whole translation between how cxx1 addresses a local and how an
     // FH3 table describes one.
     int establisherOffset(int slot) const { return frameSize_ + outgoing_ - slot; }
-    void emitCoffEhTables(const Function &fn);   // the FH3 tables, one state tree
+    void emitCoffEhTables(const ir::Function &fn);   // the FH3 tables, one state tree
     // The five objects the Microsoft ABI wants per class with a vftable.
-    void emitCoffClassRtti(const Program &program);
+    void emitCoffClassRtti(const UnitData &data);
     // The four objects a Microsoft throw is identified by, in GNU syntax.
-    void emitCoffThrowInfo(const Program &program);
+    void emitCoffThrowInfo(const UnitData &data);
     // Opens one of those records as a COMDAT of its own, public, so that the
     // linker keeps one copy where every unit that names the type wrote one.
     void coffRecord(const char *section, const std::string &label, int p2align,
@@ -125,7 +126,6 @@ protected:
     // Whether the holder is in front: a different fact from passesRun(), and only emittedSize asks it.
     bool holding() const { return optimizer_ && a_ == optimizer_.get(); }
 
-    void landingPad(int pointerSlot, int selectorSlot) override;
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) override;
 
 protected:
@@ -155,7 +155,7 @@ protected:
     bool landingPads_ = false;
 
     // Whatever this target writes after a function to describe its handlers.
-    virtual void emitExceptionTables(const Function &fn) {
+    virtual void emitExceptionTables(const ir::Function &fn) {
         // Microsoft frames carry FH3 tables, not an LSDA.
         if (target_.microsoftNames()) {
             // One table for cleanups and tries alike, nested or not: a state tree.
@@ -166,7 +166,7 @@ protected:
             }
             return;
         }
-        if (!callSites().empty()) emitLsda(fn.symbol(), fn.isInline());
+        if (!callSites().empty()) emitLsda(fn.symbol, fn.isInline);
     }
     std::vector<std::string> lsdaTypes_;
     std::vector<std::string> lsdaStubs_;
@@ -197,16 +197,15 @@ private:
     int regSave_ = 0;
     int varGp_ = 0, varFp_ = 48, varOverflow_ = 16;
 
-    void emit(const Function &fn);
-    void receiveParameters(const Function &fn);
-    void returnThis(const Function &fn);
+    void emit(const ir::Function &fn);
+    void receiveParameters(const ir::Function &fn);
+    void returnThis(const ir::Function &fn);
     // **The SSA selector** (M3b.1, SsaSelect.cpp): the module -front=ssa handed over, and the frame it lays above the parser's.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
     std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
-    const ir::Function *ssaFunction(const Function &fn) const;
-    int layoutSsa(const Function &fn, const ir::Function &f);
+    int layoutSsa(const ir::Function &f);
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
     Op vslot(ir::ValueId v) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const;
@@ -254,26 +253,25 @@ private:
     void selectHandler(const ir::Function &f, ir::BlockId hb);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     // -g: the statements that begin before `i` (ir::Inst::lines), then `i` - the body's blocks and a funclet's alike.
-    void selectMarked(const ir::Function &f, const ir::Inst &i) { for (std::size_t m = 0; m < i.lines.size(); m++) ssaMark(i.lines[m]); selectInst(f, i); }
-    void ssaMark(std::uint32_t m) {
+    void selectMarked(const ir::Function &f, const ir::Inst &i) { for (std::size_t m = 0; m < i.lines.size(); m++) ssaMark(f, i.lines[m]); selectInst(f, i); }
+    void ssaMark(const ir::Function &f, std::uint32_t m) {
         const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses;
-        if (m & block) markBlock(ssaFn_->blockAt(m & ~block), (m & ir::kBlockCloses) != 0); else markLine(m);
+        if (m & block) markBlock(f.laid.blockAt(m & ~block), (m & ir::kBlockCloses) != 0); else markLine(m);
     }
-    const Function *ssaFn_ = nullptr;
-    void selectBody(const Function &fn, const ir::Function &f);
+    void selectBody(const ir::Function &f);
     // The parser's parameters' slots that hold a scalar; the rest of the frame is the selector's (layoutSsa).
-    std::vector<opt::Local> scalarsOf(const Function &fn) const;
+    std::vector<opt::Local> scalarsOf(const ir::Function &fn) const;
     void finishChunk();
     std::string label(const char *kind, int id) const override;
     std::string userLabel(const std::string &name) const override;
-    void emitData(const Program &program);
+    void emitData(const UnitData &data);
     void emitGlobal(const Global &g, Segment seg);
     // A thread_local's address into rax: local-exec or its wrapper on ELF, cl's `_tls_index` walk on
     // COFF with the CRT's guard asked first where the object may still want initialising.
     void tlsAddress(const std::string &symbol, bool viaWrapper);
     void msTlsBlock();
     // The `_ZTW` wrappers and `_ZTH` aliases this unit defines - ELF only, as raw text after the functions.
-    void emitTlsWrappers(const Program &program);
+    void emitTlsWrappers(const UnitData &data);
     void push();
     void pop(const char *into);
     // A stack argument, on the real stack whatever the level: the call unwinds it.

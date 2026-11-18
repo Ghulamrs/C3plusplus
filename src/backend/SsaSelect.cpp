@@ -98,20 +98,13 @@ std::vector<ir::BlockId> ssaBlockOrder(const ir::Function &f) {
     return out;
 }
 
-// The function `fn` is selected from SSA when the module holds its symbol.
-const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
-    if (ssa_ == nullptr) return nullptr;
-    const ir::FuncId id = ssa_->find(fn.symbol());
-    return id.valid() ? &ssa_->functions[id.v] : nullptr;
-}
-
 // The frame above the parser's parameter slots - the one part of its layout the selector reads - each alloca at its
 // alignment, then one 8-byte slot per value, an x87 value's 16. Returns the new size.
-int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
+int X86_64Linux::layoutSsa(const ir::Function &f) {
     long long cur = 0;
-    for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
-    cur = std::max(cur, static_cast<long long>(fn.sretSlot()));   // where the prologue keeps the caller's result pointer
-    cur = std::max(cur, static_cast<long long>(fn.regSaveSlot()));   // and a variadic function's register save area
+    for (const ir::LaidParam &p : f.laid.params) cur = std::max(cur, static_cast<long long>(p.offset));
+    cur = std::max(cur, static_cast<long long>(f.laid.sretSlot));   // where the prologue keeps the caller's result pointer
+    cur = std::max(cur, static_cast<long long>(f.laid.regSave));   // and a variadic function's register save area
     cur = roundUp(cur, 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
@@ -176,6 +169,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
     ssaUnwindHelpSlot_ = 0;
     if (usesFunclets() && landingPads_) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
+    if (ssaUnwindHelpSlot_ != 0 && ssaOutgoing(f) == 0) cur += 8;   // no call: the word stays off rsp+0, dispUnwindHelp > 0
     return static_cast<int>(roundUp(cur, 16));
 }
 
@@ -958,17 +952,16 @@ void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
 }
 
 // The body: the parameters copied from the slots receiveParameters filled into their values' slots, then each block.
-void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
-    const std::vector<Param> &ps = fn.params();
+void X86_64Linux::selectBody(const ir::Function &f) {
+    const std::vector<FrameParam> ps = laidParams(f, *ssaTypes_);
     for (std::size_t i = 0; i < ps.size() && i < f.params.size(); i++) {
         a_->ins("lea", local(ps[i].offset), reg("%rax"));
         load(ps[i].type);
         ssaStore(f, f.params[i]);
     }
-    ssaSretSlot_ = fn.sretSlot();
-    if (f.sret.valid() && fn.sretSlot() != 0) { a_->ins("mov", local(fn.sretSlot()), reg("%rax")); ssaStore(f, f.sret); }
+    ssaSretSlot_ = f.laid.sretSlot;
+    if (f.sret.valid() && f.laid.sretSlot != 0) { a_->ins("mov", local(f.laid.sretSlot), reg("%rax")); ssaStore(f, f.sret); }
     std::size_t lastPos = 0;
-    ssaFn_ = &fn;
     ssaRegionAt_ = 0;
     ssaTries_.clear();
     ssaTryOrder_.clear();
@@ -1045,7 +1038,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
             const ir::Inst &in = f.inst(id);
-            for (std::size_t m = 0; m < in.lines.size(); m++) ssaMark(in.lines[m]);
+            for (std::size_t m = 0; m < in.lines.size(); m++) ssaMark(f, in.lines[m]);
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);
         }
@@ -1061,9 +1054,9 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
     // After the body: the value a function that falls off its end returns, and the return label.
-    if (isX87(fn.returns()))              a_->ins("fldz");
-    else if (fn.returns()->isFloating())  a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
+    if (isX87(laidType(f.laid.returns)))              a_->ins("fldz");
+    else if (laidType(f.laid.returns)->isFloating())  a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
     else                                  a_->ins("mov", immText("0"), reg("%rax"));
     a_->defLabel(returnLabel_);
-    returnThis(fn);
+    returnThis(f);
 }

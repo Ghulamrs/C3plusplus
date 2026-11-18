@@ -808,8 +808,8 @@ std::string Classes::emitEnumTypeInfo(const Type *e, std::size_t pos,
     std::string spelt;
     if (!itaniumTypeSpelling(e, &spelt, why)) return std::string();
     const std::string ti = "_ZTI" + spelt;
-    for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
-        if (p_.current_->globals[i].symbol == ti) return ti;
+    for (std::size_t i = 0; i < p_.current_->module.data.globals.size(); i++)
+        if (p_.current_->module.data.globals[i].symbol == ti) return ti;
     const std::string ts = "_ZTS" + spelt;
     std::vector<GlobalPiece> letters;
     for (std::size_t i = 0; i <= spelt.size(); i++)
@@ -818,7 +818,7 @@ std::string Classes::emitEnumTypeInfo(const Type *e, std::size_t pos,
                                        std::string() });
     const Type *chars = p_.types_.arrayOf(p_.types_.get(Kind::Char),
                                        static_cast<long long>(spelt.size() + 1));
-    p_.current_->globals.push_back(Global{ ts, ts, chars, std::move(letters),
+    p_.current_->module.data.globals.push_back(Global{ ts, ts, chars, std::move(letters),
                                         true, false, true, std::string(), true });
     const int w = p_.pointerBytes();
     std::vector<GlobalPiece> pieces;
@@ -826,7 +826,7 @@ std::string Classes::emitEnumTypeInfo(const Type *e, std::size_t pos,
     pieces.push_back(GlobalPiece{ w, w, 0, ts });
     const Type *word = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *object = p_.types_.arrayOf(word, 2);
-    p_.current_->globals.push_back(Global{ ti, ti, object, std::move(pieces),
+    p_.current_->module.data.globals.push_back(Global{ ti, ti, object, std::move(pieces),
                                         true, false, true, std::string(), true });
     return ti;
 }
@@ -850,8 +850,8 @@ std::string Classes::emitPointerTypeInfo(const Type *ptr, std::size_t pos,
     if (builtin) return "_ZTI" + spelt;                   // the library's
 
     const std::string ti = "_ZTI" + spelt;
-    for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
-        if (p_.current_->globals[i].symbol == ti) return ti;
+    for (std::size_t i = 0; i < p_.current_->module.data.globals.size(); i++)
+        if (p_.current_->module.data.globals[i].symbol == ti) return ti;
     const std::string inner = typeInfoSymbolFor(plain, pos, why);
     if (inner.empty()) return std::string();
 
@@ -863,7 +863,7 @@ std::string Classes::emitPointerTypeInfo(const Type *ptr, std::size_t pos,
                                        std::string() });
     const Type *chars = p_.types_.arrayOf(p_.types_.get(Kind::Char),
                                        static_cast<long long>(spelt.size() + 1));
-    p_.current_->globals.push_back(Global{ ts, ts, chars, std::move(letters),
+    p_.current_->module.data.globals.push_back(Global{ ts, ts, chars, std::move(letters),
                                         true, false, true, std::string(), true });
 
     // vptr, name, flags (const 1, volatile 2 - only const is in this type
@@ -876,7 +876,7 @@ std::string Classes::emitPointerTypeInfo(const Type *ptr, std::size_t pos,
     pieces.push_back(GlobalPiece{ 3 * w, w, 0, inner });
     const Type *word = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *object = p_.types_.arrayOf(word, 4);
-    p_.current_->globals.push_back(Global{ ti, ti, object, std::move(pieces),
+    p_.current_->module.data.globals.push_back(Global{ ti, ti, object, std::move(pieces),
                                         true, false, true, std::string(), true });
     return ti;
 }
@@ -928,8 +928,8 @@ std::string Classes::emitClassTypeInfo(const Type *cls, const std::string &tag,
     const std::string ti = cls->unqualified()->tag() == tag
                          ? itaniumClassTypeInfoSymbol(cls)
                          : itaniumClassTypeInfoSymbol(tag);
-    for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
-        if (p_.current_->globals[i].symbol == ti) return ti;      // one per class
+    for (std::size_t i = 0; i < p_.current_->module.data.globals.size(); i++)
+        if (p_.current_->module.data.globals[i].symbol == ti) return ti;      // one per class
     p_.classSymbols_[tag].push_back(ti);
 
     // **Which of the three shapes this class is.**
@@ -968,7 +968,7 @@ std::string Classes::emitClassTypeInfo(const Type *cls, const std::string &tag,
     // **Weak**: every translation unit that sees the class emits these three,
     // and the linker folds them rather than rejecting them - which is what
     // clang does and what a program of more than one file needs.
-    p_.current_->globals.push_back(Global{ ts, ts, chars, std::move(letters),
+    p_.current_->module.data.globals.push_back(Global{ ts, ts, chars, std::move(letters),
                                         true, false, true,
                                         std::string(), true });
 
@@ -1016,7 +1016,7 @@ std::string Classes::emitClassTypeInfo(const Type *cls, const std::string &tag,
 
     const Type *word = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *object = p_.types_.arrayOf(word, (bytes + w - 1) / w);
-    p_.current_->globals.push_back(Global{ ti, ti, object, std::move(pieces),
+    p_.current_->module.data.globals.push_back(Global{ ti, ti, object, std::move(pieces),
                                         true, false, true,
                                         std::string(), true });
     return ti;
@@ -1038,8 +1038,8 @@ void Classes::emitVbtable(const Type *cls, const std::string &tag,
         const std::string symbol =
             ptrs[p].name.empty() ? vbtableSymbol(tag) : vbtableSymbol(tag, ptrs[p].name);
         bool already = false;
-        for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
-            if (p_.current_->globals[i].symbol == symbol) already = true;
+        for (std::size_t i = 0; i < p_.current_->module.data.globals.size(); i++)
+            if (p_.current_->module.data.globals[i].symbol == symbol) already = true;
         if (already) continue;                              // one per class
 
         // **Entry 0 steps back to the top of the class that introduced the
@@ -1083,7 +1083,7 @@ void Classes::emitVbtable(const Type *cls, const std::string &tag,
         const Type *table = p_.types_.arrayOf(entry,
                                            static_cast<long long>(
                                                pieces.size()));
-        p_.current_->globals.push_back(Global{ symbol, symbol, table,
+        p_.current_->module.data.globals.push_back(Global{ symbol, symbol, table,
                                             std::move(pieces), true, false,
                                             true, std::string(), true });
     }
@@ -1100,8 +1100,8 @@ void Classes::emitVtable(const Type *cls, const std::string &tag,
     const std::string symbol = cls->unqualified()->tag() == tag
                              ? vtableSymbol(cls, ms) : vtableSymbol(tag, ms);
 
-    for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
-        if (p_.current_->globals[i].symbol == symbol) return;   // one per class
+    for (std::size_t i = 0; i < p_.current_->module.data.globals.size(); i++)
+        if (p_.current_->module.data.globals[i].symbol == symbol) return;   // one per class
     p_.classSymbols_[tag].push_back(symbol);
 
     // **The table holding a function's address is a use of it.** The `used` flag came
@@ -1151,15 +1151,15 @@ void Classes::emitVtable(const Type *cls, const std::string &tag,
         if (microsoftClassRttiNames(cls, &names, &why)) {
             locatorWord = names.locator;
             bool had = false;
-            for (std::size_t i = 0; i < p_.current_->rtti.size(); i++)
-                if (p_.current_->rtti[i] == cls) had = true;
-            if (!had) p_.current_->rtti.push_back(cls);
+            for (std::size_t i = 0; i < p_.current_->module.data.rtti.size(); i++)
+                if (p_.current_->module.data.rtti[i] == TypeTable::id(cls)) had = true;
+            if (!had) p_.current_->module.data.rtti.push_back(TypeTable::id(cls));
         }
     }
 
     const Type *entry = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *table = p_.types_.arrayOf(entry, static_cast<long long>(pieces.size()));
-    p_.current_->globals.push_back(Global{ symbol, symbol, table, std::move(pieces),
+    p_.current_->module.data.globals.push_back(Global{ symbol, symbol, table, std::move(pieces),
                                         true, false, true, locatorWord, true });
 }
 
@@ -2408,9 +2408,9 @@ void Classes::pruneExternalVtables(Program &program) {
         std::vector<std::string> gone = it->second;
         gone.push_back(p_.linkage_.deletingDestructorSymbol(it->first));
         for (std::size_t g = 0; g < gone.size(); g++) {
-            for (std::size_t i = program.globals.size(); i-- > 0; )
-                if (program.globals[i].symbol == gone[g])
-                    program.globals.erase(program.globals.begin() + static_cast<long>(i));
+            for (std::size_t i = program.module.data.globals.size(); i-- > 0; )
+                if (program.module.data.globals[i].symbol == gone[g])
+                    program.module.data.globals.erase(program.module.data.globals.begin() + static_cast<long>(i));
             for (std::size_t i = program.functions.size(); i-- > 0; )
                 if (program.functions[i].symbol() == gone[g])
                     program.functions.erase(program.functions.begin() + static_cast<long>(i));
@@ -2876,7 +2876,7 @@ void Classes::emitVtableGroup(const std::string &symbol, VtableGroup g) {
     const Type *entry = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *table = p_.types_.arrayOf(entry,
                                        static_cast<long long>(g.pieces.size()));
-    p_.current_->globals.push_back(Global{ symbol, symbol, table, g.pieces,
+    p_.current_->module.data.globals.push_back(Global{ symbol, symbol, table, g.pieces,
                                         true, false, true, std::string(),
                                         true });
     groups_[symbol] = std::move(g);
@@ -3006,7 +3006,7 @@ void Classes::emitItaniumVtables(const Type *cls, const std::string &tag,
     const Type *entry = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *table = p_.types_.arrayOf(entry,
                                        static_cast<long long>(vtt.pieces.size()));
-    p_.current_->globals.push_back(Global{ name, name, table, vtt.pieces, true,
+    p_.current_->module.data.globals.push_back(Global{ name, name, table, vtt.pieces, true,
                                         false, true, std::string(), true });
     p_.vtts_[tag] = std::move(vtt);
 }

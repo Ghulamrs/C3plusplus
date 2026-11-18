@@ -43,7 +43,6 @@
 		E449C770B3AB69E828AA4C23 /* Spelling.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 67D0740B42D9A977D2929C12 /* Spelling.cpp */; };
 		509B883E630B683EBBE52339 /* SsaSelect.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */; };
 		4C3E931330523331CA3D79DD /* Tms6747.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 24D682BAD7A7437D87895552 /* Tms6747.cpp */; };
-		ECFF4ADB02FA0FDCA8E5E830 /* Walker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 91CE00C0935BDE384E519CE8 /* Walker.cpp */; };
 		DEA45A10FA3892FD4AE58700 /* X86_64Linux.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 334CD99BDE8B6A591C8500E5 /* X86_64Linux.cpp */; };
 		AD991EF6B756D66904E0D106 /* X86_64Windows.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 80025E52DA32488A2EF7539F /* X86_64Windows.cpp */; };
 		0CDF1684785903BDD0B9C9FC /* C6xMir.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AEBA88E970D006CFA93BAC41 /* C6xMir.cpp */; };
@@ -149,7 +148,6 @@
 		67D0740B42D9A977D2929C12 /* Spelling.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Spelling.cpp; path = "../src/backend/Spelling.cpp"; sourceTree = "<group>"; };
 		85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaSelect.cpp; path = "../src/backend/SsaSelect.cpp"; sourceTree = "<group>"; };
 		24D682BAD7A7437D87895552 /* Tms6747.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Tms6747.cpp; path = "../src/backend/Tms6747.cpp"; sourceTree = "<group>"; };
-		91CE00C0935BDE384E519CE8 /* Walker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Walker.cpp; path = "../src/backend/Walker.cpp"; sourceTree = "<group>"; };
 		334CD99BDE8B6A591C8500E5 /* X86_64Linux.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X86_64Linux.cpp; path = "../src/backend/X86_64Linux.cpp"; sourceTree = "<group>"; };
 		80025E52DA32488A2EF7539F /* X86_64Windows.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X86_64Windows.cpp; path = "../src/backend/X86_64Windows.cpp"; sourceTree = "<group>"; };
 		AEBA88E970D006CFA93BAC41 /* C6xMir.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xMir.cpp; path = "../src/optimizer/C6xMir.cpp"; sourceTree = "<group>"; };
@@ -223,9 +221,11 @@
 		A6357074452FF76FBCDA06D5 /* Mangle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Mangle.h; path = "../src/Mangle.h"; sourceTree = "<group>"; };
 		2DA8CF60A538466FE3C8F3CD /* Name.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Name.h; path = "../src/Name.h"; sourceTree = "<group>"; };
 		6483FA6AFF7E1D15F6C026EF /* Operator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Operator.h; path = "../src/Operator.h"; sourceTree = "<group>"; };
+		A502F51FB3D5663554B59C2D /* Owned.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Owned.h; path = "../src/Owned.h"; sourceTree = "<group>"; };
 		2FB500085E7EEEBDFE98884D /* Preprocessor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Preprocessor.h; path = "../src/Preprocessor.h"; sourceTree = "<group>"; };
 		89135EFA2CE6CD9678C83164 /* Source.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Source.h; path = "../src/Source.h"; sourceTree = "<group>"; };
 		EFB2C2FE15E86CFA56F6C459 /* Type.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Type.h; path = "../src/Type.h"; sourceTree = "<group>"; };
+		CF2D77069135FA5F13EC80C1 /* UnitData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = UnitData.h; path = "../src/UnitData.h"; sourceTree = "<group>"; };
 		BB09D9D67B9E2F9D511E588A /* Version.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Version.h; path = "../src/Version.h"; sourceTree = "<group>"; };
 		2D10825A2D722016661BDF14 /* Parser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Parser.h; path = "../src/parser/Parser.h"; sourceTree = "<group>"; };
 		EBB5148CBB42CE56CD122883 /* ParserInternal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ParserInternal.h; path = "../src/parser/ParserInternal.h"; sourceTree = "<group>"; };
@@ -239,7 +239,6 @@
 		1817657F695977B6FC4D1086 /* Regions.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Regions.h; path = "../src/backend/Regions.h"; sourceTree = "<group>"; };
 		A9A1194FC9BA4491688B00EC /* Spelling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Spelling.h; path = "../src/backend/Spelling.h"; sourceTree = "<group>"; };
 		1A090AFCE8174A1DE49C9C54 /* Tms6747.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Tms6747.h; path = "../src/backend/Tms6747.h"; sourceTree = "<group>"; };
-		C681B0D6A27FF7AEF4F8EF84 /* Walker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Walker.h; path = "../src/backend/Walker.h"; sourceTree = "<group>"; };
 		12A5F71977D26CEE2AF1E2A4 /* X86_64Linux.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = X86_64Linux.h; path = "../src/backend/X86_64Linux.h"; sourceTree = "<group>"; };
 		D9E2165876940A054181ABEA /* X86_64Windows.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = X86_64Windows.h; path = "../src/backend/X86_64Windows.h"; sourceTree = "<group>"; };
 		49664AC8889B2AC6C79A6A8F /* C6xMir.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = C6xMir.h; path = "../src/optimizer/C6xMir.h"; sourceTree = "<group>"; };
@@ -328,12 +327,14 @@
 				2DA8CF60A538466FE3C8F3CD /* Name.h */,
 				374BD07A02DE1978CC0332E9 /* Operator.cpp */,
 				6483FA6AFF7E1D15F6C026EF /* Operator.h */,
+				A502F51FB3D5663554B59C2D /* Owned.h */,
 				D50718FBCC03E7BCB1F6DC50 /* Preprocessor.cpp */,
 				2FB500085E7EEEBDFE98884D /* Preprocessor.h */,
 				859ACBF2A15D1132F631212A /* Source.cpp */,
 				89135EFA2CE6CD9678C83164 /* Source.h */,
 				DDE8B9A37A9782BB379AF4B9 /* Type.cpp */,
 				EFB2C2FE15E86CFA56F6C459 /* Type.h */,
+				CF2D77069135FA5F13EC80C1 /* UnitData.h */,
 				BB09D9D67B9E2F9D511E588A /* Version.h */,
 				0622243F82CE24842E74D759 /* main.cpp */,
 			);
@@ -366,8 +367,6 @@
 				85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */,
 				24D682BAD7A7437D87895552 /* Tms6747.cpp */,
 				1A090AFCE8174A1DE49C9C54 /* Tms6747.h */,
-				91CE00C0935BDE384E519CE8 /* Walker.cpp */,
-				C681B0D6A27FF7AEF4F8EF84 /* Walker.h */,
 				334CD99BDE8B6A591C8500E5 /* X86_64Linux.cpp */,
 				12A5F71977D26CEE2AF1E2A4 /* X86_64Linux.h */,
 				80025E52DA32488A2EF7539F /* X86_64Windows.cpp */,
@@ -630,7 +629,6 @@
 				E449C770B3AB69E828AA4C23 /* Spelling.cpp in Sources */,
 				509B883E630B683EBBE52339 /* SsaSelect.cpp in Sources */,
 				4C3E931330523331CA3D79DD /* Tms6747.cpp in Sources */,
-				ECFF4ADB02FA0FDCA8E5E830 /* Walker.cpp in Sources */,
 				DEA45A10FA3892FD4AE58700 /* X86_64Linux.cpp in Sources */,
 				AD991EF6B756D66904E0D106 /* X86_64Windows.cpp in Sources */,
 				0CDF1684785903BDD0B9C9FC /* C6xMir.cpp in Sources */,

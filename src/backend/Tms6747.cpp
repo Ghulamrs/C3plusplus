@@ -4,7 +4,6 @@
 #include "../optimizer/DivMagic.h"
 
 #include "../Abi.h"
-#include "../Ast.h"
 #include "../Source.h"
 
 #include <cctype>
@@ -17,8 +16,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-static int align8(int n) { return (n + 7) / 8 * 8; }
 
 // ---- the target: sizes for a 32-bit C6000 (EABI) -------------------------
 int Tms6747Target::sizeOf(Kind k) const {
@@ -217,15 +214,9 @@ void Tms6747::spAdjust(int delta) {
 static const int kSaveBytes = 40;   // under A15 whatever is saved, so a local's address does not wait on the body
 
 // dst = A15 - saveBytes_ - off, past the saved registers; the stack parameters lie at A15 + 4 on.
-// dst is an A-file register. This is the one place a local's address is formed: on the first
-// walk, forming one costs the local its register, and records the slot's extent for the layout.
-void Tms6747::localAddr(int off, const char *dst, int size, int align) {
-    if (planning_) {
-        if (!plainAccess_) slots_[localBase_ + off].addressed = true;
-        noteExtent(localBase_ + off, size, align);
-        slots_[localBase_ + off].winUses += 1 << (loopDepth_ > 4 ? 12 : 3 * loopDepth_);   // SUBAW reaches 124
-    }
-    off = saveBytes_ + placed(localBase_ + off);
+// dst is an A-file register.
+void Tms6747::localAddr(int off, const char *dst) {
+    off = saveBytes_ + off;
     if (off >= 0 && off <= 31) {
         out_ << "\tSUB\tA15, " << off << ", " << dst << "\n";
     } else if (optimize_ > 0 && off % 4 == 0 && off / 4 <= 31) {
@@ -234,122 +225,6 @@ void Tms6747::localAddr(int off, const char *dst, int size, int align) {
         movImm("A0", off);
         out_ << "\tSUB\tA15, A0, " << dst << "\n";
     }
-}
-
-// The slot's bytes and alignment as this access sees them, the largest of every access winning.
-void Tms6747::noteExtent(int key, int size, int align) {
-    Slot &s = slots_[key];
-    if (size > s.extent) s.extent = size;
-    if (align > s.align) s.align = align;
-}
-
-// A slot's offset in the frame as laid out, or as the parser gave it where no layout is in force.
-int Tms6747::placed(int key) const {
-    if (!relayout_) return key;
-    std::map<int, int>::const_iterator it = place_.find(key);
-    if (it == place_.end()) {
-        std::fprintf(stderr, "codegen: frame slot %d of %s was reached by the second walk and not the first\n", key, functionName_.c_str());
-        compileFailed();
-    }
-    return it->second;
-}
-
-// The parameters' own slots, which the body may never name: an unused one is still stored on entry.
-void Tms6747::planParams(const Function &fn) {
-    const std::vector<Param> &ps = fn.params();
-    for (std::size_t i = 0; i < ps.size(); i++) {
-        noteExtent(localBase_ + ps[i].offset, ps[i].type->size(target_), ps[i].type->align(target_));
-        slots_[localBase_ + ps[i].offset].winUses += 1;    // the store on entry
-    }
-}
-
-// The declared locals' whole objects: the parser names an array's first element by a Var of the
-// element's type at the array's offset, so a Var's type alone can understate the slot.
-void Tms6747::planLocals(const Function &fn) {
-    const std::vector<Local> &ls = fn.locals();
-    for (std::size_t i = 0; i < ls.size(); i++)
-        if (ls[i].type != nullptr && ls[i].staticName.empty())
-            noteExtent(localBase_ + ls[i].offset, ls[i].type->size(target_),
-                       ls[i].align > ls[i].type->align(target_) ? ls[i].align : ls[i].type->align(target_));
-}
-
-// The most used slot first, so the short *-A15(k) form reaches the accesses that run most, each at its
-// own alignment; a slot never reached, or promoted to a register, takes no room. A key inside another slot's
-// bytes (a class array's element, which the parser names as a slot) keeps its distance from that owner and adds its uses to it.
-void Tms6747::planFrame() {
-    place_.clear();
-    relayout_ = false;
-    std::vector<int> keys;
-    for (std::map<int, Slot>::const_iterator it = slots_.begin(); it != slots_.end(); ++it)
-        if (it->second.extent > 0 && !regOf_.count(it->first)) keys.push_back(it->first);
-    std::map<int, int> owner;                                 // key -> the slot holding it
-    for (std::size_t i = 0; i < keys.size(); i++) {
-        const int k = keys[i];
-        for (std::size_t j = i + 1; j < keys.size(); j++) {
-            Slot &o = slots_[keys[j]];
-            if (keys[j] - o.extent >= k) continue;
-            owner[k] = keys[j];
-            const Slot &n = slots_[k];
-            if (keys[j] - (k - n.extent) > o.extent) o.extent = keys[j] - (k - n.extent);
-            if (n.align > o.align) o.align = n.align;
-            break;
-        }
-    }
-    std::map<int, long long> weight;
-    for (std::size_t i = 0; i < keys.size(); i++) {
-        int k = keys[i];
-        const long long w = slots_[k].winUses;
-        for (int guard = 0; guard < 64; guard++) { std::map<int, int>::const_iterator it = owner.find(k); if (it == owner.end()) break; k = it->second; }
-        weight[k] += w;
-    }
-    std::vector<std::pair<long long, int> > order;          // (-weight, key), the top-level slots
-    for (std::map<int, long long>::const_iterator it = weight.begin(); it != weight.end(); ++it)
-        order.push_back(std::make_pair(-it->second, it->first));
-    std::sort(order.begin(), order.end());
-    int c = 0;
-    for (std::size_t k = 0; k < order.size(); k++) {
-        const Slot &s = slots_[order[k].second];
-        const int a = s.align < 1 ? 1 : s.align > 8 ? 8 : s.align;
-        c = (c + s.extent + a - 1) / a * a;
-        place_[order[k].second] = c;
-    }
-    for (std::size_t i = keys.size(); i-- > 0; ) {           // owners first: an owner is the larger key
-        const int k = keys[i];
-        std::map<int, int>::const_iterator it = owner.find(k);
-        if (it == owner.end()) continue;
-        const int at = place_[it->second] - (it->second - k), a = slots_[k].align > 8 ? 8 : slots_[k].align;
-        if (a > 1 && at % a != 0) { place_.clear(); return; }
-        place_[k] = at;
-    }
-    placedTop_ = align8(c);
-    relayout_ = true;
-}
-
-// A local, or a member reached from one by `.` alone, has a fixed place in the frame: its
-// displacement from A15, negative for a local and positive for a stack parameter.
-bool Tms6747::frameSlot(const Expr &e, int &disp) {
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (!v->isLocal()) return false;
-        if (planning_) {              // an access the *-A15(k) form can reach: what the layout is for
-            if (v->type()) noteExtent(localBase_ + v->offset(), v->type()->size(target_), v->type()->align(target_));
-            slots_[localBase_ + v->offset()].winUses += 1 << (loopDepth_ > 4 ? 12 : 3 * loopDepth_);
-        }
-        disp = -(saveBytes_ + placed(localBase_ + v->offset()));
-        return true;
-    }
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
-        if (m->isBitField() || !frameSlot(m->object(), disp)) return false;
-        disp += m->offset();
-        // A slot reached by a member is no scalar: an inlined callee's scalar at the same key
-        // would otherwise take a register that this access never consults.
-        if (planning_) {
-            const Expr *root = &m->object();
-            while (const MemberAccess *in = dynamic_cast<const MemberAccess *>(root)) root = &in->object();
-            if (const Var *v = dynamic_cast<const Var *>(root)) slots_[localBase_ + v->offset()].addressed = true;
-        }
-        return true;
-    }
-    return false;
 }
 
 // The ucst5 form holds 31 units of the access size, the register form 32767 (MVK into A0).
@@ -370,12 +245,6 @@ std::string Tms6747::frameOperand(int disp, int size) {
 
 int Tms6747::accessSize(const Type *t) const {
     return isWide(t) || inPairWide(t) ? 8 : t->size(target_);
-}
-
-// A4 += bytes, for a member's offset.
-void Tms6747::addOffset(int bytes) {
-    if (bytes == 0) return;
-    regAdd("A4", bytes, "A4");
 }
 
 // A struct copy, word by word then halfword and byte, each through A3 with
@@ -441,7 +310,7 @@ void Tms6747::copyBlockBatched(int size, const char *from, const char *to, int a
 // A call's area - the word the callee saves A15 in, and its stack arguments. At -O1 and -O2 the
 // frame keeps that word at its bottom, so a call with nothing pushed and nothing on the stack opens none.
 void Tms6747::openArea(int area, bool stackArgs) {
-    int a = optimize_ > 0 && !stackArgs && pushDepth_ == 0 ? 0 : area;
+    int a = optimize_ > 0 && !stackArgs ? 0 : area;
     areas_.push_back(a);
     spAdjust(-a);
 }
@@ -450,150 +319,9 @@ void Tms6747::closeArea() {
     areas_.pop_back();
 }
 
-// At -O1 and -O2 a word is pushed into the upper half of its slot, leaving *B15 - the word a
-// callee saves A15 in - free, so a call under it needs no area; a pair fills the slot and counts.
-void Tms6747::push() {
-    if (spillPush(false)) return;
-    out_ << "\tSUB\tB15, 8, B15\n";
-    out_ << (optimize_ > 0 ? "\tSTW\tA4, *+B15(4)\n" : "\tSTW\tA4, *B15\n");
-}
-void Tms6747::pop(const char *reg) {
-    if (spillPop(false, reg)) return;
-    out_ << "\tLDW\t" << (optimize_ > 0 ? "*+B15(4)" : "*B15") << ", " << reg << "\n\tNOP\t4\n";
-    out_ << "\tADD\tB15, 8, B15\n";
-}
-
-// An expression of the parameters alone - registers, constants, the arithmetic that calls nothing - which
-// the early exit below can evaluate before any frame exists.
-bool Tms6747::simpleOfParams(const Expr &e, const Function &fn) const {
-    if (e.type() == nullptr || e.type()->isFloating() || e.type()->isStructOrUnion() || isWide(e.type())) return false;
-    if (const Num *n = dynamic_cast<const Num *>(&e)) return !n->type()->isFloating();
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (!v->isLocal()) return false;
-        const std::vector<Param> &ps = fn.params();
-        for (std::size_t i = 0; i < ps.size() && i < firstStack_; i++)
-            if (ps[i].offset == v->offset()) return !ps[i].type->isFloating() && !ps[i].type->isStructOrUnion() && ps[i].type->size(target_) == 4 && !inPair(ps[i].type);
-        return false;
-    }
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) return (u->op() == '-' || u->op() == '!' || u->op() == '~' || u->op() == '+') && simpleOfParams(u->operand(), fn);
-    if (const Cast *c = dynamic_cast<const Cast *>(&e)) return !c->value().type()->isFloating() && !isWide(c->value().type()) && simpleOfParams(c->value(), fn);
-    if (const Binary *b = dynamic_cast<const Binary *>(&e))
-        return b->op() != BinOp::Div && b->op() != BinOp::Mod && b->op() != BinOp::LAnd && b->op() != BinOp::LOr &&
-               simpleOfParams(b->lhs(), fn) && simpleOfParams(b->rhs(), fn);
-    return false;
-}
-// **A leading `if (c) return t;` of the parameters alone runs before the prologue**: `n < 2 ? n : ...` in a
-// recursive function is answered with nothing saved and nothing restored, the frame's memory round trips
-// being what the base case cost. The parameters are read where they arrive, A4 copied aside first.
 static bool backendSkipped(const char *what) {
     const char *e = std::getenv("CPP11_C6XSKIP");
     return e != nullptr && (std::string(",") + e + ",").find(std::string(",") + what + ",") != std::string::npos;
-}
-std::string Tms6747::earlyExit(const Function &fn) {
-    const Block *blk = dynamic_cast<const Block *>(&fn.body());
-    if (optimize_ <= 0 || forSize_ || backendSkipped("early") || fn.isVariadic() || sretSlot_ != 0 || fn.params().size() > 6 || blk == nullptr || blk->body().empty()) return std::string();
-    if (fn.returns()->isFloating() || fn.returns()->isStructOrUnion() || isWide(fn.returns()) || inPair(fn.returns())) return std::string();
-    const Expr *cond = nullptr, *value = nullptr;
-    const Stmt &first = *blk->body()[0];
-    if (const Return *r = dynamic_cast<const Return *>(&first)) {
-        if (r->hasValue()) if (const Conditional *c = dynamic_cast<const Conditional *>(&r->value())) { cond = &c->cond(); value = &c->thenArm(); }
-    } else if (const If *i = dynamic_cast<const If *>(&first)) {
-        if (i->elseArm() == nullptr) if (const Return *r = dynamic_cast<const Return *>(&i->thenArm())) if (r->hasValue()) { cond = &i->cond(); value = &r->value(); }
-    }
-    if (cond == nullptr || !simpleOfParams(*cond, fn) || !simpleOfParams(*value, fn)) return std::string();
-    const std::vector<Param> &ps = fn.params();
-    for (std::size_t i = 0; i < ps.size(); i++) if (ps[i].type->isFloating() || ps[i].type->isStructOrUnion() || isWide(ps[i].type) || inPair(ps[i].type)) return std::string();
-    // Every parameter is copied to A16-A21 first: the walker's scratch registers include A6 and A8, where
-    // the third and fifth arrive. The copies come back where the test fails; the unread ones are dropped.
-    std::map<int, std::string> saved = regOf_;
-    std::map<std::string, std::string> savedGlobals = globalReg_;   // filled by the prologue, which this runs ahead of
-    regOf_.clear();
-    globalReg_.clear();
-    const std::size_t seq = pushSeq_;
-    pushSeq_ = 1u << 20;                                   // any push goes to the stack, below B15
-    std::ostringstream keep;
-    keep.swap(out_);
-    const std::string enter = label("enter", nextLabel());
-    for (std::size_t i = 0; i < ps.size(); i++) {
-        const std::string held = "A" + std::to_string(16 + i);
-        regOf_[localBase_ + ps[i].offset] = held;
-        out_ << "\tMV\t" << abi_.intRegs[i] << ", " << held << "\n";
-    }
-    genTruth(*cond);
-    out_ << "\tMV\tA4, A1\n\t[!A1]\tB\t" << enter << "\n\tNOP\t5\n";
-    value->accept(asVisitor());
-    narrowInt(fn.returns());
-    out_ << "\tB\tB3\n\tNOP\t5\n";
-    defineLabel(enter);
-    for (std::size_t i = 0; i < ps.size(); i++) out_ << "\tMV\tA" << 16 + i << ", " << abi_.intRegs[i] << "\n";
-    std::string text = out_.str();
-    keep.swap(out_);
-    pushSeq_ = seq;
-    regOf_ = saved;
-    globalReg_ = savedGlobals;
-    return text;
-}
-
-// The spare callee-saved register a push takes: the first free one, an even one whose odd partner is
-// free too for a pair. Replayed by planSpills and again live, over the same events, so both agree.
-std::string Tms6747::chooseSpill(bool wide) {
-    for (std::size_t k = 0; k < spillPool_.size(); k++) {
-        const std::string &r = spillPool_[k];
-        bool held = false;
-        for (std::size_t h = 0; h < spillHeld_.size(); h++) if (spillHeld_[h] == r || (wide && spillHeld_[h] == pairHigh(r))) held = true;
-        if (held || (wide && ((r[2] - '0') % 2 != 0 || std::find(spillPool_.begin(), spillPool_.end(), pairHigh(r)) == spillPool_.end()))) continue;
-        bool wideHeld = false;             // a pair held over this one's odd partner
-        for (std::size_t h = 0; h < spillHeld_.size(); h++) if (!spillHeld_[h].empty() && pairHigh(spillHeld_[h]) == r) wideHeld = true;
-        if (wideHeld) continue;
-        if (std::find(spillUsed_.begin(), spillUsed_.end(), r) == spillUsed_.end()) spillUsed_.push_back(r);
-        if (wide && std::find(spillUsed_.begin(), spillUsed_.end(), pairHigh(r)) == spillUsed_.end()) spillUsed_.push_back(pairHigh(r));
-        return r;
-    }
-    return std::string();
-}
-// The first walk's pushes and pops replayed, so the registers they will take are saved by the prologue.
-void Tms6747::planSpills() {
-    spillUsed_.clear();
-    spillHeld_.clear();
-    std::size_t seq = 0;
-    for (std::size_t e = 0; e < pushEvents_.size(); e++) {
-        if (pushEvents_[e] < 0) { spillHeld_.pop_back(); continue; }
-        const std::size_t s = seq++;
-        spillHeld_.push_back(s < pushCrossesCall_.size() && pushCrossesCall_[s] ? chooseSpill(pushEvents_[e] == 2) : std::string());
-    }
-    spillHeld_.clear();
-}
-bool Tms6747::spillPush(bool wide) {
-    const std::size_t seq = pushSeq_++;
-    if (planning_) {
-        pushOpen_.push_back(std::make_pair(seq, callCount_));
-        pushEvents_.push_back(wide ? 2 : 1);
-        if (pushLoop_.size() <= seq) pushLoop_.resize(seq + 1, 0);
-        pushLoop_[seq] = loopDepth_;
-        if (pushCrossesCall_.size() <= seq) pushCrossesCall_.resize(seq + 1, false);
-        return false;
-    }
-    std::string r;
-    if (optimize_ > 0 && seq < pushCrossesCall_.size() && pushCrossesCall_[seq]) r = chooseSpill(wide);
-    spillHeld_.push_back(r);
-    if (r.empty()) return false;
-    out_ << "\tMV\tA4, " << r << "\n";
-    if (wide) out_ << "\tMV\tA5, " << pairHigh(r) << "\n";
-    return true;
-}
-bool Tms6747::spillPop(bool wide, const char *reg) {
-    if (planning_) {
-        if (!pushOpen_.empty()) { pushCrossesCall_[pushOpen_.back().first] = callCount_ != pushOpen_.back().second; pushOpen_.pop_back(); }
-        pushEvents_.push_back(-1);
-        return false;
-    }
-    if (spillHeld_.empty()) return false;
-    const std::string r = spillHeld_.back();
-    spillHeld_.pop_back();
-    if (r.empty()) return false;
-    out_ << "\tMV\t" << r << ", " << reg << "\n";
-    if (wide) out_ << "\tMV\t" << pairHigh(r) << ", " << pairHigh(reg) << "\n";
-    return true;
 }
 
 // ---- doubles: a register pair, and 8-byte moves through the stack --------
@@ -608,92 +336,6 @@ bool Tms6747::isWide(const Type *t) const {
 std::string Tms6747::pairOf(const char *reg) {
     int n = std::atoi(reg + 1);
     return std::string(1, reg[0]) + std::to_string(n + 1) + ":" + reg;
-}
-// The value of type t in the accumulator, to and from the stack. A push slot
-// is already 8 bytes and B15 stays 8-aligned, which STDW and LDDW need.
-void Tms6747::pushValue(const Type *t) {
-    if (!isWide(t) && !inPairWide(t)) { push(); return; }
-    if (spillPush(true)) return;
-    pushDepth_++;
-    out_ << "\tSUB\tB15, 8, B15\n";
-    out_ << "\tSTDW\tA5:A4, *B15\n";
-}
-void Tms6747::popValue(const Type *t, const char *reg) {
-    if (!isWide(t) && !inPairWide(t)) { pop(reg); return; }
-    if (spillPop(true, reg)) return;
-    pushDepth_--;
-    out_ << "\tLDDW\t*B15, " << pairOf(reg) << "\n\tNOP\t4\n";
-    out_ << "\tADD\tB15, 8, B15\n";
-}
-// The accumulator's value into reg (and its pair for a double).
-void Tms6747::moveValue(const Type *t, const char *reg) {
-    out_ << "\tMV\tA4, " << reg << "\n";
-    if (isWide(t) || inPairWide(t)) out_ << "\tMV\tA5, " << pairOf(reg).substr(0, pairOf(reg).find(':')) << "\n";
-}
-// A floating constant's bits: one word for a float, two for a double, the
-// low word in reg and the high in its pair.
-void Tms6747::fpConst(const Type *t, double v, const char *reg) {
-    if (isDouble(t)) {
-        unsigned long long bits;
-        std::memcpy(&bits, &v, sizeof bits);
-        movImm(reg, static_cast<long long>(bits & 0xffffffffu));
-        std::string hi = pairOf(reg).substr(0, pairOf(reg).find(':'));
-        movImm(hi.c_str(), static_cast<long long>(bits >> 32));
-    } else {
-        float f = static_cast<float>(v);
-        unsigned int bits;
-        std::memcpy(&bits, &f, sizeof bits);
-        movImm(reg, static_cast<long long>(bits));
-    }
-}
-
-// ---- addresses, loads, stores --------------------------------------------
-void Tms6747::genAddr(const Expr &e) {
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (v->isLocal()) {
-            const Type *t = v->type();   // null where the parser typed the object through its Assign alone
-            localAddr(v->offset(), "A4", t ? t->size(target_) : 4, t ? t->align(target_) : 4);
-            return;
-        }
-        // A global, or a function: its address goes through the register the planner gave it, if any.
-        if (planning_) globalUses_[v->symbol()] += 2 << (loopDepth_ > 4 ? 12 : 3 * loopDepth_);
-        const std::map<std::string, std::string>::const_iterator g = globalReg_.find(v->symbol());
-        if (g != globalReg_.end()) out_ << "\tMV\t" << g->second << ", A4\n";
-        else movSym("A4", v->symbol());
-        return;
-    }
-    if (const StrLit *s = dynamic_cast<const StrLit *>(&e)) {
-        movSym("A4", s->label());
-        return;
-    }
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '*') { u->operand().accept(asVisitor()); return; }
-    }
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
-        if (m->isBitField()) {
-            std::fprintf(stderr, "codegen: '%s' is a bit-field and has no address\n",
-                         m->name().c_str());
-            compileFailed();
-        }
-        genAddr(m->object());
-        addOffset(m->offset());
-        return;
-    }
-    // A struct-valued call or conditional: its value already is an address.
-    if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        if (c->type()->isStructOrUnion()) { c->accept(asVisitor()); return; }
-    }
-    if (const Conditional *q = dynamic_cast<const Conditional *>(&e)) {
-        if (q->type()->isStructOrUnion()) { q->accept(asVisitor()); return; }
-    }
-    // **A constructed temporary is a Comma, and it has an address** - so is a
-    // virtual call whose result is bound to a reference; the hosts had this.
-    if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
-        c->left().accept(asVisitor());
-        genAddr(c->right());
-        return;
-    }
-    unsupported("this address");
 }
 
 void Tms6747::load(const Type *t) { loadFrom(t, "*A4"); }
@@ -723,7 +365,7 @@ void Tms6747::narrowInt(const Type *t) {
     // 4 bytes and up: the value already fills the 32-bit register.
 }
 
-// ---- Walker hooks --------------------------------------------------------
+// ---- Regions. hooks ----
 std::string Tms6747::label(const char *kind, int id) const {
     return labelPrefix_ + kind + std::to_string(id);
 }
@@ -741,24 +383,6 @@ void Tms6747::emitLoc(int file, int line, int column) {
          << ",column " << column << ",is_stmt,isa 0\n";
 }
 void Tms6747::jump(const std::string &l) { out_ << "\tB\t" << l << "\n\tNOP\t5\n"; }
-
-// Only A0-A2 and B0-B2 can predicate a branch, so the truth value is moved into
-// A1 first.
-void Tms6747::branchIfZero(const std::string &l) {
-    out_ << "\tMV\tA4, A1\n\t[!A1]\tB\t" << l << "\n\tNOP\t5\n";
-}
-void Tms6747::branchIfNotZero(const std::string &l) {
-    out_ << "\tMV\tA4, A1\n\t[A1]\tB\t" << l << "\n\tNOP\t5\n";
-}
-void Tms6747::caseBranch(long long v, const std::string &l) {
-    movImm("A0", v);
-    out_ << "\tCMPEQ\tA0, A4, A1\n";
-    if (wideSwitch_) {                       // both halves, A2 the second predicate
-        movImm("A0", v >> 32);
-        out_ << "\tCMPEQ\tA0, A5, A2\n\tAND\tA1, A2, A1\n";
-    }
-    out_ << "\t[A1]\tB\t" << l << "\n\tNOP\t5\n";
-}
 
 // The pair by a constant: 32 or more moves a word across, less splices the
 // two through A3; 0 is nothing. The right shift fills from the sign or 0.
@@ -785,17 +409,6 @@ void Tms6747::shiftPairRight(int count, bool sign) {
     }
     out_ << "\tSHRU\tA4, " << count << ", A4\n\tSHL\tA5, " << (32 - count)
          << ", A3\n\tOR\tA4, A3, A4\n\t" << shr << "\tA5, " << count << ", A5\n";
-}
-// A landing pad: the exception in A4, and in B4 - from the trampoline the
-// table names - the parser's index of the handler type that matched, or 0
-// for a cleanup; B15 is the throwing call's and goes back to the base.
-void Tms6747::landingPad(int pointerSlot, int selectorSlot) {
-    localAddr(pointerSlot, "A0");
-    out_ << "\tSTW\tA4, *A0\n";
-    localAddr(selectorSlot, "A0");
-    out_ << "\tSTW\tB4, *A0\n";
-    out_ << "\tMV\tA15, B15\n";
-    spAdjust(-(saveBytes_ + frame_ + (optimize_ > 0 ? 8 : 0)));    // the call word below the frame, as the prologue keeps it
 }
 
 // An upper bound on a function's bytes: four per instruction line, labels and directives none.
@@ -824,22 +437,11 @@ static const std::size_t kLongScope = 0xF000;
 // A row's catches come first, one per type in its chain, its cleanup last:
 // phase 2 then lands once, on the pad of the barrier phase 1 found, whose
 // selector walks the chain of pads the parser built.
-void Tms6747::emitExceptionTable(const Function &fn) {
-    std::vector<CallSite> rows;
-    std::map<std::string, std::size_t> region;
-    // **A cleanup region is one scope here, unsplit**: TI's personality scans a frame's scopes in order and
-    // goes on after a cleanup from the next one at the address that threw, which pieces split around an
-    // inner region would not cover - unless a pad in it jumps to another, whose resume would run it twice.
-    for (const CallSite &c : callSites()) {
-        const bool pure = !ssaRows_ && c.types.empty() && !c.terminate && !c.handsOver;
-        std::map<std::string, std::size_t>::const_iterator at = pure ? region.find(c.pad) : region.end();
-        if (at != region.end()) { rows[at->second].end = c.end; continue; }
-        if (pure) region[c.pad] = rows.size();
-        rows.push_back(c);
-    }
-    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+void Tms6747::emitExceptionTable(bool noexcept_, const std::vector<std::string> &spec) {
+    const std::vector<CallSite> &rows = callSites();     // the selector's: one per invoke, each whole, none joined to another
+    const bool states = noexcept_ || !spec.empty();
     if (rows.empty() && !states) return;
-    const std::string table = "__c6xabi_extab$" + fn.symbol();
+    const std::string table = "__c6xabi_extab$" + functionName_;
     std::ostringstream pads;
     std::set<std::string> made;
     // The trampoline for (pad, selector), made once and named by both.
@@ -856,7 +458,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     for (const CallSite &c : rows) padLines += 3 * (c.types.size() + 1);
     const bool wide = codeBytes(out_.str()) + 4 * padLines >= kLongScope;
     const char *const scope = wide ? "\t.ulong\t" : "\t.half\t";
-    t << "\t.sect\t\"" << ".c6xabi.extab:" << fn.symbol() << "\"\n\t.align\t4\n" << table << ":\n";
+    t << "\t.sect\t\"" << ".c6xabi.extab:" << functionName_ << "\"\n\t.align\t4\n" << table << ":\n";
     for (unsigned w : wide ? longUnwindWords() : std::vector<unsigned>(1, unwindWord(true))) {
         std::snprintf(word, sizeof word, "0x%08x", w);
         t << "\t.ulong\t" << word << "\n";
@@ -864,7 +466,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     for (std::size_t i = 0; i < rows.size(); i++) {
         const CallSite &c = rows[i];
         std::string len = "$EXTAB_SCOPE(" + c.end + ") - $EXTAB_SCOPE(" + c.begin + ")";
-        std::string off = "$EXTAB_SCOPE(" + c.begin + ") - $EXTAB_SCOPE(" + fn.symbol() + ") + 2";
+        std::string off = "$EXTAB_SCOPE(" + c.begin + ") - $EXTAB_SCOPE(" + functionName_ + ") + 2";
         if (c.terminate) {           // catch anything, and terminate: cl6x's scope over a cleanup pad
             t << scope << len << " + 1\n" << scope << off << "\n\t.ulong\t0\n\t.ulong\t0xfffffffe\n";
             continue;
@@ -882,534 +484,23 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     // A function's exception specification, over the whole of it and last: the types
     // `throw(T...)` allows - none for noexcept - and no pad, so TI's runtime calls
     // __cxa_call_unexpected - cl6x's row, with the offset's low bit set.
-    const std::string fnEnd = "L." + fn.symbol() + ".fnend";
+    const std::string fnEnd = "L." + functionName_ + ".fnend";
     if (states) {
-        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << fn.symbol() << ")\n" << scope << "3\n"
-          << "\t.ulong\t" << fn.exceptionSpec().size() << "\n";
-        for (const std::string &type : fn.exceptionSpec()) t << "\t.ulong\t$EXTAB_RTTI(" << type << ")\n";
-        t << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << functionName_ << ")\n" << scope << "3\n"
+          << "\t.ulong\t" << spec.size() << "\n";
+        for (const std::string &type : spec) t << "\t.ulong\t$EXTAB_RTTI(" << type << ")\n";
+        t << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << functionName_ << "\"\n";
     }
-    t << "\t.ulong\t0\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr" << (wide ? 2 : 3) << "\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+    t << "\t.ulong\t0\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr" << (wide ? 2 : 3) << "\", \".c6xabi.extab:" << functionName_ << "\"\n";
     if (wide) needsPr2_ = true;
     out_ << pads.str() << fnEnd << ":\n" << t.str() << "\t.text\n";
     if (states) needsUnexpected_ = true;
 }
-// A4 = (value == 0) ? 1 : 0, for the value of type t in the accumulator. A
-// floating zero is compared as a number, so -0.0 is zero and NaN is not.
-void Tms6747::isZero(const Type *t) {
-    if (isDouble(t)) {
-        out_ << "\tZERO\tA7:A6\n\tCMPEQDP\tA5:A4, A7:A6, A4\n\tNOP\t1\n";
-    } else if (t->isFloating()) {
-        out_ << "\tZERO\tA6\n\tCMPEQSP\tA4, A6, A4\n\tNOP\t1\n";
-    } else if (isWide(t)) {
-        out_ << "\tOR\tA4, A5, A4\n\tCMPEQ\t0, A4, A4\n";
-    } else {
-        out_ << "\tCMPEQ\t0, A4, A4\n";
-    }
-}
-void Tms6747::genTruth(const Expr &e) {
-    e.accept(asVisitor());
-    if (e.type()->kind() == Kind::Bool) return;   // a bool is already 0 or 1
-    isZero(e.type());
-    out_ << "\tXOR\t1, A4, A4\n";  // A4 = (value != 0) ? 1 : 0
-}
 
-// ---- expressions ---------------------------------------------------------
-void Tms6747::visit(const Num &n) {
-    if (n.type()->isFloating()) { fpConst(n.type(), static_cast<double>(n.dvalue()), "A4"); return; }
-    movImm("A4", n.value());
-    if (isWide(n.type())) movImm("A5", n.value() >> 32);
-}
-// A local in a register is read from it; any other scalar local where it sits, A15-relative
-// (the review's C-B1); an aggregate answers with its address.
-void Tms6747::visit(const Var &n) {
-    if (const std::string *r = regFor(n)) { regRead(*r, isWide(n.type())); return; }
-    int disp;
-    if (!n.type()->isArray() && !n.type()->isStructOrUnion() && frameSlot(n, disp) && frameFits(disp, accessSize(n.type()))) {
-        loadFrom(n.type(), frameOperand(disp, accessSize(n.type())));
-        return;
-    }
-    plainAccess_ = regCandidate(n);
-    genAddr(n);
-    plainAccess_ = false;
-    load(n.type());
-}
-
-// ---- locals in registers ---------------------------------------------------
-bool Tms6747::regCandidate(const Var &v) const {
-    if (!v.isLocal() || optimize_ <= 0) return false;
-    const Type *t = v.type();   // a target the parser typed through the Assign alone stays in memory
-    if (t == nullptr || t->isStructOrUnion() || t->isArray() || t->isFunction() || t->isVoid()) return false;
-    const int size = t->size(target_);
-    return size == 4 || size == 8 || size == 2 || size == 1;
-}
-// A use is counted on the first walk; the register is answered on the second.
-const std::string *Tms6747::regFor(const Var &v) {
-    if (!regCandidate(v)) return nullptr;
-    if (planning_) { noteUse(localBase_ + v.offset(), v.type()); return nullptr; }
-    std::map<int, std::string>::const_iterator it = regOf_.find(localBase_ + v.offset());
-    return it == regOf_.end() ? nullptr : &it->second;
-}
-void Tms6747::noteUse(int key, const Type *t) {
-    Slot &s = slots_[key];
-    const int size = t->size(target_);
-    if (s.size != 0 && s.size != size) s.addressed = true;   // two types on one slot: left in memory
-    s.size = size;
-    s.wide = size == 8;
-    s.uses += 1 << (loopDepth_ > 4 ? 12 : 3 * loopDepth_);
-    noteExtent(key, size, t->align(target_));
-}
 std::string Tms6747::pairHigh(const std::string &r) { return r.substr(0, 1) + std::to_string(std::atoi(r.c_str() + 1) + 1); }
-void Tms6747::regRead(const std::string &r, bool wide) {
-    out_ << "\tMV\t" << r << ", A4\n";
-    if (wide) out_ << "\tMV\t" << pairHigh(r) << ", A5\n";
-}
 void Tms6747::regWrite(const std::string &r, bool wide) {
     out_ << "\tMV\tA4, " << r << "\n";
     if (wide) out_ << "\tMV\tA5, " << pairHigh(r) << "\n";
-}
-
-// The most used locals take the callee-saved registers the function's calls leave alone - the A
-// file first, since a copy to the accumulator folds there - a 64-bit one an even:odd pair. B16-B23
-// for a leaf measured neutral: cross-file copies do not fold, and the epilogue's load hides the restore.
-void Tms6747::planRegisters(const Function &fn) {
-    regOf_.clear();
-    promoted_.clear();
-    if (fn.params().size() + sretShift_ > 6) usesSavedArgRegs_ = usesSavedPairRegs_ = true;
-    // A caller fills B10-B13 first: with B3 saved the B pairs sit on 8-aligned words - one STDW, one LDDW -
-    // and the A pairs do not; a function with no call fills the A side first, where a copy to A4 folds.
-    static const char *const kSaved[] = { "A10", "A11", "A12", "A13", "B10", "B11", "B12", "B13" };
-    static const char *const kCaller[] = { "B10", "B11", "B12", "B13", "A10", "A11", "A12", "A13" };
-    // A leaf with no loop - no call, no pad - keeps its locals in A16-A23, which nothing saves, and needs no
-    // frame; one with a loop keeps the callee-saved set, the pipeliner wanting A16-A23 for the loop's values.
-    static const char *const kLeaf[] = { "A16", "A17", "A18", "A19", "A20", "A21", "A22", "A23" };
-    leaf_ = !hasCall_ && !hasLoop_ && !fn.hasLandingPads() && !fn.isVariadic();
-    const char *const *kRegs = leaf_ ? kLeaf : hasCall_ ? kCaller : kSaved;
-    std::map<std::string, bool> free;
-    for (std::size_t k = 0; k < 8; k++) {
-        const char *r = kRegs[k];
-        const bool even = (r[2] - '0') % 2 == 0;
-        free[r] = leaf_ || (even ? !usesSavedArgRegs_ : !usesSavedPairRegs_);
-    }
-    // The pushes that cross a call, by how many are held at once: each level a slot weighted as a local
-    // would be, wide where any pair is pushed at it, competing with the locals for the registers.
-    std::vector<Slot> demand;
-    {
-        std::vector<bool> heldCross;
-        std::size_t seq = 0, level = 0;
-        for (std::size_t e = 0; e < pushEvents_.size(); e++) {
-            if (pushEvents_[e] < 0) { if (heldCross.back()) level--; heldCross.pop_back(); continue; }
-            const bool c = seq < pushCrossesCall_.size() && pushCrossesCall_[seq];
-            if (c) {
-                if (demand.size() <= level) demand.push_back(Slot());
-                demand[level].uses += 2 << (pushLoop_[seq] > 4 ? 12 : 3 * pushLoop_[seq]);
-                if (pushEvents_[e] == 2) demand[level].wide = true;
-                level++;
-            }
-            heldCross.push_back(c);
-            seq++;
-        }
-    }
-    // A global's address formed twice or more is a candidate too - MVKL/MVKH per use against one pair in the prologue and a copy the scheduler folds into the access - weighted at two words a use, above.
-    // At -O1 only: -O2's loop passes hoist the pair themselves, and a callee-saved register taken here is one the pipeliner cannot rename into - matmul's inner loop lost its schedule, 158 k to 352 k cycles.
-    std::vector<std::string> globals;
-    if (optimize_ == 1)
-        for (std::map<std::string, int>::const_iterator it = globalUses_.begin(); it != globalUses_.end(); ++it)
-            if (it->second >= 4) globals.push_back(it->first);
-    std::vector<std::pair<int, int> > order;   // (-uses, key): a slot's offset, -1 - level for a push, -1000 - i for a global
-    for (std::map<int, Slot>::const_iterator it = slots_.begin(); it != slots_.end(); ++it)
-        if (!it->second.addressed && it->second.uses >= 2) order.push_back(std::make_pair(-it->second.uses, it->first));
-    for (std::size_t d = 0; d < demand.size(); d++) order.push_back(std::make_pair(-demand[d].uses, -1 - static_cast<int>(d)));
-    for (std::size_t g = 0; g < globals.size(); g++) order.push_back(std::make_pair(-globalUses_[globals[g]], -1000 - static_cast<int>(g)));
-    std::sort(order.begin(), order.end());
-    spillPool_.clear();
-    globalReg_.clear();
-    const Slot narrow;
-    for (std::size_t k = 0; k < order.size(); k++) {
-        const bool globalSlot = order[k].second <= -1000, pushSlot = !globalSlot && order[k].second < 0;
-        const Slot &s = globalSlot ? narrow : pushSlot ? demand[static_cast<std::size_t>(-1 - order[k].second)] : slots_[order[k].second];
-        for (std::size_t q = 0; q < 8; q++) {
-            const char *r = kRegs[q];
-            if (!free[r]) continue;
-            const std::string hi = pairHigh(r);
-            if (s.wide && ((r[2] - '0') % 2 != 0 || !free[hi])) continue;
-            free[r] = false;
-            if (pushSlot) { spillPool_.push_back(r); if (s.wide) { free[hi] = false; spillPool_.push_back(hi); } break; }
-            promoted_.push_back(r);
-            if (s.wide) { free[hi] = false; promoted_.push_back(hi); }
-            if (globalSlot) globalReg_[globals[static_cast<std::size_t>(-1000 - order[k].second)]] = r;
-            else regOf_[order[k].second] = r;
-            break;
-        }
-    }
-    std::sort(spillPool_.begin(), spillPool_.end());
-    planSpills();
-}
-
-void Tms6747::visit(const While &n) { hasLoop_ = true; loopDepth_++; Walker::visit(n); loopDepth_--; }
-void Tms6747::visit(const For &n) { hasLoop_ = true; loopDepth_++; Walker::visit(n); loopDepth_--; }
-void Tms6747::visit(const DoWhile &n) { hasLoop_ = true; loopDepth_++; Walker::visit(n); loopDepth_--; }
-
-// ---- bit-fields ----------------------------------------------------------
-// A bit-field is width bits from bitOffset up in the unit at the member's
-// offset. EXT/EXTU read it in one instruction (up to the top of the word,
-// back down); a write is CLR, EXTU + SHL of the new value, OR, store.
-void Tms6747::bitFieldUnitAddr(const MemberAccess &m) {
-    genAddr(m.object());
-    addOffset(m.offset());
-}
-void Tms6747::bitFieldExtract(const MemberAccess &m) {    // unit in A4 -> field
-    // A 64-bit unit is the pair A5:A4: the field goes to the top and back.
-    if (isWide(m.type())) {
-        shiftPairLeft(64 - m.bitOffset() - m.width());
-        shiftPairRight(64 - m.width(), m.type()->isSigned(target_));
-        return;
-    }
-    int left = 32 - m.bitOffset() - m.width();
-    int right = 32 - m.width();
-    out_ << (m.type()->isSigned(target_) ? "\tEXT\tA4, " : "\tEXTU\tA4, ")
-         << left << ", " << right << ", A4\n";
-}
-void Tms6747::bitFieldInsert(const MemberAccess &m) {     // value A4 -> *A6
-    int low = m.bitOffset(), high = m.bitOffset() + m.width() - 1;
-    if (isWide(m.type())) {
-        // The value A5:A4 is masked to its width and moved into place while
-        // it is still the pair, then held in A9:A8 (no call intervenes) as
-        // the unit is loaded, cleared a half at a time, and merged.
-        shiftPairLeft(64 - m.width());
-        shiftPairRight(64 - m.width() - low, false);
-        out_ << "\tMV\tA4, A8\n\tMV\tA5, A9\n\tMV\tA6, A4\n";
-        load(m.type());
-        if (low <= 31) out_ << "\tCLR\tA4, " << low << ", " << (high < 31 ? high : 31) << ", A4\n";
-        if (high >= 32) out_ << "\tCLR\tA5, " << (low > 32 ? low - 32 : 0) << ", " << (high - 32) << ", A5\n";
-        out_ << "\tOR\tA4, A8, A4\n\tOR\tA5, A9, A5\n";
-        store(m.type(), "*A6");
-        bitFieldExtract(m);
-        return;
-    }
-    out_ << "\tMV\tA4, A3\n";                               // A3 = the value
-    out_ << "\tMV\tA6, A4\n";
-    load(m.type());                                          // A4 = the unit
-    out_ << "\tCLR\tA4, " << low << ", " << high << ", A4\n";
-    out_ << "\tEXTU\tA3, " << (32 - m.width()) << ", " << (32 - m.width())
-         << ", A3\n";                                       // the low width bits
-    if (low != 0) out_ << "\tSHL\tA3, " << low << ", A3\n";
-    out_ << "\tOR\tA4, A3, A4\n";
-    store(m.type(), "*A6");
-    bitFieldExtract(m);                     // the expression's value: the field
-}
-
-void Tms6747::visit(const Assign &n) {
-    const MemberAccess *bf = dynamic_cast<const MemberAccess *>(&n.target());
-    if (bf != nullptr && !bf->isBitField()) bf = nullptr;
-
-    n.value().accept(asVisitor());        // A4 = value (a struct's is its address), and stays it: the result
-    // A local in a register takes the value as a sub-word store and load would leave it: extended.
-    const Var *target = bf == nullptr ? dynamic_cast<const Var *>(&n.target()) : nullptr;
-    if (target != nullptr && regCandidate(*target))
-        if (const std::string *r = regFor(*target)) { narrowInt(n.type()); regWrite(*r, isWide(n.type())); return; }
-    // Any other scalar in the frame is stored where it sits, A15-relative.
-    int disp;
-    if (bf == nullptr && !n.type()->isStructOrUnion() && frameSlot(n.target(), disp) && frameFits(disp, accessSize(n.type()))) {
-        store(n.type(), frameOperand(disp, accessSize(n.type())));
-        return;
-    }
-    // A double or a 64-bit value is saved whole: the address may call a helper, and TI's clobber A5.
-    if (target != nullptr && regCandidate(*target)) {
-        pushValue(n.type());
-        plainAccess_ = true;
-        genAddr(n.target());
-        plainAccess_ = false;
-        out_ << "\tMV\tA4, A6\n";
-        popValue(n.type(), "A4");
-        store(n.type(), "*A6");
-        return;
-    }
-    pushValue(n.type());            // save the value, both words of a double
-    if (bf) bitFieldUnitAddr(*bf);  // A4 = the unit's address
-    else    genAddr(n.target());    // A4 = address
-    out_ << "\tMV\tA4, A6\n";        // A6 = address
-    popValue(n.type(), "A4");        // A4 (and A5) = value again
-    if (bf) { bitFieldInsert(*bf); return; }
-    if (n.type()->isStructOrUnion()) {
-        copyBlock(n.type()->size(target_), "A4", "A6", n.type()->align(target_), n.type()->align(target_) >= 8);
-        out_ << "\tMV\tA6, A4\n";    // the result: the target, by address
-        return;
-    }
-    store(n.type(), "*A6");           // *A6 = A4 ; A4 stays the value (the result)
-}
-
-void Tms6747::visit(const Unary &n) {
-    switch (n.op()) {
-    case '+': n.operand().accept(asVisitor()); return;
-    case '-':
-        n.operand().accept(asVisitor());
-        if (n.type()->isFloating()) {
-            // Flip the sign bit, which is right for -0.0 and NaN where 0 - x
-            // would not be. The bit is in the high word of a double.
-            movImm("A0", 0x80000000LL);
-            out_ << "\tXOR\t" << (isDouble(n.type()) ? "A5, A0, A5" : "A4, A0, A4") << "\n";
-            return;
-        }
-        if (isWide(n.type())) {
-            // -x = ~x + 1: the low word negates, the high word inverts and
-            // takes the carry, which is there exactly when the low word was 0.
-            out_ << "\tCMPEQ\t0, A4, A0\n\tNEG\tA4, A4\n\tNOT\tA5, A5\n\tADD\tA5, A0, A5\n";
-            return;
-        }
-        out_ << "\tNEG\tA4, A4\n";
-        return;
-    case '~':
-        n.operand().accept(asVisitor());
-        out_ << "\tNOT\tA4, A4\n";
-        if (isWide(n.type())) out_ << "\tNOT\tA5, A5\n";
-        return;
-    case '!':
-        n.operand().accept(asVisitor());
-        isZero(n.operand().type());
-        return;
-    case '&': genAddr(n.operand()); return;
-    case '*': n.operand().accept(asVisitor()); load(n.type()); return;
-    default:  unsupported("this unary operator");
-    }
-}
-
-// A right operand that is a small constant goes into the instruction (the review's B4): the
-// scst5 forms of ADD, AND, OR, XOR and the compares (constant first, so a compare turns about),
-// SUB's and a shift's ucst5, and ADDK's 16 bits for any other add or subtract.
-bool Tms6747::immediateBinary(const Binary &n) {
-    const Num *c = dynamic_cast<const Num *>(&n.rhs());
-    if (c == nullptr) return false;
-    const long long k = c->value();
-    const bool sign = n.lhs().type()->isSigned(target_), small = k >= -16 && k <= 15, ucst = k >= 0 && k <= 31;
-    const bool wide16 = k >= -32768 && k <= 32767;
-    std::string code;
-    switch (n.op()) {
-    case BinOp::Add:
-        if (small) code = "\tADD\t" + std::to_string(k) + ", A4, A4\n";
-        else if (wide16) code = "\tADDK\t" + std::to_string(k) + ", A4\n";
-        break;
-    case BinOp::Sub:
-        if (ucst) code = "\tSUB\tA4, " + std::to_string(k) + ", A4\n";
-        else if (-k >= -32768 && -k <= 32767) code = "\tADDK\t" + std::to_string(-k) + ", A4\n";
-        break;
-    case BinOp::BitAnd: case BinOp::BitOr: case BinOp::BitXor:
-        if (small) code = std::string(n.op() == BinOp::BitAnd ? "\tAND\t" : n.op() == BinOp::BitOr ? "\tOR\t" : "\tXOR\t") + std::to_string(k) + ", A4, A4\n";
-        break;
-    case BinOp::Shl: case BinOp::Shr:
-        if (ucst) code = std::string(n.op() == BinOp::Shl ? "\tSHL" : sign ? "\tSHR" : "\tSHRU") + "\tA4, " + std::to_string(k) + ", A4\n";
-        break;
-    case BinOp::Eq: case BinOp::Ne: case BinOp::Lt: case BinOp::Gt: case BinOp::Le: case BinOp::Ge: {
-        const bool eq = n.op() == BinOp::Eq || n.op() == BinOp::Ne;     // CMPEQ has only scst5, whatever the sign
-        if ((sign || eq) ? !small : !ucst) break;
-        // x < k is k > x, x > k is k < x; <= and >= are their opposites negated.
-        const bool lt = n.op() == BinOp::Lt || n.op() == BinOp::Ge, gt = n.op() == BinOp::Gt || n.op() == BinOp::Le;
-        const char *cmp = lt ? (sign ? "CMPGT" : "CMPGTU") : gt ? (sign ? "CMPLT" : "CMPLTU") : "CMPEQ";
-        code = std::string("\t") + cmp + "\t" + std::to_string(k) + ", A4, A4\n";
-        if (n.op() == BinOp::Ne || n.op() == BinOp::Le || n.op() == BinOp::Ge) code += "\tXOR\t1, A4, A4\n";
-        n.lhs().accept(asVisitor());
-        out_ << code;
-        return true;
-    }
-    default: break;
-    }
-    if (code.empty()) return false;
-    n.lhs().accept(asVisitor());
-    out_ << code;
-    narrowInt(n.type());
-    return true;
-}
-
-static bool low32(const Expr &e, const Target &t, unsigned &v);
-
-void Tms6747::visit(const Binary &n) {
-    if (n.op() == BinOp::LAnd || n.op() == BinOp::LOr) {
-        int id = nextLabel();
-        std::string sc = label("shortcut", id);
-        bool isAnd = n.op() == BinOp::LAnd;
-        genTruth(n.lhs());
-        out_ << "\tMV\tA4, A1\n\t[" << (isAnd ? "!" : "") << "A1]\tB\t" << sc
-             << "\n\tNOP\t5\n";
-        genTruth(n.rhs());
-        defineLabel(sc);
-        return;
-    }
-
-    const Type *ot = n.lhs().type();        // the operands' common type
-    // A multiply by 1 or a power of two - the parser's index scaling - is nothing or a shift.
-    if (n.op() == BinOp::Mul && !ot->isFloating() && !isWide(ot)) {
-        const Num *k = dynamic_cast<const Num *>(&n.rhs());
-        long long v = k ? k->value() : 0;
-        if (k && v > 0 && (v & (v - 1)) == 0) {
-            n.lhs().accept(asVisitor());
-            int sh = 0;
-            while ((1LL << sh) < v) sh++;
-            if (sh) out_ << "\tSHL\tA4, " << sh << ", A4\n";
-            narrowInt(n.type());
-            return;
-        }
-    }
-    long long divisor;
-    if (constDivisor(n, divisor)) {
-        n.lhs().accept(asVisitor());
-        divideByConstant(n.op() == BinOp::Div, ot->isSigned(target_), divisor);
-        narrowInt(n.type());
-        return;
-    }
-    if (optimize_ > 0 && !ot->isFloating() && !isWide(ot) && immediateBinary(n)) return;
-    // A 64-bit shift by a constant is the pair moved or spliced in place, not wideBinary's branch on the count.
-    unsigned count;
-    if (optimize_ > 0 && isWide(ot) && (n.op() == BinOp::Shl || n.op() == BinOp::Shr) && low32(n.rhs(), target_, count)) {
-        n.lhs().accept(asVisitor());      // A5:A4 = lhs
-        if (n.op() == BinOp::Shl) shiftPairLeft(static_cast<int>(count & 63));
-        else shiftPairRight(static_cast<int>(count & 63), ot->isSigned(target_));
-        return;
-    }
-    n.lhs().accept(asVisitor());          // A4 = lhs
-    pushValue(ot);
-    n.rhs().accept(asVisitor());          // A4 = rhs
-    moveValue(ot, "A6");             // A6 = rhs
-    popValue(ot, "A4");              // A4 = lhs   (now A4=lhs, A6=rhs)
-
-    if (ot->isFloating()) { fpBinary(n.op(), isDouble(ot)); return; }
-    if (isWide(ot)) { wideBinary(n.op(), n.lhs().type()->isSigned(target_)); return; }
-
-    bool sign = ot->isSigned(target_);
-    switch (n.op()) {
-    case BinOp::Add:    out_ << "\tADD\tA4, A6, A4\n";  narrowInt(n.type()); return;
-    case BinOp::Sub:    out_ << "\tSUB\tA4, A6, A4\n";  narrowInt(n.type()); return;
-    case BinOp::Mul:    out_ << "\tMPY32\tA4, A6, A4\n\tNOP\t3\n"; narrowInt(n.type()); return;
-    case BinOp::BitAnd: out_ << "\tAND\tA4, A6, A4\n";  narrowInt(n.type()); return;
-    case BinOp::BitOr:  out_ << "\tOR\tA4, A6, A4\n";   narrowInt(n.type()); return;
-    case BinOp::BitXor: out_ << "\tXOR\tA4, A6, A4\n";  narrowInt(n.type()); return;
-    case BinOp::Shl:    out_ << "\tSHL\tA4, A6, A4\n";  narrowInt(n.type()); return;
-    case BinOp::Shr:
-        out_ << (sign ? "\tSHR\tA4, A6, A4\n" : "\tSHRU\tA4, A6, A4\n");
-        narrowInt(n.type());
-        return;
-    case BinOp::Div: case BinOp::Mod: {
-        // No divide instruction: the EABI's helper takes A4 and B4 and
-        // returns in A4, called like any function - an area opened, B3 set -
-        // so nothing it may clobber is assumed to survive.
-        const char *helper = n.op() == BinOp::Div ? (sign ? "__c6xabi_divi" : "__c6xabi_divu")
-                                                  : (sign ? "__c6xabi_remi" : "__c6xabi_remu");
-        openArea(8);
-        out_ << "\tMV\tA6, B4\n";
-        call(helper);
-        closeArea();
-        narrowInt(n.type());
-        return;
-    }
-    case BinOp::Eq: out_ << "\tCMPEQ\tA4, A6, A4\n"; return;
-    case BinOp::Ne: out_ << "\tCMPEQ\tA4, A6, A4\n\tXOR\t1, A4, A4\n"; return;
-    case BinOp::Lt: out_ << (sign ? "\tCMPLT\tA4, A6, A4\n" : "\tCMPLTU\tA4, A6, A4\n"); return;
-    case BinOp::Gt: out_ << (sign ? "\tCMPGT\tA4, A6, A4\n" : "\tCMPGTU\tA4, A6, A4\n"); return;
-    case BinOp::Le: // !(lhs > rhs)
-        out_ << (sign ? "\tCMPGT\tA4, A6, A4\n" : "\tCMPGTU\tA4, A6, A4\n") << "\tXOR\t1, A4, A4\n";
-        return;
-    case BinOp::Ge: // !(lhs < rhs)
-        out_ << (sign ? "\tCMPLT\tA4, A6, A4\n" : "\tCMPLTU\tA4, A6, A4\n") << "\tXOR\t1, A4, A4\n";
-        return;
-    default: unsupported("this binary operator");
-    }
-}
-
-// An integer constant's low 32 bits: a literal, and +, -, ~ and the casts to integers of 4 bytes or
-// more over one, which all commute with truncation; anything else, or a narrower cast, is not one.
-static bool low32(const Expr &e, const Target &t, unsigned &v) {
-    const Type *ty = e.type();
-    if (ty == nullptr || !ty->isInteger() || ty->isBool()) return false;
-    if (const Num *k = dynamic_cast<const Num *>(&e)) { v = static_cast<unsigned>(k->value()); return true; }
-    if (const Cast *c = dynamic_cast<const Cast *>(&e)) return ty->size(t) >= 4 && low32(c->value(), t, v);
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (!low32(u->operand(), t, v)) return false;
-        if (u->op() == '-') v = 0u - v;
-        else if (u->op() == '~') v = ~v;
-        else if (u->op() != '+') return false;
-        return true;
-    }
-    const Binary *b = dynamic_cast<const Binary *>(&e);
-    unsigned l, r;
-    if (b == nullptr || (b->op() != BinOp::Add && b->op() != BinOp::Sub)) return false;
-    if (!low32(b->lhs(), t, l) || !low32(b->rhs(), t, r)) return false;
-    v = b->op() == BinOp::Add ? l + r : l - r;
-    return true;
-}
-
-// A 32-bit `/` or `%` whose divisor is a constant other than 0, at -O1 and up, as a value of the
-// operands' type. 0 stays the helper's, as at -O0.
-bool Tms6747::constDivisor(const Binary &n, long long &d) const {
-    const Type *ot = n.lhs().type();
-    if (optimize_ <= 0 || (n.op() != BinOp::Div && n.op() != BinOp::Mod)) return false;
-    if (!ot->isInteger() || ot->size(target_) != 4) return false;
-    unsigned u;
-    if (!low32(n.rhs(), target_, u)) return false;
-    d = ot->isSigned(target_) ? static_cast<long long>(static_cast<int>(u)) : static_cast<long long>(u);
-    // -Os keeps the helper call for anything but a power of two - nine words of magic multiply against three, cl6x -ms3's trade too - in a function that calls anyway: in one that does not, the call would cost the frame, B3 and the callee-saved set.
-    const unsigned long long a = d < 0 ? 0ull - static_cast<unsigned long long>(d) : static_cast<unsigned long long>(d);
-    if (forSize_ && planHasCall_ && !planning_ && (a & (a - 1)) != 0) return false;
-    return d != 0;
-}
-
-// Division by a constant as Hacker's Delight has it (chapter 10): a power of two a shift, with the
-// signed bias; otherwise the high word of MPY32U or MPY32SU by the magic number and a shift, and a
-// remainder n - q*d. The dividend is in A4; A0, A1, A3 and A6 are scratch, as elsewhere here.
-void Tms6747::divideByConstant(bool quotient, bool sign, long long d) {
-    unsigned a = sign ? (d < 0 ? 0u - static_cast<unsigned>(d) : static_cast<unsigned>(d))
-                      : static_cast<unsigned>(d);
-    bool negate = sign && d < 0;
-    if (a == 1) {                           // n / -1 wraps INT_MIN to itself, as NEG does
-        if (!quotient) out_ << "\tMVK\t0, A4\n";
-        else if (negate) out_ << "\tNEG\tA4, A4\n";
-        return;
-    }
-    int k = 0;
-    while (k < 32 && (1ULL << k) < a) k++;
-    if ((1ULL << k) == a) {
-        if (!sign) {
-            if (quotient) out_ << "\tSHRU\tA4, " << k << ", A4\n";
-            else out_ << "\tEXTU\tA4, " << (32 - k) << ", " << (32 - k) << ", A4\n";
-            return;
-        }
-        // Round toward zero: a negative n is biased by 2^k - 1 before the shift.
-        if (k == 1) out_ << "\tSHRU\tA4, 31, A0\n";
-        else out_ << "\tSHR\tA4, 31, A0\n\tSHRU\tA0, " << (32 - k) << ", A0\n";
-        out_ << "\tADD\tA4, A0, A0\n";
-        if (quotient) {
-            out_ << "\tSHR\tA0, " << k << ", A4\n";
-            if (negate) out_ << "\tNEG\tA4, A4\n";
-        } else {
-            out_ << "\tCLR\tA0, 0, " << (k - 1) << ", A0\n\tSUB\tA4, A0, A4\n";
-        }
-        return;
-    }
-    unsigned long long M;
-    int s;
-    if (!sign && a >= 0x80000000u) {        // the quotient is 0 or 1
-        movImm("A6", a);
-        out_ << "\tCMPLTU\tA4, A6, A3\n\tXOR\t1, A3, A3\n";
-    } else if (!sign) {
-        bool add;
-        opt::unsignedMagicAdd(a, M, s, add);
-        movImm("A6", static_cast<long long>(M));
-        out_ << "\tMPY32U\tA4, A6, A1:A0\n\tNOP\t3\n";
-        if (!add) {
-            out_ << (s ? "\tSHRU\tA1, " + std::to_string(s) + ", A3\n" : std::string("\tMV\tA1, A3\n"));
-        } else {
-            out_ << "\tSUB\tA4, A1, A3\n\tSHRU\tA3, 1, A3\n\tADD\tA3, A1, A3\n";
-            if (s > 1) out_ << "\tSHRU\tA3, " << (s - 1) << ", A3\n";
-        }
-    } else {
-        opt::signedMagic(a, M, s);
-        movImm("A6", static_cast<long long>(M));
-        out_ << "\tMPY32SU\tA4, A6, A1:A0\n\tNOP\t3\n";   // n signed, M unsigned: the high word
-        out_ << (s ? "\tSHR\tA1, " + std::to_string(s) + ", A3\n" : std::string("\tMV\tA1, A3\n"));
-        out_ << "\tSHRU\tA4, 31, A0\n\tADD\tA3, A0, A3\n";   // plus one where n is negative
-        if (negate) out_ << "\tNEG\tA3, A3\n";
-    }
-    if (quotient) { out_ << "\tMV\tA3, A4\n"; return; }
-    movImm("A6", d);
-    out_ << "\tMPY32\tA3, A6, A3\n\tNOP\t3\n\tSUB\tA4, A3, A4\n";
 }
 
 // The C674x's own SP/DP instructions, each with its delay slots as NOPs
@@ -1528,63 +619,6 @@ void Tms6747::wideBinary(BinOp op, bool sign) {
     }
 }
 
-void Tms6747::visit(const Postfix &n) {
-    const Type *t = n.type();
-    // The old value in A4 (A5:A4) to the new one in the same place, by the step.
-    auto stepValue = [&]() {
-        int step = n.step();
-        if (t->isFloating()) {
-            bool dp = isDouble(t);
-            fpConst(t, static_cast<double>(step), "A6");   // the step, as a number
-            out_ << (n.increment() ? "\tADD" : "\tSUB") << (dp ? "DP\tA5:A4, A7:A6, A5:A4" : "SP\tA4, A6, A4")
-                 << "\n\tNOP\t" << (dp ? 6 : 3) << "\n";
-        } else if (isWide(t)) {
-            if (step != 1) unsupported("a 64-bit step other than 1");
-            if (n.increment()) out_ << "\tADD\tA4, 1, A4\n\tCMPEQ\t0, A4, A0\n\tADD\tA5, A0, A5\n";
-            else               out_ << "\tCMPEQ\t0, A4, A0\n\tSUB\tA4, 1, A4\n\tSUB\tA5, A0, A5\n";
-        } else if (t->unqualified()->isBool()) {
-            out_ << "\tMVK\t1, A4\n";   // [expr.post.incr]/1: a bool's increment makes it true
-        } else {
-            if (step >= 0 && step <= 31)
-                out_ << (n.increment() ? "\tADD\tA4, " : "\tSUB\tA4, ") << step << ", A4\n";
-            else { movImm("A0", step); out_ << (n.increment() ? "\tADD\tA4, A0, A4\n" : "\tSUB\tA4, A0, A4\n"); }
-            narrowInt(t);               // A4 = new value
-        }
-    };
-    const Var *target = dynamic_cast<const Var *>(&n.target());
-    if (target != nullptr && regCandidate(*target)) {
-        if (const std::string *r = regFor(*target)) {
-            regRead(*r, isWide(t));     // A4 = old value
-            pushValue(t);
-            stepValue();
-            regWrite(*r, isWide(t));
-            popValue(t, "A4");          // the expression's value is the old value
-            return;
-        }
-    }
-    // An integer local in its slot: the old value kept in A6 (A7) while A4 is stepped and stored.
-    int disp;
-    if (!t->isFloating() && frameSlot(n.target(), disp) && frameFits(disp, accessSize(t))) {
-        loadFrom(t, frameOperand(disp, accessSize(t)));
-        moveValue(t, "A6");
-        stepValue();
-        store(t, frameOperand(disp, accessSize(t)));
-    } else {
-        plainAccess_ = target != nullptr && regCandidate(*target);
-        genAddr(n.target());        // A4 = address
-        plainAccess_ = false;
-        push();                     // save address
-        load(t);                    // A4 = old value
-        pushValue(t);               // save old value  (stack: top=old, next=addr)
-        stepValue();
-        popValue(t, "A6");          // A6 = old value
-        pop("A3");                  // A3 = address
-        store(t, "*A3");            // *A3 = new value (A4)
-    }
-    out_ << "\tMV\tA6, A4\n";        // the expression's value is the old value
-    if (isWide(t)) out_ << "\tMV\tA7, A5\n";
-}
-
 // A struct of 8 bytes or less whose copy and destruction are not calls
 // travels in registers like a scalar of its size - one up to 4 bytes, the
 // pair A5:A4 up to 8 - as an argument and as a result: TI's rule, measured.
@@ -1629,31 +663,6 @@ void Tms6747::storePair(int size, int align) {
     }
 }
 
-void Tms6747::visit(const Return &n) {
-    markLine(n);
-    if (n.hasValue()) {
-        n.value().accept(asVisitor());    // result in A4
-        if (inPair(n.value().type())) {
-            loadPair(n.value().type()->size(target_), n.value().type()->align(target_));
-        } else if (n.value().type()->isStructOrUnion()) {
-            // Copy it to where the caller asked (the pointer kept in the sret
-            // slot) and answer with that address - unless the caller passed
-            // none, as TI's do for an unused trivially copyable result.
-            std::string skip = label("noresult", nextLabel());
-            localAddr(sretSlot_, "A6");
-            out_ << "\tLDW\t*A6, A6\n\tNOP\t4\n";
-            // At -O1 and -O2 the copy is predicated on the pointer instead of branched around: no delay slots.
-            const bool guard = sretShift_ == 0;
-            if (guard) out_ << "\tMV\tA6, A1\n" << (optimize_ > 0 ? "" : "\t[!A1]\tB\t" + skip + "\n\tNOP\t5\n");
-            copyBlock(n.value().type()->size(target_), "A4", "A6", n.value().type()->align(target_),
-                      n.value().type()->align(target_) >= 8, guard && optimize_ > 0 ? "A1" : "");
-            defineLabel(skip);
-            out_ << "\tMV\tA6, A4\n";
-        }
-    }
-    jump(returnLabel_);
-}
-
 // Conversions with a 64-bit integer on one side. Widening is a sign or zero
 // fill of A5; narrowing drops it; to and from floating point is the EABI's.
 void Tms6747::wideCast(const Type *from, const Type *to) {
@@ -1677,87 +686,13 @@ void Tms6747::wideCast(const Type *from, const Type *to) {
     else     narrowInt(to);
 }
 
-// A call under the C6000 EABI: ten word arguments in registers, the rest
-// above the reserved word at *B15, B3 built by hand, B + NOP 5, result in A4.
-// A variadic callee takes its last named argument onward on the stack.
-void Tms6747::visit(const Call &n) {
-    const std::vector<ExprPtr> &args = n.args();
-    bool pair = inPair(n.type());
-    bool sret = n.type()->isStructOrUnion() && !pair;
-    const std::size_t shift = sret && hiddenInA4(n.type()) ? 1 : 0;   // the hidden pointer takes A4
-
-    // A struct argument is passed by the address of a copy: each is copied
-    // into the slot the parser gave it first, and the slot's address then
-    // stands in for the argument wherever it goes.
-    for (std::size_t i = 0; i < args.size(); i++) {
-        if (!args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(asVisitor());               // A4 = the struct's address
-        localAddr(n.argSlot(i), "A6", args[i]->type()->size(target_), args[i]->type()->align(target_));
-        copyBlock(args[i]->type()->size(target_), "A4", "A6", args[i]->type()->align(target_), args[i]->type()->align(target_) >= 8);
-    }
-
-    std::size_t regCount = static_cast<std::size_t>(abi_.intCount) - shift;
-    std::size_t inRegs = args.size() < regCount ? args.size() : regCount;
-    if (n.isVariadic()) {
-        std::size_t named = static_cast<std::size_t>(n.namedArgs());
-        std::size_t last = named > 0 ? named - 1 : 0;   // the anchor for va_start
-        if (last < inRegs) inRegs = last;
-    }
-    int onStack = static_cast<int>(args.size() - inRegs);
-
-    // The area under the call: the reserved word, then the stack arguments
-    // each where stackArg puts it. Opened even for a call with none, so a
-    // value an enclosing expression pushed is not what sits at *B15.
-    std::vector<int> at(onStack);
-    int end = 4;
-    for (int k = 0; k < onStack; k++) at[k] = stackArg(args[inRegs + k]->type(), end);
-    int area = align8(end);
-    // A callee walked in place needs no area: nothing is on the stack and nothing is called.
-    const Function *inPlace = onStack == 0 && !pair && !sret ? inlineTarget(n) : nullptr;
-    if (inPlace == nullptr) openArea(area, onStack > 0);
-    for (int k = 0; k < onStack; k++) {
-        genArg(n, inRegs + k);
-        regAdd("B15", at[k], "B0");
-        out_ << stackArgAccess(args[inRegs + k]->type(), true, "*B0");
-    }
-
-    if (n.callee() != nullptr) {
-        n.callee()->accept(asVisitor());  // the function's address
-        push();
-    }
-    for (std::size_t i = 0; i + 1 < inRegs; i++) {
-        genArg(n, i);
-        pushValue(args[i]->type());
-    }
-    if (inRegs > 0) {
-        // A double rides in the pair above its register: A5:A4, B5:B4, ...
-        genArg(n, inRegs - 1);
-        const char *last = abi_.intRegs[inRegs - 1 + shift];
-        if (std::string(last) != "A4") moveValue(args[inRegs - 1]->type(), last);
-        for (std::size_t i = inRegs - 1; i-- > 0; ) popValue(args[i]->type(), abi_.intRegs[i + shift]);
-    }
-    if (inRegs + shift > 6) usesSavedArgRegs_ = true;  // A10, B10, A12, B12 are callee-saved
-    for (std::size_t i = 6; i < inRegs + shift; i++)   // and so are the partners a 64-bit argument writes
-        if (isWide(args[i - shift]->type()) || inPairWide(args[i - shift]->type())) usesSavedPairRegs_ = true;
-    if (n.callee() != nullptr) pop("B1");
-    if (inPlace != nullptr) { walkInPlace(*inPlace); return; }
-    if (sret) localAddr(n.resultSlot(), shift != 0 ? "A4" : "A3", n.type()->size(target_), n.type()->align(target_));    // where the result goes
-    if (sret && n.resultIndirect()) out_ << (shift != 0 ? "\tLDW\t*A4, A4\n\tNOP\t4\n" : "\tLDW\t*A3, A3\n\tNOP\t4\n");
-
-    call(n.callee() != nullptr ? "B1" : c6x::symbolOperand(n.symbol()));
-    closeArea();
-    if (pair) { localAddr(n.resultSlot(), "A3", n.type()->size(target_), n.type()->align(target_)); storePair(n.type()->size(target_), n.type()->align(target_)); }
-    if (sret || pair) localAddr(n.resultSlot(), "A4", n.type()->size(target_), n.type()->align(target_));    // the value: its address
-    if (sret && n.resultIndirect()) out_ << "\tLDW\t*A4, A4\n\tNOP\t4\n";
-}
-
 // Where a stack-passed parameter (from firstStack_ on) sits relative to the
 // caller's B15 - the layout the Call visit uses. i == ps.size() names the
 // word past the last parameter, where a variadic function's extras begin.
-int Tms6747::stackParamOffset(const std::vector<Param> &ps, std::size_t i) {
+int Tms6747::stackParamOffset(const std::vector<ir::LaidParam> &ps, std::size_t i) {
     int end = 4;
-    for (std::size_t k = firstStack_; k < i; k++) stackArg(ps[k].type, end);
-    return i < ps.size() ? stackArg(ps[i].type, end) : end;
+    for (std::size_t k = firstStack_; k < i; k++) stackArg(laidType(ps[k].type), end);
+    return i < ps.size() ? stackArg(laidType(ps[i].type), end) : end;
 }
 // Where the next stack argument of type t sits, as cl6x places it: a scalar
 // at its own alignment in its own size (a char and a short pack), a class of
@@ -1783,83 +718,9 @@ std::string Tms6747::stackArgAccess(const Type *t, bool store, const std::string
     return std::string("\t") + op + "\t" + mem + ", A4\n\tNOP\t4\n";
 }
 
-// Argument i into A4: its value, or for a struct the address of its copy.
-void Tms6747::genArg(const Call &n, std::size_t i) {
-    const Type *t = n.args()[i]->type();
-    if (inPair(t)) { localAddr(n.argSlot(i), "A4", t->size(target_), t->align(target_)); loadPair(t->size(target_), t->align(target_)); }
-    else if (t->isStructOrUnion()) localAddr(n.argSlot(i), "A4", t->size(target_), t->align(target_));
-    else n.args()[i]->accept(asVisitor());
-}
-
 void Tms6747::setOptimizeForSize(bool size) { forSize_ = size; }
 void Tms6747::setOptimize(int level) {
     optimize_ = level;
-    if (level <= 0 || costs_) return;
-    costs_ = opt::Costs::forLevel(level);
-    if (costs_->inlines()) inliner_.reset(new Inliner(*costs_));
-}
-
-// A node is several instructions of a stack machine: only a member this small is taken, and its own small members to kInlineDepth.
-static const int kSmallMember = 12;
-// A leaf - no call, no loop - is straight-line code shorter than the call it replaces: to 24.
-static const int kLeafMember = 24;
-static const int kInlineDepth = 3;
-
-// **A direct call to a small function of this unit, walked in its place**: every argument
-// in a register, no struct in or out, and not nested past kInlineDepth callees walked in place. A
-// noexcept callee keeps its call - its terminate is in its own exception-table entry.
-const Function *Tms6747::inlineTarget(const Call &n) const {
-    if (!inliner_ || inlineDepth_ >= kInlineDepth || n.callee() != nullptr || n.isVariadic()) return nullptr;
-    const auto it = bodies_.find(n.symbol());
-    if (it == bodies_.end() || !inliner_->allows(n)) return nullptr;
-    const Function &fn = *it->second;
-    const std::string site = n.symbol() + " in " + (functionOf_ ? functionOf_->symbol() : std::string());
-    auto decline = [&](const char *why) { if (!planning_) opt::noteDecline(why, site); return static_cast<const Function *>(nullptr); };
-    if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return decline("inline-callee-noexcept");
-    if (inliner_->size(fn) > (inliner_->leaf(fn) ? kLeafMember : kSmallMember)) return decline("inline-callee-not-small");
-    if (fn.params().size() > static_cast<std::size_t>(abi_.intCount)) return decline("inline-site-stack-arguments");
-    for (const Param &p : fn.params())
-        if (p.type->isStructOrUnion()) return decline("inline-callee-struct-parameter");
-    if (fn.returns()->isStructOrUnion()) return decline("inline-callee-struct-result");
-    return &fn;
-}
-
-// The arguments are in their registers, as for a call; the callee's parameters take them into
-// its own slots past the caller's frame, its body runs here, and every return jumps to the end.
-void Tms6747::walkInPlace(const Function &fn) {
-    const std::string ret = returnLabel_;
-    const int sret = sretSlot_, base = localBase_, va = vaStart_, top = inlineTop_;
-    const std::size_t shift = sretShift_, first = firstStack_;
-    localBase_ = inlineDepth_ == 0 ? inlineBase_ : inlineTop_;
-    inlineTop_ = localBase_ + align8(fn.frameSize());
-    inlineDepth_++;
-    sretSlot_ = 0;
-    sretShift_ = 0;
-    firstStack_ = static_cast<std::size_t>(abi_.intCount);
-    returnLabel_ = label("inline", nextLabel());
-    if (planning_) planLocals(fn);
-    emitParams(fn);
-    std::vector<DwarfBlock> outer = takeBlocks();           // -g: the callee's blocks are not the caller's
-    fn.body().accept(asVisitor());
-    putBlocks(std::move(outer));
-    // A return as the body's last statement branches to the next line: dropped.
-    const std::string tail = "\tB\t" + returnLabel_ + "\n\tNOP\t5\n";
-    std::string text = out_.str();
-    if (text.size() >= tail.size() && text.compare(text.size() - tail.size(), tail.size(), tail) == 0) {
-        text.erase(text.size() - tail.size());
-        out_.str(text);
-        out_.seekp(0, std::ios::end);
-    }
-    defineLabel(returnLabel_);
-    if (!relayout_ && inlineTop_ > frame_) frame_ = inlineTop_;
-    inlineDepth_--;
-    inlineTop_ = top;
-    returnLabel_ = ret;
-    sretSlot_ = sret;
-    sretShift_ = shift;
-    firstStack_ = first;
-    vaStart_ = va;
-    localBase_ = base;
 }
 
 // The call itself: the return address into B3, the branch - to a symbol or
@@ -1870,65 +731,11 @@ void Tms6747::call(const std::string &target) {
     out_ << "\tB\t" << target << "\n\tNOP\t5\n";
     defineLabel(ret);
     hasCall_ = true;
-    callCount_++;
 }
 
-// Between integers and pointers a conversion is a narrowing at most: A4
-// holds every value extended to the word, so widening is nothing and an
-// array decays to the address it already is.
-void Tms6747::visit(const Cast &n) {
-    n.value().accept(asVisitor());
-    const Type *from = n.value().type(), *to = n.type();
-    if (to->isVoid()) return;
-    if (from->isArray() || from->isFunction()) return;   // decay: the address it is
-    bool fromF = from->isFloating(), toF = to->isFloating();
-    bool fromW = !fromF && isWide(from), toW = !toF && isWide(to);
-    if (fromW || toW) { wideCast(from, to); return; }
-    if (fromF && toF) {
-        // float <-> double; long double is double here.
-        bool fromD = isDouble(from), toD = isDouble(to);
-        if (fromD && !toD) out_ << "\tDPSP\tA5:A4, A4\n\tNOP\t3\n";   // 3 on the C674x, measured on TI's simulator; the C67x's 1 is a silent 0
-        if (!fromD && toD) out_ << "\tSPDP\tA4, A5:A4\n\tNOP\t1\n";
-        return;
-    }
-    if (!fromF && toF) {
-        // Integer to floating: INTSP/INTDP, or their U forms for unsigned.
-        const char *u = from->isSigned(target_) ? "" : "U";
-        if (isDouble(to)) out_ << "\tINTDP" << u << "\tA4, A5:A4\n\tNOP\t4\n";
-        else              out_ << "\tINTSP" << u << "\tA4, A4\n\tNOP\t3\n";
-        return;
-    }
-    if (fromF && !toF) {
-        // Floating to integer, truncating toward zero as C says. SPTRUNC and
-        // DPTRUNC give a signed word; a full unsigned word is the helper's.
-        bool dp = isDouble(from);
-        if (to->size(target_) == 4 && !to->isSigned(target_)) {
-            openArea(8);
-            call(dp ? "__c6xabi_fixdu" : "__c6xabi_fixfu");
-            closeArea();
-        } else {
-            out_ << (dp ? "\tDPTRUNC\tA5:A4, A4" : "\tSPTRUNC\tA4, A4") << "\n\tNOP\t3\n";
-        }
-        narrowInt(to);
-        return;
-    }
-    narrowInt(to);
-}
-void Tms6747::visit(const StrLit &n) { genAddr(n); }  // an array: its address
-// va_list is a char *: va_start points it at the word past the last named
-// parameter, on the stack with everything after it; va_arg reads the value
-// there (8-byte ones 8-aligned, a struct through its pointer) and steps on.
-void Tms6747::visit(const VaStart &n) {
-    n.list().accept(asVisitor());                 // A4 = &ap
-    vaStartAt();
-}
 void Tms6747::vaStartAt() {
     regAdd("A15", vaStart_, "A6");
     out_ << "\tSTW\tA6, *A4\n";
-}
-void Tms6747::visit(const VaArg &n) {
-    n.list().accept(asVisitor());                 // A4 = &ap
-    vaArgAt(n.type());
 }
 void Tms6747::vaArgAt(const Type *t) {
     bool byRef = t->isStructOrUnion() && !inPair(t);
@@ -1940,37 +747,15 @@ void Tms6747::vaArgAt(const Type *t) {
     if (byRef) { out_ << "\tLDW\t*A4, A4\n\tNOP\t4\n"; return; }  // the struct's address
     load(t);
 }
-void Tms6747::visit(const Switch &n) {
-    const bool outer = wideSwitch_;
-    wideSwitch_ = isWide(n.cond().type());
-    Walker::visit(n);
-    wideSwitch_ = outer;
-}
-
-void Tms6747::visit(const MemberAccess &n) {
-    if (n.isBitField()) {
-        bitFieldUnitAddr(n);
-        load(n.type());
-        bitFieldExtract(n);
-        return;
-    }
-    int disp;
-    if (!n.type()->isArray() && !n.type()->isStructOrUnion() && frameSlot(n, disp) && frameFits(disp, accessSize(n.type()))) {
-        loadFrom(n.type(), frameOperand(disp, accessSize(n.type())));
-        return;
-    }
-    genAddr(n);
-    load(n.type());
-}
 
 // ---- functions and the file ----------------------------------------------
 // Initialised data, in TI's directives: .byte, .short and .word (32 bits;
 // TI's .long is 32 bits too, so a 64-bit piece is two words, low first), a
 // .word of a symbol with its addend for a relocated piece, .space for a gap.
 void Tms6747::emitGlobal(const Global &g, Segment seg) {
-    int size = g.type->size(target_);
+    int size = laidType(g.type)->size(target_);
     // The type's own alignment: lifting a 16-byte object to 16 is x86's rule.
-    int align = g.align > g.type->align(target_) ? g.align : g.type->align(target_);
+    int align = g.align > laidType(g.type)->align(target_) ? g.align : laidType(g.type)->align(target_);
     // An inline object - a vtable, a typeinfo, a template's static member -
     // is one object however many units define it: `.weak` in place of
     // `.global`, and zero-filled ones in .data by .space, not the .bss form.
@@ -1984,7 +769,7 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
     // **A scalar goes where TI's code can reach it through DP**: `.neardata`
     // or `.rodata`, as cl6x places every scalar; an aggregate stays in
     // `.data`/`.const`, which TI reaches by absolute address (measured).
-    const bool scalar = !g.type->isStructOrUnion() && !g.type->isArray();
+    const bool scalar = !laidType(g.type)->isStructOrUnion() && !laidType(g.type)->isArray();
     if (scalar) out_ << (seg == Segment::Const || seg == Segment::ConstRelocated ? "\t.sect\t\".rodata\"\n" : "\t.sect\t\".neardata\", RW\n");
     else if (seg == Segment::Bss) out_ << "\t.data\n";
     else out_ << (seg == Segment::Data ? "\t.data\n" : "\t.sect\t\".const\"\n");
@@ -2027,10 +812,10 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
 // String literals into .const as plain .byte lists - no escape syntax to
 // get wrong, and wide strings are the same form - then the globals by
 // segment, each opening the section its kind belongs in (emitGlobal).
-void Tms6747::emitData(const Program &program) {
-    bool inConst = !program.strings.empty();
+void Tms6747::emitData(const UnitData &data) {
+    bool inConst = !data.strings.empty();
     if (inConst) out_ << "\t.sect\t\".const\"\n";
-    for (const StringLit &s : program.strings) {
+    for (const StringLit &s : data.strings) {
         if (s.width > 1) out_ << "\t.align\t" << s.width << "\n";
         out_ << symName(s.label) << ":\n";
         for (std::size_t i = 0; i < s.bytes.size(); i++) {
@@ -2043,17 +828,17 @@ void Tms6747::emitData(const Program &program) {
     struct Bucket { Segment seg; };
     const Bucket order[] = { { Segment::Const }, { Segment::ConstRelocated }, { Segment::Data }, { Segment::Bss } };
     for (const Bucket &b : order)
-        for (const Global &g : program.globals)
+        for (const Global &g : data.globals)
             if (segmentFor(g) == b.seg) emitGlobal(g, b.seg);   // each names its own section
 }
 
 // Parameters arrive in the argument registers and, from the eleventh, on
 // the stack; each is copied to its own frame slot so the body sees a local.
-// Runs after the body has been walked, when the frame link's size is known.
-void Tms6747::emitParams(const Function &fn) {
-    const std::vector<Param> &ps = fn.params();
+// Runs after the body has been selected, when the frame link's size is known.
+void Tms6747::emitParams(const ir::Function &f) {
+    const std::vector<ir::LaidParam> &ps = f.laid.params;
     for (std::size_t i = 0; i < ps.size(); i++) {
-        const Type *t = ps[i].type;
+        const Type *t = laidType(ps[i].type);
         bool byRef = t->isStructOrUnion() && !inPair(t);   // the address of the caller's copy
         if (i < firstStack_) {
             const char *reg = abi_.intRegs[i + sretShift_];
@@ -2075,7 +860,7 @@ void Tms6747::emitParams(const Function &fn) {
         if (inPair(t)) {
             // The value itself, into the parameter's slot, in its own bytes.
             paramInFrame_ = true;
-            localAddr(ps[i].offset, "A3", t->size(target_), t->align(target_));
+            localAddr(ps[i].offset, "A3");
             storePair(t->size(target_), t->align(target_));
             continue;
         }
@@ -2083,20 +868,17 @@ void Tms6747::emitParams(const Function &fn) {
             // Through A1, not A6: A6 is the third argument's register, still
             // to be read when an earlier struct parameter is being copied.
             paramInFrame_ = true;
-            localAddr(ps[i].offset, "A1", t->size(target_), t->align(target_));
+            localAddr(ps[i].offset, "A1");
             copyBlock(t->size(target_), "A4", "A1", t->align(target_), t->align(target_) >= 8);
             continue;
         }
-        // A parameter in a register: the value as the walk found it, its arrival counted as a use.
-        const int key = localBase_ + ps[i].offset;
-        if (planning_) noteUse(key, t);
+        // A parameter in its home register (regOf_, the selector's).
+        const int key = ps[i].offset;
         if (regOf_.count(key)) { narrowInt(t); regWrite(regOf_[key], isWide(t)); continue; }
         paramInFrame_ = true;
-        const int disp = -(saveBytes_ + placed(localBase_ + ps[i].offset));
+        const int disp = -(saveBytes_ + ps[i].offset);
         if (frameFits(disp, accessSize(t))) { store(t, frameOperand(disp, accessSize(t))); continue; }
-        plainAccess_ = true;
-        localAddr(ps[i].offset, "A0", t->size(target_), t->align(target_));
-        plainAccess_ = false;
+        localAddr(ps[i].offset, "A0");
         store(t, "*A0");
     }
 }
@@ -2114,7 +896,6 @@ std::vector<std::string> Tms6747::savedRegs() const {
         const bool odd = (reg[2] - '0') % 2 != 0;
         bool want = std::string(reg) == "B3" ? hasCall_ : odd ? usesSavedPairRegs_ : usesSavedArgRegs_;
         for (std::size_t k = 0; k < promoted_.size(); k++) if (promoted_[k] == reg) want = true;
-        for (std::size_t k = 0; k < spillUsed_.size(); k++) if (spillUsed_[k] == reg) want = true;
         if (want) r.push_back(reg);
     }
     // A14, never used, is saved as a filler where it puts the A pairs on 8-aligned words: B3 and an even
@@ -2157,86 +938,56 @@ std::vector<unsigned> Tms6747::longUnwindWords() const {
     return words;
 }
 
-// One walk of the body: the per-function state reset, the statements, and the fall off the end.
-void Tms6747::walkBody(const Function &fn) {
-    resetLabels();
-    clearCallSites();
-    hasCall_ = false;
-    usesSavedArgRegs_ = false;
-    usesSavedPairRegs_ = false;
-    loopDepth_ = 0;
-    callCount_ = 0;
-    hasLoop_ = false;
-    pushSeq_ = 0;
-    pushOpen_.clear();
-    spillHeld_.clear();
-    if (planning_) { pushCrossesCall_.clear(); pushEvents_.clear(); pushLoop_.clear(); }
-    frame_ = relayout_ ? placedTop_ : align8(fn.frameSize());
-    inlineBase_ = align8(fn.frameSize());
-    // A pad sets SP from the frame as it stands, so room for any callee walked in place - unless the frame is laid out.
-    if (!relayout_ && inliner_ && fn.hasLandingPads()) frame_ += kInlineDepth * align8(inliner_->largestFrame());
-    // -g: each block's begin and end label, so its variables can be tagged with the code they live in
-    if (lineSource() != nullptr) resetBlocks(fn.blocks());
-    fn.body().accept(asVisitor());
-    // Falling off the end returns 0 - main's C99 meaning, and what the other
-    // backends do for every function - or the result pointer for a struct.
-    if (sretSlot_ != 0) { localAddr(sretSlot_, "A4"); out_ << "\tLDW\t*A4, A4\n\tNOP\t4\n"; }
-    else if (isWide(fn.returns())) out_ << "\tZERO\tA5:A4\n";
-    else out_ << "\tZERO\tA4\n";
-}
-
 // -g: parameters, then locals, in TI's .dwtag spelling for sim6747 and vm6747 (GRIDEd docs\C6747-LOCALS-DESIGN.md): a frame
 // variable at its slot from A15 (DWARF register 15), one kept in a register or given no room left out, a static by its symbol.
 // An inner block's variables go inside its DW_TAG_lexical_block (phase F), so a debugger lists them only while the stop is in it.
-void Tms6747::emitVariables(const Function &fn) {
+void Tms6747::emitVariables(const ir::Function &f) {
     if (lineSource() == nullptr) return;
     // ASM6x ends a string at the next quote, so a literal operator's `operator"" _km` is `operator'' _km` here.
-    std::string name = fn.name();
+    std::string name = f.laid.name;
     for (char &c : name) if (c == '"') c = '\'';
-    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
-    emitScope(fn, 0);
+    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << f.symbol << ")\n";
+    emitScope(f, 0);
     out_ << "\t.dwendtag\n";
 }
 
 // a block's own variables (the function's, scope 0, parameters first), then each inner block that declares
 // something: as a lexical block when it has code of its own, else folded into this one
-void Tms6747::emitScope(const Function &fn, int scope) {
+void Tms6747::emitScope(const ir::Function &f, int scope) {
     for (int pass = 0; pass < 2; pass++)
-        for (std::size_t n = 0; n < fn.locals().size(); n++) {
-            const Local &l = fn.locals()[n];
-            if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
+        for (std::size_t n = 0; n < f.laid.locals.size(); n++) {
+            const ir::LaidLocal &l = f.laid.locals[n];
+            if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || !l.type.valid()) continue;
+            const Type *lt = laidType(l.type);
             std::string where;
             if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
             else if (n < ssaPlace_.size() && (ssaPlace_[n] >= 0 || !l.isParam || regOf_.count(l.offset))) {
                 if (ssaPlace_[n] < 0) continue;                 // selected: promoted, or a parameter in its home register
                 where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + ssaPlace_[n]));
             } else {
-                int key = localBase_ + l.offset;
-                if (regOf_.count(key)) continue;
-                std::map<int, int>::const_iterator it = place_.find(key);
-                if (relayout_ && it == place_.end()) continue;
-                where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + (relayout_ ? it->second : key)));
+                if (regOf_.count(l.offset)) continue;
+                where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + l.offset));
             }
             out_ << "\t.dwtag\t" << (l.isParam ? "DW_TAG_formal_parameter" : "DW_TAG_variable")
-                 << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << l.type->describe() << "\"), "
+                 << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << lt->describe() << "\"), "
                  << "DW_AT_location[" << where << "]\n";
-            noteType(l.type);
+            noteType(lt);
         }
     const std::vector<DwarfBlock> &bs = blocks();
     for (std::size_t b = 1; b < bs.size(); b++) {
-        if (bs[b].parent != scope || !declaresAnything(fn, static_cast<int>(b))) continue;
-        if (bs[b].begin.empty() || bs[b].end.empty()) { emitScope(fn, static_cast<int>(b)); continue; }
+        if (bs[b].parent != scope || !declaresAnything(f, static_cast<int>(b))) continue;
+        if (bs[b].begin.empty() || bs[b].end.empty()) { emitScope(f, static_cast<int>(b)); continue; }
         out_ << "\t.dwtag\tDW_TAG_lexical_block, DW_AT_low_pc(" << bs[b].begin << "), DW_AT_high_pc(" << bs[b].end << ")\n";
-        emitScope(fn, static_cast<int>(b));
+        emitScope(f, static_cast<int>(b));
         out_ << "\t.dwendtag\n";
     }
 }
 
-bool Tms6747::declaresAnything(const Function &fn, int scope) const {
-    for (const Local &l : fn.locals()) if (l.scope == scope && !l.name.empty()) return true;
+bool Tms6747::declaresAnything(const ir::Function &f, int scope) const {
+    for (const ir::LaidLocal &l : f.laid.locals) if (l.scope == scope && !l.name.empty()) return true;
     const std::vector<DwarfBlock> &bs = blocks();
     for (std::size_t b = 1; b < bs.size(); b++)
-        if (bs[b].parent == scope && declaresAnything(fn, static_cast<int>(b))) return true;
+        if (bs[b].parent == scope && declaresAnything(f, static_cast<int>(b))) return true;
     return false;
 }
 
@@ -2301,17 +1052,22 @@ void Tms6747::emitTypes() {
     file_ += o.str();
 }
 
-void Tms6747::emitFunction(const Function &fn) {
+void Tms6747::emitFunction(const std::string &symbol) {
     resetLabels();
+    // The IR's function of `fn`, which the shell reads (M6d): a refusal of the lowering is an error, so each has one.
+    const ir::FuncId irId = ssa_ != nullptr ? ssa_->find(symbol) : ir::FuncId();
+    if (!irId.valid()) unsupported("a function the SSA lowering built none of");
+    const ir::Function &irFn = ssa_->functions[irId.v];
     // The symbol, not the name: with C++ linkage that is the mangled name, and
     // two overloads share a name but must not share a label.
-    functionName_ = fn.symbol();
-    labelPrefix_ = "L." + fn.symbol() + ".";
-    returnLabel_ = "L.return." + fn.symbol();
-    functionOf_ = &fn;
+    functionName_ = irFn.symbol;
+    labelPrefix_ = "L." + irFn.symbol + ".";
+    returnLabel_ = "L.return." + irFn.symbol;
+    const ir::Laid &laid = irFn.laid;     // the parser's frame of it
+    returns_ = laidType(laid.returns);
 
-    sretSlot_ = fn.sretSlot();
-    sretShift_ = sretSlot_ != 0 && hiddenInA4(fn.returns()) ? 1 : 0;
+    sretSlot_ = laid.sretSlot;
+    sretShift_ = sretSlot_ != 0 && hiddenInA4(returns_) ? 1 : 0;
 
     // Which parameters the caller put on the stack, and where a variadic
     // function's unnamed arguments start. The hidden pointer in A4 takes a
@@ -2319,47 +1075,22 @@ void Tms6747::emitFunction(const Function &fn) {
     std::size_t regCount = static_cast<std::size_t>(abi_.intCount);
     firstStack_ = regCount - sretShift_;
     vaStart_ = 0;
-    if (fn.isVariadic()) {
-        std::size_t named = fn.params().size();
+    if (irFn.variadic) {
+        std::size_t named = laid.params.size();
         std::size_t last = named > 0 ? named - 1 : 0;
         if (last < firstStack_) firstStack_ = last;
-        vaStart_ = (stackParamOffset(fn.params(), named) + 3) / 4 * 4;   // a word past a packed char
+        vaStart_ = (stackParamOffset(laid.params, named) + 3) / 4 * 4;   // a word past a packed char
     }
 
-    // The body first, into its own text: what it does decides the prologue. At -O1 and -O2 it is
-    // walked once to learn the locals, the text dropped, and again with the chosen ones in registers.
-    slots_.clear();
+    // The body first, into its own entries: what it does decides the prologue.
     regOf_.clear();
-    globalUses_.clear();
-    globalReg_.clear();
     promoted_.clear();
-    spillPool_.clear();
-    spillUsed_.clear();
-    pushCrossesCall_.clear();
-    pushEvents_.clear();
-    leaf_ = false;
-    planHasCall_ = false;
     paramInFrame_ = false;
-    relayout_ = false;
     saveBytes_ = kSaveBytes;
-    // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
+    // Selected from SSA (M6a); a body outside the selector's subset is refused by name in ssaChoose (M6d: no walker).
     ssaPlace_.clear();
-    const ir::Function *ssaFn = ssaChoose(fn);
-    ssaRows_ = ssaFn != nullptr;
-    if (optimize_ > 0 && ssaFn == nullptr) {
-        planning_ = true;
-        walkBody(fn);
-        planHasCall_ = hasCall_;
-        planParams(fn);
-        planLocals(fn);
-        planning_ = false;
-        out_.str(std::string());
-        planRegisters(fn);
-        planFrame();
-        saveBytes_ = align8(4 * (static_cast<int>(savedRegs().size()) - 1));   // A15 goes in the caller's word
-    }
-    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else walkBody(fn);
-    std::string body = out_.str();
+    ssaChoose(irFn);
+    selectBody(irFn);
     out_.str(std::string());
     if (sretSlot_ != 0) {
         // The caller's pointer to where the result goes - A4 for a class
@@ -2368,7 +1099,7 @@ void Tms6747::emitFunction(const Function &fn) {
         localAddr(sretSlot_, "A0");
         out_ << (sretShift_ != 0 ? "\tSTW\tA4, *A0\n" : "\tSTW\tA3, *A0\n");
     }
-    emitParams(fn);
+    emitParams(irFn);
     std::string params = out_.str();
     out_.str(std::string());
 
@@ -2376,26 +1107,25 @@ void Tms6747::emitFunction(const Function &fn) {
     // An inline definition may appear in several translation units, so the
     // linker keeps one rather than rejecting the rest: a weak definition,
     // `.weak` in place of `.global` for TI's assembler.
-    if (fn.isInline())       out_ << "\t.weak\t" << fn.symbol() << "\n";
-    else if (!fn.isStatic()) out_ << "\t.global " << fn.symbol() << "\n";
-    out_ << fn.symbol() << ":\n";
+    if (irFn.isInline)       out_ << "\t.weak\t" << irFn.symbol << "\n";
+    else if (!irFn.isStatic) out_ << "\t.global " << irFn.symbol << "\n";
+    out_ << irFn.symbol << ":\n";
     // A second name for the same code (Function::alias): a label at the same
     // address, not a copy of the body.
-    if (!fn.alias().empty()) {
-        if (fn.isInline())       out_ << "\t.weak\t" << fn.alias() << "\n";
-        else if (!fn.isStatic()) out_ << "\t.global " << fn.alias() << "\n";
-        out_ << fn.alias() << ":\n";
+    if (!laid.alias.empty()) {
+        if (irFn.isInline)       out_ << "\t.weak\t" << laid.alias << "\n";
+        else if (!irFn.isStatic) out_ << "\t.global " << laid.alias << "\n";
+        out_ << laid.alias << ":\n";
     }
 
     int frame = frame_;
-    const std::string early = ssaFn != nullptr ? std::string() : earlyExit(fn);
     std::ostringstream pro;
     pro.swap(out_);                                        // the prologue, scheduled with the body at -O1 and -O2
-    markLine(fn.pos());                                     // -g: the function's own line, as cl6x's first .dwpsn names it
+    markLine(irFn.pos);                                     // -g: the function's own line, as cl6x's first .dwpsn names it
     std::vector<std::string> saved = savedRegs();
     // A leaf whose parameters and locals are all in registers needs no frame at all.
-    bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !fn.params().empty()) || sretSlot_ != 0 ||
-                     saved.size() > 1 || fn.hasLandingPads() || fn.isVariadic();
+    bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !laid.params.empty()) || sretSlot_ != 0 ||
+                     saved.size() > 1 || laid.pads || irFn.variadic;
     // An odd:even pair saved side by side on an 8-aligned word (A15 is the caller's B15, 8-aligned) goes
     // in one STDW and comes back in one LDDW - one round trip to memory where there were two.
     auto pairAt = [&](std::size_t k) -> bool {
@@ -2410,11 +1140,8 @@ void Tms6747::emitFunction(const Function &fn) {
             if (pairAt(k)) { out_ << "\tSTDW\t" << saved[k] << ":" << saved[k + 1] << ", *-A15(" << 4 * (k + 1) << ")\n"; k++; continue; }
             out_ << "\tSTW\t" << saved[k] << ", *-A15(" << 4 * k << ")\n";
         }
-        spAdjust(-(saveBytes_ + frame + (optimize_ > 0 && (hasCall_ || fn.hasLandingPads()) ? 8 : 0)));
+        spAdjust(-(saveBytes_ + frame + (optimize_ > 0 && (hasCall_ || laid.pads) ? 8 : 0)));
     }
-    // The globals the planner gave a register: their addresses formed once, here, for the whole body.
-    for (std::map<std::string, std::string>::const_iterator g = globalReg_.begin(); g != globalReg_.end(); ++g)
-        movSym(g->second.c_str(), g->first);
 
     pro.swap(out_);
     // The prologue holds no padding, and the frame is decided after the body.
@@ -2429,48 +1156,47 @@ void Tms6747::emitFunction(const Function &fn) {
         epi << "\tLDW\t*A15, A15\n\tNOP\t4\n";      // the caller's FP, last
     }
     epi << "\tB\tB3\n\tNOP\t5\n";
-    emitVariables(fn);                                      // -g: after the label, outside the scheduled code
+    emitVariables(irFn);                                     // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
     std::string declined, refused;
     const bool whole = optimize_ > 0 && !backendSkipped("pro");
     if (!whole) out_ << pro.str();
-    // A selected body goes as its entries (C6xSelect.cpp), a walked one as the text it wrote.
-    const std::string before = early + (whole ? pro.str() : std::string()) + params + (ssaFn != nullptr ? ssaHead_ : body);
-    out_ << c6xSchedule(before, ssaFn != nullptr ? &ssaMir_ : nullptr, epi.str(), optimize_, declined, refused);
+    // The body goes as its entries (C6xSelect.cpp).
+    const std::string before = (whole ? pro.str() : std::string()) + params + ssaHead_;
+    out_ << c6xSchedule(before, &ssaMir_, epi.str(), optimize_, declined, refused);
     // Declined (Q5 of the M6c review): the serial text stands as -O0 writes it, and tools/c6x-declines counts the line.
-    if (!declined.empty()) opt::noteDecline("c6x-unscheduled", fn.symbol() + ": " + declined);
+    if (!declined.empty()) opt::noteDecline("c6x-unscheduled", irFn.symbol + ": " + declined);
     if (!refused.empty()) unsupported(("the C6000 instruction '" + refused + "', which no unit encodes").c_str());
     // TI's index entry for a function an exception can pass through - one that calls, so saves B3 - naming the table
     // when there are handlers, holding the word itself when there are none. A function that calls nothing gets no
     // entry, as cl6x gives none: the linker covers the run it sits in with one EXIDX_CANTUNWIND.
-    emitExceptionTable(fn);
+    emitExceptionTable(irFn.noexcept_, irFn.spec);
     char word[16];
     std::snprintf(word, sizeof word, "0x%08x", unwindWord(needFrame));
-    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+    const bool states = irFn.noexcept_ || !irFn.spec.empty();
     bool calls = !callSites().empty() || states;
     for (const std::string &r : savedRegs()) if (r == "B3") calls = true;
     if (calls) anyExidx_ = true;
     if (calls)
-        out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << fn.symbol() << ")\n\t.ulong\t"
-             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + fn.symbol() + "\")") << "\n\t.text\n";
+        out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << irFn.symbol << ")\n\t.ulong\t"
+             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + tiSpelling(irFn.symbol) + "\")") << "\n\t.text\n";
 
     file_ += out_.str();
     out_.str(std::string());
 }
 
-void Tms6747::run(const Program &program) {
-    for (const Function &fn : program.functions) bodies_[fn.symbol()] = &fn;
-    if (inliner_) inliner_->summarize(program);
-    emitData(program);
+void Tms6747::run(const ir::Module &module) {
+    const UnitData &data = module.data;
+    emitData(data);
     file_ += out_.str();
     out_.str(std::string());
-    for (const Function &fn : program.functions) emitFunction(fn);
+    for (const std::string &s : data.order) emitFunction(s);
     emitTypes();
     // Dynamic initialisation: the init function's address in .init_array,
     // which the EABI's start-up code - and the VM6747 emulator - walk before
     // main.
-    if (!program.initFunction.empty()) {
-        out_ << "\t.sect\t\".init_array\"\n\t.align\t4\n\t.word\t" << program.initFunction << "\n";
+    if (!data.initFunction.empty()) {
+        out_ << "\t.sect\t\".init_array\"\n\t.align\t4\n\t.word\t" << data.initFunction << "\n";
         file_ += out_.str();
         out_.str(std::string());
     }
@@ -2481,6 +1207,6 @@ void Tms6747::run(const Program &program) {
     if (needsPr2_) file_ += "\t.global\t__c6xabi_unwind_cpp_pr2\n";
     if (needsUnexpected_) file_ += "\t.global\t__cxa_call_unexpected\n";
     if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
-        std::fprintf(stderr, "c6x-select: selected=%d of %d\n", ssaSelected_, ssaSelected_ + ssaWalked_);
+        std::fprintf(stderr, "c6x-select: selected=%d of %d\n", ssaSelected_, ssaSelected_);
     sink_ << tiExternals(tiSpelling(file_));
 }

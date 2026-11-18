@@ -44,10 +44,9 @@ public:
     Arm64Darwin(std::ostream &sink, const Target &target, const Abi &abi)
         : sink_(sink), target_(target), abi_(abi) {}
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
 
-    void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
 
@@ -61,6 +60,7 @@ private:
     // refused by ssaChoose, naming why. A value has a register or an 8-byte slot above the parser's parameters.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
+    const Type *laidType(TypeId t) const { return ssaTypes_->type(t); }      // a type of the parser's frame record (ir::Laid)
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
     long long ssaArgArea_ = 0;      // the frame's one area for the copies of classes a call passes by a copy's address
     int ssaRegionAt_ = 0;
@@ -93,11 +93,12 @@ private:
     std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
     int ssaSelected_ = 0, ssaOffered_ = 0;   // the census row's two numbers (R120)
     void ssaCensus() const;
-    const ir::Function &ssaChoose(const Function &fn);
-    std::string ssaOutside(const Function &fn, const ir::Function &f) const;
+    void ssaChoose(const ir::Function &f);
+    [[noreturn]] void ssaRefuse(const std::string &name, const std::string &why);     // the census, then the refusal by name
+    std::string ssaOutside(const ir::Function &f) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
-    int layoutSsa(const Function &fn, const ir::Function &f);
-    void selectBody(const Function &fn, const ir::Function &f);
+    int layoutSsa(const ir::Function &f);
+    void selectBody(const ir::Function &f);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectCall(const ir::Function &f, const ir::Inst &i);
     void ssaFrame(const char *dst, long long off);
@@ -137,11 +138,11 @@ private:
 
     void push();
     void pop(const char *reg);
-    void emitData(const Program &program);
+    void emitData(const UnitData &data);
     void emitGlobal(const Global &g, Segment seg);
     // The `_ZTW` wrappers, `_ZTH` aliases and the register-preserving `__tls_init` this unit defines.
-    void emitTlsWrappers(const Program &program);
-    void emitFunction(const Function &fn);
+    void emitTlsWrappers(const UnitData &data);
+    void emitFunction(const ir::Function &fn);
 
     struct AggPlan {
         int hfa = 0;

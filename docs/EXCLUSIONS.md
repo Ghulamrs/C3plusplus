@@ -108,7 +108,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:468` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:485`, `src/parser/ParserExprNew.cpp:512` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:209` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:485`, `src/parser/ParserExprNew.cpp:437` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:209` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:89` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:291` |
 
@@ -355,10 +355,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1181`, `src/parser/ParserExprNew.cpp:1178`
+  every target. `src/parser/ParserExprNew.cpp:1109`, `src/parser/ParserExprNew.cpp:1106`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1280`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1208`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1708`
 - **throwing a pointer to a function** - it has no `type_info`; the message
@@ -557,7 +557,7 @@ commit; and `make test` fails until both are true.
 ## The SSA lowering's limits: C++11, owed (2026-11-13)
 
 Since M3b.7 deleted the walker, a function the SSA lowering (`src/ir/`) does not build is a compile error on
-both x86 targets, and on arm64-darwin since M5.3 deleted its walker (`ssaChoose` in A64Select.cpp; its own
+both x86 targets, on the C6000 since M6d (the walker is no second path for a refused function), and on arm64-darwin since M5.3 deleted its walker (`ssaChoose` in A64Select.cpp; its own
 `unsupported()` sites are counted by `tools/exclusions --arm64`): "is outside the SSA lowering: <reason>". Each reason a valid C++11 program can meet is raised
 by `outside(...)` and is **C++11, owed** - a defect, not a choice. Each is listed below by its message text
 rather than its line, because the lowering's lines move every round; `tools/exclusions --check` reads this

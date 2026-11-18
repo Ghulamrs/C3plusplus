@@ -3,6 +3,8 @@
 #include "Dialect.h"
 #include "Type.h"
 #include "Mangle.h"
+#include "Operator.h"
+#include "Owned.h"
 #include "syntax/SyntaxId.h"
 #include "ir/Ir.h"
 
@@ -125,14 +127,6 @@ private:
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
-
-// R6.4: the one helper an owned node is made by, and so the one `new` the memory rule (R6) leaves standing.
-template <class T, class... A>
-std::unique_ptr<T> make_owned(A &&...args) { return std::unique_ptr<T>(new T(std::forward<A>(args)...)); }
-
-enum class BinOp { Add, Sub, Mul, Div, Mod, Shl, Shr,
-                   BitAnd, BitOr, BitXor,
-                   Eq, Ne, Lt, Le, Gt, Ge, LAnd, LOr };
 
 class Num final : public Expr {
 public:
@@ -276,8 +270,6 @@ public:
     bool resultIndirect() const { return resultIndirect_; }
     void setResultIndirect(bool b) { resultIndirect_ = b; }
 
-    int namedArgs() const { return namedArgs_; }
-
     int argSlot(std::size_t i) const {
         return i < argSlots_.size() ? argSlots_[i] : 0;
     }
@@ -303,15 +295,13 @@ private:
 
 class Postfix final : public Expr {
 public:
-    Postfix(ExprPtr target, bool increment, long long step)
-        : target_(std::move(target)), increment_(increment), step_(step) {}
+    Postfix(ExprPtr target, bool, long long step)
+        : target_(std::move(target)), step_(step) {}
     const Expr &target() const { return *target_; }
-    bool increment() const { return increment_; }
     long long step() const { return step_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr target_;
-    bool increment_;
     long long step_;
 };
 
@@ -408,17 +398,11 @@ public:
     // For the one block that is filled in after it is placed.
     void append(StmtPtr s) { body_.push_back(std::move(s)); }
 
-    int scope() const { return scope_; }
     void setScope(int s) { scope_ = s; }
-    // **Run while an exception unwinds** - a pad's destructors and the
-    // resume - so a throw out of it is [except.terminate]'s, not a new one.
-    void setUnwindCleanup() { unwindCleanup_ = true; }
-    bool unwindCleanup() const { return unwindCleanup_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     std::vector<StmtPtr> body_;
     int scope_ = -1;
-    bool unwindCleanup_ = false;
 };
 
 class If final : public Stmt {
@@ -456,7 +440,6 @@ public:
     const Expr *step() const { return step_.get(); }
     const Stmt &body() const { return *body_; }
 
-    int scope() const { return scope_; }
     void setScope(int s) { scope_ = s; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
@@ -497,19 +480,16 @@ private:
 class Switch final : public Stmt {
 public:
     Switch(ExprPtr cond, StmtPtr body, std::vector<const Case *> cases,
-           const Case *deflt)
+           const Case *)
         : cond_(std::move(cond)), body_(std::move(body)),
-          cases_(std::move(cases)), default_(deflt) {}
+          cases_(std::move(cases)) {}
     const Expr &cond() const { return *cond_; }
     const Stmt &body() const { return *body_; }
-    const std::vector<const Case *> &cases() const { return cases_; }
-    const Case *defaultCase() const { return default_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr cond_;
     StmtPtr body_;
     std::vector<const Case *> cases_;
-    const Case *default_;
 };
 
 class Goto final : public Stmt {
@@ -577,32 +557,18 @@ public:
     // The body is a *list* and not a block, because a cleanup region covers a
     // slice of an enclosing block's statements and must not open a scope of its
     // own - the objects it destroys belong to the block outside it.
-    Try(std::vector<StmtPtr> body, StmtPtr pad, int pointerSlot,
-        int selectorSlot, std::vector<std::string> types)
+    Try(std::vector<StmtPtr> body, StmtPtr pad, int, int,
+        std::vector<std::string> types)
         : body_(std::move(body)), pad_(std::move(pad)),
-          pointerSlot_(pointerSlot), selectorSlot_(selectorSlot),
           types_(std::move(types)) {}
     const std::vector<StmtPtr> &body() const { return body_; }
 
     // **Null on Windows.**
     bool hasPad() const { return pad_ != nullptr; }
-    // **A `try` whose pad also unwinds this frame's objects.** Its call sites
-    // then need a trailing cleanup action, or phase 2 installs no pad where
-    // no handler matched and the destructors never run.
-    void setAlsoCleanup() { alsoCleanup_ = true; }
-    bool alsoCleanup() const { return alsoCleanup_; }
     const Stmt &pad() const { return *pad_; }
-    int pointerSlot() const { return pointerSlot_; }
-    int selectorSlot() const { return selectorSlot_; }
     const std::vector<std::string> &types() const { return types_; }
     // **Set late, and only for a `try` body's cleanup rows.**
     void setTypes(std::vector<std::string> t) { types_ = std::move(t); }
-
-    // **The selector index of each of those types, as the parser numbered
-    // them.** It writes `if (sel == n)` into the handler chain, so it - and
-    // not the backend - is where n comes from.
-    const std::vector<int> &typeIndices() const { return typeIndices_; }
-    void setTypeIndices(std::vector<int> ix) { typeIndices_ = std::move(ix); }
 
     const std::vector<MsHandler> &handlers() const { return handlers_; }
     void setHandlers(std::vector<MsHandler> h) { handlers_ = std::move(h); }
@@ -613,29 +579,13 @@ public:
     const Stmt *cleanup() const { return cleanup_.get(); }
     void setCleanup(StmtPtr c) { cleanup_ = std::move(c); }
 
-    // Where the runtime's four-word scratch area sits in this frame. Written
-    // as -2 on entry by the parent and read by the personality routine
-    // through the FuncInfo's dispUnwindHelp.
-    int unwindHelpSlot() const { return unwindHelpSlot_; }
-    void setUnwindHelpSlot(int s) { unwindHelpSlot_ = s; }
-    // The labels a handler funclet may hand back as where to carry on, so the
-    // flow knows the body's calls can reach them.
-    const std::vector<std::string> &msExits() const { return msExits_; }
-    void setMsExits(std::vector<std::string> e) { msExits_ = std::move(e); }
-
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     std::vector<StmtPtr> body_;
     StmtPtr pad_;
-    int pointerSlot_;
-    int selectorSlot_;
-    bool alsoCleanup_ = false;
-    std::vector<std::string> msExits_;
     std::vector<std::string> types_;
-    std::vector<int> typeIndices_;
     std::vector<MsHandler> handlers_;
     StmtPtr cleanup_;
-    int unwindHelpSlot_ = 0;
 };
 
 struct Local {
@@ -696,8 +646,6 @@ public:
     const Type *returns() const { return returns_; }
     const std::vector<Param> &params() const { return params_; }
     const Stmt &body() const { return *body_; }
-    // The adapter's body in place of the parser's (M2.11, -front=typed).
-    void setBody(StmtPtr b) { body_ = std::move(b); }
     int frameSize() const { return frameSize_; }
     // **What the frame must be aligned to**: the stack's 16 unless a local asked for more with
     // `alignas` or its type, when the prologue realigns the frame to it - [basic.align], measured
@@ -714,13 +662,8 @@ public:
     const std::vector<Local> &locals() const { return locals_; }
 
     const std::vector<int> &blocks() const { return blocks_; }
+    const std::vector<std::size_t> &blockPositions() const { return blockAt_; }     // where each opens: ir::Laid::blockAt reads them
     void setBlocks(std::vector<int> b, std::vector<std::size_t> at) { blocks_ = std::move(b); blockAt_ = std::move(at); }
-    // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
-    int blockAt(std::size_t pos) const {
-        int found = 0;
-        for (std::size_t i = 1; i < blockAt_.size(); i++) if (blockAt_[i] == pos) found = found == 0 ? static_cast<int>(i) : -1;
-        return found > 0 && pos != 0 ? found : 0;
-    }
 
     // Whether this function has a landing pad in it, which the prologue has
     // to know before the body is walked: the personality routine and the LSDA
@@ -763,88 +706,12 @@ private:
     bool landingPads_ = false;
 };
 
-struct GlobalPiece {
-    int offset;
-    int size;
-    long long value;
-
-    std::string symbol;
-};
-
-struct Global {
-    std::string name;
-
-    // The linker's name for it, which differs from 'name' only where the
-    // platform ABI mangles a variable - Microsoft does, Itanium does not.
-    std::string symbol;
-    const Type *type;
-    std::vector<GlobalPiece> init;
-    bool hasInit;
-    bool isStatic;
-
-    bool isConst;
-
-    // **One 8-byte pointer laid down immediately before this object's label.**
-    std::string prefixWord;
-
-    // **Folded rather than rejected**, for an object several translation units each define: a
-    // vtable, a typeinfo and its name string. clang marks all three weak, and without it two units
-    // that share a polymorphic class collide on every one of them.
-    bool isInline;
-    int align = 0;   // `alignas(N)` on the object: what it asked for beyond its type's, else 0
-    // `thread_local`: one copy per thread, in the target's TLS segment rather than .data or .bss.
-    bool isThreadLocal = false;
-
-    // C++11 has no aggregate with a member initialiser, so the braces call this.
-    Global(std::string name = std::string(), std::string symbol = std::string(),
-           const Type *type = nullptr, std::vector<GlobalPiece> init = std::vector<GlobalPiece>(),
-           bool hasInit = false, bool isStatic = false, bool isConst = false,
-           std::string prefixWord = std::string(), bool isInline = false)
-        : name(std::move(name)), symbol(std::move(symbol)), type(type), init(std::move(init)),
-          hasInit(hasInit), isStatic(isStatic), isConst(isConst),
-          prefixWord(std::move(prefixWord)), isInline(isInline) {}
-};
-
-// **One Itanium TLS wrapper this unit writes** - `_ZTW<name>`, the function every other unit calls
-// to reach a thread_local with external linkage: defined here (local-exec, calling `_ZTH` first
-// where the object has dynamic initialisation) or declared elsewhere (initial-exec, `_ZTH` weak).
-struct TlsWrapper {
-    std::string symbol;
-    bool definedHere;
-    bool dynamicInit;
-    bool internal;       // `static thread_local` built by __tls_init: a wrapper nobody else can name
-};
-
-struct StringLit {
-    std::string label;
-    std::string bytes;
-    int width;
-};
-
 struct Program {
     std::vector<Function> functions;
-    std::vector<Global> globals;
-    std::vector<StringLit> strings;
-    // **The types this file throws**, which only the Microsoft backend reads.
-    std::vector<const Type *> thrown;
-    // **The Microsoft ThrowInfo chains**, one per type thrown or caught, finished by the parser.
-    std::vector<MicrosoftThrow> msThrows;
-    // **The classes wanting a Microsoft run-time description**, five each.
-    std::vector<const Type *> rtti;
-    // **The function that runs before main** - [basic.start.init]/2.
-    std::string initFunction;
-    // Whether it names __dso_handle, which ELF wants declared hidden.
-    bool usesDsoHandle = false;
-    // **The function that initialises this unit's thread_locals in a thread**, `__tls_init`, which
-    // Itanium's `_ZTH` aliases name and the Microsoft CRT runs from .CRT$XDU; empty where none needs one.
-    std::string tlsInitFunction;
-    std::vector<TlsWrapper> tlsWrappers;
     // **Whether the file wrote `volatile`**: the type system drops it, so -O is off (Driver::compile).
     bool usesVolatile = false;
     // Where the first `volatile` is, `file:line:col`, for the warning that says so.
     std::string volatileAt;
-    // The dialect the unit was read as (M7): the debug records' language byte is C's for C90.
-    Dialect dialect = Dialect::Cxx11;
     // **Every function lowered to the SSA IR** (M3b.7), which the x86 generator selects from, found by symbol.
     ir::Module module;
 };

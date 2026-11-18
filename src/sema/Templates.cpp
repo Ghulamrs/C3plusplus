@@ -520,7 +520,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         // The pattern is no function: what its read writes - definition, static locals, literals - is a program of its own.
         Program pattern;
         Program *const into = p_.current_, *const wasUnit = p_.unit_;
-        pattern.dialect = into->dialect;
+        pattern.module.data.dialect = into->module.data.dialect;
         struct Back { Parser *p; Program *into, *unit; ~Back() { p->current_ = into; p->unit_ = unit; } } back = { &p_, into, wasUnit };
         if (p_.unit_ == nullptr) p_.unit_ = into;
         const Parser::FunctionState outer = p_.captureFunctionState();

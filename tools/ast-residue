@@ -9,7 +9,7 @@
     tools/ast-residue --readers   every file under src/ that includes Ast.h, with its count of node-kind names
 
 M3b.7 deleted x86's walk of `Ast.h` and kept the rest (design 12.2): the parser's building half, `Classes`'
-synthesised bodies, the constant evaluator's reads, and the tms6747 walker (exception 2; arm64's went at M5.3). Each
+synthesised bodies and the constant evaluator's reads (the tms6747 walker went at M6d, arm64's at M5.3). Each
 moves with a later row; until then the residue may only go down, as the memory gate's counts do. The kinds:
 
     ExprPtr, StmtPtr   the words, under src/parser and src/sema

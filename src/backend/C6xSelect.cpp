@@ -54,34 +54,42 @@ bool smallConst(const ir::Function &f, ir::ValueId v, long long lo, long long hi
 
 }   // namespace
 
-// The function `fn` from the module where its body is inside the subset; otherwise null, and the walker's, the reason named.
-const ir::Function *Tms6747::ssaChoose(const Function &fn) {
-    if (ssa_ == nullptr) return nullptr;
-    const ir::FuncId id = ssa_->find(fn.symbol());
-    const std::string why = !id.valid() ? std::string("outside the SSA lowering") : ssaOutside(fn, ssa_->functions[id.v]);
-    if (why.empty()) { ssaSelected_++; return &ssa_->functions[id.v]; }
-    ssaWalked_++;
-    if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "c6x-walker %s: %s\n", fn.symbol().c_str(), why.c_str());
-    return nullptr;
+// A body outside the selector's subset is refused by name, its reason said: the C6000 has no second path (M6d).
+void Tms6747::ssaChoose(const ir::Function &f) {
+    const std::string why = ssaOutside(f);
+    if (why.empty()) { ssaSelected_++; return; }
+    unsupported((f.symbol + ", outside the C6000 selector (" + why + "),").c_str());
 }
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
-std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (!fn.exceptionSpec().empty()) return "exception specification";     // throw(T...): the lowering's filter has no row here
+std::string Tms6747::ssaOutside(const ir::Function &f) const {
+    const Type *ret = laidType(f.laid.returns);
+    const int sretSlot = f.laid.sretSlot;
     // A class result (W3): in A5:A4, or copied through A3's pointer, or built through the hidden first parameter in A4.
-    const bool cls = fn.returns()->isStructOrUnion(), hidden = fn.sretSlot() != 0 && hiddenInA4(fn.returns());
-    if (f.sret.valid() != hidden || (cls ? !inPair(fn.returns()) && fn.sretSlot() == 0 : fn.sretSlot() != 0)) return "class result of another shape";
-    if (fn.params().size() != f.params.size()) return "parameters differ";
-    for (std::size_t n = 0; n < fn.params().size(); n++) {
-        const Type *p = fn.params()[n].type;
-        // A 64-bit parameter (W4) arrives in a pair; past the sixth the pair's high register is a home (A11, B11, A13, B13).
-        if (!p->isStructOrUnion()) { if (accessSize(p) > 4 && n + (hidden ? 1 : 0) >= 6) return "64-bit parameter past the sixth"; continue; }
+    const bool cls = ret->isStructOrUnion(), hidden = sretSlot != 0 && hiddenInA4(ret);
+    // One with a destructor and a trivial copy (W7) is copied through the hidden pointer from the object the lowering returns.
+    if ((f.sret.valid() != hidden && (f.sret.valid() || ret->nonTrivialCopy())) || (cls ? !inPair(ret) && sretSlot == 0 : sretSlot != 0)) return "class result of another shape";
+    if (f.laid.params.size() != f.params.size()) return "parameters differ";
+    for (std::size_t n = 0; n < f.laid.params.size(); n++) {
+        const Type *p = laidType(f.laid.params[n].type);
+        if (!p->isStructOrUnion()) continue;
         if (!ssaTypes_->type(f.values[f.params[n].v].type)->isPointer()) return "class parameter of another shape";
     }
+    std::vector<int> used(f.values.size(), 0), decays(f.values.size(), 0);
+    for (ir::BlockId b : f.blocks)
+        for (std::size_t k = 0; k <= f.block(b).insts.size(); k++) {
+            const ir::InstId id = k < f.block(b).insts.size() ? f.block(b).insts[k] : f.block(b).term;
+            if (!id.valid()) continue;
+            const ir::Inst &i = f.inst(id);
+            for (std::uint32_t n = 0; n < i.count; n++) used[f.operand(i, n).v]++;
+            if (i.op == ir::Op::Bitcast && ssaType(f, i.result)->isPointer()) decays[f.operand(i, 0).v]++;
+            for (const ir::Succ &s : i.succ) for (std::uint32_t a = 0; a < s.count; a++) used[f.arg(s, a).v]++;
+        }
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
-        if (t->isVoid()) continue;
+        if (t->isVoid() || ssaDeadClassLoad(f, ir::ValueId(static_cast<std::uint32_t>(v)), used[v])) continue;
+        if (t->isArray() && f.values[v].def.valid() && ssaArrayDecay(f, f.inst(f.values[v].def)) && decays[v] == used[v]) continue;
         if (t->isStructOrUnion() || t->isArray() || t->isFunction()) return "aggregate value";
         if (t->size(target_) > 8) return "a value past 64 bits";
     }
@@ -116,23 +124,29 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
             case ir::Op::ICmp: case ir::Op::SMulH:
             case ir::Op::FConst: case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: case ir::Op::FNeg: case ir::Op::FCmp:
             case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp: case ir::Op::UiToFp: case ir::Op::FpExt: case ir::Op::FpTrunc:
+            case ir::Op::Memcpy:
+                break;
+            case ir::Op::Memset:    // written out a store at a time (W5); a larger one is the runtime's
+                if (i.k > 512) return "memset past 512 bytes";
                 break;
             case ir::Op::Call: case ir::Op::Invoke: {
                 const ir::CallInfo &c = f.calls[i.call];
                 if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "landing pads";
-                if (c.symbol.empty()) return "indirect call";
-                if (c.variadic && (c.hasThis || c.namedArgs < 1 || c.namedArgs > abi_.intCount)) return "variadic call";
+                const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;     // a call through a value: its first operand
+                if (c.variadic && (c.namedArgs < 0 || c.namedArgs > abi_.intCount)) return "variadic call";
                 // A class result (W3) comes back into the call's frame object, or into this function's own result (c.sret).
                 const Type *cr = ssaTypes_->type(c.signature)->returns();
                 if (cr->isStructOrUnion() ? c.variadic || (c.sret ? !(f.sret.valid() && hiddenInA4(cr)) : c.resultAlloca < 0)
                                           : c.sret || c.resultAlloca >= 0) return "class result of a call";
-                if (!c.variadic && i.count + (hiddenInA4(cr) ? 1 : 0) > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
-                for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
-                    if (p->isStructOrUnion()) return "class argument";
-                // A 64-bit argument (W4) goes in its register's pair, not past the sixth; a variadic call's lie in its area.
-                const std::uint32_t named = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
-                for (std::uint32_t n = 0; n < named; n++)
-                    if (ssaWideV(f, f.operand(i, n)) && n + (hiddenInA4(cr) ? 1 : 0) >= 6) return "64-bit argument past the sixth";
+                if (!c.variadic && count + (hiddenInA4(cr) ? 1 : 0) > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
+                // A class argument (W5): a word or a pair of words in its registers, else the address of the caller's copy.
+                const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+                for (std::size_t n = 0; n < ps.size(); n++) {
+                    if (!ps[n]->isStructOrUnion()) continue;
+                    // One whose copy or destruction is a call (W7): the lowering's copy in this frame, its address a word.
+                    if (c.variadic || n >= count || !(ssaCopiedArg(ps[n]) || inPair(ps[n]) || hiddenInA4(ps[n])))
+                        return "class argument of another shape";
+                }
                 break;
             }
             default:
@@ -143,10 +157,41 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     return std::string();
 }
 
+// A class read whose value nothing uses (-O0: `os.put(c);`'s reference read as an object), which the text drops (W7).
+bool Tms6747::ssaDeadClassLoad(const ir::Function &f, ir::ValueId v, int uses) const {
+    if (uses != 0 || !f.value(v).def.valid() || !ssaType(f, v)->isStructOrUnion()) return false;
+    const ir::Inst &d = f.inst(f.value(v).def);
+    return d.op == ir::Op::Load && !d.isVolatile;
+}
+
+// An array read whose every use is its decay to a pointer (W8: `std::forward<const char (&)[6]>(a)` decayed): its address.
+bool Tms6747::ssaArrayDecay(const ir::Function &f, const ir::Inst &i) const {
+    return i.op == ir::Op::Load && !i.isVolatile && i.result.valid() && ssaType(f, i.result)->isArray();
+}
+
+// A 64-bit argument in the seventh register or later (W8): its pair's high register is A11, B11, A13 or B13, saved ones.
+bool Tms6747::ssaPairPastSixth(const ir::Function &f, const ir::Inst &i) const {
+    const ir::CallInfo &c = f.calls[i.call];
+    const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;
+    const Type *sig = ssaTypes_->type(c.signature);
+    const std::uint32_t hid = hiddenInA4(sig->returns()) ? 1 : 0;
+    const std::uint32_t named = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
+    for (std::uint32_t n = 0; n < named; n++)
+        if (n + hid >= 6 && (ssaWideV(f, f.operand(i, n + base)) || (n < sig->params().size() && inPairWide(sig->params()[n])))) return true;
+    return false;
+}
+
 // A class result from its address in A4, as visit(Return): the pair, or a copy through A3's pointer where the caller gave
 // one (cl6x gives none for a result it drops); a class built through the hidden parameter is already there.
-void Tms6747::ssaClassResult(const Type *t) {
-    if (!t->isStructOrUnion() || sretShift_ != 0) return;
+void Tms6747::ssaClassResult(const Type *t, bool built) {
+    if (!t->isStructOrUnion() || built) return;
+    if (sretShift_ != 0) {      // the hidden pointer in A4 is never null: the walker's unguarded copy
+        localAddr(sretSlot_, "A6");
+        out_ << "\tLDW\t*A6, A6\n\tNOP\t4\n";
+        copyBlock(t->size(target_), "A4", "A6", t->align(target_), t->align(target_) >= 8);
+        out_ << "\tMV\tA6, A4\n";
+        return;
+    }
     if (inPair(t)) { loadPair(t->size(target_), t->align(target_)); return; }
     const std::string skip = label("noresult", nextLabel());
     localAddr(sretSlot_, "A6");
@@ -156,13 +201,36 @@ void Tms6747::ssaClassResult(const Type *t) {
     out_ << "\tMV\tA6, A4\n";
 }
 
+// A pointer's alignment, from what it points to: 1 where that says nothing.
+int Tms6747::ssaAlign(const ir::Function &f, ir::ValueId p) const {
+    const Type *t = ssaType(f, p);
+    if (!t->isPointer() || t->pointee() == nullptr || t->pointee()->isVoid() || t->pointee()->isFunction()) return 1;
+    return std::max(1, t->pointee()->align(target_));
+}
+
+// size bytes at `to` (an A register other than A0 and A3) zeroed from B16, or B17:B16 where both are 8-aligned.
+void Tms6747::ssaFill(int size, const char *to, int align) {
+    const bool wide = align >= 8 && size >= 8;
+    out_ << (wide ? "\tZERO\tB17:B16\n" : "\tZERO\tB16\n");
+    std::string dst = to;
+    for (int off = 0, base = 0; off < size; ) {
+        int step = wide && size - off >= 8 ? 8 : size - off >= 4 ? 4 : size - off >= 2 ? 2 : 1;
+        if (step > align) step = align >= 4 ? 4 : align;
+        if ((off - base) / step > 31) { regAdd(to, off, "A3"); dst = "A3"; base = off; }
+        const int o = off - base;
+        out_ << "\t" << (step == 8 ? "STDW\tB17:B16" : step == 4 ? "STW\tB16" : step == 2 ? "STH\tB16" : "STB\tB16") << ", *"
+             << (o ? "+" : "") << dst << (o ? "(" + std::to_string(o) + ")" : "") << "\n";
+        off += step;
+    }
+}
+
 // The parser's parameter slots stay where emitParams writes them; above them a word per value, then each alloca.
-int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
+int Tms6747::layoutSsa(const ir::Function &f) {
     int cur = 0;
     // A class parameter's slot holds the object itself (emitParams), and the result pointer's its word: both stay.
-    for (std::size_t i = 0; i < fn.params().size(); i++)
-        if (ssaHome_[f.params[i].v] == 0 || fn.params()[i].type->isStructOrUnion()) cur = std::max(cur, fn.params()[i].offset);
-    cur = std::max(cur, fn.sretSlot());
+    for (std::size_t i = 0; i < f.laid.params.size(); i++)
+        if (ssaHome_[f.params[i].v] == 0 || laidType(f.laid.params[i].type)->isStructOrUnion()) cur = std::max(cur, f.laid.params[i].offset);
+    cur = std::max(cur, f.laid.sretSlot);
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid()) continue;
@@ -172,13 +240,226 @@ int Tms6747::layoutSsa(const Function &fn, const ir::Function &f) {
         ssaValueSlot_[v] = cur;
     }
     ssaAllocaSlot_.assign(f.frame.size(), 0);
-    for (std::size_t a = 0; a < f.frame.size(); a++) {
-        const Type *t = ssaTypes_->type(f.frame[a].type);
-        const int align = f.frame[a].align > 0 ? f.frame[a].align : t->align(target_);
-        cur = roundUp(cur + t->size(target_), std::max(align, 1));
-        ssaAllocaSlot_[a] = cur;
+    cur = layoutSsaLocals(f, cur);
+    cur = layoutSsaTemps(f, cur);
+    // A call's copied arguments live from their copy to the call, both written at the call: every call's lie in the same bytes.
+    ssaArgCopy_.assign(f.operands.size(), 0);
+    int top = cur;
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!id.valid() || (f.inst(id).op != ir::Op::Call && f.inst(id).op != ir::Op::Invoke)) continue;
+            const ir::Inst &i = f.inst(id);
+            const std::vector<const Type *> &ps = ssaTypes_->type(f.calls[i.call].signature)->params();
+            const std::uint32_t base = f.calls[i.call].symbol.empty() ? 1u : 0u;     // past a callee value
+            int at = cur;
+            for (std::size_t n = 0; n < ps.size() && n + base < i.count; n++) {
+                if (!ssaCopiedArg(ps[n])) continue;
+                at = roundUp(at + ps[n]->size(target_), std::max(ps[n]->align(target_), 4));
+                ssaArgCopy_[i.first + base + n] = at;
+            }
+            top = std::max(top, at);
+        }
     }
-    return roundUp(cur, 8);
+    return roundUp(top, 8);
+}
+
+// **Frame slots shared by scope**: a local's object (AllocaInfo::serial) keeps the parser's distance from every local whose
+// bytes the parser overlapped with it - sibling scopes' objects, as the walker's frame had them. Groups are packed from `cur`;
+// a serial on two objects, a size the parser did not lay, or an alignment the group cannot keep leaves the object its own bytes.
+int Tms6747::layoutSsaLocals(const ir::Function &f, int cur) {
+    std::map<int, int> uses;
+    for (std::size_t a = 0; a < f.frame.size(); a++) uses[f.frame[a].serial]++;
+    std::vector<std::pair<int, std::size_t> > objs;          // (the parser's low end, the object)
+    std::vector<int> key(f.frame.size(), 0), align(f.frame.size(), 1);
+    for (std::size_t a = 0; a < f.frame.size(); a++) {
+        if (f.frame[a].serial <= 0 || uses[f.frame[a].serial] != 1) continue;
+        const Type *t = ssaTypes_->type(f.frame[a].type);
+        const int size = t->size(target_);
+        for (const ir::LaidLocal &l : f.laid.locals) {
+            if (l.serial != f.frame[a].serial) continue;
+            if (l.isParam || !l.staticName.empty() || !l.type.valid() || size == 0 || laidType(l.type)->size(target_) != size || l.offset < size) break;
+            key[a] = l.offset;
+            align[a] = std::max(f.frame[a].align > 0 ? f.frame[a].align : t->align(target_), 1);
+            objs.push_back(std::make_pair(l.offset - size, a));
+            break;
+        }
+    }
+    std::sort(objs.begin(), objs.end());
+    for (std::size_t i = 0; i < objs.size(); ) {
+        std::size_t j = i, lead = objs[i].second;
+        int high = key[lead];
+        for (; j < objs.size() && (j == i || objs[j].first < high); j++) {
+            high = std::max(high, key[objs[j].second]);
+            if (align[objs[j].second] > align[lead]) lead = objs[j].second;
+        }
+        // The group moves by `by`, the least step at or past `cur` that keeps its most aligned object aligned.
+        const int A = align[lead], need = cur - objs[i].first;
+        const int by = need + ((-(need + key[lead])) % A + A) % A;
+        int top = cur;
+        for (std::size_t k = i; k < j; k++) {
+            const std::size_t a = objs[k].second;
+            if ((key[a] + by) % align[a] != 0) continue;
+            ssaAllocaSlot_[a] = key[a] + by;
+            top = std::max(top, key[a] + by);
+        }
+        cur = top;
+        i = j;
+    }
+    return cur;
+}
+
+// An Itanium name of a destructor: _ZN, the nested names by length, then D1Ev or D2Ev.
+static bool c6xDestructorName(const std::string &s) {
+    if (s.compare(0, 3, "_ZN") != 0) return false;
+    std::size_t p = 3;
+    while (p < s.size() && s[p] >= '1' && s[p] <= '9') {
+        std::size_t len = 0;
+        for (; p < s.size() && s[p] >= '0' && s[p] <= '9'; p++) len = len * 10 + static_cast<std::size_t>(s[p] - '0');
+        p += len;
+    }
+    return p < s.size() && (s.compare(p, std::string::npos, "D1Ev") == 0 || s.compare(p, std::string::npos, "D2Ev") == 0);
+}
+
+// The objects that are no local (temporaries, an inlined callee's): two never live together lie in the same bytes. One is live
+// from a touch of its address to the lowering's own destructor call on it, where its storage ends - never to one called by name
+// (CallInfo::byName) - or, its address never leaving, to its last touch. Past 256 of them, or with one alone, each has its own.
+int Tms6747::layoutSsaTemps(const ir::Function &f, int cur) {
+    std::vector<std::size_t> todo;
+    std::vector<int> idx(f.frame.size(), -1);
+    for (std::size_t a = 0; a < f.frame.size(); a++)
+        if (ssaAllocaSlot_[a] == 0) { idx[a] = static_cast<int>(todo.size()); todo.push_back(a); }
+    const std::size_t m = todo.size(), nb = f.blockArena.size();
+    std::vector<int> size(m, 0), align(m, 1);
+    for (std::size_t x = 0; x < m; x++) {
+        const Type *t = ssaTypes_->type(f.frame[todo[x]].type);
+        size[x] = t->size(target_);
+        align[x] = std::max(f.frame[todo[x]].align > 0 ? f.frame[todo[x]].align : t->align(target_), 1);
+    }
+    if (m < 2 || m > 256) {
+        for (std::size_t x = 0; x < m; x++) { cur = roundUp(cur + size[x], align[x]); ssaAllocaSlot_[todo[x]] = cur; }
+        return cur;
+    }
+    // The object a value is an address in: an alloca's, or a gep or a cast from one.
+    std::vector<int> root(f.values.size(), -1);
+    for (bool more = true; more; ) {
+        more = false;
+        for (ir::BlockId b : f.blocks)
+            for (ir::InstId id : f.block(b).insts) {
+                const ir::Inst &i = f.inst(id);
+                if (!i.result.valid() || root[i.result.v] >= 0) continue;
+                int r = -1;
+                if (i.op == ir::Op::Alloca) r = idx[static_cast<std::size_t>(i.k)];
+                else if ((i.op == ir::Op::Gep || i.op == ir::Op::Bitcast || ssaArrayDecay(f, i)) && i.count > 0) r = root[f.operand(i, 0).v];
+                if (r >= 0) { root[i.result.v] = r; more = true; }
+            }
+    }
+    // An instruction's touches, and the one it destroys (-1: none); an address used any other way has left (`away`).
+    std::vector<char> away(m, 0);
+    const auto touches = [&](const ir::Inst &i, std::vector<int> &t) -> int {
+        t.clear();
+        int ends = -1;
+        const bool call = i.op == ir::Op::Call || i.op == ir::Op::Invoke;
+        if (i.op == ir::Op::Alloca) return ends;
+        for (std::uint32_t k = 0; k < i.count; k++) {
+            const ir::ValueId v = f.operand(i, k);
+            const int r = v.valid() ? root[v.v] : -1;
+            if (r < 0) continue;
+            if (k == 0 && (i.op == ir::Op::Gep || i.op == ir::Op::Bitcast || ssaArrayDecay(f, i))) continue;
+            t.push_back(r);
+            if (i.op == ir::Op::Load || i.op == ir::Op::Memset || i.op == ir::Op::Memcpy || i.op == ir::Op::Store) {
+                if (k == 0 || (k == 1 && i.op == ir::Op::Memcpy)) continue;
+            } else if (call && k == 0) {
+                const ir::CallInfo &c = f.calls[i.call];
+                const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+                const Type *own = ssaTypes_->type(f.frame[todo[static_cast<std::size_t>(r)]].type);
+                if (!ps.empty() && ps[0]->isPointer() && ps[0]->pointee()->unqualified() == own->unqualified() && own->isStructOrUnion() &&
+                    f.inst(f.value(v).def).op == ir::Op::Alloca && !c.byName && c6xDestructorName(c.symbol)) { ends = r; continue; }
+            }
+            away[static_cast<std::size_t>(r)] = 1;
+        }
+        for (const ir::Succ &sc : i.succ)
+            for (std::uint32_t k = 0; k < sc.count; k++) {
+                const ir::ValueId v = f.operands[sc.first + k];
+                if (v.valid() && root[v.v] >= 0) { t.push_back(root[v.v]); away[static_cast<std::size_t>(root[v.v])] = 1; }
+            }
+        if (call && f.calls[i.call].resultAlloca >= 0 && idx[static_cast<std::size_t>(f.calls[i.call].resultAlloca)] >= 0) {
+            t.push_back(idx[static_cast<std::size_t>(f.calls[i.call].resultAlloca)]);
+            away[static_cast<std::size_t>(t.back())] = 1;
+        }
+        return ends;
+    };
+    // Per block: what it starts (gen), what it ends (cut), each object's last touch in it; then begun-before and touched-after.
+    std::vector<std::vector<char> > gen(nb, std::vector<char>(m, 0)), cut(gen), in(gen), ahead(gen);
+    std::vector<std::vector<int> > last(nb, std::vector<int>(m, -1));
+    std::vector<int> t;
+    const auto instAt = [&](const ir::Block &blk, std::size_t k) { return k < blk.insts.size() ? blk.insts[k] : blk.term; };
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            if (!instAt(blk, k).valid()) continue;
+            const int ends = touches(f.inst(instAt(blk, k)), t);
+            for (int x : t) { gen[b.v][static_cast<std::size_t>(x)] = 1; cut[b.v][static_cast<std::size_t>(x)] = 0; last[b.v][static_cast<std::size_t>(x)] = static_cast<int>(k); }
+            if (ends >= 0) { gen[b.v][static_cast<std::size_t>(ends)] = 0; cut[b.v][static_cast<std::size_t>(ends)] = 1; }
+        }
+    }
+    for (bool more = true; more; ) {
+        more = false;
+        for (ir::BlockId b : f.blocks) {
+            const ir::Block &blk = f.block(b);
+            if (!blk.term.valid()) continue;
+            for (const ir::Succ &sc : f.inst(blk.term).succ)
+                for (std::size_t x = 0; x < m; x++) {
+                    const char out = gen[b.v][x] || (in[b.v][x] && !cut[b.v][x]);
+                    if (out && !in[sc.block.v][x]) { in[sc.block.v][x] = 1; more = true; }
+                    const char later = last[sc.block.v][x] >= 0 || ahead[sc.block.v][x];
+                    if (later && !ahead[b.v][x]) { ahead[b.v][x] = 1; more = true; }
+                }
+        }
+    }
+    // Two objects meet where one is touched while the other is live, or both are live into a block.
+    std::vector<char> meet(m * m, 0);
+    std::vector<char> on(m, 0);
+    for (ir::BlockId b : f.blocks) {
+        const ir::Block &blk = f.block(b);
+        std::vector<char> begun = in[b.v];
+        const auto live = [&](std::size_t x, std::size_t k) {
+            return begun[x] && (away[x] || last[b.v][x] >= static_cast<int>(k) || ahead[b.v][x]);
+        };
+        for (std::size_t x = 0; x < m; x++) on[x] = live(x, 0);
+        for (std::size_t x = 0; x < m; x++)
+            for (std::size_t y = x + 1; on[x] && y < m; y++) if (on[y]) meet[x * m + y] = meet[y * m + x] = 1;
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            if (!instAt(blk, k).valid()) continue;
+            const int ends = touches(f.inst(instAt(blk, k)), t);
+            for (int x : t) begun[static_cast<std::size_t>(x)] = 2;        // touched here: live through this instruction
+            for (int x : t)
+                for (std::size_t y = 0; y < m; y++)
+                    if (y != static_cast<std::size_t>(x) && (begun[y] == 2 || live(y, k))) meet[static_cast<std::size_t>(x) * m + y] = meet[y * m + static_cast<std::size_t>(x)] = 1;
+            for (int x : t) begun[static_cast<std::size_t>(x)] = 1;
+            if (ends >= 0) begun[static_cast<std::size_t>(ends)] = 0;
+        }
+    }
+    // In frame order, each into the first group of bytes none of whose objects it meets; a group is its largest object's bytes.
+    std::vector<std::vector<std::size_t> > groups;
+    for (std::size_t x = 0; x < m; x++) {
+        std::size_t g = 0;
+        for (; g < groups.size(); g++) {
+            bool free = true;
+            for (std::size_t y = 0; free && y < groups[g].size(); y++) free = !meet[x * m + groups[g][y]];
+            if (free) break;
+        }
+        if (g == groups.size()) groups.push_back(std::vector<std::size_t>());
+        groups[g].push_back(x);
+    }
+    for (std::size_t g = 0; g < groups.size(); g++) {
+        int bytes = 0, to = 1;
+        for (std::size_t y = 0; y < groups[g].size(); y++) { bytes = std::max(bytes, size[groups[g][y]]); to = std::max(to, align[groups[g][y]]); }
+        cur = roundUp(cur + bytes, to);
+        for (std::size_t y = 0; y < groups[g].size(); y++) ssaAllocaSlot_[todo[groups[g][y]]] = cur;
+    }
+    return cur;
 }
 
 std::string Tms6747::ssaMem(int off, int size) {
@@ -340,7 +621,7 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
 
 // **Homes for the values** (M6b), as arm64's ssaAssign: a linear scan over live ranges, a range that crosses a call in a
 // saved register only, the heavier range taking a lighter one's place; a compare read by its block's branch alone has none.
-void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
+void Tms6747::ssaAssign(const ir::Function &f) {
     const std::size_t nv = f.values.size(), nb = f.blockArena.size();
     ssaHome_.assign(nv, 0);
     ssaFused_.assign(nv, 0);
@@ -350,7 +631,11 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<long long> weight(nv, 0);
     std::vector<char> hot(nv, 0);       // a constant or an address a loop reads where no instruction can hold it
     std::vector<char> kept2(nv, 0);     // read by other than a call's argument, or by a call deeper in loops than its definition
-    bool wideCall = fn.params().size() + sretShift_ > 6;
+    bool wideCall = f.laid.params.size() + sretShift_ > 6, pairPast = false;
+    for (std::size_t n = 0; n < f.laid.params.size(); n++) {
+        const Type *p = laidType(f.laid.params[n].type);
+        pairPast = pairPast || (n + sretShift_ >= 6 && (p->isStructOrUnion() ? inPairWide(p) : accessSize(p) > 4));
+    }
     // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
     std::vector<std::size_t> index(nb, 0), reach(ssaOrder_.size(), 0);
     std::vector<int> depth(ssaOrder_.size(), 0);
@@ -384,7 +669,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             at += 2;
             if (i.result.valid()) { start[i.result.v] = at; home[i.result.v] = static_cast<int>(id); }
             if (callsOut(i.op)) calls.push_back(at);
-            if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && i.count + (hiddenInA4(ssaTypes_->type(f.calls[i.call].signature)->returns()) ? 1 : 0) > 6) wideCall = true;
+            if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && i.count - (f.calls[i.call].symbol.empty() ? 1 : 0) +
+                (hiddenInA4(ssaTypes_->type(f.calls[i.call].signature)->returns()) ? 1 : 0) > 6) wideCall = true;
+            if ((i.op == ir::Op::Call || i.op == ir::Op::Invoke) && ssaPairPastSixth(f, i)) pairPast = true;
         }
         last[id] = at;
         at += 2;
@@ -494,8 +781,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
                 partner[q.v].push_back(a.v);
             }
     }
-    // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it.
-    const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept;
+    // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it;
+    // one with a 64-bit one there all eight saved registers.
+    const unsigned kept = mode <= 0 || pairPast ? 0u : wideCall ? kKept & ~0x55u : kKept;
     const bool sides = optimize_ != 0 && std::getenv("CXX1_C6X_NOSIDES") == nullptr;
     const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) & (anyPair ? ~kPairs : ~0u) : 0u;
     const unsigned pairs = mode >= 2 ? kPairLow & (sides ? kScratch : kScratchA) : 0u;
@@ -760,8 +1048,8 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::And: case ir::Op::Or: case ir::Op::Xor: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         if (!wr) return false;
         long long count = 0;
-        // By a constant, at -O1 and up: the pair spliced in place, as the walker's.
-        if (optimize_ > 0 && (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) && smallConst(f, b, 0, 63, count)) {
+        // By a constant, the pair spliced in place, as the walker's at -O1; at -O0 too (W7: a bit-field's 64-bit shifts).
+        if ((i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) && smallConst(f, b, 0, 63, count)) {
             ssaPair(f, a, "A4");
             if (i.op == ir::Op::Shl) shiftPairLeft(static_cast<int>(count)); else shiftPairRight(static_cast<int>(count), i.op == ir::Op::AShr);
             ssaKeep(f, i.result);
@@ -847,24 +1135,22 @@ bool Tms6747::ssaWideInst(const ir::Function &f, const ir::Inst &i) {
     }
 }
 
-void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
+void Tms6747::selectBody(const ir::Function &f) {
     resetLabels();
     clearCallSites();
     hasCall_ = false;
     usesSavedArgRegs_ = false;
     usesSavedPairRegs_ = false;
-    callCount_ = 0;
     const std::string head = out_.str();        // the stream holds the body alone; what stood before it goes back first
     out_.str(std::string());
     ssaMir_.clear();
     ssaRegionAt_ = 0;
-    // A loop's blocks together, its latch last; at -O0 only a wrapped body's (pads, noexcept), which else jumps to its body and back.
-    const bool wrapped = fn.isNoexcept() || fn.hasLandingPads() || f.landingPads;
-    ssaOrder_ = optimize_ != 0 || wrapped ? ssaBlockOrder(f) : f.blocks;
-    ssaAssign(fn, f);
-    frame_ = layoutSsa(fn, f);
+    // A loop's blocks together, its latch last, at every level: in the IR's order a block jumps round the early return block.
+    ssaOrder_ = ssaBlockOrder(f);
+    ssaAssign(f);
+    frame_ = layoutSsa(f);
     // Each parameter into its home by emitParams (regOf_), or from the slot emitParams wrote it to into its value's word.
-    const std::vector<Param> &ps = fn.params();
+    const std::vector<ir::LaidParam> &ps = f.laid.params;
     if (f.sret.valid()) {       // the hidden pointer, from the word emitFunction kept it in
         ssaEmit(c6x::MInst("LDW", ssaMem(sretSlot_, 4), "A4"));
         ssaNop(4);
@@ -872,19 +1158,20 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     }
     for (std::size_t i = 0; i < ps.size(); i++) {
         // A class parameter is the address of the slot emitParams wrote or copied it to.
-        if (ps[i].type->isStructOrUnion()) { localAddr(ps[i].offset, "A4"); ssaStore(f, f.params[i], "A4"); continue; }
+        const Type *pt = laidType(ps[i].type);
+        if (pt->isStructOrUnion()) { localAddr(ps[i].offset, "A4"); ssaStore(f, f.params[i], "A4"); continue; }
         if (const char *h = ssaHomeOf(f.params[i])) { regOf_[ps[i].offset] = h; continue; }
-        const std::string m = ssaMem(ps[i].offset, accessSize(ps[i].type));
-        loadFrom(ps[i].type, m);
+        const std::string m = ssaMem(ps[i].offset, accessSize(pt));
+        loadFrom(pt, m);
         ssaKeep(f, f.params[i]);
     }
     // -g: each variable at its alloca's slot (ssaPlace_); a value in a register has no record, as the walker's regOf_.
-    ssaPlace_.assign(fn.locals().size(), -1);
+    ssaPlace_.assign(f.laid.locals.size(), -1);
     ssaInsts_ = 0;
     ssaCounting_ = lineSource() != nullptr;
     if (lineSource() != nullptr) {
-        resetBlocks(fn.blocks());
-        const std::vector<int> at = ssaLocalAllocas(fn, f);
+        resetBlocks(f.laid.blocks);
+        const std::vector<int> at = ssaLocalAllocas(f);
         for (std::size_t n = 0; n < at.size(); n++) if (at[n] >= 0) ssaPlace_[n] = ssaAllocaSlot_[static_cast<std::size_t>(at[n])];
     }
     std::size_t lastPos = 0;
@@ -918,7 +1205,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
             const ir::Inst &in = f.inst(id);
             for (std::size_t m = 0; m < in.lines.size(); m++) {
                 const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses, at = in.lines[m];
-                if (at & block) markBlock(fn.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
+                if (at & block) markBlock(f.laid.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
             }
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in, next);
@@ -939,7 +1226,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     c6x::write(ssaMir_, out_);
     if (std::getenv("CXX1_C6X_MIR") != nullptr) {
         const c6x::Census c = c6x::census(ssaMir_);
-        std::fprintf(stderr, "c6x-mir %s: %d instructions, %d labels, %d verbatim, %d opaque operands\n", fn.symbol().c_str(),
+        std::fprintf(stderr, "c6x-mir %s: %d instructions, %d labels, %d verbatim, %d opaque operands\n", f.symbol.c_str(),
                      c.instructions, c.labels, c.verbatim, c.opaque);
     }
 }
@@ -1005,7 +1292,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         ssaLater_.clear();
     };
     if (ssaWideInst(f, i)) return;
-    switch (i.op) {
+    if (i.op == ir::Op::Load && rt->isStructOrUnion()) return;     // a dead class read (ssaDeadClassLoad)
+    switch (ssaArrayDecay(f, i) ? ir::Op::Bitcast : i.op) {     // an array read is its address (ssaArrayDecay)
     case ir::Op::IConst: case ir::Op::Addr:
         if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
         return;
@@ -1031,6 +1319,15 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         ssaEmit(c6x::MInst(sz == 1 ? "STB" : sz == 2 ? "STH" : "STW", from, mem));
         return;
     }
+    case ir::Op::Memcpy: {     // the walker's block copy (W5), from A4 to A6 or the homes
+        const int align = std::min(ssaAlign(f, f.operand(i, 0)), ssaAlign(f, f.operand(i, 1)));
+        const std::string to = ssaUse(f, f.operand(i, 0), "A6"), from = ssaUse(f, f.operand(i, 1), "A4");
+        copyBlock(static_cast<int>(i.k), from.c_str(), to.c_str(), align, align >= 8);
+        return;
+    }
+    case ir::Op::Memset:
+        ssaFill(static_cast<int>(i.k), ssaUse(f, f.operand(i, 0), "A6").c_str(), ssaAlign(f, f.operand(i, 0)));
+        return;
     case ir::Op::Gep: {
         if (i.count == 2) {
             const std::string p = y(0), b = y(1);
@@ -1132,26 +1429,37 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         // An invoke is one call-site row, in address order and disjoint, with its pad's chain (M3-IR 3.13), as arm64 writes it.
         const ir::CallInfo &c = f.calls[i.call];
         const int row = i.op == ir::Op::Invoke ? nextLabel() : 0;
+        // A call through a value (W6): the callee is the first operand, loaded into B1 last, as the walker's `B B1`.
+        const std::uint32_t base = c.symbol.empty() ? 1u : 0u, count = i.count - base;
+        const auto arg = [&](std::uint32_t k) { return f.operand(i, k + base); };
         if (i.op == ir::Op::Invoke) defineLabel(label("ssatry", row));
-        // A variadic callee's last named argument and every one after it: a word each above the reserved word, as cl6x's -S.
-        const std::uint32_t inRegs = c.variadic ? std::min(i.count, static_cast<std::uint32_t>(c.namedArgs - 1)) : i.count;
+        // A variadic callee's last named argument and every one after it (all of a `(...)` one's): a word each above the reserved word, as cl6x's -S.
+        const std::uint32_t inRegs = c.variadic ? std::min(count, static_cast<std::uint32_t>(std::max(c.namedArgs - 1, 0))) : count;
         // A 64-bit one (W4) lies 8-aligned in eight bytes, as stackArg places it.
-        std::vector<int> at(i.count, 0);
+        std::vector<int> at(count, 0);
         int end = 4;
-        for (std::uint32_t k = inRegs; k < i.count; k++) {
-            const int sz = ssaWideV(f, f.operand(i, k)) ? 8 : 4;
+        for (std::uint32_t k = inRegs; k < count; k++) {
+            const int sz = ssaWideV(f, arg(k)) ? 8 : 4;
             at[k] = roundUp(end, sz);
             end = at[k] + sz;
         }
+        // A class argument over 8 bytes is copied first, as the walker's genArg: its copy's address is the argument.
+        const std::vector<const Type *> &ps = ssaTypes_->type(c.signature)->params();
+        for (std::uint32_t k = 0; k < count && k < ps.size(); k++) {
+            if (!ssaCopiedArg(ps[k])) continue;
+            const std::string from = ssaUse(f, arg(k), "A4");
+            localAddr(ssaArgCopy_[i.first + base + k], "A6");
+            copyBlock(ps[k]->size(target_), from.c_str(), "A6", ps[k]->align(target_), ps[k]->align(target_) >= 8);
+        }
         const int area = c.variadic ? roundUp(end, 8) : 8;
-        openArea(area, i.count > inRegs);
-        for (std::uint32_t k = inRegs; k < i.count; k++) {
+        openArea(area, count > inRegs);
+        for (std::uint32_t k = inRegs; k < count; k++) {
             // Through A4, A6 and A8 in turn - each an argument's register, loaded after - so two words' values are made side by side.
             const char *const turn[] = { "A4", "A6", "A8" };
             const char *t = turn[(k - inRegs) % 3];
-            const bool pair = ssaWideV(f, f.operand(i, k));
-            if (pair) ssaPair(f, f.operand(i, k), t);
-            const std::string v = pair ? pairOf(t) : ssaRead(f, f.operand(i, k), t);
+            const bool pair = ssaWideV(f, arg(k));
+            if (pair) ssaPair(f, arg(k), t);
+            const std::string v = pair ? pairOf(t) : ssaRead(f, arg(k), t);
             std::string mem = "*+B15(" + std::to_string(at[k]) + ")";
             if (at[k] / (pair ? 8 : 4) > 31) { regAdd("B15", at[k], "B0"); mem = "*B0"; }
             if (pair) out_ << "\tSTDW\t" << v << ", " << mem << "\n"; else ssaEmit(c6x::MInst("STW", v, mem));
@@ -1165,10 +1473,38 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
             ssaEmit(c6x::MInst("LDW", ssaMem(sretSlot_, 4), reg));
             ssaNop(4);
         };
-        for (std::uint32_t k = 0; k < inRegs; k++) ssaPair(f, f.operand(i, k), abi_.intRegs[k + hid]);
+        for (std::uint32_t k = 0; k < inRegs; k++) {
+            const char *reg = abi_.intRegs[k + hid];
+            if (k >= ps.size() || !ps[k]->isStructOrUnion() || hiddenInA4(ps[k])) { ssaPair(f, arg(k), reg); continue; }
+            if (ssaCopiedArg(ps[k])) {
+                localAddr(ssaArgCopy_[i.first + base + k], "A3");
+                ssaEmit(c6x::MInst("MV", "A3", reg));
+                continue;
+            }
+            // A class of one or two words is its words, read from the object; a less aligned one in pieces, as loadPair.
+            const int sz = ps[k]->size(target_), w = std::min(ps[k]->align(target_), 4);
+            const std::string obj = ssaUse(f, arg(k), "A1"), pr = pairOf(reg), hi = pr.substr(0, pr.find(':'));
+            if (w == 4 && sz % 4 == 0) {
+                ssaEmit(c6x::MInst("LDW", "*" + obj, reg));
+                if (sz > 4) ssaEmit(c6x::MInst("LDW", "*+" + obj + "(4)", hi));
+                ssaNop(4);
+                continue;
+            }
+            for (int word = 0; word < sz; word += 4) {
+                out_ << "\tZERO\tA3\n";
+                for (int at = word; at < sz && at < word + 4; at += w) {
+                    out_ << "\t" << (w == 2 ? "LDHU" : "LDBU") << "\t*" << (at ? "+" + obj + "(" + std::to_string(at) + ")" : obj) << ", A0\n\tNOP\t4\n";
+                    if (at > word) out_ << "\tSHL\tA0, " << (at - word) * 8 << ", A0\n";
+                    out_ << "\tOR\tA3, A0, A3\n";
+                }
+                out_ << "\tMV\tA3, " << (word == 0 ? std::string(reg) : hi) << "\n";
+            }
+        }
         if (inRegs + hid > 6) usesSavedArgRegs_ = true;     // A10, B10, A12, B12 are callee-saved
+        if (ssaPairPastSixth(f, i)) usesSavedPairRegs_ = true;     // and A11, B11, A13, B13
+        if (base != 0) ssaLoad(f, f.operand(i, 0), "B1");    // through A3 at most, before A3 is the result's address
         if (cr->isStructOrUnion() && !inPair(cr)) into(hid ? "A4" : "A3");
-        call(c6x::symbolOperand(c.symbol));
+        call(base != 0 ? "B1" : c6x::symbolOperand(c.symbol));
         closeArea();
         if (i.op == ir::Op::Invoke) {
             defineLabel(label("ssatryend", row));
@@ -1213,7 +1549,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Ret:
         if (i.count == 1) ssaPair(f, f.operand(i, 0), "A4");
-        if (i.count == 1) ssaClassResult(functionOf_->returns());
+        if (i.count == 1) ssaClassResult(returns_, f.sret.valid());
         jump(returnLabel_);
         writeLater();
         return;

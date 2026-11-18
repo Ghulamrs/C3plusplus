@@ -73,6 +73,7 @@ void dumpInst(const Function &f, const TypeTable &types, InstId id, std::string 
         if (c.variadic) out += " variadic";
         if (c.hasThis) out += " this";
         if (c.sret) out += " sret";
+        if (c.byName) out += " byname";
     } else {
         for (std::uint32_t n = 0; n < i.count; n++) out += (n ? ", " : " ") + valueName(f.operand(i, n));
         if (i.op == Op::Gep && i.count == 1) out += ", " + std::to_string(i.k);

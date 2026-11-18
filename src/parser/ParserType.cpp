@@ -2346,7 +2346,7 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
             lookup_.globalIndex_[gname] = lookup_.globals_.size();
             lookup_.globals_.push_back(GlobalSym{ gname, symbol, ms[i].type, ms[i].type->isConst(), true, false, false, 0 });
         }
-        current_->globals.push_back(Global{ hidden, symbol, u, std::vector<GlobalPiece>(), false, true, false });
+        current_->module.data.globals.push_back(Global{ hidden, symbol, u, std::vector<GlobalPiece>(), false, true, false });
         return;
     }
     const std::size_t from = scopeStarts_.empty() ? 0 : scopeStarts_.back();
@@ -2357,7 +2357,7 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
         const std::string symbol = linkage_.uniqueStaticSymbol(ms.empty() ? hidden : ms[0].name);
         for (std::size_t i = 0; i < ms.size(); i++)
             declareStaticLocal(ms[i].name, ms[i].type, i < where.size() ? where[i] : pos, symbol);
-        current_->globals.push_back(Global{ symbol, symbol, u, std::vector<GlobalPiece>(), false, true, false });
+        current_->module.data.globals.push_back(Global{ symbol, symbol, u, std::vector<GlobalPiece>(), false, true, false });
         return;
     }
     if (sc != StorageNone)

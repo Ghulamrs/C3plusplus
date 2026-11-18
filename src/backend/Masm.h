@@ -162,7 +162,7 @@ public:
     MasmCodeGen(std::ostream &sink, const Target &target, const Abi &abi, bool comdat)
         : X86_64Linux(sink, target, abi), masm_(out_, comdat) { a_ = plain_ = &masm_; }
 
-    void run(const Program &program) override;
+    void run(const ir::Module &module) override;
     void setStructured(std::vector<masm::Instruction> *to) override { masm_.structured(to); }
 
 private:
@@ -173,7 +173,7 @@ private:
     int establisherOffset(int slot) const;
 
     void storeUnwindHelp(int slot) override;
-    void emitExceptionTables(const Function &fn) override;
+    void emitExceptionTables(const ir::Function &fn) override;
 
     // -g: the variables and types as CodeView, which GRIDE's masm carries into the object
     // (writeDebug); not for ml64, which the driver refuses -g for (1.29).
@@ -182,9 +182,9 @@ private:
                     const std::vector<DwarfGlobal> &globals) override;
     bool emitsOwnRtti() const override { return true; }
     // The four objects the Microsoft ABI wants per thrown type.
-    void emitThrowInfo(const Program &program);
+    void emitThrowInfo(const UnitData &data);
     // The five objects the Microsoft ABI wants per class with a vftable, for the same reason and in the same place.
-    void emitClassRtti(const Program &program);
+    void emitClassRtti(const UnitData &data);
     std::string record(const char *segment, int align, const std::string &name, bool first,
                        bool writable = false);
 

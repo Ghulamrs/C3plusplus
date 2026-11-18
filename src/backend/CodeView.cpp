@@ -97,7 +97,7 @@ void writeCompileUnit(Records &r, CodeViewLanguage language, const std::string &
 
 // One object in a scope: a frame slot off RBP, or a static local's own symbol.
 // `frameReg` is the register the slot is measured from: rbp, or rbx for a realigned frame (DWARF's 3).
-void writeObject(Records &r, const Local &l, int frameBias, int frameReg, CodeViewTypes &types, const Spell &spell) {
+void writeObject(Records &r, const DwarfLocal &l, int frameBias, int frameReg, CodeViewTypes &types, const Spell &spell) {
     std::string &o = r.out();
     if (!l.staticName.empty()) {
         r.begin(kSLData32);
@@ -121,7 +121,7 @@ bool inProcedure(const DwarfFunction &f, std::size_t b) { return f.blocks[b].fun
 
 bool declaresAnything(const DwarfFunction &f, int scope) {
     if (f.locals != nullptr)
-        for (const Local &l : *f.locals)
+        for (const DwarfLocal &l : *f.locals)
             if (l.scope == scope) return true;
     for (std::size_t b = 1; b < f.blocks.size(); b++)
         if (f.blocks[b].parent == scope && inProcedure(f, b) && declaresAnything(f, static_cast<int>(b))) return true;
@@ -131,9 +131,9 @@ bool declaresAnything(const DwarfFunction &f, int scope) {
 void writeObjects(Records &r, const DwarfFunction &f, int scope, CodeViewTypes &types, const Spell &spell) {
     if (f.locals == nullptr) return;
     // **Parameters first and in order**: cdb counts off the procedure's arguments from the top.
-    for (const Local &l : *f.locals)
+    for (const DwarfLocal &l : *f.locals)
         if (l.scope == scope && l.isParam) writeObject(r, l, f.frameBias, f.frameBaseReg == 3 ? kCvAmd64Rbx : kCvAmd64Rbp, types, spell);
-    for (const Local &l : *f.locals)
+    for (const DwarfLocal &l : *f.locals)
         if (l.scope == scope && !l.isParam) writeObject(r, l, f.frameBias, f.frameBaseReg == 3 ? kCvAmd64Rbx : kCvAmd64Rbp, types, spell);
 }
 
@@ -191,7 +191,7 @@ void writeFuncletScope(Records &r, const DwarfFunction &f, CodeViewTypes &types,
 unsigned procedureType(const DwarfFunction &f, CodeViewTypes &types) {
     std::vector<const Type *> params;
     if (f.locals != nullptr)
-        for (const Local &l : *f.locals)
+        for (const DwarfLocal &l : *f.locals)
             if (l.isParam && l.scope == 0) params.push_back(l.type);
     return types.procedure(f.returns, params, false);
 }

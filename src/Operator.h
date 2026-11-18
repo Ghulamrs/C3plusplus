@@ -3,6 +3,11 @@
 #include <cstddef>
 #include <string>
 
+// A binary operator's kind: what the constant evaluator folds and the C6000's wide and floating helpers are asked for.
+enum class BinOp { Add, Sub, Mul, Div, Mod, Shl, Shr,
+                   BitAnd, BitOr, BitXor,
+                   Eq, Ne, Lt, Le, Gt, Ge, LAnd, LOr };
+
 // The overloadable operators, and what each ABI calls them. Every code here
 // was measured with clang for both ABIs and confirmed with cl, and CLAUDE.md
 // keeps why Itanium needs the arity (`ml` against `de`) where Microsoft does not.

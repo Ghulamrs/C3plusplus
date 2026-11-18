@@ -9,81 +9,6 @@
 #include <climits>
 #include <cstring>
 
-namespace {
-
-// How often a body names the frame slot `slot`: a temporary built only by its constructor names it once.
-class SlotUses final : public Visitor {
-public:
-    int slot, count = 0;
-    explicit SlotUses(int s) : slot(s) {}
-    void visit(const Num &) override {}
-    void visit(const Var &n) override { if (n.isLocal() && n.offset() == slot) count++; }
-    void visit(const StrLit &) override {}
-    void visit(const Goto &) override {}
-    void visit(const Break &) override {}
-    void visit(const Continue &) override {}
-    void visit(const FuncletLeave &) override {}
-    void visit(const Call &n) override {
-        if (n.callee() != nullptr) n.callee()->accept(*this);
-        for (const ExprPtr &a : n.args()) a->accept(*this);
-        if (n.resultSlot() == slot) count++;
-    }
-    void visit(const VaStart &n) override { n.list().accept(*this); }
-    void visit(const VaArg &n) override { n.list().accept(*this); }
-    void visit(const Assign &n) override { n.target().accept(*this); n.value().accept(*this); }
-    void visit(const Unary &n) override { n.operand().accept(*this); }
-    void visit(const Binary &n) override { n.lhs().accept(*this); n.rhs().accept(*this); }
-    void visit(const Postfix &n) override { n.target().accept(*this); }
-    void visit(const Cast &n) override { n.value().accept(*this); }
-    void visit(const Comma &n) override { n.left().accept(*this); n.right().accept(*this); }
-    void visit(const Conditional &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this); n.elseArm().accept(*this);
-    }
-    void visit(const MemberAccess &n) override { n.object().accept(*this); }
-    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
-    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
-    void visit(const Block &n) override { for (const StmtPtr &s : n.body()) s->accept(*this); }
-    void visit(const If &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this);
-        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
-    }
-    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
-    void visit(const For &n) override {
-        if (n.init() != nullptr) n.init()->accept(*this);
-        if (n.cond() != nullptr) n.cond()->accept(*this);
-        if (n.step() != nullptr) n.step()->accept(*this);
-        n.body().accept(*this);
-    }
-    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const Case &n) override { n.body().accept(*this); }
-    void visit(const Label &n) override { n.body().accept(*this); }
-    void visit(const Try &n) override {
-        for (const StmtPtr &s : n.body()) s->accept(*this);
-        if (n.hasPad()) n.pad().accept(*this);
-        if (n.cleanup() != nullptr) n.cleanup()->accept(*this);
-        for (const MsHandler &h : n.handlers())
-            if (h.body != nullptr) h.body->accept(*this);
-    }
-};
-
-// The constructor call in `x` whose `this` is `&slot`, through the commas a guard or a zeroing adds.
-Call *constructorOfSlot(Expr *x, int slot) {
-    if (Comma *c = dynamic_cast<Comma *>(x)) {
-        if (Call *got = constructorOfSlot(&c->left(), slot)) return got;
-        return constructorOfSlot(&c->right(), slot);
-    }
-    Call *call = dynamic_cast<Call *>(x);
-    if (call == nullptr || call->args().empty()) return nullptr;
-    const Unary *at = dynamic_cast<const Unary *>(call->args()[0].get());
-    if (at == nullptr || at->op() != '&') return nullptr;
-    const Var *v = dynamic_cast<const Var *>(&at->operand());
-    return v != nullptr && v->isLocal() && v->offset() == slot ? call : nullptr;
-}
-
-}
-
-
 // `P(1)` - a temporary of class type. **The object goes in a slot of this frame
 // and the expression answers with its name**, the constructor sequenced in front;
 // it dies at the end of the full expression, which is what `pendingTemps_` is for.
@@ -930,28 +855,26 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
             if (Comma *both = dynamic_cast<Comma *>(deref->operandSlot().get())) {
                 const Unary *at = dynamic_cast<const Unary *>(&both->right());
                 const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
-                if (tmp != nullptr && tmp->isLocal() && pendingTemporaryAt(tmp->offset())) {
-                    const int slot = tmp->offset();
-                    SlotUses uses(slot);
-                    both->left().accept(uses);
-                    Call *ctor = constructorOfSlot(&both->left(), slot);
-                    if (uses.count == 1 && ctor != nullptr) {
-                        releaseTemporary(*value);
-                        ExprPtr held(Var::local(".sret", sretSlot_));
-                        held->setType(ptr);
-                        ctor->argsSlots()[0] = std::move(held);
-                        ExprPtr again(Var::local(".sret", sretSlot_));
-                        again->setType(ptr);
-                        both->rightSlot() = std::move(again);
-                        pendingReturnBuilt_.form = 3;
-                        // `return {}` by a constructor of defaults: they go under "$ret:" for the SSA lowering (M3b.7).
-                        if (!pendingReturnEmpty_.empty()) noteEntryDefaults(pendingReturnEmpty_, ctor->argsSlots(), 1);
-                        if (ctor->resolved() != 0 && resolvedTable_[ctor->resolved()].what == Resolved::Call) {
-                            pendingReturnBuilt_.symbol = resolvedTable_[ctor->resolved()].symbol;
-                            pendingReturnBuilt_.signature = resolvedTable_[ctor->resolved()].type;
-                        }
-                        return value;
+                Temporary made;
+                for (std::size_t i = 0; tmp != nullptr && tmp->isLocal() && i < pendingTemps_.size(); i++)
+                    if (pendingTemps_[i].slot == tmp->offset()) made = pendingTemps_[i];
+                if (made.plain) {
+                    releaseTemporary(*value);
+                    pendingReturnBuilt_.form = 3;
+                    // `return {}` by a constructor of defaults: they go under "$ret:" for the SSA lowering (M3b.7).
+                    const std::unordered_map<int, syntax::NodeId>::const_iterator d = temporaryDefaults_.find(made.slot);
+                    if (!pendingReturnEmpty_.empty() && !memberTemplateInst_ && d != temporaryDefaults_.end() && d->second.valid()) {
+                        std::vector<syntax::NodeId> parts;
+                        for (std::uint32_t i = 0; i < syntaxTree_.node(d->second).count; i++)
+                            parts.push_back(syntaxTree_.child(d->second, i));
+                        memberDefaults_[currentFunction_ + "|^" + pendingReturnEmpty_] =
+                            syntaxTree_.add(syntax::Kind::MemInit, pendingReturnEmpty_, syntaxTree_.node(parts[0]).loc, parts);
                     }
+                    if (made.builtBy != 0 && resolvedTable_[made.builtBy].what == Resolved::Call) {
+                        pendingReturnBuilt_.symbol = resolvedTable_[made.builtBy].symbol;
+                        pendingReturnBuilt_.signature = resolvedTable_[made.builtBy].type;
+                    }
+                    return value;
                 }
             }
     // A const one binds no `T &&`, so [class.copy]/32's first try fails and the copy is taken.
@@ -1025,6 +948,8 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
     ExprPtr call = completeCall(plain->tag(), ctor.symbol, nullptr,
                                 types_.get(Kind::Void), full, false, pos,
                                 std::move(all));
+    const std::uint32_t builtBy = call->resolved();
+    bool zeroed = false;
     if (zeroFirst) {
         ExprPtr fresh(Var::local("$tmp", slot));
         fresh->setType(plain);
@@ -1032,8 +957,11 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
             ExprPtr seq(new Comma(std::move(chain), std::move(call)));
             seq->setType(types_.get(Kind::Void));
             call = std::move(seq);
+            zeroed = true;
         }
     }
+    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+        if (pendingTemps_[i].slot == slot) { pendingTemps_[i].builtBy = builtBy; pendingTemps_[i].plain = !zeroed; }
 
     // The object exists from the moment its constructor returns, and a cleanup
     // pad may run at any point after that - so the flag is set here rather
@@ -1385,12 +1313,12 @@ void Parser::finishMicrosoftThrow(MicrosoftThrow &names, bool thrown) {
             names.destructor = d->symbol;
         }
     microsoftThrowFinish(&names);
-    for (std::size_t i = 0; i < current_->msThrows.size(); i++)
-        if (current_->msThrows[i].info == names.info) {
-            current_->msThrows[i].thrown |= thrown;
+    for (std::size_t i = 0; i < current_->module.data.msThrows.size(); i++)
+        if (current_->module.data.msThrows[i].info == names.info) {
+            current_->module.data.msThrows[i].thrown |= thrown;
             return;
         }
-    current_->msThrows.push_back(names);
+    current_->module.data.msThrows.push_back(names);
 }
 
 // The statements a `throw` lowers to are a block of expression statements - stores, guard flags and

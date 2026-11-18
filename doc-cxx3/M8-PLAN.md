@@ -2225,3 +2225,30 @@ uncited 0 stale after 14 re-pointed, comments 0 over, memory, ast-residue +0, id
 case printing `main`); M3 (c); M1, M2, M4-M7 (M4's range-based `for` over a dependent range now holds 25 of the 27);
 `boxkit/m8z4-singles.patch`; the four `.templates` records on Windows; why the Itanium targets refused the 25 and the
 Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-call`.
+
+### M8.1 commits 1-3 landed, 2026-11-18 (the coordinator)
+
+- Commits 1-3 (lanes m8b-m8j): the count (`-check=templates`), the signature kept at the declaration, and a function
+  template's body read at its declaration in a Lookup layer of its own - the read always on (the flag dropped in
+  241cd65b), writing nothing into the unit's tables; the replay still emits. Read 3,379 of 3,478 function templates over
+  tests/cases; the self-host's -S the same with the read on and off but Driver's `__TIME__`.
+- With them (lane m8x): docs/EXCLUSIONS.md's 11 citations re-pointed after the merge with main; **x86_64-windows: a
+  function with a landing pad and no call keeps 8 bytes below its unwind-help word** (000dbd71) - with no outgoing area
+  the word sat at rsp+0 and dispUnwindHelp read 0, on main too (ssa-ms-try, ssa-try-catch, nested-parse-state); and two
+  gate mends: win-structure's unwind faults fail the step (6cede9be - m6g had passed with 6), and a worse cycle case
+  passes only through tests/tms6747-cycles.txt (ca4eaa3d).
+- **Gate: tools/wave-gate m81j -w dbdce549 at ac71cf9d: 43 passed, 0 failed, 4 not run** (the fixed points, not owed).
+  The first gate of this tree (m81i) failed only on the unwind mend's 31 unnamed x86_64-windows differences (the frame 8
+  bytes larger, its unwind bytes and frame offsets moved); m81g and m81h were void (a Linux build stopped under load).
+- tests/wave-expected.txt emptied (31 rows were this wave's). Commit 4 (the class doors) continues on m8-e.
+
+### The Fable review's H1 landed: a read marks nothing used, 2026-11-18 (the coordinator)
+
+- The one Fable run the user allowed (review m8rev, boxkit/m8rev-review.md: 2 high, 7 medium, 3 low) found H1: a pattern's
+  read marked a static data member used, so a template never instantiated that names `Box<int>::s` emitted its dynamic
+  initialiser - on main 95e06424 the case printed `init ran` twice (clang: once). Lane h1 (63ed234d) marks only outside a
+  read at four sites: staticMemberRef, an external thread_local's wrapper, a copied string's label, a mem-initialiser's
+  constructor; case tests/cases/template-unused-static-init (clang's .expected; its class half is read once m8-e lands).
+- **Gate: tools/wave-gate h1g -w 95e06424 at 099f3fb0: 40 passed, 0 failed, 4 not run** (the fixed points, not owed); the
+  only output difference is the new case (the base build emits the initialiser). tests/wave-expected.txt emptied.
+- H2, M1-M7 and L1-L3 are M8's lanes' (m8z6 on m8-e: H2 and M3 first).
