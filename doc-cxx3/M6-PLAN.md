@@ -3892,3 +3892,44 @@ tms6747 -O0 and -O2 refused by REF and the lane alike (`Parser::classRangeEnds`'
 selector); exclusions, comment cap, memory gate pass; ast-residue lower, recorded; ide --check up to date.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test to its end. **Left of S3:** the
 other three casts and C1, as proposed above.
+
+### M6d S3, second round: the merged tree shown, and `ConstexprFn` owning its operand - lane m6d-s3b, 2026-11-18
+
+From m6d-s3 2663e160 (S2, S3's first half and S1 whole, merged). src/ 93,199 -> 93,196 lines. REFs are built in the lane's
+own Linux tree (~/m6d-s3b: one baked include path, so no path is normalised): REF0 is m6d-s1's 23c713fc, then the merged
+tree itself (`~/m6d-s3b-m.exe`, built from clean). The compares are S2's (tools/identical.sh; every case's `-g -S` text).
+
+**(0) The merge** (d9abd80c, the baseline alone). Built from clean: g++ -Werror and cl /W4 /WX clean (cl's full build 8 min
+14 s with the tar, started first and alone). Against REF0: identical tms6747 1,808/0, x86_64-linux, x86_64-windows and
+arm64-darwin 7,232/0; `-g` 888/903/903 same and x86_64-windows 878, 0 differ; run.sh 1,240/0; tests/typed.sh 11,537 functions, 10,435 with a source body, 1,102 compiler-written - S1's counts,
+no line different from REF0's. The S3 half changes nothing. Static gates pass (exclusions 0/0, comment cap, memory gate,
+ide --check); ast-residue re-recorded on Linux: ExprPtr 2,012, StmtPtr 635, node-casts 158, node-refs 357, readers 9,
+ast-lines 722.
+**(1) The constexpr return operand into `ConstexprFn`** (914d70b6, src/ -3). `Return::takeValue` hands the operand over
+(it replaces `hasValue` and `value`, which only the evaluator read); `Constexpr::singleReturn` finds the one `return`
+as `singleReturnValue` did - the same Ast walk, so what is accepted is unchanged (C1's second half, the test asked of the
+syntax tree, is S4's: it changes acceptance, as the first round found); `ConstexprFn::value` is an `ExprPtr`, and fold()
+reads the operand there, not through a pointer into a body. `Block::body()` gains its non-const twin (ast-lines
+unchanged). Unblocked by S1: no closure walks the constexpr body any more.
+**ast-residue after (1):** ExprPtr 2,013 (+1, `ConstexprFn::value`), node-refs 355 (-2), the rest unchanged. The ExprPtr
+word is the design's own (C1: "`ExprPtr value`, moved out of the `Return`"), so `--check` is over the baseline by that one
+word; the lane wrote no accepted line and did not respell it (`std::unique_ptr<Expr>` would count as a node-ref and pass).
+The coordinator's call: the user's mark on ExprPtr 2013, or the respelling.
+
+**Step (1) shown** against the merged tree: identical tms6747 1,808/0, the three others 7,232/0; `-g` 888/903/903 same and
+x86_64-windows 878, 0 differ (358/343/343/368 refused alike); tests/typed.sh the same counts, no line different.
+
+**Gates on the final tree** (914d70b6; Linux ~/m6d-s3b g++ -Werror clean; Windows work\m6d-s3bx cl /W4 /WX clean, a full
+build in 4 min 53 s started first and alone): run.sh 1,240 passed, 0 failed (the merge's the same); tests/tms6747.sh SIM=1
+shards 1-3 on Linux and 4-6 on Windows at -O2 425/0 and 425/0, -O0 425/0 and 425/0; self-compile of Constexpr.cpp and
+ParserTopLevel.cpp: x86_64-linux -O2 text the same as the merged tree's, tms6747 -O0 and -O2 refused by both alike
+(`std::fma` undeclared; `Parser::topLevel`'s lambda, stack arguments outside the C6000 selector); exclusions 0/0, comment
+cap, memory gate, ide --check pass; ast-residue over the baseline by the one ExprPtr word above.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test to its end, and the residue
+decision.
+
+**Not done, and why.** (2) the builders returning effect expressions (the three ParserExprNew.cpp casts, :217, :356,
+:1320-1327, and `ConstexprCtor`'s statements as step records): not started - the hour went to showing the merge and step
+1 on a box whose three slots were held by two other gates. It is still one lane, as the first round proposed. (3) "one
+return and nothing else" asked of the syntax tree is S4's: it changes what is accepted (`{ { return x; } }`, a wrapped
+`noexcept` body), so it is not a step of identical output.
