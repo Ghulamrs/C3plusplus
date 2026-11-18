@@ -956,3 +956,34 @@ either may be dependent - one condition, not made because the function door shar
 were already running); (4) "has no member" through a base left out; (5) a door for member templates - not
 started; (6) the out-of-line door's 14 (11 an incomplete class, 3 "declares no member"). The signature's
 expression reader: not started.
+
+**Gates** on the final tree (`381643e3`), each box built from clean; REF built fresh from `edeb7535` in its own
+kept tree (Linux `~/m8lr`, Windows `work\m8lr`; NEW `~/m8ln`, `work\m8ln`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` in
+its `__TIME__` string (diff opened: one `.byte` line); `run.sh` 1233 passed, 0 failed; `typed.sh` 876 passed,
+0 failed, 1 not for this host; `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004 / 52;
+`template-class.templates` re-recorded - its class-members line reads 4 of 6 where it read 0 of 3, and the
+dependent-size line is gone; `template-variadic`'s is unchanged); self-compile stage 0 103 of 103; exclusions
+0 uncited, 0 stale (31 citations re-pointed); comment cap 0; memory gate held; ast-residue +0 on all seven;
+`ide/generate.py --check` up to date. Windows (cl /W4 /WX clean - both builds passed the driver's nine-minute
+cap on the shared box and ended on the box, the executables made): the self-host's `-S`, REF against NEW, 102
+of 103 the same and `Driver` (its `__TIME__` line); the flag against no flag, cases 1,239 the same, 0 differ,
+and the self-host 102 and `Driver` (diff opened: one `DB` line of the time); static gates rc 0; `names.sh` 884
+passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against
+REF, **12,390 the same, 0 differ** (the whole compare, inside the hour); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8ls`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units;
+`-check=templates` by door on Windows (the Linux counts are the measure); no `tests/cases` program was added.
+src/ lines: 95,326 before, 95,368 after.
+
+**A patch measured and not committed** (`boxkit/m8l-left.patch`, two conditions; Linux only, the Windows
+gates were already running on the final tree): (a) `explicitDestructorCall` lets a pseudo-destructor through
+in a read when the named type or the object's is dependent; (b) `memberCallWith` holds a member call whose
+arguments are dependent (`patternBody_ && argsDependent_`), as the function-template paths do - the root of
+"no function called takes these arguments": `o.n` through a reference to the class being read is dependent,
+and the ordinary member call resolved over it. Both lines are the function door's too, so they change every
+compile's read and want the whole gate. On Linux `~/m8lx` (built clean): cases class members **10,026 of
+12,175 read** (7,529 committed), the function door 3,380 of 3,478, the flag against no flag 0 differ;
+`identical.sh` against REF 5,304 compared, 0 differ; the self-host's `-S` against REF 102 and `Driver`; the
+self-host's flag against no flag 102 and `Driver`;
+`typed.sh` 876 / 0; `run.sh` 1233 / 0; self-compile 103 of 103. The next lane's first step.
