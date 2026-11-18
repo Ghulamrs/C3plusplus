@@ -1,0 +1,3 @@
+x86_64-linux  three names owed and none of them H2's: the local enumeration E of h<int> is written `1E`, as at namespace scope, where clang writes `Z1hIiEiT_E1E` (a local enumeration's scope, owed); the closure is `3$_0` where clang writes `UliE_` (the numbering and spelling lambda.nonames records); and the parameter of g deduced as a local type is `T_` where clang writes the substitution `S1_`.
+arm64-darwin  the same three, the two Itanium targets alike.
+x86_64-windows  the closure is `U$_0@?1???$h@H@@YAHH@Z@@` where clang-msvc writes `V<lambda_1>@?0???$h@H@@YAHH@Z@@` (lambda.nonames), and the local enumeration is `W4E@@` where clang-msvc scopes it to h<int>, `W4E@?1???$h@H@@YAHH@Z@@`; g(L) agrees.

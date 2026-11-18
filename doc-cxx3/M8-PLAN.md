@@ -2164,3 +2164,64 @@ a host difference), 4 `.templates` records failing as at m8z4, m8z3 and m8z2 (ho
 
 **Next**: (1) the 25 (the probe above); (2) H2 from `boxkit/m8z5-h2.patch`, built and gated; (3) the review's H1 and M3
 (a floor on `read`, every case unit counted); (4) `boxkit/m8z4-singles.patch`; (5) the cases' five and the review's M1-M7.
+
+## M8.1: H2 landed, the ceiling made sound, and the Linux-only 25 read (lane m8z6, 2026-11-18)
+
+Branch `m8-e` from `d6f4b538`: `24799adb` (H2 from `boxkit/m8z5-h2.patch` unchanged, an Itanium name mended, `tests/subst.sh`),
+`e2c89714` (the ceilings re-recorded, EXCLUSIONS re-pointed: 14) and this entry. src/ 95,849 -> 95,873 lines (+25 -1 in
+`ParserTemplate.cpp`, `ParserType.cpp`, `Mangle.cpp`).
+
+**H2.** `dependentType` takes a class or enumeration under a read's tag (`$read$f::L`, `C<$T0>$read3::D`) as dependent, a
+read function's enumeration is tagged `$read$f::E`, and a function read's array bound over a parameter is refused by name
+("an array whose bound depends on a template parameter"), never folded with 0. Its three cases, clang's answers:
+`read-dependent-member` 223, `read-dependent-local` 222, `read-dependent-bound` "307 507" - right on both boxes. The
+Windows build, alone, took about 2 minutes (m8z5's capped one ran under the gate's load). **What the Itanium targets
+found**: `read-dependent-member` wrote `g(C<int,1>::E)` as `_Z1gN8C<int,1>1EE` on x86_64-linux, arm64-darwin and the
+C6000 (REF too: no case had an enumeration of a class specialization in a signature), and the assembler refused it.
+`Mangle.cpp`'s `enumeration` now writes a specialization scope through `prefix`, `_Z1gN1CIiLi1EE1EE` (c++filt:
+`g(C<int, 1>::E)`, beside its sibling `_Z1gN1CIiLi1EE1DE`); an enumeration in a plain class or a namespace is spelled
+as before.
+
+**M3: what `tests/subst.sh` enforces now.** The ceiling files hold, beside each reason's count, each door's sums
+(`door <name> bodies= read= unread= shape=`) and each body whose read differs in shape from its replay, by place
+(`shape <file:line:col>`, every unit, not only the four with a `.templates` record). It fails on: a reason not
+recorded or above its count (as before); **a door's `read` below its record** (a body moving from read to unread, or a
+door that stops reading); a door's `shape` above its record; **a shape at a place not recorded**; and, for the cases as
+for the self-host, **a unit that reaches no count** (one whose `.notarget` names this host's target is excused:
+`windows-h-layout` on Linux). Crossed on purpose on Linux (a door's read one above what it reads, one recorded shape
+taken away): both fail by name, rc 1. And a run whose self step lost its units to a second run sharing `$OUT` failed
+four floors ("read 1949, below the floor of 35148") where the old ceiling would have passed it as "below the record".
+Not done: (c), a reason being one message with its names taken out, so a body can still trade places with another
+under one reason at one count - the door's read floor bounds it, the reason does not. **`make test`**: not added. The
+wave gate runs it whole (`tools/wave-gate`, leg `subst`); its run and typed steps would repeat make test's run.sh and
+typed.sh four more times; and its four `.templates` records fail on Windows (the host difference owed since m8z2).
+When that is mended, `tests/subst.sh bodies self` belongs in make test, and the rest stays in the wave gate.
+
+**The Linux-only 25** (`'' was not declared - a prototype must come first`, class-members, `OptCore.h:301`): not the
+host but the ABI. One Linux build reads the probe at `-arch x86_64-windows` and refuses it at x86_64-linux,
+arm64-darwin and tms6747. The shape is smaller than m8z5 had it: a `[&]` or `[=]` closure calling any member of a
+captured `std::vector<int>` (`post[x]`, `post.size()`, `post.at(x)`), called, in a member of a class template - no
+nested class needed; a closure over an `int[3]`, or over a class template of the file's own, is read. Not rooted
+further. **H2 reads it**: the closure is the read's own class now, dependent, so `in(0, 1)` is left to the
+instantiation and nothing is resolved over it at the read - every probe read on every target, and the self-host's 25 with them.
+
+**Unread by door and reason** (Linux, the ceilings): before (`d6f4b538`) cases 5 in 5 - member-templates 3 (a member
+function template not worked out from the call; a call with a dependent argument; a cast between unrelated classes),
+functions 1 (a throw of a dependent value), 1 (a class specialization over the template's own local class); self 52
+in 4 - class-members 25 (the 25), member-templates 25 (the local class), functions 1 ("needs a pointer to a struct or
+union"), 1 ("was not declared"). After: cases 6 in 5 - member-templates the same 3, functions 1 (the throw), **2 "an
+array whose bound depends on a template parameter"** (`read-dependent-bound`, and `nontype-pack-expansion`, which the
+read had folded with 0); the local class's 1 is read. Self 27 in 3 - **member-templates 25 "has no begin and end ...
+so a range-based for"** (the 25 the local class held: a range-based `for` over the now dependent local class, the
+review's M4 refusal), functions 1 and 1 as before; the class-members 25 are read. Windows, the same ceilings measured there: cases 6 in 5, self 27 in 3, every door's sums and the 51 and 3 shapes as on Linux - **the host difference of the self-host is gone**.
+
+**Gates** (REF `d6f4b538` from `git archive`, Linux `~/m8z6r`, Windows `work\m8z6r`; NEW `~/m8z6n`, `work\m8z6n`; each
+built alone, paths of one length; g++ `-Werror` and cl /W4 /WX clean): **Linux** - run 1238/0, typed 881/0, syntax
+4/0, subst bodies self 0 failed (879 of 879 case units counted, 5136 replayed over 881 units, 54 differ in shape; self
+103 of 103), the four `.templates` records re-made the same, open 1 (as before), static rc 0 each (exclusions 0
+uncited 0 stale after 14 re-pointed, comments 0 over, memory, ast-residue +0, ide); `identical.sh` REF against NEW on tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2 8,890 compared, **16 differ, all the two new cases** (`read-dependent-local` 10, REF refusing it with "'E' is defined twice"; `read-dependent-member` 6, the Itanium name on three targets) and 0 among the rest; the cases' `-S` with `-check=templates` against without 0 differ (905 of 1244 reached the count); **the self-host's `-S` REF against NEW 102 of 103 the same, Driver's `__TIME__` the one**; self-compile stage 0 103 of 103 (127 s). **Windows** - the five spellings at -O0 and -O2 against REF, text and diagnostics, 12,424 the same, **16 differ, the same 16**; **the self-host's `-S` REF against NEW 102 of 103, Driver's `__TIME__` the one**; names 888 passed, 1 failed - `read-dependent-local`, three name families none of them H2's (a local enumeration written as at namespace scope, the closure's `$_0`, `T_` where clang substitutes `S1_`), recorded in its `.nonames`, after which the three cases pass; overload 46/0; typed 862/0 (20 not this host); static rc 0 each; subst bodies self: 850 of 850 case units counted, the ceilings held, the four `.templates` records failing as at m8z2-m8z5 (host).
+
+**What M8.1 still owes**: the review's H1 (`staticMemberRef`'s `usedStaticMembers_` without `!patternUses_`, a
+case printing `main`); M3 (c); M1, M2, M4-M7 (M4's range-based `for` over a dependent range now holds 25 of the 27);
+`boxkit/m8z4-singles.patch`; the four `.templates` records on Windows; why the Itanium targets refused the 25 and the
+Microsoft one did not (H2 hides it now); `tests/open/template-dependent-static-call`.
