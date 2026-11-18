@@ -1893,3 +1893,84 @@ commit that does it deletes M8.1-early's stand-in (`substituteFunction`, `substi
 `TypedTree::retype`, the census's sibling roots, `subst.sh`'s on-against-off steps) as the row says. Its gate is
 row M8.2's: identical.sh replay against subst on the covered shapes, names.sh, overload.sh, the self-host under the
 flag.
+
+## M8.1: the design's lanes 2 and 3 met, the held class over a read's own local class, one name for a dependent throw, the ceiling host-free (lane m8z2, 2026-11-18)
+
+Branch `m8-e` from `a51eab69`, with lane m8z's uncommitted work in the worktree: `e179edc2` (the local class named
+apart), `3bcbfa65` (one throw name), `3cda1af1` (the open case), `43f308e5` (the new case), `8cf51148` (the record).
+
+**Lane m8z (Fable, stopped at the user's word, 2026-11-18)**: its chains stopped by their own PIDs on both boxes, its
+trees removed, its REF of `a51eab69` (Linux `~/m8zr`, Windows `work\m8zr`, built fresh and clean) reused here. Of its
+work, **continued**: the one throw name and `tests/open/template-dependent-static-call` (redone, below). **Set aside as
+`boxkit/m8z-lane3.patch`**, not landed: lane 3 as m8z wrote it - the wanted class made where the read's declaration
+stands and the read made again over it (`Templates::makeWanted`) - took the cases' unread 14 to 9 (the held class's 5
+to 0), the flag against no flag 0 differ on both boxes, but the self-host's 65 became **152 behind them** (50 constexpr
+member bodies, 75 range-for, 25 a local class defined twice by the read made again) and on Windows 25 of 103 sources
+died (rc 127). **Lane 2's measure** is m8z's (`boxkit/m8z-tags.sh` over that patch, Linux): the cases make 2 held
+classes in 2 units - `lock_guard<std::mutex>` (asked later) and `Sum<{0}>` (never); the self-host 177 in 29 units, 8
+tags, 125 asked later: `vector<opt::Block>`, `<opt::Edge>`, `<opt::Effects>`, `<const opt::Region *>` (25 made, 22
+asked later each), `map<string, int>` (24, 22), `vector<bool>` (24, 12), `lock_guard<std::mutex>` (4, 4) and
+**`vector<$read$build::Throw>` (25 made, 0 asked later)**.
+
+**Where the design is wrong.** Lane 2 expected every held tag to be one a replay reaches, and (d) makes each at the
+definition. `vector<$read$build::Throw>` is neither: `OptCore.h`'s member template `build<EffectsFn>` declares a local
+`struct Throw` and a `std::vector<Throw>`, and a class over a template's own local class is **dependent** - the local
+class belongs to the templated function and is made again with each specialization, so clang instantiates
+`vector<Throw>` per `build<F>`, never at the definition. No program asks for a `$read$` tag; making it is what defined
+the local class twice in m8z's patch (its 25). **Lane 3 must read a held class whose arguments name a read's local class
+(or closure) as dependent**, and make only the rest at the definition. `e179edc2` names it apart so the count can see
+it: "the members of a class specialization over the template's own local class" (`overReadLocal`, beside
+`Parser::refuseHeldClass`). In the self-host it moves nothing - in `build`'s body the read stops first at an earlier
+held class - so `tests/cases/template-local-class-held` (`Box<L> b;` over a local `L` in a function template; clang
+`4 10`, Windows box) holds it: unread 1 under the new name with the flag, the program's own `Box<f<int>::L>` built.
+
+**One name for a dependent throw** (`3bcbfa65`, item 2): a read's `throw` of a value whose type waits for the
+arguments is refused "a throw of a value whose type waits for the arguments" in `Parser::throwStatement` before the
+type_info and the size are asked - where the Itanium path said type_info and the Microsoft path its own, so the cases'
+ceiling read differently by host. m8z wrote it as a second function with the refusal caught; that raised
+`tools/ast-residue` (StmtPtr 639 to 641, ExprPtr 2016 to 2018 - design 12.2 lets it only fall), so it is two lines of
+`throwStatement` here, which also keeps a read from asking `size()` of a dependent type (lane m8b's exit). The count
+did not move (the cases' one throw, under the new name).
+
+**`V<T::num < 3>::value()` in a template body** (`3cda1af1`, item 3): refused by the SSA lowering ("the name 'V', of
+another kind", `src/ir/Lowering.cpp` - not this lane's file), so it is `tests/open/template-dependent-static-call`:
+clang (`-x c++ -std=c++11 -pedantic-errors`, Windows box) prints `1 0`; cxx3 refuses on both boxes (`open.sh`: 1 still
+differs).
+
+**Not read, by reason**: before (`a51eab69`) the cases 14 in 11 and the self-host 67 in 5; after (`8cf51148`, recorded
+on Linux `~/m8z2f` with `SUBST_RECORD=1`, the same bytes as written) **the cases 15 in 12** - the 14 as before, the
+type_info line now the one throw name, and the new case's one under the local-class name - and **the self-host 67 in
+5**, unchanged. The ceilings do not come down: lane 3 did not land.
+
+**Gates** (REF `a51eab69`, m8z's, built fresh and clean on both boxes; NEW `8cf51148` built fresh and alone - Linux
+`~/m8z2f` g++ `-Werror` clean, Windows `work\m8z2f` cl /W4 /WX clean - and `29fba9be`'s comment move rebuilt on
+Linux). **Linux**: `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at
+-O0 and -O2 **8,860 compared, 0 differ** (on `8cf51148` and again on `29fba9be`); the self-host's 103 sources' `-S`
+REF against NEW **102 the same and `Driver`**, its `__TIME__` bytes (`13:39:06` against `13:39:13`), so 0 of 103;
+`run.sh` **1235 passed, 0 failed** (both trees); `typed.sh` **878 passed, 0 failed** (untyped other=38 name=8, as
+REF); self-compile stage 0 **103 of 103** (75 s); `syntax.sh` **4 passed, 0 failed**; `subst.sh bodies self` **0
+failed** (5,126 replayed over 878 units; the cases 15 under 15 in 12, the self-host 103 of 103 and 67 under 67 in 5);
+the cases' `-S` with `-check=templates` against without **1,241 the same, 0 differ**; `open.sh` 1 still differs;
+on `29fba9be` exclusions, comment cap (0 over), memory gate, ast-residue (ExprPtr 2016, StmtPtr 639, +0) and
+`ide/generate.py` rc 0 each by its own status (`8cf51148`'s comment cap was 1 over - three lines over the one line
+the throw's check left under them - which `29fba9be` mends). **Windows** (`8cf51148`'s binary; `29fba9be`'s file in
+the tree for the static step): the five spellings at -O0 and -O2 against REF, text and diagnostics, **12,398 the same
+and 12 that differ** - `posix-headers` and `windows-h-layout` refused on the targets not theirs, whose `#error`
+caret stands one column further right under a tree path one letter longer (`m8z2f` against `m8zr`, shown by
+`boxkit/m8z2-d1.sh`), so none of the compiler's; `names.sh` **886 passed, 0 failed**; `overload.sh` **46 agreed, 0
+differed**; the flag against no flag **1,241 the same, 0 differ**; `typed.sh` **859 passed, 0 failed** (20 not for
+this host); static rc 0 each (ast-residue counts nothing there - Linux's is the gate). **The ceiling is host-free**:
+`subst.sh bodies self` with `SUBST_RECORD=1` on Windows writes both ceilings byte for byte as Linux's, and the cases'
+passes there; at REF it fails on Windows ("the size of a dependent type", the Microsoft path's throw). Four
+`.templates` records (`constructor-template`, `template-class`, `template-out-of-line`, `template-variadic`) and
+`syntax.sh`'s four records fail on Windows at REF and NEW alike - a host difference of those records, owed. `run.sh` on Windows (`CXX1=./cxx3-msvc.exe`) does not run there: 359 passed, 876 failed - the 355
+refusals as recorded and 2 programs printing, every other program failing to build or run, which is the suite's
+link step on that host (REF was not measured; winpass is Windows' run gate, the coordinator's).
+
+src/ lines: 95,677 before, 95,690 after.
+
+**What M8.1 still owes.** (1) Lane 3 (the class made at the definition), with a held class over a read's local class
+or closure read as dependent, and the 152 m8z's patch uncovered (constexpr member bodies, range-for) met, before the
+5 and 65 go to 0; (2) the singles (9 in the cases, 2 in the self-host); (3) Fable's reading of the dependent-name
+marking; (4) `template` as payload and the member name's mark; (5) the lowering's refusal of a class template-id's
+static member call over a dependent argument (`tests/open/template-dependent-static-call`), M3's file.
