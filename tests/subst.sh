@@ -7,16 +7,37 @@
 #      (masm, or gnu for a .nomasm case) and arm64-darwin at -O0 and -O2 - the C6000 is refused whole, so not compared.
 #   5. bodies (M8.1, kept past M8.2): -check=templates over every case - each template body a replay reads, held against
 #      the first read of the same body, summed; a case with a .templates beside it prints that record.
+#   6. self (M8.1): -check=templates over the compiler's own sources, as tools/self-host lists them.
+# **The ceiling** (M8.1 commit 5's first condition): a body a read declines is a refusal by name, and bodies and self
+# hold each door's count by reason under tests/subst-cases.ceiling and tests/subst-self.ceiling - a reason not recorded
+# or a count above its record fails; a count below asks for the record again (SUBST_RECORD=1 writes both).
 # It fails on any failed case, a probe that does not count as recorded, or one file that differs.
-#   tests/subst.sh [run|typed|census|same|bodies]...   (all five by default)
+#   tests/subst.sh [run|typed|census|same|bodies|self]...   (all six by default)
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 OUT=tests/out-subst
 export CXX1 OUT
-steps="${*:-run typed census same bodies}"
+steps="${*:-run typed census same bodies self}"
 bad=0
 mkdir -p "$OUT"
+# ceiling <corpus> <suffix>: the unread bodies of $OUT/*.<suffix>, "count door | reason" a line, against the record.
+ceiling() {
+    rec=tests/subst-$1.ceiling; now=$OUT/$1.unread
+    cat "$OUT"/*."$2" | tr -d '\r' | sed -n 's/^-check=templates unread\([^(]*\)(\([0-9]*\)): /\2 \1| /p' |
+        awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "%d%s\n", s[k], k}' | LC_ALL=C sort -t' ' -k2 > "$now"
+    [ -z "$SUBST_RECORD" ] || cp "$now" "$rec"
+    [ -f "$rec" ] || { echo "FAIL $1: no $rec (SUBST_RECORD=1 writes it)"; bad=$((bad + 1)); return; }
+    awk -v corpus="$1" -v rec="$rec" 'FILENAME == rec { n = $1; $1 = ""; c[$0] = n; ct += n; nr++; next }
+        { n = $1; $1 = ""; seen[$0] = 1; t += n
+          if (!($0 in c)) { printf "FAIL %s: a reason the ceiling does not record (%d):%s\n", corpus, n, $0; f++ }
+          else if (n > c[$0]) { printf "FAIL %s: %d above the ceiling of %d:%s\n", corpus, n, c[$0], $0; f++ }
+          else if (n < c[$0]) low++ }
+        END { for (k in c) if (!(k in seen)) low++
+              printf "subst.sh ceiling %s: %d unread under a ceiling of %d in %d reasons\n", corpus, t, ct, nr
+              if (low) printf "    %d reasons are below the record: record again (SUBST_RECORD=1 sh tests/subst.sh bodies self)\n", low
+              exit f != 0 }' "$rec" "$now" || bad=$((bad + 1))
+}
 for step in $steps; do case "$step" in
 run|typed)
     for level in -O0 -O2; do
@@ -72,8 +93,17 @@ bodies)
     echo "    $(cat "$OUT"/*.bodies | grep -c '^-check=templates shape: ') bodies whose replays differ in shape, in $(grep -l '^-check=templates shape: ' "$OUT"/*.bodies | wc -l | tr -d ' ') units"
     for rec in tests/cases/*.templates; do base=$(basename "$rec" .templates)
         cmp -s "$OUT/$base.bodies" "$rec" || { echo "FAIL $base: -check=templates is not the record"; diff "$OUT/$base.bodies" "$rec" | head -10; bad=$((bad + 1)); }
-    done ;;
-*) echo "subst.sh: no step '$step' (run, typed, census, same, bodies)"; exit 2 ;;
+    done
+    ceiling cases bodies ;;
+self)
+    W=$(pwd); export W; rm -f "$OUT"/*.selfbodies
+    srcs=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
+    echo "$srcs" | xargs -P "$JOBS" -n 1 sh -c '$CXX1 -nologo -check=templates -S -I src -DCXX1_INCLUDE_DIR="\"$W/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$W/include\"" "$0" -o "$OUT/self.$$.s" > "$OUT/$(basename "$0" .cpp).selfbodies" 2> /dev/null; rm -f "$OUT/self.$$.s"'
+    n=$(echo "$srcs" | wc -l | tr -d ' '); got=$(cat "$OUT"/*.selfbodies | grep -c '^-check=templates: bodies=')
+    echo "subst.sh self: $got of $n sources reached the count"
+    [ "$got" -eq "$n" ] || bad=$((bad + 1))
+    ceiling self selfbodies ;;
+*) echo "subst.sh: no step '$step' (run, typed, census, same, bodies, self)"; exit 2 ;;
 esac; done
 echo "subst.sh: $bad failed"
 [ "$bad" -eq 0 ]
