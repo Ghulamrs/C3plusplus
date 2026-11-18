@@ -955,6 +955,8 @@ ExprPtr Parser::conditionalNode() {
 
     const Type *ta = a->type();
     const Type *tb = b->type();
+    // A read's `?:` with a dependent arm has no type until substitution: held, as a dependent operator is.
+    if (dependentOperand(ta) || dependentOperand(tb)) return zeroOf(dependentResult());
     const Type *result = nullptr;
 
     // **[expr.cond]/2: a throw-expression arm takes the other arm's type** - `b ? 7 : throw 1` is an int (1.27,

@@ -261,6 +261,7 @@ public:
         bool met() const;
     };
     void setDependentLayout() { dependentLayout_ = true; }
+    bool dependentLayout() const { return dependentLayout_; }
     bool isSigned(const Target &t) const;
 
     int rank() const;

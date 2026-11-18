@@ -837,7 +837,7 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
     refuseWeakAlignas(alignAtLeast, type, pos);
     // A frame slot is only as aligned as the stack it hangs from; past that the
     // frame is realigned by the hosts' prologues, and the C6000's is not yet.
-    const int typeAlign = type->isReference() || (patternBody_ && dependentType(type)) ? 0 : type->align(target_);
+    const int typeAlign = type->isReference() || (patternBody_ && (dependentType(type) || type->kind() == Kind::PackExpansion)) ? 0 : type->align(target_);
     if ((alignAtLeast > target_.stackAlign() || typeAlign > target_.stackAlign()) && !target_.realignsFrame())
         src_.fail(pos, "'alignas(" + std::to_string(alignAtLeast > typeAlign ? alignAtLeast : typeAlign) + ")' on a "
                        "local is not supported yet on " + target_.name() + ": the stack is kept " +

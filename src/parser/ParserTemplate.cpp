@@ -2132,6 +2132,8 @@ bool Parser::dependentType(const Type *t) const {
         if (t->unqualified() != t) { t = t->unqualified(); continue; }
         if (t->isStructOrUnion()) {
             int tt;
+            // A read's class laid out over a dependent member (a nested `Node` holding a `T`) is as dependent as its member.
+            if (t->dependentLayout()) return true;
             return t->isSpecialization() &&
                    (ttRefName(t->templateName(), &tt) || dependentArgs(t->templateArgs()));
         }

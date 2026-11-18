@@ -1548,7 +1548,9 @@ void Parser::topLevel(Program &program) {
     // whatever its size.
     const bool returnsAsMember = memberOf != nullptr && !inStaticMember_;
     int sretSlot = 0;
-    if (d.type->isStructOrUnion() && abi_.returnsIndirectly(*d.type, target_, returnsAsMember)) {
+    // A read's member returning its dependent class by value: how it comes back is the instance's to say.
+    if (d.type->isStructOrUnion() && !(patternBody_ && dependentType(d.type)) &&
+        abi_.returnsIndirectly(*d.type, target_, returnsAsMember)) {
         frameSize_ += 8;
         frameSize_ = alignTo(frameSize_, 8);
         sretSlot = frameSize_;

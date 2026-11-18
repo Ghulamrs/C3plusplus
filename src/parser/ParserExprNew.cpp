@@ -1820,7 +1820,8 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
     else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
     const Type *sizeT = types_.get(target_.sizeType());
-    ExprPtr bytes(new Num(static_cast<long long>(made->size(target_))));
+    // A read's `new T`: the size is the instance's.
+    ExprPtr bytes(new Num(patternBody_ && dependentType(made) ? 0LL : static_cast<long long>(made->size(target_))));
     bytes->setType(sizeT);
     // **An array of a class**: the count is wanted by the cookie, the
     // constructor loop and the allocator, so it goes into a slot. [expr.new]/12:
