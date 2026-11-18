@@ -1657,6 +1657,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         StmtPtr stmt;
     };
     std::vector<Handler> handlers;
+    std::vector<StmtPtr> msHeld;   // a Microsoft handler's statements, kept with its try: resolveGotos fills a goto's cleanups late
     MsExit msExit;
     std::vector<int> indices;
     bool sawCatchAll = false;
@@ -1733,7 +1734,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // catch when the funclet returns - so the three Itanium calls are not here.
         if (microsoft) {
             MsHandler mh;
-            StmtPtr body;
             mh.pos = cpos;
             if (caught != nullptr) {
                 MicrosoftThrow names;
@@ -1770,21 +1770,21 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             handlerFrom_.push_back(peek().pos);
             const bool wasCtorHandler = inCtorTryHandler_;
             inCtorTryHandler_ = rethrows;
-            body = block();
+            msHeld.push_back(block());
             inCtorTryHandler_ = wasCtorHandler;
             // [except.handle]/15: a constructor's or destructor's handler that falls off its end rethrows.
             if (rethrows) {
                 mayThrow_++;
                 std::vector<StmtPtr> then;
-                then.push_back(std::move(body));
+                then.push_back(std::move(msHeld.back()));
                 then.push_back(StmtPtr(make_owned<ExprStmt>(rethrowCall())));
-                body = make_owned<Block>(std::move(then));
+                msHeld.back() = make_owned<Block>(std::move(then));
             }
             // Falling off the end destroys the caught object; a jump out did for itself; an exception out of
             // the handler finds it under a cleanup state of the handler's, cl's dtor funclet (M1).
             if (alive_.size() > aliveBeforeCaught) {
                 std::vector<StmtPtr> one;
-                one.push_back(std::move(body));
+                one.push_back(std::move(msHeld.back()));
                 std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(0), alive_.size()));
                 std::vector<StmtPtr> both = wrapMsCleanups(std::move(one), built, aliveBeforeCaught, cpos,
                                                            std::vector<Temporary>());
@@ -1792,7 +1792,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                 alive_.resize(aliveBeforeCaught);
                 Block *b = new Block(std::move(both));
                 b->setScope(-1);
-                body.reset(b);
+                msHeld.back().reset(b);
             }
             msExit_ = wasExit;
             handlerFrom_.pop_back();
@@ -2039,6 +2039,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     if (microsoft) {
         std::vector<StmtPtr> guardedMs;
         guardedMs.push_back(std::move(body));
+        for (std::size_t k = 0; k < msHeld.size(); k++) guardedMs.push_back(std::move(msHeld[k]));
         StmtPtr t = tryRegion(std::move(guardedMs), StmtPtr());
         // The runtime's scratch word, which the personality routine finds through the
         // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
