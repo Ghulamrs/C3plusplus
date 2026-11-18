@@ -1804,3 +1804,92 @@ src/ lines: 95,608 before, 95,630 after.
 design's lane 2 (which tags, and the class made at the read under m8i's seating, measured) and lane 3 (the class
 made at the definition, M8.5's first step) take the 5 and 65; the one name for the incomplete class's refusals; a
 case for `T::num < x` in a signature (owed since m8v; `boxkit/m8v-lt.cpp`).
+
+## M8.1: the items commit 5 left - one name for the held class, a read body in the dump, the dependent mark, `T::num < x` (lane m8y, 2026-11-18)
+
+Branch `m8-e` from `904fe621`: `002f278c` (one name), `a302b3a6` (the dump and the marks), `40f8f34a` (the case), and
+the records re-made on the final tree after them.
+
+**First, the gates m8w did not re-run on `4057b4de`** (its tree is `904fe621`'s: the plan alone differs). REF
+`904fe621` built fresh and alone (Linux `~/m8yr`, g++ `-Werror` clean; Windows `work\m8yr`, cl /W4 /WX clean), and
+`a18490df` again on Windows (`work\m8ya`) as the five spellings' base. Linux: `typed.sh` **876 passed, 0 failed**;
+`run.sh` **1233 passed, 0 failed**; self-compile stage 0 **103 of 103** (132 s). Windows: `names.sh` **884 passed, 0
+failed**; `overload.sh` **46 agreed with clang, 0 differed**; the five spellings at -O0 and -O2, `904fe621` against
+`a18490df`: **12,390 the same, 0 differ** (6,200 and 6,190), text and diagnostics.
+
+**One name for the held class** (`002f278c`). `Templates::instantiateClass` notes each class a read holds incomplete
+in `Parser::readHeld_`; `Parser::refuseHeldClass` refuses "the members of a class specialization the program has not
+asked for yet" where a read needs such a class's members - a member or a local of it, a conversion or a reference
+binding to or from it, a static member's name in it - in place of the general "has an incomplete type", "is A and
+this is B" and "has no static member". It asks only inside a read, so no program's output moves. **Not read, by
+reason**: the cases' 14 in 11 reasons to 14 in 11 - **5 under the one name** (4 class members, 1 a
+function) and the 9 singles as before; the self-host's 67 in 5 to 67 in 5 - **65 under the one name** (25
+the class, 24 a function, 16 class members) and the 2 singles. The ceilings re-recorded on the final tree (Linux
+`~/m8yf`): `tests/subst-cases.ceiling` 14 in 11 lines and `tests/subst-self.ceiling` 67 in 5 - a line is a door and a
+reason, so the one name stands on two lines in the cases (class members, functions) and three in the self-host (the
+class, class members, functions). No count rose; the five general messages became one, as the design asked.
+
+**A read body in `-dump=syntax`, and the dependent mark** (`a302b3a6`, row 5's two halves). Each body a read took is
+shown once, after the live tree, as `file:line:col: (read (function ...))` (`Tree::noteRead` from `tallyRead`, the
+node kept dead as before - no reader of the tree sees it); a body declined keeps its `(unread "...")` line. A name
+node made in a read whose expression's type waits for the arguments is marked `dependent`, and a written `typename`
+is kept on it as `typename` (`Node::marks`, `Parser::markReadName`, at the primary name and at a call's callee).
+`tests/syntax/template-read.cpp` (recorded) shows both: `(read (function "twice" (var "template parameter x")
+(block ... (call (name "g" dependent) (name "x" dependent)) (call (name "T::type" typename dependent) (name "k"))
+...)))`. The three earlier syntax records do not change (a mark is set only in a read, whose nodes the live tree never
+holds). **Not done of row 5**: `template` after `.`, `->` or `::` is not kept (the name's spelling stops at the
+keyword in the primary's walk; changing that walk changes the live tree's names, so it waits for M8.2's reader); a
+`typename` in a declaration's type is a `var` node's spelled type, not a name node; a member name over a dependent
+object (`x.m`) is held by `dependentPostfix` and makes no name node to mark; a pack's name (`rest` in
+`template-variadic`'s `total(rest...)`, whose `.templates` shape line now shows the marks) is left unmarked - its
+type is the expansion's, which `dependentOperand` does not count.
+
+**`T::num < x` in a signature** (`40f8f34a`): `tests/cases/template-dependent-less.cpp` - a return type's
+`enable_if<T::num < 3, int>` and its negation chosen between, and a parameter's `V<T::num < 3> *` - prints `1 2 1
+0`, clang's answer (`-x c++ -std=c++11 -pedantic-errors`, the Windows box), by cxx3 on Linux and on Windows. **Found on the
+way**: the body `return V<T::num < 3>::value();` (a static member function of a class template-id whose argument is
+dependent, called in a template's body) is refused "'g<A>' ... is outside the SSA lowering: the name 'V', of another
+kind" - the case was written round it; the refusal is the SSA lowering's, by name, and is owed a case of its own.
+
+**Gates on the round** (`40f8f34a`, whose records `9a891287` re-made; REF `904fe621` as above; each NEW tree built
+fresh and alone after REF, g++ `-Werror` and cl /W4 /WX clean). The two iteration trees came first on Linux: item 2
+alone (`~/m8yn`: unread 14 and 67, the reasons renamed, no `.templates` record moved) and items 2 and 3 (`~/m8yd`:
+the three syntax records unchanged, `template-read` as shown). **The final** (Linux `~/m8yf`, Windows `work\m8yf`):
+`tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows at -O0 and -O2
+**8,850 compared, 0 differ** (8,840 and the new case's 10); Windows' five spellings at -O0 and -O2 against REF, text
+and diagnostics, **12,400 the same, 0 differ** (6,200 and 6,200); the self-host's 103 sources' `-S` REF against NEW
+**102 the same and `Driver`**, whose two lines are its `__TIME__` bytes (`12:39:49` against `12:40:03`), so 0 of 103;
+`run.sh` **1234 passed, 0 failed**; the cases' `-S` with `-check=templates` against without **1,240 the same, 0
+differ** on both boxes; `names.sh` **885 passed, 0 failed** and `overload.sh` **46 agreed, 0 differed** (Windows);
+`subst.sh bodies self` on the record step **1 failed** - `template-variadic.templates`, whose shape line spells the
+read with its marks now - re-recorded in `9a891287`, the ceilings 14 and 67 under it; Windows' static gates with the
+re-pointed `EXCLUSIONS.md` copied in, each rc 0 (exclusions, comment cap 0 over, memory gate, residue, generate).
+Linux, on `~/m8yf` with the records in place: exclusions, comment cap (0 over), memory gate, ast-residue (ExprPtr
+2016, +0) and `ide/generate.py` rc 0 each by its own status; `syntax.sh` **4 passed, 0 failed**; `subst.sh bodies
+self` **0 failed** (5,124 replayed over 877 units; the cases 14 under 14 in 11, the self-host 103 of 103 and 67 under
+67 in 5); self-compile stage 0 **103 of 103** (156 s); `typed.sh` **877 passed, 0 failed** (untyped other=38 name=8, as REF). **Two defects of the lane's own**: a Windows
+chain written against the wrong tree name (`m8y-wplan2.sh`; its parent stopped by PID before any step ran, its
+build left to finish, the chain written again as `m8y-wplan3.sh`), and `m8y-linux.sh` sent to the Linux box a second
+time while chains read it - the same bytes (md5 `e71fca6e` both sides), so no chain read another script, but the
+rule is broken in form.
+
+src/ lines: 95,630 before, 95,677 after.
+
+**What M8.1 still owes before it closes.** (1) **Fable's reading of the dependent-name marking** (row M8.1's stop,
+before M8.2 builds on it), on `a302b3a6`'s `template-read` record. (2) **Unread 14 and 67 under the ceiling** - the
+design's lane 2 (which tags the held classes are, and the unit's `-S` with the class made at the read under m8i's
+seating, measured) and lane 3 (the class made at the definition, M8.5's first step, Fable) take the 5 and 65 under
+the one name; the singles (9 and 2) each a step of its own. Row M8.1 can close with them outstanding, as commit 5
+did, since a read declines and leaves nothing - but M8.2 then replays those bodies, counted. (3) The `template`
+disambiguator as payload, and the member name's mark (above). (4) `subst.sh` on a Windows host names the Linux host's
+`type_info` reason (m8w's note). (5) The lowering refusal above as a case.
+
+**What M8.2 starts with** (the design's next row: substitution for function templates). Its input is what this round
+makes visible: the function door's read body (the node `tallyRead` keeps in `declRead_` and the dump now shows once),
+with its dependent names marked. Its first step: keep that body alive as the pattern (`pattern` beside `dead`, as the
+signature's), and behind `-templates=subst` build a free function template's typed body from it under a `Binding`
+with the Typer, the shapes it does not cover falling back to replay by name and counted by `-check=templates`; the
+commit that does it deletes M8.1-early's stand-in (`substituteFunction`, `substituted`, `Typer::typeBody`,
+`TypedTree::retype`, the census's sibling roots, `subst.sh`'s on-against-off steps) as the row says. Its gate is
+row M8.2's: identical.sh replay against subst on the covered shapes, names.sh, overload.sh, the self-host under the
+flag.
