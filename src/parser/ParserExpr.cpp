@@ -21,7 +21,7 @@ const Type *Parser::ptrdiffType() {
 
 ExprPtr Parser::pointerAdd(ExprPtr p, ExprPtr n) {
     const Type *pt = p->type();
-    long long stride = pt->pointee()->size(target_);
+    long long stride = slotless(pt->pointee()) ? 1 : pt->pointee()->size(target_);   // a read's dependent stride is substitution's
     const Type *pd = ptrdiffType();
 
     ExprPtr size(new Num(stride));

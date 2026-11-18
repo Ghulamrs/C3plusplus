@@ -417,6 +417,7 @@ ExprPtr Parser::lambdaExpression() {
     // alignment allows, and the whole thing aligned to the widest of them.
     std::vector<Member> members;
     int at = 0, widest = 1;
+    const Type::DependentLayout laid(patternBody_);   // a read's capture of dependent type: noted, as a class door's member
     for (std::size_t i = 0; i < capTypes.size(); i++) {
         // The same slot rule a reference data member follows: what it occupies
         // is a pointer, where `sizeof` the type is the referent's.
@@ -433,6 +434,7 @@ ExprPtr Parser::lambdaExpression() {
     }
     const int size = members.empty() ? 1 : alignTo(at, widest);
     closure->complete(members, size, widest);
+    if (laid.met()) closure->setDependentLayout(false);
     // **A closure is a class and gets the members a class gets.**
     classes_.declareImplicitSpecials(tag, closure, pos);
     // And is passed as a class is, settled as a class settles it: by address where copying it is a call (M1 -
