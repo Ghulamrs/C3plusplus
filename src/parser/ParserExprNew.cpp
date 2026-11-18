@@ -1509,8 +1509,8 @@ StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
 // __cxa_allocate_exception, the store, __cxa_throw with the type that identifies
 // it. That type_info pointer is the work - fundamental types, the rest refused.
 StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
-    // A read's throw of a dependent value: its type_info and its size are the arguments' to give - one name on every target.
-    if (patternBody_ && dependentOperand(value->type())) throw SubstitutionFailure("a throw of a value whose type waits for the arguments");
+    if (patternBody_ && dependentOperand(value->type()))   // a read's: the type_info and the size are the arguments' to give
+        throw SubstitutionFailure("a throw of a value whose type waits for the arguments");
     const Type *thrown = value->type()->unqualified();
     if (target_.microsoftNames()) return microsoftThrow(std::move(value), pos);
 
