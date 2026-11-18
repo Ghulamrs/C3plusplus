@@ -4,7 +4,6 @@
 
 #include "Lowering.h"
 #include "../Abi.h"
-#include "../Ast.h"
 #include "../sema/ConstArith.h"
 
 #include <cctype>
@@ -13,8 +12,8 @@
 namespace ir {
 
 Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target,
-                   Program &program, Module &into)
-    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), handlerDepth_(0), skippable_(0), hasGoto_(false) {}
+                   Module &into)
+    : tree_(tree), syntax_(syntax), types_(types), target_(target), module_(into), fnIndex_(0), handlerDepth_(0), skippable_(0), hasGoto_(false) {}
 
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 void Lowering::broken(const std::string &why) { throw Outside("internal error: " + why); }
@@ -4212,11 +4211,11 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
 void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
     const std::string &label = tree_.stringLabel(lit);
     if (!tree_.node(lit).literal || label.empty()) broken("an array initialised from a string whose label was not recorded");
-    std::size_t found = program_.module.data.strings.size();
-    for (std::size_t k = 0; k < program_.module.data.strings.size(); k++)
-        if (program_.module.data.strings[k].label == label) found = k;
-    if (found == program_.module.data.strings.size()) outside("an array initialised from a string the program does not hold");
-    const StringLit &s = program_.module.data.strings[found];
+    std::size_t found = module_.data.strings.size();
+    for (std::size_t k = 0; k < module_.data.strings.size(); k++)
+        if (module_.data.strings[k].label == label) found = k;
+    if (found == module_.data.strings.size()) outside("an array initialised from a string the program does not hold");
+    const StringLit &s = module_.data.strings[found];
     const long long size = t.size(target_), copied = static_cast<long long>(s.bytes.size());
     if (s.width != t.pointee()->size(target_) || copied > size) outside("an array initialised from a string of another width");
     std::vector<ValueId> ops;
@@ -4949,7 +4948,7 @@ bool Lowering::anonymousUnionMember(sema::TypedId id) const {
         !r.type.valid() || T(r.type).isReference())
         return false;
     if (r.symbol.empty()) return r.owner.valid() && T(r.owner).kind() == Kind::Union && T(r.owner).findMember(text(id)) != nullptr;
-    for (const ::Global &g : program_.module.data.globals)
+    for (const ::Global &g : module_.data.globals)
         if (g.symbol == r.symbol) return !g.isThreadLocal && g.type->kind() == Kind::Union && g.type->findMember(text(id)) != nullptr;
     return false;
 }
@@ -5693,7 +5692,7 @@ bool Lowering::blockExtern(const sema::Resolution &r) { return r.what == sema::R
 
 // Whether the program's global of this symbol is a thread_local: a block-scope one's record is made before its mark.
 bool Lowering::threadLocalGlobal(const std::string &symbol) const {
-    for (const ::Global &g : program_.module.data.globals)
+    for (const ::Global &g : module_.data.globals)
         if (g.symbol == symbol) return g.isThreadLocal;
     return false;
 }

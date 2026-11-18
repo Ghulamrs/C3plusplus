@@ -14,7 +14,6 @@
 #include <string>
 #include <vector>
 
-struct Program;
 
 namespace ir {
 
@@ -42,12 +41,10 @@ struct FunctionFacts {
 
 class Lowering {
 public:
-    Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target, Program &program,
-             Module &into);
+    Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target, Module &into);
     const sema::TypedTree &tree() const { return tree_; }
     TypeTable &types() const { return types_; }
     const Target &target() const { return target_; }
-    Program &program() const { return program_; }
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
     std::uint32_t outsideAt() const { return at_; }   // the source offset of the last statement begun
@@ -482,7 +479,6 @@ private:
     const syntax::Tree &syntax_;
     TypeTable &types_;
     const Target &target_;
-    Program &program_;
 
     Module &module_;
     // Per function: the one being lowered, by index.

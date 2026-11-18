@@ -1360,7 +1360,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     sema::Typer typer(parser);
     typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
-    ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
+    ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, into);
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
     lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
