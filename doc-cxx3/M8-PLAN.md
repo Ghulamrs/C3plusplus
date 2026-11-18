@@ -2048,3 +2048,71 @@ made class's element read as the replay reads it - before the cases' 5 and the s
 (2) the singles left: three deductions and calls over a dependent argument (with item 3), the dependent throw, and
 the self-host's two; (3) Fable's reading of the dependent-name marking; (4) `template` as payload and the member
 name's mark; (5) `tests/open/template-dependent-static-call`, M3's file.
+
+## M8.1: FlowOf<Entry>'s five bodies read, and lane 3 set aside a third time - the self-host's code changed (lane m8z4, 2026-11-18)
+
+Branch `m8-e` from `52e04f1e`: this entry alone. Lane 3 with the three reads below, its 19 EXCLUSIONS citations
+re-pointed and both ceilings re-recorded, was committed as `6e5ee35c`, `10b069e8`, `f0d21552`, gated, and taken off the
+branch again when the last gate failed; it is kept whole as `boxkit/m8z4-lane3.patch` (against `52e04f1e`).
+
+**Why not landed: the self-host's `-S`, REF against NEW, 89 the same and 14 differ** (Driver's `__TIME__` and 13
+backend and optimizer units - SsaSelect, X86_64Windows, X86_64Linux, MirAlloc, MirWebs, the Opt* - 98 or 346 lines each: NEW emits `std::pair<const std::string, int>::~pair()`
+(`_ZNSt4pairIKSbIcEiED1Ev`) and what follows it, which REF does not - a class made at the read owes a member the
+program never asked for). Every other gate held (below). What lane 3 still needs: a class made below a read owes no
+member body until the program asks (the `seat_` log seats specializations, not the bodies they owe).
+
+**Lane 3, measured** (`boxkit/m8z3-lane3.patch`, m8z2's correction in): a class a read holds and then needs the members
+of is made where the read's declaration stands and the read made again; a class over the read's own local class
+stays dependent. **The five `FlowOf<Entry>` bodies** (`src/optimizer/OptCore.h`, read, not edited) it uncovered:
+- the 75, `a range-based 'for' needs an array or a class ...` (`succBlocks`, `predBlocks`, `joinPads`): the range
+  was `decltype(a dependent expression)`, not an element of a made class - `blocks[b]` is a subscript, and
+  `Parser::memberCallWith` asked `argsDependent_`, the arguments of whichever call was read last (a dependent
+  call in the read before), not its own. The subscript now asks of its own index (`ParserExpr.cpp`), and the range is the
+  made `vector<Block>`'s element, `const vector<int>`, read as the replay reads it.
+- the 50, `a constexpr member's body the program has not asked for yet` (`connect`'s and `dominators`' `const int
+  ... = static_cast<int>(v.size())`): no constexpr member at all - `Constexpr::instantiateForConstant` is asked of
+  every call a constant fold meets, and `size()` was a body still waiting. **Folded only in the replay**: a read's
+  tree is dead to every reader and the body cannot be replayed into the unit from inside the read's layer, so in a
+  read the fold answers "not a constant" and the replay, which asks again, folds it (`Constexpr.cpp`).
+- behind them `dominators`' `std::vector<bool> seen(n, false)`: `vector<bool>` held, met by `ParserStmt`'s `X q(a,
+  b)` path for a class with no constructor; that path now wants the held class (`refuseHeldClass`), as the
+  declaration's own check below it does.
+
+**Not read, by door and reason** (with lane 3; not landed, so the committed ceilings are `52e04f1e`'s). Before (`52e04f1e`): the cases 10 in 7 reasons, the self-host 67 in 5 (25 + 16
+class-members and 24 functions under the held class, OptJumps' and OptPipeline's one each). After (lane 3's tree,
+recorded on Linux `~/m8z4f` with `SUBST_RECORD=1`): **the cases 5 in 5** (the three member-template reads, the
+dependent throw, the local-class one) and **the self-host 52 in 4** - 25 member-templates (`build<EffectsFn>`'s
+`vector<Throw>`, dependent by design), OptJumps' `'' was not declared` (`include/memory:98`, `make_shared`'s read),
+OptPipeline's `'' needs a pointer to a struct or union` (`rounds<G>`'s `g->add`), and **25 class-members `'' was not
+declared - a prototype must come first` at `OptCore.h:301` (`dominators`) on Linux only**: Windows `work\m8z4b` reads
+the same sources at 27 in 3 and `OptCore.h` alone reads `dominators` on both hosts - a host difference owed (the
+ceiling holds Linux's, the higher). 103 of 103 sources compile on both boxes.
+
+**The singles, set aside** (`boxkit/m8z4-singles.patch`): `memberCallWith` asking of its own arguments everywhere,
+not only for a subscript - `rounds<G>`'s `g->add` is `operator->` after `g(new G())` set the flag. Its Windows build
+was capped at 9 minutes under the gates' load (a defect of the box's load, not retried), so it is not measured.
+
+**Gates of lane 3's tree** (REF `52e04f1e` built fresh from `git archive`, Linux `~/m8z4r`, Windows `work\m8z4r`; NEW `6e5ee35c`'s
+sources built fresh, Linux `~/m8z4f` g++ `-Werror` clean, Windows `work\m8z4b` cl /W4 /WX clean; paths of one
+length). **Linux**: run.sh **1235 passed, 0 failed**; typed.sh **878 passed, 0 failed**; syntax.sh **4 passed, 0
+failed**; subst.sh bodies self **0 failed** (cases 5 under 5, self-host 103 of 103 and 52 under 52); the `.templates`
+records re-made, none changed; open.sh 1 still differs; exclusions (19 re-pointed, 0 uncited, 0 stale), comment cap
+(0 over), memory gate, ast-residue (+0 each) and ide/generate.py rc 0 each. **Windows**: names.sh **886 passed, 0
+failed**; overload.sh **46 agreed, 0 differed**; typed.sh **859 passed, 0 failed** (20 not this host); the
+five spellings at -O0 and -O2 against REF, text and diagnostics, **12,410 the same, 0 differ**; the flag against
+no flag **1,241 the same, 0 differ**; static rc 0 each; `subst.sh bodies self` with `SUBST_RECORD=1` writes the
+cases' ceiling byte for byte as committed and the self-host's as 27 in 3 (the Linux-only 25 above); its four
+`.templates` records fail there as m8z2 and m8z3 measured them (the host difference already owed).
+**Linux, the rest**: `tools/identical.sh` REF against NEW for tms6747, arm64-darwin, x86_64-linux and x86_64-windows
+at -O0 and -O2 **8,860 compared, 0 differ**; the cases' `-S` with `-check=templates` against without **0 differ**
+(902 of 1241 reached the count); self-compile stage 0 **103 of 103** (137 s); **the self-host's `-S` REF against NEW
+14 of 103 differ** (above) - the one gate failed.
+
+src/ lines: 95,704 before and after (lane 3's tree 95,827).
+
+**What M8.1 still owes.** (0) Lane 3 (`boxkit/m8z4-lane3.patch`): no member body owed for a class made below a
+read until the program asks, then the self-host's `-S` 0 of 103; (1) the Linux-only 25 at `OptCore.h:301`; (2) `boxkit/m8z4-singles.patch` measured and
+landed (OptPipeline's), and OptJumps' `make_shared` read; (3) the cases' five: three deductions and calls over a
+dependent argument (with item 3), the dependent throw, the local class (dependent by design); (4) Fable's reading of
+the dependent-name marking; (5) `template` as payload and the member name's mark; (6)
+`tests/open/template-dependent-static-call`, M3's file.
