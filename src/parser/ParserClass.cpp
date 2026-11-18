@@ -2069,8 +2069,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
     if (consume("=")) {
-        // A read's `static const T value = v;`: the type is dependent, so the value is - read and folded to nothing.
-        if (patternBody_ && d.type->isConst() && dependentType(d.type)) {
+        if (patternBody_ && d.type->isConst() && dependentType(d.type)) {    // a read's `static const T value = v;`: folded to nothing
             conditional();
             s.folded = true;
         } else if (!d.type->isConst() || !d.type->isInteger())
