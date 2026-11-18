@@ -4233,3 +4233,59 @@ read by the parser itself - `Case` (a switch's duplicate test reads `value()` of
 `Block` a `Function` holds. The order the next lane can take: `Case` (the switch's record of values instead of the
 node), then each builder returning its syntax node, `Function::body` and `StmtPtr` last. **Owed to the wave gate:**
 winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S4, sixth lane: an out-of-line constexpr constructor's statements refused as clang refuses them, and seven more statement classes deleted - lane m6d-s4f, 2026-11-18
+
+From m6d-s4e 63249362. src/ 93,655 -> 93,563 lines. REF is 63249362 built from clean in the lane's own Linux tree
+(`~/m6d-s4f-ref.exe`); the compares are S4a's (tools/identical.sh on four targets; every case's `-g -S` text).
+
+**(1) The difference S4e named** (60921fb7, src/ 93,655 -> 93,667). At 63249362 an out-of-line `constexpr P::P(int a)
+: x(0) { x = a; }` was accepted quietly: `P p(1);` compiled to an ordinary runtime call of `P::P` and ran, and
+`constexpr P q(2);` was refused only as "its value could not be worked out" - the statement was never evaluated
+(the walk that ran it under C++14's rule went with S4e's step 1). clang 19.1.5 -std=c++11 -pedantic-errors refuses
+the body: "use of this statement in a constexpr constructor is a C++14 extension". The definition's block is read
+off the syntax tree where the constructor's steps are kept, and a statement other than `;`, a typedef,
+`static_assert` or `using` (C++11's [dcl.constexpr]/4 list) is refused by name with the in-class check's message,
+now one function (`refuseConstexprConstructorStatement`). A body of only those was a null step at 63249362, so
+`constexpr P q(2)` over `{ ; typedef int T; static_assert(...); }` was refused though clang takes it; now it folds
+(q in .data as 2). Case `constexpr-constructor-out-of-line-refused` (.error; clang's position 5:47). **ast-residue**:
+ExprPtr 2,012, StmtPtr 519, node-casts 149, node-refs 343 -> 344 (the statement node held by reference; read by value
+in (3)), readers 9, ast-lines 689. **Shown** against REF: identical tms6747 1,820/0 and 7,280/0; `-g` 894/909/909
+same and x86_64-windows 884, 1 differ on each target - the new case itself, accepted by REF and refused now.
+
+**(2) `Goto`, `Label`, `FuncletLeave`, `Case` and `Switch` leave Ast.h** (c66636ef, src/ 93,667 -> 93,598). The
+switch's duplicate test holds the case values it noted (`SwitchCtx::values`, `deflt` a flag) rather than the
+`Case` nodes; a jump is an empty `Block` (`jumpStatement`, its label still made, so the `$ms` numbering is
+unchanged); a label or a case is a `Block` holding its statement (`labelStatement`); a switch is a `Block` of its
+body and its condition's effect. **ast-residue**: ExprPtr 2,012, StmtPtr 507, node-casts 149, node-refs 341,
+readers 9, ast-lines 616. **Shown**: identical 1,820/0 and 7,280/0; `-g` as (1), the one differ the new case.
+
+**(3) `While` and `For` leave Ast.h** (f171f814, src/ 93,598 -> 93,563): a loop's init, condition, step and body
+are kept in a `Block` (`loopStatement`), as the do-while's are; the `For`'s scope, which nothing read, goes, and
+`rangeForStatement`'s parameter with it. **ast-residue**: ExprPtr 2,012 -> 2,017 (the helper's ExprPtr
+parameters), StmtPtr 512, node-casts 149, node-refs 337, readers 9, ast-lines 581. **Shown**: identical 1,820/0 and 7,280/0; `-g` as (1).
+**(4)** (07524fe0, src/ 93,563) takes the condition and step as `Effect`s: ExprPtr back to 2,012, StmtPtr 512,
+node-casts 149, node-refs 337, readers 9, ast-lines 581, all at or below the baseline, recorded. **Shown**: identical
+1,820/0 and 7,280/0; `-g` as (1). **(5)** (528b76ac) spells each call's `Effect(...)`: cxx3 does not convert an
+ExprPtr argument through `Effect`'s constructor with its defaulted second parameter (a refusal stricter than the
+standard, left for its own round), so (4) made the self-compile of ParserStmt.cpp and ParserClass.cpp refuse,
+REF and new alike; now both compile them, x86_64-linux -O2 text the same. Residue as (4). **Shown**: identical
+1,820/0 and 7,280/0; `-g` as (1).
+
+**Gates on the final tree** (528b76ac, and this entry's commit for exclusions and the baseline): Linux g++ -Werror
+clean (each step built); Windows cl /W4 /WX clean, started first and alone: (1) a full build in about 1.5 min
+(work\m6d-s4fy), (2) a delta that found `ParserTopLevel`'s `Label` left out of the commit (amended before any gate
+counted it), (3) a delta that found the For's scope still set in the cleanup path (amended likewise), each a full
+rebuild after Ast.h in about 4 min; (4) about 2.5 min, (5) about 1.5 min; run.sh 1,248 passed, 0 failed on each of (1)-(5) (the new case the one added);
+tests/tms6747.sh SIM=1 on 07524fe0 (the final tree but (5)'s spelling), shards 1-3 on Linux at -O2 428/0 and -O0
+428/0, shards 4-6 on Windows at -O2 428/0 and -O0 428/0; self-compile of the changed files (ParserTopLevel.cpp,
+ParserConst.cpp with (1); ParserStmt.cpp, ParserClass.cpp with (2), (3) and (5)):
+x86_64-linux -O2 text the same as REF's, tms6747 -O0 and -O2 refused by both alike (calls outside the C6000
+selector); comment cap, memory gate, ide --check pass; exclusions 0/0 after 14 citations the steps moved were
+re-pointed in this entry's commit (lines moved, words kept); ast-residue recorded lower.
+
+**Not done, and why.** Left of S4: five statement classes (`ExprStmt`, `Return`, `Block`, `If`, `Try`) are still
+built - `ExprStmt` and `Block` are what every deleted class became, so they go last, with `StmtPtr`; `Return` (17
+builders, an ExprPtr each) and `If` (14) are the next lane's, in the shape of (2) and (3); `Try` holds the
+Microsoft handlers and cleanup the parser hands on; and the body `Block` a `Function` holds is still read by the
+parser itself. **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
