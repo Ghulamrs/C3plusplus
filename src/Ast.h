@@ -87,15 +87,12 @@ private:
     std::uint32_t resolved_ = 0;
 };
 
+// A statement is lowered from its syntax node, which noteStmt records here; it holds its expressions, and no more.
 class Stmt : public Node {
 public:
-    std::size_t pos() const { return pos_; }
-    void setPos(std::size_t p) { pos_ = p; }
-    // The syntax node the grammar recorded for this statement (M2 step 2); nothing reads it yet.
     syntax::NodeId syntax() const { return syntax_; }
     void setSyntax(syntax::NodeId s) { syntax_ = s; }
 private:
-    std::size_t pos_ = 0;
     syntax::NodeId syntax_;
 };
 
@@ -347,9 +344,6 @@ private:
 class ExprStmt final : public Stmt {
 public:
     explicit ExprStmt(ExprPtr e) : expr_(std::move(e)) {}
-    const Expr &expr() const { return *expr_; }
-    // **Handing the expression back out.**
-    ExprPtr release() { return std::move(expr_); }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr expr_;
@@ -358,7 +352,6 @@ private:
 class Block final : public Stmt {
 public:
     explicit Block(std::vector<StmtPtr> body) : body_(std::move(body)) {}
-    const std::vector<StmtPtr> &body() const { return body_; }
     // For the one block that is filled in after it is placed.
     void append(StmtPtr s) { body_.push_back(std::move(s)); }
 
@@ -462,7 +455,6 @@ public:
     void setAlias(std::string a) { alias_ = std::move(a); }
     const Type *returns() const { return returns_; }
     const std::vector<Param> &params() const { return params_; }
-    const Stmt &body() const { return *body_; }
     int frameSize() const { return frameSize_; }
     // **What the frame must be aligned to**: the stack's 16 unless a local asked for more with
     // `alignas` or its type, when the prologue realigns the frame to it - [basic.align], measured
@@ -509,7 +501,7 @@ private:
     std::string alias_;
     const Type *returns_;
     std::vector<Param> params_;
-    StmtPtr body_;
+    StmtPtr body_;   // read by nothing: it owns the expressions ConstexprFn and ConstexprCtor point into
     int frameSize_;
     int frameAlign_ = 16;
     bool isStatic_;

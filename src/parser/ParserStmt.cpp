@@ -87,7 +87,6 @@ StmtPtr Parser::declaration() {
     const std::size_t mark = syntaxTree_.size();
     attributedDeclarationAhead();  // `[[x]] n = 2;` reaches here, atDeclarationStart taking any `[[`
     StmtPtr s = declarationBody();
-    if (s) s->setPos(pos);
     const syntax::Kind kind = typedefDeclared_ ? syntax::Kind::Typedef : syntax::Kind::DeclStmt;
     typedefDeclared_ = false;
     return noteStmt(std::move(s), kind, "", pos, mark, pos);
@@ -1187,7 +1186,6 @@ StmtPtr Parser::switchStatement() {
     setup.push_back(std::move(made));
     std::unique_ptr<Block> b = make_owned<Block>(std::move(setup));
     b->setScope(scope);
-    b->setPos(pos);
     return StmtPtr(std::move(b));
 }
 
@@ -1513,7 +1511,6 @@ StmtPtr Parser::block(bool functionTry) {
     Block *b = new Block(std::move(body));
     b->setScope(scope);
 
-    b->setPos(pos);
     return noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
 }
 
@@ -1552,7 +1549,6 @@ StmtPtr Parser::statement(bool *madeTry) {
     syntax::Kind kind = statementKindAhead(&text);
     const bool throws = peek().is("throw");
     StmtPtr s = statementBody();
-    if (s) s->setPos(pos);
     if (typedefDeclared_) kind = syntax::Kind::Typedef;
     typedefDeclared_ = false;
     if (madeTry != nullptr) *madeTry = kind == syntax::Kind::Try && builtTry_;
@@ -2538,11 +2534,9 @@ StmtPtr Parser::statementBody() {
         }
         Block *b = new Block(std::move(setup));
         b->setScope(scope);
-        b->setPos(pos);
         return StmtPtr(b);
     }
     if (peek().is("while")) {
-        const std::size_t pos = peek().pos;
         at_++;
         expect("(");
         // The declared object is one slot for the whole loop and is written
@@ -2572,7 +2566,6 @@ StmtPtr Parser::statementBody() {
         wrap.push_back(std::move(made));
         Block *b = new Block(std::move(wrap));
         b->setScope(scope);
-        b->setPos(pos);
         return StmtPtr(b);
     }
 
