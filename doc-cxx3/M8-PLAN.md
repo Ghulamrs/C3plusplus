@@ -1047,3 +1047,79 @@ token (162, the class door's own parse); the in-class static initialiser (84); d
 parameters (59 + 59); a door for member templates - not started; the out-of-line door's 14; the last dependent
 sizes (an array `new T[n]`'s element, partials').
 src/ lines: 95,368 before, 95,381 after.
+
+**M8.1, commit 4, fourth step: three of the class doors' reasons, 2026-11-18** (lane m8n, branch `m8-e` from
+`9830a16e`; one lane-hour; code `d3767911`). Still under `-check=templates` for the class doors; the replay is what
+emits. The reasons were read whole, not by their quote-stripped census, by a probe patch (`boxkit/m8n-why.patch`:
+each refusal's text and place under `CXX3_WHY`), on `<type_traits>`, `<utility>`, `<memory>` and `<string>`
+alone. **Three holds**, each in a read only (`patternBody_`): (1) *the class: expected '('* is `<type_traits>`'
+`is_arithmetic : _arith_or<is_integral<T>::value, T>` and `is_fundamental`'s twin - a dependent class's member
+named as a value in a template argument, which the expression reader took for a type and a functional cast; it
+is held as an unresolved name (`depPrimary`, `X<args>::name` not followed by `(`, `<` or `::`); (2) *an in-class
+initialiser of a static member* is `integral_constant`'s `static const T value = v;` - over a dependent `T` it is
+read and folded to nothing; (3) *a name the class does not find when a dependent base was left out*
+(`Type::dependentBase`, set beside `dependentLayout` by m8l's left-out base): `S::x`, an unqualified name, and
+`o.x` / `p->x` are held as dependent in such a class (the replay finds them in the base; [temp.dep]/3 would look
+for the unqualified ones nowhere, so this follows the replay, not the standard).
+`e394cc44` moves (1)'s comment onto its line (the comment cap said 1 over at `d3767911`: the new line split a
+three-line group from its one-line `if`; comments alone, and the file has no `__LINE__`).
+
+**Read / not read by door**, Linux `~/m8nn` (`d3767911`), `boxkit/m8n-count.sh`, `m8n-self.sh`; before is m8m's
+after (`d5ebe843`, the same sources as `9830a16e`):
+
+| door | `tests/cases` before: bodies / read / unread | after | the self-host before | after |
+| --- | --- | --- | --- | --- |
+| function | 3,478 / 3,389 / 89 | 3,478 / 3,389 / 89 | 7,512 / 7,324 / 188 | 7,512 / 7,324 / 188 |
+| class members | 12,208 / 11,617 / 591 | 12,044 / 11,699 / 345 | 29,883 / 28,002 / 1,881 | 29,679 / 28,104 / 1,575 |
+| out-of-line members | 22 / 8 / 14 | 22 / 8 / 14 | 0 | 0 |
+| partial specializations' members | 607 / 526 / 81 | 607 / 526 / 81 | 1,796 / 1,587 / 209 | 1,796 / 1,587 / 209 |
+| alias type-ids | 7 / 7 / 0 | 7 / 7 / 0 | 0 | 0 |
+
+(`bodies` is a floor while a class is refused whole: the 246 classes read now count their bodies, 82, where each
+counted one.) Read class-member bodies against their replays: 1,158 the same, 1,190 in text, 2 in shape, 9,349
+unreplayed. **Gone** (cases, class members): the class: "expected" 162 -> 1 (`expected a name`, one case), the
+in-class initialiser 84 -> 0. **Not changed**: has no member called (40) and was not declared (27) - neither is
+through a left-out base, so hold (3) met none of them in the cases. Their roots, read with the probe on
+`deque-both-ends` (`<map>`/`<set>`'s `__tree`): `order::less(...)`, where `order` names `__tree_order<..., C>` - a
+class over dependent arguments, shallow and without members - is "has no member called"; and `KeyOf::get(...)`,
+where `KeyOf` is the class's type parameter, is "was not declared" (the ordinary reader knows `T::name` only in
+the signature's expression reader). Both are one condition each at `primaryNode`'s two refusals; not made, the
+gates being under way. **Not read, by reason, after**
+(cases): the class: an incomplete type (69); no function called takes these 2 arguments (68); declares no member
+with these parameters (59, and 59 in partials) - all `<utility>`'s `pair(const pair<const T1, T2> &)` and the
+partial's `pair(const pair<T1, T2> &)` at their replay, the class read and only the member's definition not
+matched against its declaration (not mended); has no member called (40); was not declared (27); the size of a
+dependent type (16 class members, 16 partials, 25 the function door); an incomplete type in a body (16); declared
+twice (11); a class specialization not asked for (9). The self-host after: has no member called (352) and was not
+declared (311), an incomplete type (223), declared twice (127), no function takes these 2 arguments (102),
+declares no member (101 + 101). **On Windows** (`work\m8nn`, x86_64-windows, the first
+count by door there): the function door the same, 3,478 / 3,389 / 89; the class doors read 15 of 935 and 1 of 245
+partials - 843 and 240 refused as "the class: cannot be given a name the linker can hold: this type has no
+Microsoft linkage name yet", the read's class `C<$T0>$read<n>` meeting the Microsoft mangler. A wall of the
+Windows names alone, which the Linux counts do not see; commit 5 has to give a read's class a Microsoft name (or
+ask for none) before the class doors can be measured there.
+
+**The flag against no flag** (`-S`): the cases 0 differ of 1,239 on Linux (`m8n-count.sh`; its "1" is the
+script's own slot line, which carries the word), and 1,239 the same, 0 differ, on Windows; the self-host 102 of 103 the same and `Driver` (diff opened: one `.byte` line of the time) on Linux, 102 of 103 and `Driver` on Windows (diff opened: one `DB` line of the time).
+
+**Gates** on the final code (`d3767911`), each box built from clean; REF built fresh from `9830a16e` in its own
+kept tree (Linux `~/m8nr`, Windows `work\m8nr`; NEW `~/m8nn`, `work\m8nn`, names of one length). Linux (g++
+`-Werror` clean): `tools/identical.sh` REF against NEW for tms6747, arm64-darwin and x86_64-linux at -O0 and
+-O2, **5,304 compared, 0 differ**; the self-host's `-S`, REF against NEW, 102 of 103 the same and `Driver` (2
+lines, its `__TIME__` `.byte` line); `tests/subst.sh bodies` 0 failed (5,119 over 876 units, 3,381 / 682 / 1,004
+/ 52); `typed.sh` 876 passed, 0 failed, 1 not for this host; `run.sh` 1233 passed, 0 failed; self-compile stage
+0 103 of 103; static gates on `e394cc44`'s sources (Linux `~/m8nc`): exclusions rc 0, comment cap 0, memory gate
+held, ast-residue +0, `ide/generate.py --check` up to date. Windows (cl /W4 /WX clean, 103 sources, 0 warnings,
+its log read whole): static gates rc 0 on `e394cc44` (`work\m8nc`; at `d3767911` the comment cap said 1); the
+self-host's `-S`, REF against NEW, 102 of 103 and `Driver` (its `__TIME__` `DB` line, diff opened); `names.sh`
+884 passed, 0 failed; `overload.sh` 46 agreed with clang, 0 differed; the five spellings at -O0 and -O2 against
+REF, **12,390 the same, 0 differ** (6,200 and 6,190, the halves one after the other); `tools\windows\self-compile.cmd` in a tree of its own (`work\m8ns`), **103 of 103**.
+**Not run**: `tests/subst.sh`'s four stand-in steps, `syntax.sh`, winpass, the -O1 rows, Compiler++'s units; no
+`tests/cases` program was added. **What the lane did wrong**: `tools/comment-lines` was run once on the Mac (a
+text scan, to find the group) - the gate of record is the boxes' run above.
+
+**Left of commit 4**: the pair constructors' "declares no member" (59 + 59, one root); `X::m` over a dependent class
+and `T::f` over a type parameter (40 / 27, the roots above); the class's incomplete type (69); no function takes
+these 2 arguments (68); a door for member templates - not started; the out-of-line door's 14; the last
+dependent sizes; and the Windows class doors' Microsoft name for a read's class.
+src/ lines: 95,381 before, 95,421 after.
