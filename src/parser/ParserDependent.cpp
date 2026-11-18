@@ -387,6 +387,17 @@ std::string Parser::depText(std::size_t from, std::size_t to) const {
     return text;
 }
 
+// Tokens as written, a space only between two words: `Sel<(N>3)>`, `cv<unsigned int>`.
+std::string Parser::spelledTokens(std::size_t from, std::size_t to) const {
+    std::string text;
+    for (std::size_t i = from; i < to; i++) {
+        const Token &t = tokens_[i];
+        if (i > from && t.kind != TokenKind::Punct && tokens_[i - 1].kind != TokenKind::Punct) text += ' ';
+        text += t.kind == TokenKind::Num && t.text.empty() ? std::to_string(t.value) : t.text;
+    }
+    return text;
+}
+
 // **A pattern's body reads an operand of dependent type as any other and gives it no meaning**: the
 // ordinary productions note their syntax, and what they hand on is a zero of a dependent type (M8.1).
 bool Parser::dependentOperand(const Type *t, bool pointers) const {
@@ -409,6 +420,24 @@ bool Parser::leftOutBase(const Type *cls) const {
     for (std::size_t i = 0; i < classStack_.size(); i++)
         if (classStack_[i] != nullptr && classStack_[i]->unqualified()->dependentBase()) return true;
     return false;
+}
+
+// [temp.res]/3: `X<N>::type` over a bound parameter is a dependent name, a type only after `typename`, as `T::type`
+// (M8rev M6); `from` is the template's name, at_ past its `>`. A member of the current instantiation needs none.
+void Parser::refuseUntypedMember(const std::string &name, std::size_t from) {
+    if (!peek().is("::") || peekAt(1).kind != TokenKind::Ident) return;
+    if (currentClass_ != nullptr && currentClass_->unqualified()->templateName() == name) return;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i] != nullptr && classStack_[i]->unqualified()->templateName() == name) return;
+    for (std::size_t i = from; i < at_; i++) {
+        const Token &t = tokens_[i];
+        if (t.kind != TokenKind::Ident || (boundTypeParams_.count(t.text) == 0 && boundValueParams_.count(t.text) == 0 &&
+                                           nonTypePatternParams_.count(t.text) == 0))
+            continue;
+        const std::string spelled = spelledTokens(from, at_) + "::" + peekAt(1).text;
+        src_.fail(tokens_[from].pos, "'" + spelled + "' names a member of a class whose arguments depend on '" + t.text +
+                                     "', and whether that is a type depends on them - write 'typename " + spelled + "'");
+    }
 }
 
 // One postfix step on an object of dependent type, its tokens alone: a subscript, a member's name, `++`.

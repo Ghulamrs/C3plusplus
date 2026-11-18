@@ -1674,11 +1674,13 @@ private:
     const DepExpr *depNode(DepExpr e);
     void depRefuse(std::size_t pos, const std::string &what);
     std::string depText(std::size_t from, std::size_t to) const;
+    std::string spelledTokens(std::size_t from, std::size_t to) const;
     // An expression of dependent type in a pattern's body: what an operand is, the type its result has, one postfix step.
     bool dependentOperand(const Type *t, bool pointers = true) const;
     const Type *dependentResult();
     bool dependentPostfix(const Type *object, PostfixStep &step);
     bool leftOutBase(const Type *cls) const;
+    void refuseUntypedMember(const std::string &name, std::size_t from);
     bool argsDependent_ = false;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;

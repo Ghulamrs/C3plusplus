@@ -2109,10 +2109,10 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         peekAt(1).is("<")) {
         const TemplateDecl decl = findTemplate(peek().text)->second;
         if (!decl.isClass) refuseTemplateId();
-        const std::size_t tpos = peek().pos;
+        const std::size_t tpos = peek().pos, from = at_;
         at_++;
         const Type *cls = tmpl_.instantiateClass(decl, tpos);
-
+        if (!sawTypename) refuseUntypedMember(decl.name, from);
         return memberTypeWalk(cls);
     }
 
@@ -2147,10 +2147,11 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
                 }
             }
             if (tmplConsumed > consumed) {
-                const std::size_t tpos = peek().pos;
+                const std::size_t tpos = peek().pos, from = at_;
                 at_ += tmplConsumed;
                 const Type *cls = tmpl_.instantiateClass(findTemplate(tmpl)->second,
                                                    tpos);
+                if (!sawTypename) refuseUntypedMember(findTemplate(tmpl)->second.name, from);
                 return memberTypeWalk(cls);
             }
             if (found != nullptr) {
