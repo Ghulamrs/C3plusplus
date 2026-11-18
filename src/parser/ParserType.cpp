@@ -154,11 +154,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (within == nullptr && defining && !tag.empty() &&
         !currentFunction_.empty() && specializationOf.empty()) {
         localOwner = currentFunction_;
-        std::string qualified = currentFunctionName_ + "::" + tag;
+        const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;   // as a read's closure
+        std::string qualified = owner + "::" + tag;
         for (int n = 2; ; n++) {
             auto had = localClassOwner_.find(qualified);
             if (had == localClassOwner_.end() || had->second == localOwner) break;
-            qualified = currentFunctionName_ + "$" + std::to_string(n) + "::" + tag;
+            qualified = owner + "$" + std::to_string(n) + "::" + tag;
         }
         local = tag;
         tag = qualified;

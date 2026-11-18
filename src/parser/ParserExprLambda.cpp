@@ -387,15 +387,17 @@ ExprPtr Parser::lambdaExpression() {
     // **The tag has to be unique and the function's *name* is not enough.** In a
     // replay `currentFunctionName_` is `operator()`, so every nested lambda built
     // `operator()::$_0`; the owner decides, with a counter for the display tag.
+    // A read's closure is named apart (`$read$tw::$_0`), so it takes none of the names an instantiation's will.
+    const std::string owner = patternBody_ ? "$read$" + currentFunctionName_ : currentFunctionName_;
     std::string tag = currentFunctionName_.empty()
-                    ? local : currentFunctionName_ + "::" + local;
+                    ? local : owner + "::" + local;
     if (!currentFunction_.empty()) {
         for (int n = 2; ; n++) {
             std::map<std::string, std::string>::const_iterator had =
                 localClassOwner_.find(tag);
             if (had == localClassOwner_.end() || had->second == currentFunction_)
                 break;
-            tag = currentFunctionName_ + "$" + std::to_string(n) + "::" + local;
+            tag = owner + "$" + std::to_string(n) + "::" + local;
         }
     }
     Type *closure = types_.structType(Kind::Struct, tag);
