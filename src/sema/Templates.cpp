@@ -698,7 +698,9 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     // The door's set as its resolveOverload looks it up there: the key's, the unnamed namespace's and ADL's ([basic.lookup.argdep]).
     const std::string looked = p_.overload_.lookupName(key, given, nullptr);
     std::vector<std::size_t> merged;
-    const std::vector<std::size_t> *set = memberTemplates_.count(looked) != 0 ? nullptr : p_.overload_.candidateSet(looked, key, given, nullptr, &merged);
+    const std::string unqualified = cut == std::string::npos ? name : std::string();
+    const std::vector<std::size_t> *set = memberTemplates_.count(looked) != 0 ? nullptr
+                                        : p_.overload_.candidateSet(looked, key, given, nullptr, &merged, unqualified);
     p_.namespaceStack_ = wasStack, p_.replayingInline_ = wasInline;
     p_.instantiationKey_ = wasKey, p_.instantiationOf_ = wasOf, p_.instantiationDisplay_ = wasDisplay, p_.instantiationDepth_ = wasDepth;
     unbindTemplateParameters(undo);

@@ -1,5 +1,6 @@
-// The replay asks no argument-dependent lookup at a function template's call door: the key it ranks under (templateCallKey,
-// `$global:weigh` or `lib::size`) is not the bare name, so geo's ordinary functions are never candidates ([basic.lookup.argdep]/2).
+// A function template's call asks argument-dependent lookup too ([basic.lookup.argdep]/2, [temp.dep.candidate]): the
+// replay's door ranks under its own key (templateCallKey, `$global:weigh` or `lib::size`), and geo's ordinary functions,
+// exact, beat the specialization ([over.match.best]).
 extern "C" int printf(const char *, ...);
 
 namespace geo {
