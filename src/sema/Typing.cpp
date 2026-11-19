@@ -981,6 +981,8 @@ std::string Typer::typedApart(TypedId a, TypedId b, std::map<int, int> &serials,
     if (k != st.node(y.syntax).kind || (!spelled && u != w)) return at + "read apart from its replay: its spelling";
     if (st.node(x.syntax).loc != st.node(y.syntax).loc) return at + "read apart from its replay: its place";
     if (x.count != y.count) return at + "read apart from its replay: its parts";
+    if (x.type != y.type && k == syntax::Kind::Var)    // the read's type named: what the binding did not carry
+        return at + "typed apart from its replay: " + (y.type != nullptr ? y.type->describe() : std::string("untyped"));
     if (x.type != y.type || x.castType != y.castType || x.castXvalue != y.castXvalue) return at + "typed apart from its replay";
     if (x.folded.has != y.folded.has || x.folded.value != y.folded.value || x.folded.type != y.folded.type ||
         (x.literal == 0) != (y.literal == 0) || tree_.literal(a).text != tree_.literal(b).text ||
