@@ -468,6 +468,40 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
 
+// [temp.nondep]: a call with no type-dependent part is bound at the definition, so the read's record is the replay's - here
+// a named function of scalars that is no specialization; the rest replays by name. The callee's use is made in callsUsed.
+std::string Templates::nondependentCall(syntax::NodeId call) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    for (std::uint32_t c = 0; c < st.node(call).count; c++)
+        if ((st.node(st.child(call, c)).marks & (syntax::TypeDependent | syntax::DependentName)) != 0)
+            return "a call with a type-dependent argument or a dependent-name callee, resolved at the instantiation";
+    const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(call.v);
+    if ((st.node(call).marks & (syntax::TypeDependent | syntax::DependentName)) != 0 || st.node(call).count == 0 ||
+        st.node(st.child(call, 0)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call ||
+        r->second.symbol.empty() || r->second.indirect || r->second.hasThis || r->second.type == nullptr || !r->second.type->isFunction())
+        return "a call through a value, a member or a class, or one the read did not resolve";
+    const Type &f = *r->second.type;
+    bool scalars = !f.isVariadicFn() && (f.returns()->isVoid() || f.returns()->isScalar());
+    for (std::size_t q = 0; q < f.params().size(); q++) scalars = scalars && f.params()[q]->isScalar();
+    if (!scalars) return "a call of a function over a class, a reference or variadic arguments";
+    for (std::size_t q = 0; q < specializations_.size(); q++)
+        if (specializations_[q].symbol == r->second.symbol) return "a call of a specialization, which the replay asks for";
+    return std::string();
+}
+
+// What the replay's resolution of each call in `body` marks used ([basic.def.odr]/3), made for a body built from the read.
+void Templates::callsUsed(syntax::NodeId body) {
+    for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
+        const syntax::NodeId id = work.back();
+        work.pop_back();
+        for (std::uint32_t c = 0; c < p_.syntaxTree_.node(id).count; c++) work.push_back(p_.syntaxTree_.child(id, c));
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+        if (p_.syntaxTree_.node(id).kind != syntax::Kind::Call || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call) continue;
+        for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
+            if (p_.lookup_.functions_[q].symbol == r->second.symbol) { p_.noteUsed(q); break; }
+    }
+}
+
 std::string Templates::substShape(syntax::NodeId body, const Substituted &s) const {
     typedef syntax::Kind Kind;
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
@@ -485,6 +519,9 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s) con
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
             case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
                 continue;
+            case Kind::Call:
+                if (nondependentCall(id).empty()) continue;
+                return nondependentCall(id);
             default:
                 return std::string("a '") + syntax::kindName(n.kind) + "' in the body";
             }
@@ -1050,6 +1087,7 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
     if (raised > alignHad) p_.frameAligns_[sp.symbol] = raised;
     p_.frameAlign_ = std::max(startAlign, raised);
     unreplayed_.insert(sp.symbol);
+    callsUsed(bound_.at(sp.symbol).read);
     return true;
 }
 
