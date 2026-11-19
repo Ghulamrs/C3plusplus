@@ -4452,3 +4452,9 @@ make_owned more (the new cxx3 over main's sources holds 7 and 3); the ceilings a
 them. Windows run.sh compares the program's CRLF output as is (m8h1's owed fault): with diff's
 --strip-trailing-cr, 1232 passed, 31 failed, the same 31 as REF's 1222/31 (x86_64-windows refusals such as
 alignas-local-unwind's over-aligned local beside a try).
+
+**M6d's wave landed, 2026-11-19 (gate m6dh at 6b97ad9a against main b582a877: 44 passed, 0 failed, 127 minutes).** S3c,
+S4a-S4i and the merge with main (lane mw12) on main and m3-line. The first gate (m6dg, 55b3b02d) passed 40 and failed only
+identical, identlnx, identwin and identa64 on the wave's own 93 differences - eight cases new to M6d (constexpr-body-*,
+converting-constructor-*) that main refuses - named row by row in 6b97ad9a from the gate's lists. Cycles: 71 worse, every
+one owed or accepted; 192,025,550 -> 149,248,103 at -O2. tests/wave-expected.txt emptied.
