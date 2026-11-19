@@ -466,8 +466,8 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     }
     if (trailing && ret != p_.declaredReturns_.end() && ret->second != nullptr && unnotedOperand(ret->second->unqualified()->dependentExpr()))
         return *why = "replayed: a trailing 'decltype' over a sizeof, cast or qualified name, which the read notes in other parts", false;
-    // The requests in the replay's order: a call's node is noted as its door fires, after its arguments, and no request's
-    // argument holds another (each is a local), so the read's node order is the doors'. Requesting may move `sp`.
+    // The requests in the replay's order: a call's node is noted as its door fires, after its arguments, so the read's node
+    // order is the doors' - an argument that is a call is asked, and recorded, before the call it is passed to. `sp` may move.
     std::vector<std::uint32_t> order;
     for (std::size_t q = 0; q < requests.size(); q++) order.push_back(requests[q].v);
     std::sort(order.begin(), order.end());
@@ -475,7 +475,7 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     const Specialization outer = sp;
     for (std::size_t q = 0; q < requests.size(); q++) {
         std::size_t chosen = 0;
-        const std::string asked = requestCall(outer, requests[q], made.s, &chosen);
+        const std::string asked = requestCall(outer, requests[q], made.s, made.calls, &chosen);
         if (!asked.empty()) return *why = "replayed: " + asked, false;
         made.calls[requests[q].v] = made.calls[p_.syntaxTree_.child(requests[q], 0).v] = chosen;
     }
@@ -599,7 +599,8 @@ static int argumentCategory(const syntax::Tree &st, syntax::NodeId a) {
 
 // A call's arguments as deductionArgType gives them, typed under the binding: an lvalue as a reference to its type, a prvalue
 // as its type - a local by its record, any other form the typed tree's (Typer::typeUnder); else why not.
-std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes) {
+std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, const std::map<std::uint32_t, std::size_t> *calls,
+                                    std::vector<const Type *> *argTypes) {
     const syntax::Tree &st = p_.syntaxTree_;
     for (std::uint32_t c = 1; c < st.node(call).count; c++) {
         const syntax::NodeId a = st.child(call, c);
@@ -608,8 +609,16 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, s
         if (st.node(a).kind == syntax::Kind::Name && r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Local && r->second.type != nullptr) {
             t = substituted(s, r->second.type);
             t = t->isReference() ? t : p_.types_.referenceTo(t);
+        } else if (st.node(a).kind == syntax::Kind::Call) {
+            // A call passed is a prvalue of what its record returns: the body's (asked first, its node the lower) or the read's.
+            if (calls == nullptr) return DeducedCall;
+            const std::map<std::uint32_t, std::size_t>::const_iterator k = calls->find(a.v);
+            if (k != calls->end()) t = p_.lookup_.functions_[k->second].returns;
+            else if (r != p_.resolutions_.end() && nondependentCall(a).empty() && r->second.what == Parser::Resolved::Call) t = r->second.type->returns();
+            if (t == nullptr || t->isReference() || t->unqualified() != t || t->isVoid())
+                return "a call a function template may answer over a call that returns a reference, a qualified type or nothing";
         } else {
-            // No request's argument holds another (each is ordered by its node, Templates::instantiate), nor any call.
+            // No request's argument holds another but as itself (the case above, ordered by its node), nor any call.
             for (std::vector<syntax::NodeId> work(1, a); !work.empty(); ) {
                 const syntax::NodeId id = work.back();
                 work.pop_back();
@@ -641,8 +650,8 @@ std::string Templates::templateCandidates(syntax::NodeId call, const Substituted
     const std::string written = st.text(st.child(call, 0));
     if (written.find('<') != std::string::npos) return "an explicit-argument call of a function template, which the replay specializes";
     std::vector<const Type *> argTypes;
-    const std::string why = callArgTypes(call, s, &argTypes);
-    if (!why.empty()) return why;
+    const std::string why = callArgTypes(call, s, nullptr, &argTypes);
+    if (!why.empty()) return why;      // DeducedCall where an argument is a call: deduced as it is requested
     const std::string::size_type cut = written.rfind("::");
     std::string scope = cut == std::string::npos ? std::string() : written.substr(0, cut), ns;
     if (scope.compare(0, 2, "::") == 0) scope.erase(0, 2);
@@ -659,7 +668,8 @@ std::string Templates::templateCandidates(syntax::NodeId call, const Substituted
 
 // The specialization a deduced call asks for, requested where and as the replay's call door does (instantiateViableTemplates
 // in the instantiation's context), then ranked with the other candidates of the door's index (Overload::bestViable).
-std::string Templates::requestCall(const Specialization sp, syntax::NodeId call, const Substituted &s, std::size_t *chosen) {
+std::string Templates::requestCall(const Specialization sp, syntax::NodeId call, const Substituted &s,
+                                   const std::map<std::uint32_t, std::size_t> &calls, std::size_t *chosen) {
     const syntax::Tree &st = p_.syntaxTree_;
     const std::string written = st.text(st.child(call, 0));
     const std::string::size_type cut = written.rfind("::");
@@ -668,7 +678,8 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     if (scope.compare(0, 2, "::") == 0) scope.erase(0, 2);
     if (cut == std::string::npos && functionHidesTemplates(name)) return "a call an ordinary function hides the templates of";
     std::vector<const Type *> argTypes;
-    callArgTypes(call, s, &argTypes);
+    const std::string why = callArgTypes(call, s, &calls, &argTypes);
+    if (!why.empty()) return why;
     const TemplateDecl &outer = templates_[sp.name];
     std::vector<Shadow> undo;
     bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);

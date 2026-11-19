@@ -3437,3 +3437,47 @@ self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool
 comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date;
 g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, the full build 18:16:44-18:19 (about 2.5 minutes);
 names.sh 940/0, overload.sh 46/0.
+
+**(b) A deduced call whose argument is a call** (this commit). The replay's door fires after its arguments are parsed, so an
+inner call's specialization is asked, and its node noted, before the outer's: the requests sorted by node (m82o (a)) are already
+in that order, and `Templates::instantiate` hands `requestCall` the body's records so far (`Bound::calls`). `callArgTypes` takes
+an argument that is itself a call as a prvalue of what its record returns - the request's or the dependent-name call's chosen
+`Signature`, or for a call bound at the definition the read's own resolution - so deduction and the one ranking see the type the
+replay's `deductionArgType` gives the call's `Expr`. Before any record exists (the shape walk, `templateCandidates`) such an
+argument defers the deduction to the request, which deduces through `instantiateViableTemplates` and replays by reason where
+nothing is viable. A call returning a reference, a qualified type or nothing replays by name ("a call that returns a reference,
+a qualified type or nothing"); an argument that holds a call deeper than itself (`a.data() + 1`, a member call) still replays.
+
+**The probe** `tests/cases/template-subst-nest` (`.expected` clang 19's on the Windows box): `twice(inc(a))` (a request inside
+a request) for an `int` and a `double`, `twice(sq(a)) + 1` (an ordinary dependent-name call inside), `inc(half(a))` for an `int`
+and a `double` - 9 bodies with no replay, plain and `-g`, made 9 equal under the check (5 of them replayed "that holds a call"
+before). tests/subst.sh: the probe added. **Residue**: the first build raised node-refs 298 -> 299 - `Resolved::Call &&
+nondependentCall(` reads as a node reference to the tool (the known false-positive family); the condition was reordered, the
+tool not edited, 298 kept.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,290 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 325** (316 + the probe's 9), 325 made equal. **Without the lanes' probes: 98 with no replay** (+0): the
+suite's 8 that replayed "that holds a call" now replay by their inner call's own reason - 4 "a call through a value, a member
+or a class" (`a.data()` in `__cxx1_compare_n`'s callers), 3 "a type-dependent argument or a dependent-name callee", 1
+"explicit-argument" (`std::__sort_less<T>()`, `std::forward<T>(x)`); the reason "that holds a call" is gone from the census.
+
+**src/** (b): `Templates.cpp` +20 -9, `Templates.h` +5 -2: 95,336 -> 95,350 (+14). EXCLUSIONS re-pointed (Templates.cpp 1558,
+1610, 2307).
+
+**Gates of (b)** (REF `50f39adb` in `~/m82qb`, NEW in `~/m82qe` - REF with (a) and (b) shipped, one path length; every check on
+this commit's own tree): `identical.sh` **0 differ on four targets without the flag** (x86_64-linux 1,882, x86_64-windows
+3,764, arm64-darwin 1,882, tms6747 1,882) and **0 on three with `-templates=subst`**; **-g 0 differ** with and without the flag
+(x86_64-linux 722 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 704, 375, 211);
+`-check=templates -templates=subst`: 1,290 units, 350 nonzero exits as before, none failing on a difference (made 325 equal);
+`-check=fold` 0 units failing; run.sh 1283/0 without and with `-templates=subst`; **subst.sh 0 failed** (same 1,012 of 1,012,
+self 102 of 102, the ceiling 26 of 26; 4 counts below the record - not re-recorded); syntax.sh 6/0; typed.sh 933/0;
+self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool's own exit status: exclusions rc 0 0/0,
+comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date;
+g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, 18:32:52-18:39:58 (102 files: `Templates.h` is wide);
+names.sh 941/0, overload.sh 46/0.
+
+**Left**: (c) a reference parameter over a prvalue (the temporary the replay materialises), not started; the 11 over a class
+argument (its converting constructors and associated classes); an argument holding a call deeper than itself, and a member
+call as one; the replay's own missing ADL at a function template's call door (tests/open/template-adl-ordinary - output
+changes without the flag, so a decision of its own); a member in the body walk; a class candidate that takes a temporary;
+explicit-argument calls; the 10 through a value or a member.
