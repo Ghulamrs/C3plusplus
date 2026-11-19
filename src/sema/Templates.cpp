@@ -816,6 +816,8 @@ std::string Templates::bodiesReport() const {
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = frameCensus_.begin(); i != frameCensus_.end(); ++i)
         out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = shellCensus_.begin(); i != shellCensus_.end(); ++i)
+        out += "-check=templates shell (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -832,7 +834,7 @@ static const char *frameStepName(char kind) {
 // **Slice 2c**: the frame the read's steps lay under `s` from `start`, the parser's frameAlign_ before it - held against the
 // replay's step by step: kind, type, offset - and in `raised` the widest slot past the alignment it started at, outside a nested
 // function: what allocateFrameSlot records in frameAligns_. Nothing but the check reads the replay's steps.
-std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised) const {
+std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laidOut) const {
     struct Frame { int size, align; std::vector<Parser::FreeSlot> free; };
     Frame now = { 0, 16, std::vector<Parser::FreeSlot>() };
     int nested = 0;
@@ -895,6 +897,51 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
         if (at != y.offset) return step + ": its offset";
     }
     if (read.size() != replay.size()) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
+    *laidOut = laid;
+    return std::string();
+}
+
+// **Step 2's shell**: the records substituteFunction gives a Function, made from the read's steps as laid - a parameter's and a
+// local's from its `d` (name, stored type, offset, scope, alignment, serial), the sret slot, the save area and the frame's size -
+// and held against the function the replay made. Steps inside a nested or synthesised frame are not this function's.
+std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const {
+    std::vector<Param> params;
+    std::vector< ::Local> locals;
+    int depth = 0, size = 0, sret = 0, save = 0;
+    for (std::size_t k = 0; k < read.size() && k < laid.size(); k++) {
+        const FrameEvent &r = read[k];
+        if (r.kind == 'p' || r.kind == 'o') depth++;
+        else if (r.kind == 'q' || r.kind == 'c') depth--;
+        if (depth != 0) continue;
+        if (r.kind == 'S') sret = laid[k];
+        else if (r.kind == 'V') save = laid[k];
+        else if (r.kind == 'e') size = laid[k];
+        if (r.kind != 'd') continue;
+        const Type *t = substituted(s, r.type), *stored = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
+        if (r.param) params.push_back(Param{ stored, laid[k] });
+        locals.resize(locals.size() + 1);      // not `::Local(...)`: cxx3 reads that as sema::Local (the plan entry)
+        locals.back().name = r.name; locals.back().type = stored; locals.back().offset = laid[k];
+        locals.back().isParam = r.param; locals.back().scope = r.block;
+        locals.back().align = std::max(r.align, objectAlign(stored, p_.target_));
+        locals.back().serial = r.serial;
+        if (t->isReference()) locals.back().declared = t;
+    }
+    if (params.size() != f.params().size()) return "its parameters' count";
+    for (std::size_t q = 0; q < params.size(); q++)
+        if (params[q].type != f.params()[q].type || params[q].offset != f.params()[q].offset) return "a parameter";
+    if (locals.size() != f.locals().size()) return "its locals' count";
+    std::map<int, int> serials, back;      // the read numbers its locals as its own; the replay's, one for one
+    for (std::size_t q = 0; q < locals.size(); q++) {
+        const std::vector< ::Local> &a = locals, &b = f.locals();
+        if (a[q].name != b[q].name || a[q].type != b[q].type || a[q].offset != b[q].offset || a[q].isParam != b[q].isParam ||
+            a[q].staticName != b[q].staticName) return "a local";
+        if (a[q].scope != b[q].scope) return "a local's block";
+        if (a[q].align != b[q].align || a[q].declared != b[q].declared) return "a local's alignment or declared type";
+        if (!serials.insert(std::make_pair(b[q].serial, a[q].serial)).second || !back.insert(std::make_pair(a[q].serial, b[q].serial)).second)
+            return "a local's serial, not one for one with the replay's";
+    }
+    if (sret != f.sretSlot() || save != f.regSaveSlot()) return "the sret slot or the save area";
+    if (size != f.frameSize()) return "the frame's size";
     return std::string();
 }
 
@@ -1038,12 +1085,20 @@ void Templates::instantiatePending() {
                 p_.frameLog_ = logBack.was;
                 if (bound != bound_.end()) {
                     int raised = 0;
-                    std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s, startAlign, &raised);
+                    std::vector<int> laid;
+                    std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s, startAlign, &raised, &laid);
                     const std::map<std::string, int>::const_iterator has = p_.frameAligns_.find(sp.symbol);
                     const int alignHas = has != p_.frameAligns_.end() ? has->second : 0;
                     if (apart.empty() && std::max(alignHad, raised) != alignHas) apart = "the frame's alignment";
                     if (apart.empty() && std::max(startAlign, raised) != p_.frameAlign_) apart = "the alignment the next frame starts at";
                     frameCensus_[apart.empty() ? "equal" : "differ: " + apart]++;
+                    const std::vector<Function> &made = p_.current_->functions;
+                    std::size_t at = made.size();
+                    while (apart.empty() && at-- > 0 && made[at].symbol() != sp.symbol) {}
+                    if (apart.empty() && at < made.size()) {
+                        std::string shell = shellApart(readFrames_[sp.start], laid, bound->second.s, made[at]);
+                        shellCensus_[shell.empty() ? "equal" : "differ: " + shell]++;
+                    }
                 }
             }
             holdBodies(bodiesFrom);

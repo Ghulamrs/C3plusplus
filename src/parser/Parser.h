@@ -1840,7 +1840,9 @@ private:
     // M8.2 2c: each step of the frame's layout while `frameLog_` is set - Templates::layFrame names the kinds.
     typedef sema::FrameEvent FrameEvent;
     std::vector<FrameEvent> *frameLog_ = nullptr;
-    void logFrame(char kind, const Type *t, int align, int offset, int serial = 0) { if (frameLog_ != nullptr) frameLog_->push_back(FrameEvent{ kind, t, align, offset, serial }); }
+    void logFrame(char kind, const Type *t, int align, int offset, int serial = 0, const std::string *name = nullptr, bool param = false, int block = 0) {
+        if (frameLog_ != nullptr) frameLog_->push_back(FrameEvent{ kind, t, align, offset, serial, name != nullptr ? *name : std::string(), param, block });
+    }
     int alignasSpecifier();
     void refuseWeakAlignas(int asked, const Type *t, std::size_t pos);
     void declareStaticLocal(const std::string &name, const Type *type,
