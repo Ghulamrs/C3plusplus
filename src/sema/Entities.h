@@ -32,6 +32,8 @@ struct Local {
     long double constantDouble = 0;
     // A const local read in a lambda for its value only: no odr-use, no capture ([expr.prim.lambda]/12, 1.27).
     bool constantOnly = false;
+    // A template's read: initialised from a value-dependent name, its constant the read's stand-in alone (M8rev L2).
+    bool valueDependent = false;
     // **[class.copy]/31 elides a `return` copy, and excludes a parameter.**
     bool isParameter = false;
     // A by-value class parameter that arrived by address is lowered to a reference, so by its slot alone it looks like `T &t`.
@@ -165,6 +167,8 @@ struct EnumConst {
     const Type *type;
     // A bound non-type template parameter's declared type, which only a signature's expression spells.
     const Type *paramType = nullptr;
+    // A template's read: a non-type parameter standing for itself, or an enumerator made from one (M8rev L2).
+    bool valueDependent = false;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     EnumConst(std::string name = std::string(), long long value = 0,

@@ -58,9 +58,10 @@ struct Node {
 };
 
 // TypeDependent: the type waits for the arguments; DependentName: looked up again at the instantiation ([temp.dep]/1,
-// an unqualified callee with a type-dependent argument, or a name in a dependent scope); Unfound: no declaration (M8rev M1).
+// an unqualified callee with a type-dependent argument, or a name in a dependent scope); Unfound: no declaration (M8rev M1);
+// ValueDependent: a non-type parameter, or a constant or enumerator a read made from one ([temp.dep.constexpr], M8rev L2).
 const std::uint8_t TypeDependent = 1, Typename = 2, Unfound = 4,
-                   DependentName = 8;
+                   DependentName = 8, ValueDependent = 16;
 
 class Tree {
 public:
@@ -99,6 +100,8 @@ public:
     std::pair<std::size_t, std::size_t> noted() const { return std::make_pair(read_.size(), unread_.size()); }
     void forget(const std::pair<std::size_t, std::size_t> &n) { read_.erase(read_.begin() + static_cast<long>(n.first), read_.end()); unread_.erase(unread_.begin() + static_cast<long>(n.second), unread_.end()); }
     void mark(NodeId id, std::uint8_t marks) { nodes_[id.v].marks |= marks; }
+    // Whether a node of the subtree carries one of `marks`.
+    bool holds(NodeId id, std::uint8_t marks) const;
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
     // [temp.dep.candidate] (M8rev M7): a dependent-name callee's functions as unqualified lookup found them at the
     // definition - each its spelling for the dump and its symbol, empty for a template, for the instantiation.

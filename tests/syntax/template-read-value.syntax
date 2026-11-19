@@ -1,0 +1,7 @@
+tests/syntax/template-read-value.cpp:6:5: (function "use" (block (return (binary "+" (binary "+" (call (name "f<3>") (int "1")) (call (name "g<4>"))) (call (name "h<5>") (int "5"))))))
+tests/syntax/template-read-value.cpp:3:22: (function "f" (var "int x") (block (decl (var "int w" (name "N"))) (decl (var "const int c" (binary "+" (name "N") (int "1")))) (decl (var "const int K" (binary "*" (name "N") (int "2")))) (return (binary "+" (binary "+" (binary "+" (name "w") (name "c")) (name "K")) (name "x")))))
+tests/syntax/template-read-value.cpp:4:22: (function "g" (block (decl (name "N")) (return (name "E"))))
+tests/syntax/template-read-value.cpp:5:22: (function "h" (var "int x") (block (switch (name "x") (block (case (name "N") (return (int "1"))) (default (return (int "0")))))))
+tests/syntax/template-read-value.cpp:3:22: (read (function "f" (var "int x") (block (decl (var "int w" (name "N" value-dependent))) (decl (var "const int c" (binary "+" (name "N" value-dependent) (int "1")))) (decl (var "const int K" (binary "*" (name "N" value-dependent) (int "2")))) (return (binary "+" (binary "+" (binary "+" (name "w") (name "c" value-dependent)) (name "K" value-dependent)) (name "x"))))))
+tests/syntax/template-read-value.cpp:4:22: (read (function "g" (block (decl (name "N" value-dependent)) (return (name "E" value-dependent)))))
+tests/syntax/template-read-value.cpp:5:22: (read (function "h" (var "int x") (block (switch (name "x") (block (case (name "N" value-dependent) (return (int "1"))) (default (return (int "0"))))))))

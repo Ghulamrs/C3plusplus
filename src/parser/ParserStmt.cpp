@@ -506,6 +506,7 @@ Kept Parser::declarationBody() {
             if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
             const std::size_t mine = locals_.size() - 1;
             Init dynamic;
+            bool dependentInit = false;
             if (parenInit || consume("=") || atBracedInitialiser(d.name)) {
                 OverloadTarget hold(*this, d.type);
                 Init in = parenInit ? parenthesisedInitialiser(d)
@@ -513,6 +514,8 @@ Kept Parser::declarationBody() {
                 if (d.type->isArray() && d.type->length() < 0)
                     d.type = types_.arrayOf(d.type->pointee(),
                                             inferredLength(in, d.type->pointee(), d.pos));
+                dependentInit = d.type->isConst() && valueDependentRead(syn(in.value));
+                const sema::Constexpr::StandIn standIn(constant_, dependentInit);
                 // [stmt.dcl]/4: one that is not a constant expression is initialised the
                 // first time control passes, under the guard a constructor gets; a constant
                 // stays data, and `constexpr` keeps its demand for one.
@@ -529,6 +532,7 @@ Kept Parser::declarationBody() {
             const std::size_t at = early ? mine : locals_.size();
             if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
             locals_[at].isConst = d.type->isConst();
+            locals_[at].valueDependent = dependentInit;
             markThreadLocal(at, quals.isThreadLocal);
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
             // An inline function's static local is one object for the program: external, in a
@@ -583,12 +587,15 @@ Kept Parser::declarationBody() {
         }
         locals_[mine].isConst = d.type->isConst();
         locals_[mine].isRegister = (sc == StorageRegister);
+        // A const local of a read initialised from a value-dependent name is one too: its constant is the stand-in (M8rev L2).
+        locals_[mine].valueDependent = hasInit && locals_[mine].isConst && valueDependentRead(syn(in.value));
         // An initialiser to skip, or a destructor that would run on what was
         // never built: either makes this a declaration no jump may land past.
         locals_[mine].guardsJump = hasInit || destructorOf(d.type) != nullptr;
         if (hasInit) {
             long long value = 0;
             long double dvalue = 0;
+            const sema::Constexpr::StandIn standIn(constant_, locals_[mine].valueDependent);     // the read's stand-in, under the mark
             if (constant_.constantInitialiser(d.type, in, &value)) {
                 locals_[mine].isConstantValue = true;
                 locals_[mine].constantValue = value;
@@ -1216,6 +1223,7 @@ Kept Parser::caseLabel() {
             src_.fail(at, "value of type '" + et->describe() + "' is not implicitly "
                           "convertible to '" + governing->describe() + "'");
         long long folded;
+        const sema::Constexpr::StandIn standIn(constant_, valueDependentRead(syn(e)));
         if (!constant_.fold(*e, &folded, at))
             src_.fail(at, "expected a case value, and this is not an integer constant expression");
         value = constant_.narrowTo(folded, governing);

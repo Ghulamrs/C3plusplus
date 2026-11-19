@@ -79,7 +79,7 @@ census)
         awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d M8.2:%s\n", s[k], k}' | sort -rn
     # The probes, on M8.2's census (2026-11-19, decision ii): what substitutes with no replay, and beside one under the check;
     # each refused shape replayed with its reason.
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest template-subst-classarg; do for how in plain check g; do
+    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest template-subst-classarg template-subst-value; do for how in plain check g; do
         case $how in plain) f= ;; check) f=-check=templates ;; g) f=-g ;; esac
         CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo $f -templates=subst -S tests/cases/$p.cpp -o /dev/null 2>&1 | tr -d '\r' > "$OUT/$p.$how"
     done; done
@@ -113,6 +113,7 @@ census)
     probe template-subst-classarg check "-check=templates made (18): equal"
     probe template-subst-adl check "-check=templates subst (2): replayed: a type parameter bound to a class or an array"
     probe template-subst-classarg check "-check=templates subst (2): replayed: a deduced call of a function over a class, a default, or a reference that binds no local as it is"
+    probe template-subst-value check "-check=templates subst (5): replayed: a non-type, pack or template parameter, bound by name"
     ;;
 bodies)
     ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |

@@ -324,14 +324,21 @@ void Parser::refuseVirtSpecifiers(const char *what) {
                              " cannot be virtual");
 }
 
-long long Parser::constantExpression(const char *what) {
+long long Parser::constantExpression(const char *what, bool *dependent) {
     std::size_t pos = peek().pos;
     ExprPtr e = decay(conditional());
     long long v;
+    const bool standIn = valueDependentRead(syn(e));
+    if (dependent != nullptr) *dependent = standIn;
+    const sema::Constexpr::StandIn hold(constant_, standIn);
     if (!constant_.fold(*e, &v, pos))
-        src_.fail(pos, std::string("expected ") + what +
-                       ", and this is not an integer constant expression");
+        src_.fail(pos, std::string("expected ") + what + ", and this is not an integer constant expression");
     return v;
+}
+
+// A read that must have a constant to go on takes a value-dependent one at the binding's stand-in, marked (M8rev L2).
+bool Parser::valueDependentRead(syntax::NodeId id) const {
+    return patternBody_ && syntaxTree_.holds(id, syntax::ValueDependent);
 }
 
 // The same types, in any order and however often each is written.

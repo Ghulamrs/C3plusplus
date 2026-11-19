@@ -1163,12 +1163,20 @@ ExprPtr Parser::primary(Program *program) {
     }
     const bool written = tokens_[start].is("typename");
     r = note(std::move(r), syntax::Kind::Name, name, pos);
-    markReadName(syn(r), r ? r->type() : nullptr, written, scoped);
+    markReadName(syn(r), r ? r->type() : nullptr, written, scoped, valueDependentName(name));
     return r;
 }
 
+// [temp.dep.constexpr]/2 in a read: a non-type parameter, or a const local or an enumerator made from one (M8rev L2).
+bool Parser::valueDependentName(const std::string &name) const {
+    if (!patternBody_) return false;
+    if (const Local *l = lookup_.findLocal(name)) return l->valueDependent;
+    const EnumConst *e = lookup_.findEnum(name);
+    return e != nullptr && e->valueDependent;
+}
+
 // M8.1 row 5: a name in a template body read at its declaration whose meaning waits for the arguments is marked so.
-void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName) {
+void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName, bool valueDependent) {
     if (!patternBody_ || !id.valid()) return;
     const DepExpr *e = t != nullptr ? t->dependentExpr() : nullptr;
     if (e != nullptr && e->text == "a name not found, which a left-out base may not declare") {
@@ -1177,7 +1185,8 @@ void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten
     }
     syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::TypeDependent : 0) |
                                                    (typenameWritten ? syntax::Typename : 0) |
-                                                   (dependentName ? syntax::DependentName : 0)));
+                                                   (dependentName ? syntax::DependentName : 0) |
+                                                   (valueDependent ? syntax::ValueDependent : 0)));
 }
 
 // [temp.dep.candidate]: an unqualified dependent-name callee keeps what unqualified lookup finds at the definition - a

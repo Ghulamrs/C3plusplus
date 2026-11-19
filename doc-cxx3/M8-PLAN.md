@@ -3589,3 +3589,63 @@ ide/generate.py up to date. g++ `-Werror` clean. **The Wine stand-in** (Linux, `
 12 template-subst probes built for x86_64-windows, linked and run, 12 passed 0 failed with `-templates=subst` and at -O0.
 **Owed on Windows** (the box is down): cl /W4 /WX, names.sh, overload.sh, winpass, cdb, MASM. **Owed by the wave gate**:
 the fixed point (the self-host), since 145 lines went.
+
+## M8.2 slice 2f, first part: M8rev L2 - a value-dependent name in a read is marked, and the read takes no constant from it (lane m82t, 2026-11-19)
+
+Branch `m8-2t` from `8c75b11a` (main: M8.2 through 2e, the stand-in deleted, the replay's ADL mended). **The finding** (M8rev
+L2): in a function template's read a non-type parameter is bound as an enumerator worth 0, so `int w = N` read `N` as the
+constant 0, `const int c = N + 1` and `static const int K = N * 2` kept constants (1, 0), `enum { E = N }` made E = 0 and `case
+N:` a label 0. Nothing read those constants yet (M8.2 refuses a non-type parameter before it builds), but slice 2f's second
+part would have.
+
+**What it does** (with and without the flag; a read's tree only): a new syntax mark, `value-dependent` (`syntax::ValueDependent`,
+[temp.dep.constexpr]/2), on a name in a read that is a non-type parameter standing for itself (`EnumConst::valueDependent`, set
+where `bindTemplateParameters` binds a pattern's parameter), a const or static const local whose initialiser holds one
+(`Local::valueDependent`), or an enumerator made from one, and those after it (`E = N`). `Constexpr::fold` refuses a node so
+marked in a read: no fold asked of the read takes a constant from it. Where the read must have a constant to go on - a const
+local's record, an enumerator's value, a case label, a template argument, a static member's value (`constantExpression`,
+`caseLabel`, `Parser::standInConstant`) - it takes the binding's stand-in as before, under `Constexpr::StandIn`, and the entity
+keeps the mark: so the read's tree is what REF read, node for node, and every constant from a parameter is marked where it is
+read. A refusal (the body unread) was tried first and measured: it made 16 bodies of the cases and 2 of the self-host unread
+(class doors over `ratio`, `chrono` and the like: "the class: a constant from a value-dependent name"), which the ceiling may
+not take; so the read keeps its stand-in and M8.2 is the one to refuse a marked constant (slice 2f's second part: a body whose
+constant positions hold the mark is folded under the binding or replays by name). `-check=fold` counts these apart: "a
+value-dependent name in a template's read". A non-const local (`int w = N`) is not marked, as the standard has it.
+
+**Shown**: `tests/syntax/template-read-value` (new; its dump read by hand: `(name "N" value-dependent)` in `w`, `c` and `K`'s
+initialisers, in `case N:` and in `enum { E = N }`; `(name "c" value-dependent)`, `(name "K" value-dependent)` and `(name "E"
+value-dependent)` where they are read; `w` and `x` unmarked; f, g and h all read, as REF reads them). No existing syntax
+record changed (none holds a non-type parameter). The probe `tests/cases/template-subst-value` (`.flags` `-templates=subst`; `.expected` g++'s on Linux, clang 19's
+on Windows below): f, g, h over `N`, 5 specializations, all replayed by name ("a non-type, pack or template parameter, bound
+by name"), its line in tests/subst.sh's census step.
+
+**Found, not mended** (no side tasks): a local `enum { E = N };` in a function template instantiated twice is refused "'E' is
+declared twice" by REF and NEW alike (`g<4>(); g<7>();`): the replay's enumerator outlives the specialization's body. The probe
+instantiates `g` once; the defect is owed to the register.
+
+**src/**: Syntax.h +5 -2, Syntax.cpp +8, Entities.h +4, Templates.cpp +1, Constexpr.h +8, Constexpr.cpp +3, Parser.h +4 -2,
+ParserExpr.cpp +12 -3, ParserStmt.cpp +8, ParserConst.cpp +10 -3, ParserType.cpp +4 -1: 95,226 -> 95,282 (+56). EXCLUSIONS re-pointed
+(ParserExpr.cpp six, ParserStmt.cpp six, ParserType.cpp twelve, Constexpr.cpp one, Templates.cpp 1466, 1518, 2215).
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,296 cases): 350 nonzero exits as REF's 1,295, none failing on
+a difference; covered 356, built 356, as REF. Without the check **286 substituted with no replay and 70 replayed**, as REF;
+**without the lanes' probes 111** (+0): this part makes no body; it marks what slice 2f's second part must fold under the
+binding. The probe's 5 replay by name.
+
+**Gates** (REF `8c75b11a` in `~/m82tb`, NEW in `~/m82tc` - REF's tree with this commit shipped, one path length; every check on
+this commit's own tree): `identical.sh` without the flag 0 differ on four targets (x86_64-linux 1,894, x86_64-windows 3,788,
+arm64-darwin 1,894, tms6747 1,894) and with `-templates=subst` 0 differ on three (1,894, 3,788, 1,894); **-g** 0 differ with and
+without the flag (x86_64-linux 727 the same, 350 refused alike, 219 by the tree's path alone; x86_64-windows 709, 375, 212).
+`-check=fold` compared 16,745, 0 differ, 0 units failing (43 "a value-dependent name in a template's read"). run.sh 1289/0
+without and with `-templates=subst`. **subst.sh 0 failed** (cases ceiling 17 of 17, 53 shapes; self 102 of 102, ceiling 26 of
+26). syntax.sh 7/0. Self-compile of the six changed `.cpp` files rc 0. Static, each tool's own exit status: comments rc 0,
+memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (ExprPtr 2012, node-refs 298: not raised), ide/generate.py up to date;
+exclusions rc 0 0/0 after the last re-point. g++ `-Werror` clean. The Wine stand-in: the 13 template-subst probes 13 passed with
+`-templates=subst` and at -O0. **Windows**: cl /W4 /WX clean (85 s, alone); clang 19 (`-nostdinc++ -isystem include`) prints
+the probe's `.expected`. names.sh 947/0 and overload.sh 46/0 were run on this part's first version (the refusal); see the
+handover for the final tree's run.
+
+**Left**: slice 2f's second part - the Binding carries a non-type parameter's value (integral and enumeration) and the Typer
+folds a `value-dependent` node under it (`N`, `sizeof(T) * N`, `T a[N]`, `static const int K = N`), pointer and reference
+parameters replaying by name; then the census and the bodies newly made under -check=templates (third part). The local enum
+defect above.

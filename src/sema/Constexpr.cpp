@@ -128,6 +128,8 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
         checkFold(e.syntax(), ok, ok ? *out : 0, e.type());
         return ok;
     }
+    // A template's read takes no constant from a value-dependent name (M8rev L2).
+    if (!standIn_ && p_.patternBody_ && e.syntax().valid() && (p_.syntaxTree_.node(e.syntax()).marks & syntax::ValueDependent) != 0) return false;
     // **A name, when it names a constant.**
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         // **Inside a constexpr call, a local name is a parameter.** The body being
@@ -367,6 +369,7 @@ bool Constexpr::fold(const TypedTree &t, TypedId id, long long *out, const char 
 void Constexpr::checkFold(syntax::NodeId s, bool ok, long long value, const Type *asked) const {
     if (!s.valid()) { foldNotReached_["no syntax node"]++; return; }
     // A template's read at its declaration: what depends on a parameter is the parser's stand-in there (M8rev L2).
+    if (p_.patternBody_ && p_.syntaxTree_.holds(s, syntax::ValueDependent)) { foldNotReached_["a value-dependent name in a template's read"]++; return; }
     if (p_.patternBody_ || p_.readLayout_) { foldNotReached_["a template's read"]++; return; }
     Typer typer(p_);
     const TypedId id = typer.typeExpression(s);

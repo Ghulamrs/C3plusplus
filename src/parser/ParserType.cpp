@@ -1814,6 +1814,7 @@ const Type *Parser::enumSpecifier() {
     std::vector<std::size_t> made;
     long long next = 0;
     const std::size_t first = lookup_.enums_.size();
+    bool dependent = false;     // a read's `E = N` and those after it: value-dependent, their values the stand-in (M8rev L2)
     while (!peek().is("}")) {
         std::size_t npos = peek().pos;
         std::string name = expectIdent("an enumerator");
@@ -1824,7 +1825,8 @@ const Type *Parser::enumSpecifier() {
             (!scoped && twice == lookup_.enumIndex_.end() && lookup_.findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
-            const long long given = constantExpression("a constant");
+            dependent = false;
+            const long long given = constantExpression("a constant", &dependent);
             next = constant_.narrowTo(given, narrowAs);
             // [dcl.enum]/5: a value the base cannot hold is ill-formed, not wrapped.
             if (underlying != nullptr && next != given)
@@ -1835,6 +1837,7 @@ const Type *Parser::enumSpecifier() {
         lookup_.enumIndex_[within_ + name] = lookup_.enums_.size();
         lookup_.enums_.push_back(EnumConst{ within_ + name, next,
                                     scoped ? underlying : valueType });
+        lookup_.enums_.back().valueDependent = dependent;
         made.push_back(lookup_.enums_.size() - 1);
         // C++11's `E::a` for an unscoped E too, [dcl.enum]/11.
         if (!scoped && !tag.empty()) lookup_.enumIndex_[prefix + tag + "::" + name] = lookup_.enums_.size() - 1;

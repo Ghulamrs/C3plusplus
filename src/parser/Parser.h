@@ -833,7 +833,9 @@ private:
     bool definesType(std::size_t from) const;
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
     // M8rev M7: `dependentName` is [temp.dep]/1's - an unqualified callee with a type-dependent argument, or a dependent scope's.
-    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName);
+    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName, bool valueDependent = false);
+    bool valueDependentName(const std::string &name) const;
+    bool valueDependentRead(syntax::NodeId id) const;
     void noteDefinitionLookup(syntax::NodeId callee, const std::string &written);
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
@@ -2432,7 +2434,7 @@ private:
     // How many potentially-throwing things the expression being parsed has
     // reached. `noexcept(e)` reads it; nothing else does.
     int mayThrow_ = 0;
-    long long constantExpression(const char *what);
+    long long constantExpression(const char *what, bool *dependent = nullptr);
 
     void typedefFunctionSuffix(Declared &td);
 

@@ -108,6 +108,7 @@ void Tree::dumpNode(std::string &out, NodeId id) const {
     if ((n.marks & TypeDependent) != 0) out += " type-dependent";
     if ((n.marks & DependentName) != 0) out += " dependent-name";
     if ((n.marks & Unfound) != 0) out += " unfound";
+    if ((n.marks & ValueDependent) != 0) out += " value-dependent";
     const std::unordered_map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t> > >::const_iterator f = found_.find(id.v);
     if (f != found_.end())
         for (std::size_t i = 0; i < f->second.size(); i++) { out += " found "; quoted(out, strings_.at(f->second[i].first)); }
@@ -170,6 +171,13 @@ void Tree::revive(NodeId id) {
 void Tree::markPattern(NodeId id) {
     nodes_[id.v].dead = nodes_[id.v].pattern = true;
     for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) markPattern(children_[nodes_[id.v].first + i]);
+}
+
+bool Tree::holds(NodeId id, std::uint8_t marks) const {
+    if (!id.valid()) return false;
+    if ((nodes_[id.v].marks & marks) != 0) return true;
+    for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) if (holds(children_[nodes_[id.v].first + i], marks)) return true;
+    return false;
 }
 
 int Tree::differs(NodeId a, NodeId b) const {

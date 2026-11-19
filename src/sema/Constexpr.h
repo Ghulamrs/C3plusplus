@@ -57,6 +57,13 @@ public:
     void refuseConstexprClassObject(const std::string &name, std::size_t pos) const;
     bool foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const;
     bool fold(const Expr &e, long long *out, std::size_t pos) const;
+    // While held on, a read's value-dependent names fold at their stand-in, for a parse that must go on (M8rev L2).
+    struct StandIn {
+        StandIn(const Constexpr &c, bool on) : c_(c), was_(c.standIn_) { c_.standIn_ = was_ || on; }
+        ~StandIn() { c_.standIn_ = was_; }
+        const Constexpr &c_;
+        bool was_;
+    };
     // fold's cases over a typed expression (M6d S6, C2); false with `*why` set where this lane does not reach the case.
     bool fold(const TypedTree &t, TypedId id, long long *out, const char **why) const;
     std::string foldReport(int *differ) const;
@@ -76,6 +83,7 @@ private:
     Parser &p_;
     mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
     mutable int foldDepth_ = 0, foldAgreed_ = 0, foldDiffer_ = 0;
+    mutable bool standIn_ = false;
     mutable std::map<std::string, int> foldNotReached_;
     mutable std::string foldDiffers_;
 };
