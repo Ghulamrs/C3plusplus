@@ -1484,8 +1484,8 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     addr->setType(clsPtr);
     ExprPtr call = destructorCall(std::move(addr), *dtor, d.pos);
     // For the SSA builder (M3b.3): the object the helper destroys, "$object", and the destructor it calls, "~object".
-    if (const Call *c = dynamic_cast<const Call *>(call.get())) {
-        const MemberBuilt o = { symbol, d.type, false, false }, k = { c->symbol(), types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ clsPtr }, false), false, false };
+    if (call->resolved() != 0 && resolvedTable_[call->resolved()].what == Resolved::Call) {
+        const MemberBuilt o = { symbol, d.type, false, false }, k = { resolvedTable_[call->resolved()].symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ clsPtr }, false), false, false };
         memberBuilt_[helper + "|$object|0"] = o;
         memberBuilt_[helper + "|~object|0"] = k;
     }
