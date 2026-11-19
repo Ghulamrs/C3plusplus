@@ -1874,8 +1874,9 @@ ExprPtr Parser::primaryNode(Program *program) {
                     if (obj->type()->unqualified() != cls->unqualified())
                         obj = baseSubobject(std::move(obj), cls->unqualified());
                     requireAssignable(*obj, qpos, "the left of '='");
-                    ExprPtr done = assignValue(std::move(obj), decay(std::move(args[0])), qpos);
-                    if (!dynamic_cast<const Assign *>(done.get())) return done;
+                    bool bytes = false;
+                    ExprPtr done = assignValue(std::move(obj), decay(std::move(args[0])), qpos, &bytes);
+                    if (!bytes) return done;
                     // Bytes moved: what it answers is the base subobject, named again from `this`.
                     ExprPtr whole = thisObject();
                     if (whole->type()->unqualified() != cls->unqualified())
@@ -2430,6 +2431,14 @@ const Type *Parser::decltypeSpecifier() {
     return isLvalue(*e) ? types_.referenceTo(t) : prvalue;
 }
 
+Parser::NoAddress Parser::noAddressOf(const Expr &e, std::string &name) {
+    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e))
+        if (m->isBitField()) { name = m->name(); return NoAddress::BitField; }
+    if (const Var *v = dynamic_cast<const Var *>(&e))
+        if (v->noAddress()) { name = v->name(); return NoAddress::Register; }
+    return NoAddress::None;
+}
+
 // A reference is used by going through the address in its slot, and every use does
 // it. The parser hands back a dereference, so assignment, address-of and member
 // access see an ordinary lvalue - the trade `(bool)x` becoming `x != 0` is.
@@ -2510,18 +2519,9 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     // Binding takes an address, so the two things that have none cannot be bound to
     // directly. A const reference still may: it copies them into a temporary below,
     // which is what the standard says happens.
-    const char *noAddressBecause = nullptr;
     std::string noAddressName;
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(init.get()))
-        if (m->isBitField()) {
-            noAddressBecause = "a bit-field";
-            noAddressName = m->name();
-        }
-    if (const Var *v = dynamic_cast<const Var *>(init.get()))
-        if (v->noAddress()) {
-            noAddressBecause = "register";
-            noAddressName = v->name();
-        }
+    const NoAddress unaddressed = noAddressOf(*init, noAddressName);
+    const char *noAddressBecause = unaddressed == NoAddress::BitField ? "a bit-field" : unaddressed == NoAddress::Register ? "register" : nullptr;
 
     // **An rvalue reference takes exactly what an lvalue one will not**: [dcl.init.ref], `T &&` binds to a value
     // with nowhere to live and refuses an object that has somewhere - which is how a move takes an object apart.
@@ -3585,14 +3585,14 @@ ExprPtr Parser::unaryNode() {
             if (decayed->op() == '&' && v->type()->isPointer() &&
                 v->type()->pointee()->isFunction())
                 return v;
-        if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(v.get()))
-            if (m->isBitField())
-                src_.fail(pos, "'" + m->name() + "' is a bit-field, and a "
-                               "bit-field has no address");
-        if (const Var *rv = dynamic_cast<const Var *>(v.get()))
-            if (rv->noAddress())
-                src_.fail(pos, "'" + rv->name() + "' is register, and a register "
-                               "object has no address - drop the register");
+        std::string unaddressedName;
+        const NoAddress unaddressed = noAddressOf(*v, unaddressedName);
+        if (unaddressed == NoAddress::BitField)
+            src_.fail(pos, "'" + unaddressedName + "' is a bit-field, and a "
+                           "bit-field has no address");
+        if (unaddressed == NoAddress::Register)
+            src_.fail(pos, "'" + unaddressedName + "' is register, and a register "
+                           "object has no address - drop the register");
         if (dynamic_cast<const Conditional *>(v.get()) != nullptr)
             src_.fail(pos, "'?:' is not an lvalue, and its address cannot be "
                            "taken - assign it to something first");
@@ -3720,10 +3720,10 @@ ExprPtr Parser::unaryNode() {
             Unevaluated unevaluated(this);
             ExprPtr operand = unary();
         unaryOperand_ = syn(operand);
-            if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(operand.get()))
-                if (m->isBitField())
-                    src_.fail(pos, "sizeof cannot be applied to '" + m->name() +
-                                   "', which is a bit-field");
+            std::string unaddressedName;
+            if (noAddressOf(*operand, unaddressedName) == NoAddress::BitField)
+                src_.fail(pos, "sizeof cannot be applied to '" + unaddressedName +
+                               "', which is a bit-field");
             measured = operand->type();
         }
         // A read's body holds a dependent `sizeof` as a dependent value: its number is substitution's.
