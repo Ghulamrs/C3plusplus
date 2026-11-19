@@ -2722,3 +2722,35 @@ ast-residue node-refs 298 (rc 0, not raised: a `const Var &` alias of `::Local` 
 `-Werror` clean; **Windows** cl /W4 /WX clean (first and alone: the whole tree 09:44:46-09:47:06, about 2 minutes 20; the deltas
 09:58:16-10:00:39 and 10:15:46-10:17:23), names.sh 928 passed 0 failed, overload.sh 46/0 (on the final tree; the same on the first).
 
+## M8.2 slice 2c, step 2 continued: what the read keeps apart refused at parse time, and the block table from the read (lane m82g, 2026-11-19)
+
+Branch `m8-2g` from `7774bb42` (m82f). **Two commits**, both under `-templates=subst` only. (1) **The 7 bodies whose frame and shell held
+but whose typed body did not now fall back at parse time, by name**: `Templates::substShape` takes the binding and walks the read
+twice - pass 1 the shapes the slice covers, as before (so every earlier reason reads as it did); pass 2 what the read records apart
+from any replay: a node the parser recorded with a type the binding does not carry (`p_.dependentType(substituted(s, t))` - the
+three `conditional`s, whose read the parser holds as `zeroOf(dependentResult())` and notes as a `Value`), a `var` declared with
+such a type (a member pointer too, which `substituted` keeps as written), and a unary `+` over a dependent name (the replay's
+`unaryNode` hands its operand on, record and all: `template-sfinae-unresolved`'s `+t`). `instantiate` refuses a trailing `decltype`
+(`->` at depth 0 of the declaration's tokens) over a `sizeof`, a cast or a qualified name (`DepExpr` ops the read keeps no syntax
+for, so the function node has other parts than the replay's: `template-sfinae-misc`'s `m28`, `m30`, `m31`); a leading `decltype`
+has no parts in either and still substitutes. The same pass refuses the 34 `var`s m82b-m82f found typed apart at the lowering, now
+before any replay - the class door's (M8.3). So no covered body needs the replay's typed body to be found apart.
+
+**The census after (1)** (Linux, `-check=templates -templates=subst -S` over the 1,276 cases): covered 197 (17 taken by the stand-in
+first, as before); replayed by reason - a class or array argument 288, a non-type/pack/template parameter 177, `call` 77, `cast` 49, a
+`name` resolved to a type the binding does not carry 26, `member` 13, `literal` 9, a `var` declared so 8, `sizeof` 8, no body read 6,
+a trailing `decltype` 3, a `conditional` 3, a unary `+` 1. **Frame equal 180, differ 0; shell equal 180, differ 0.** Substituted with no
+replay 0; **beside a replay 180** (46 cases, as m82f); **replayed at the lowering by name 0** (m82f: 41).
+
+**src/ (1)** `Templates.h` +1 -1, `Templates.cpp` +48 -14 (`substShape`'s second pass, `unnotedOperand`, the trailing `decltype` in
+`instantiate`): src/ 94,682 -> 94,716 lines. **Gates (1)** (REF `7774bb42` and NEW built in one Linux tree, `~/m82g-ref.exe` and
+`~/m82g-n3.exe`; the cases alone): `identical.sh` REF against NEW without the flag at -O0 and -O2 - x86_64-linux 1,856, tms6747 1,856,
+x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with `-templates=subst` on NEW - x86_64-linux 1,856, x86_64-windows 3,712,
+arm64-darwin 1,856, **0 differ**; `-g` at -O0, without and with the flag, x86_64-linux 927 the same (349 refused alike) and x86_64-windows
+902 (374), 0 differ each; run.sh 1270/0, and with `-templates=subst` 1270/0; subst.sh 0 failed (self 102 of 102 reached, the self shape
+record 34 bodies in 21 units, ceilings 17 under 17 and 26 under 26); `-templates=subst -check=templates` over the 1,276 cases no frame,
+shell or body apart; `-check=fold` compared 16,475, agreed 12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0 failed;
+self-compile of `Templates.cpp` by NEW rc 0; static, each tool's own exit status: exclusions 0/0 (three `Templates.cpp` citations
+re-pointed), comments 0 over, memory gate raw-pointers 89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to
+date; g++ `-Werror` clean; **Windows** cl /W4 /WX clean (first and alone: the whole tree 10:41:16-10:43:21, about 2 minutes; the delta
+10:46:59-10:48:39), names.sh 928 passed 0 failed, overload.sh 46/0.

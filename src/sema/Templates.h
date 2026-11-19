@@ -222,7 +222,7 @@ public:
     struct Binding { std::vector<TypeId> types; };
     // Specialization `i` built from its template's body read at the declaration, under `b`; false with `why` the reason it replays.
     bool instantiate(std::size_t i, const Binding &b, std::string *why);
-    std::string substShape(syntax::NodeId body) const;          // the first thing in a read body the slice does not cover, or empty
+    std::string substShape(syntax::NodeId body, const Substituted &s) const;     // the first thing a read body holds apart, or empty
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
