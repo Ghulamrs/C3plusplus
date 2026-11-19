@@ -4703,3 +4703,32 @@ tree), a member of a constant object and `*p` (`foldLeaf`), addresses (`foldAddr
 (`runConstexprEffect`), and an expression with no syntax node (one the parser built itself). *`-check=fold`* folds every
 ask from outside the fold twice and fails the unit on a difference, printing compared / agreed / differ / not reached by
 reason; nothing without the flag reads what it adds.
+
+**The code** (0a65cb71, src/ 94,315 -> 94,482, +167: Constexpr.cpp +138, Constexpr.h +12, Driver.cpp +11, Parser.h +3,
+Typing.h +2, Driver.h +1). `Typer::typeExpression`; `Constexpr::fold(const TypedTree &, TypedId, ...)`; `checkFold` and
+`foldReport`; `fold(const Expr &)` asks the check once at its outermost call (a depth count), so a nested fold is never
+held twice. Two rules the probes asked for: a folded static member's record carries its value (serial 1, the parser's
+`Num`), read as the Ast reads the `Num`; and **a template's read** (`patternBody_` or `readLayout_` at the ask) is not
+compared - the parser's values for what depends on a parameter are stand-ins there (`include/deque`'s
+`sizeof(T) < 32 ? ... : 16` folded to 16 by the Ast and 1 by the typed tree at the class door's read; the instantiation's
+ask agrees), which M8rev L2's dependent refusal settles, not this check.
+**-check=fold** (x86_64-linux `-S`). tests/cases: 16,475 asks compared, **12,243 agreed, 0 differ**, 4,232 not reached - a
+template's read 3,410, a call 299, an object or an address 211, a subscript 79, inside a constexpr call's frame 68, an
+operand not of integer type 42, no syntax node 37, a member 33, a cast of a floating or pointer value 27, a name with no
+constant record 25, a floating operand 1; the 345 refused units end before the report. The self-host's sources (102 units of
+src/): 33,657 compared, **22,575 agreed, 0 differ**, 11,082 not reached - a template's read 5,831, a call 3,378, an operand
+not of integer type 645, a member 563, an object or an address 304, a name with no constant record 231, a subscript 126, a
+postfix 4; every unit reported. **ast-residue** unchanged (ExprPtr 2,012, StmtPtr 0, node-casts 148, node-refs 301, visits 0,
+readers 9, ast-lines 513): the check adds no Ast read beyond `fold`'s own signature.
+**Gates** (REF 4f91ee2f and NEW 0a65cb71 built in one Linux tree, `~/m6d-s6`): identical.sh at -O0 and -O2 - tms6747 1,856,
+x86_64-linux 1,856, x86_64-windows 3,712 (both spellings), arm64-darwin 1,856 compared, **0 differ**; `-g -S` - tms6747 912 same /
+364 refused alike, x86_64-linux 927/349, arm64-darwin 927/349, x86_64-windows 902/374, **0 differ**; run.sh 1,270 passed, 0
+failed, and with `-templates=subst` 1,270/0; tests/subst.sh: run, typed, census, same and bodies pass (cases 17 under 17), **self fails - door functions shape 34, above the record of 8 - and fails the same on the base**: REF on 4f91ee2f's own sources (a clean `git archive` tree, `~/m6d-s6r`) prints the same line, so it is the unchecked merge with m8-2b's (owed to the wave gate, no record written here); a mend that took the new `std::map<std::string, int>` out of Constexpr.h left it at 34 and was dropped; tests/tms6747.sh SIM=1 -O2 shards 1-3 146/0 (1 skipped), 148/0, 147/0; self-compile of Constexpr.cpp and Driver.cpp by NEW at
+x86_64-linux -O2 rc 0, tms6747 -O2 refused as REF is (`std::fma`, `<unistd.h>`); static: exclusions 0 uncited 0 stale,
+comments 0 over, memory gate held, ide --check up to date; g++ -Werror clean; **Windows** cl /W4 /WX clean (first and alone,
+07:42:57-07:45:08, 2 min 11 s, work\m6d-s6w), names.sh 928 passed 0 failed and overload.sh 46 agreed 0 differed by that build (clang 19.1.5).
+**Where it stopped, and what is next.** The check is the deliverable and it holds; no deletion. What the next lanes reach, by
+the counts above: a constexpr call (the frame of parameters over a typed operand - after `ConstexprFn::value` is a syntax
+root), the leaf half (`foldLeaf`: members of constant objects, `*p`, subscripts) and the address half (`foldAddress`,
+`addressOfObject`, `bindStaticReference` - s7a's list), floating operands (`foldFloating`, `foldDouble`), the comma's effect;
+then S8 can replace `fold(const Expr &)` by `fold(TypedId)` where the check has said "agreed" for every ask.
