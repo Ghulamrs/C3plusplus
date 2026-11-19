@@ -51,8 +51,8 @@ public:
 
     // What the grammar recorded, for -dump=syntax.
     const syntax::Tree &syntaxTree() const { return syntaxTree_; }
-    // M8.1-early's switch (-templates=subst), and -g, which refuses it.
-    void substituteTemplates(bool on, bool debug) { tmpl_.substitute_ = on; tmpl_.substituteDebug_ = debug; }
+    // M8.2's switch (-templates=subst): a function specialization built from its body read at the declaration.
+    void substituteTemplates(bool on) { tmpl_.substitute_ = on; }
     // -check=templates (M8.1): hold each replayed template body against the first read of it, and say what differed.
     void checkTemplates() { tmpl_.checkBodies_ = true; }
     std::string templatesReport() const { return tmpl_.bodiesReport(); }

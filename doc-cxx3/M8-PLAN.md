@@ -3539,3 +3539,53 @@ only the replay's parse writes today (`temporaryBuilt_`, `convertedBuilt_`, keye
 read's nodes. Also left: a candidate over another class (a base, or one reached by a converting constructor); deducing a
 class template-id parameter from a class argument (the 5 above); (b) function templates found only in an associated
 namespace (m8-adl's left); the rest of m82q's left list.
+
+## M8.2 slice 2e: M8.1-early's stand-in deleted whole (lane m82s, 2026-11-19)
+
+Branch `m8-2s` from `9989a6f1` (m82r). **Step 1, the proof first** (the coordinator's decision ii): a measuring build of
+`9989a6f1`, never committed, printed each body `substituteFunction` made. Under `-templates=subst` over the 1,295 cases on
+x86_64-linux, x86_64-windows and arm64-darwin, and over the self-host's 102 sources on x86_64-linux and x86_64-windows (102 of
+102 rc 0 each), **the stand-in substituted 0 bodies**. It was asked 669 times over the cases (plain and under
+`-check=templates` alike) and refused each: 348 an argument that is not arithmetic, 159 a parameter that is not a type, 43
+`inline`, 31 `int`, the rest a token outside its subset or a lookup. M8.2 asks first, and the stand-in is asked only for a body
+M8.2 does not cover; it refused every one, so it made nothing M8.2 does not. tms6747 and `-g` it refused whole.
+
+**One commit, the deletion as the 2e row lists it.** `Templates::substituteFunction` and its token subset
+(`substitutableTokens`), `substituted_`, `refusedSubst_` and the census's `template-replayed (N)` lines it fed,
+`substituteDebug_` (substituteTemplates takes the switch alone now), `Substituted::pattern`, `SubstitutedTypes`,
+`TypedTree::retype` and `resolutionCount`, which only it read. `Typer::typeBody`'s retype and `declaredReturnOf`'s stand-in
+branch go, as does the sibling-root insertion in `Typer::census`. `Templates::substituted` stays: it is M8.2's binding as a
+function of a type. The `by-substitution` door is M8.2's alone now. `-templates=subst`'s help text names M8.2.
+`template-subst.cpp`'s first two comment lines say the read makes its bodies.
+
+**tests/subst.sh**: the `same` step is removed. It asserted that `-S` text and diagnostics with `CXX1_TEMPLATE_SUBST=1` equal those
+without, over the cases reaching the function door (x86_64-linux, x86_64-windows, arm64-darwin, -O0 and -O2). That is asserted
+now by `identical.sh` with `NEW_FLAGS=-templates=subst` against REF without it, on the same three targets, which every M8.2 lane
+and wave gate runs. The census step's `template-replayed` lines (the stand-in's reasons) are gone. So is the per-probe check
+`by-substitution=0` ("the stand-in substituted where M8.2 makes the body"), which has nothing left to hold. Steps run, typed,
+census (M8.2's lines and the probes, unchanged), bodies and self stay. EXCLUSIONS re-pointed (Templates.cpp 1465, 1517, 2214).
+
+**src/**: 95,371 -> 95,226 (-145: Templates.cpp +3 -106, Templates.h +5 -15, Typing.cpp +5 -25, Typing.h +1 -13, Driver.cpp and
+Parser.h +6 -6). 100 or more lines go, **so the wave gate owes the fixed point** (self-host).
+
+**The census** (Linux, unchanged against REF): `-check=templates -templates=subst` over 1,295 cases, 350 nonzero exits as REF,
+none failing on a difference; covered 356, built 356 equal. Without the check, 286 substituted with no replay and 70 replayed by
+reason (40 a return type the binding does not carry, 30 a `decltype` return). **Without the lanes' probes: 111 of the suite's own
+bodies made with no replay** (+0).
+
+**tests/subst-self.ceiling**: the member-templates door's floor lowered, bodies 1,515 -> 1,485 and read 1,490 -> 1,460 (unread
+25 as before). The self corpus is the compiler's own source, and the deletion took 30 member-template bodies out of it (the
+`substituted_` map's and its iterators' members among them). The reader is unchanged: NEW's exe over REF's sources reads 1,515
+and 1,490, the record, as REF's own exe does. class-members' `shape=57` against the record's 58 is REF's too and is left alone.
+
+**Gates** (REF `9989a6f1` in `~/m82sb`, NEW in `~/m82sc` - REF's tree with this commit shipped, one path length; every check on
+this commit's own tree): `identical.sh` without the flag 0 differ on four targets (x86_64-linux 1,892, x86_64-windows 3,784,
+arm64-darwin 1,892, tms6747 1,892), and with `-templates=subst` 0 differ on three (1,892, 3,784, 1,892). **-g** 0 differ with
+and without the flag (x86_64-linux 726 the same, 350 refused alike, 219 by the tree's path alone; x86_64-windows 708, 375,
+212). `-check=fold` compared 16,725, 0 differ, 0 units failing. run.sh 1288/0 without and with `-templates=subst`. syntax.sh
+6/0; typed.sh 938/0. Self-compile of `Templates.cpp`, `Typing.cpp` and `Driver.cpp` rc 0. Static, each tool's own exit
+status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised),
+ide/generate.py up to date. g++ `-Werror` clean. **The Wine stand-in** (Linux, `c3wine`, the project's LINK; not the box): the
+12 template-subst probes built for x86_64-windows, linked and run, 12 passed 0 failed with `-templates=subst` and at -O0.
+**Owed on Windows** (the box is down): cl /W4 /WX, names.sh, overload.sh, winpass, cdb, MASM. **Owed by the wave gate**:
+the fixed point (the self-host), since 145 lines went.

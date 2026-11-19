@@ -226,9 +226,9 @@ void Driver::usage(char *file) {
         "         its expression typed on demand, and fails where the two differ\n"
         "       -check=templates holds the syntax of each template body a replay reads\n"
         "         against the first read of the same body, and reports the count on stdout\n"
-        "       -templates=subst makes a function template's specialization from a\n"
-        "         replayed sibling's body where M8.1-early's subset admits it (off by\n"
-        "         default; CXX1_TEMPLATE_SUBST=1 the same; refused under -g)\n"
+        "       -templates=subst makes a function template's specialization from its\n"
+        "         body read at the declaration where M8.2's shapes admit it, and\n"
+        "         replays the rest (off by default; CXX1_TEMPLATE_SUBST=1 the same)\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
         "         on from the next declaration after each; the file still fails\n", file);
 }
@@ -1734,7 +1734,7 @@ bool Driver::compile(const Job &job) {
     auto t2 = Clock::now();
 
     Parser parser(src, std::move(tokens), types, target, backend_->abi(), job.dialect);
-    parser.substituteTemplates(templateSubst_ || std::getenv("CXX1_TEMPLATE_SUBST") != nullptr, debug_);
+    parser.substituteTemplates(templateSubst_ || std::getenv("CXX1_TEMPLATE_SUBST") != nullptr);
     if (checkTemplates_) parser.checkTemplates();
     if (checkFold_) parser.checkFold();
     Program program = parser.parse();

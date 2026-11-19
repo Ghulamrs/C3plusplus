@@ -158,22 +158,10 @@ public:
     void setBounds(TypedId id, int n) { nodes_[id.v].bounds = static_cast<std::uint8_t>(n); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
-    // Every type on the nodes after `node` and the records after `record`, through `f` (M8.1's substitution).
-    template <class F> void retype(std::size_t node, std::size_t record, const TypeTable &types, F f) {
-        for (std::size_t i = node + 1; i < nodes_.size(); i++) {
-            nodes_[i].type = f(nodes_[i].type);
-            if (nodes_[i].castType.valid()) nodes_[i].castType = TypeTable::id(f(types.type(nodes_[i].castType)));
-            if (nodes_[i].folded.type.valid()) nodes_[i].folded.type = TypeTable::id(f(types.type(nodes_[i].folded.type)));
-        }
-        for (std::size_t i = record + 1; i < resolutions_.size(); i++) {
-            if (resolutions_[i].type.valid()) resolutions_[i].type = TypeTable::id(f(types.type(resolutions_[i].type)));
-        }
-    }
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
     // The token a literal node was read from; `node(id).literal` says whether there is one, and 0 gives an End token.
     const Token &literal(TypedId id) const { return literals_[nodes_[id.v].literal]; }
     const std::string &stringLabel(TypedId id) const { return labels_[nodes_[id.v].literal]; }
-    std::size_t resolutionCount() const { return resolutions_.size() - 1; }
 private:
     std::vector<TypedNode> nodes_;
     std::vector<TypedId> children_;
@@ -200,7 +188,7 @@ public:
     TypedId typeExpression(syntax::NodeId e) { scopes_.clear(); return node(e); }
     // M8.2: an argument of a read body typed under Templates::bound_'s `binding` before the body is (Templates::callArgTypes).
     TypeId typeUnder(syntax::NodeId e, const std::string &binding);
-    // M8.1: the body of `symbol` - its own, or a sibling's with the types substituted where Templates made it so.
+    // The body of `symbol` - its own, or M8.2's read typed under its binding where Templates made it so.
     TypedId typeBody(syntax::NodeId fn, const std::string &symbol);
     TypeId declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const;
     const TypedTree &tree() const { return tree_; }
