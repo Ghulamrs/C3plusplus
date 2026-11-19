@@ -97,11 +97,11 @@ census)
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
     probe template-subst-refused check "-check=templates replay (10): beside a replay, under -check=templates"
-    probe template-subst-refused check "-check=templates subst (2): replayed: a dependent-name call a function template may answer, which the replay deduces"
+    probe template-subst-refused check "-check=templates subst (2): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
     probe template-subst-call check "-check=templates made (8): equal"
-    probe template-subst-call check "-check=templates subst (2): replayed: a dependent-name call a function template may answer, which the replay deduces"
+    probe template-subst-call check "-check=templates subst (2): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
     probe template-subst-depcall check "-check=templates made (9): equal"
-    probe template-subst-depcall check "-check=templates subst (1): replayed: a dependent-name call a function template may answer, which the replay deduces"
+    probe template-subst-depcall check "-check=templates subst (1): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
     probe template-subst-refused plain "template-replayed (2): a name the template does not declare: a lookup"
     for p in template-subst template-subst-refused template-subst-call template-subst-depcall; do
         grep -q ' by-substitution=0$' "$OUT/$p.plain" || { echo "FAIL $p: the stand-in substituted where M8.2 makes the body"; bad=$((bad + 1)); }

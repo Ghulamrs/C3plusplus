@@ -468,6 +468,9 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
 
+static const char TemplateCallee[] =
+    "a qualified or explicit-argument call a function template may answer, which the replay deduces or specializes";
+
 // [temp.nondep]: a call with no type-dependent part is bound at the definition, so the read's record is the replay's - here
 // a named function of scalars that is no specialization; the rest replays by name. The callee's use is made in callsUsed.
 std::string Templates::nondependentCall(syntax::NodeId call) const {
@@ -478,7 +481,7 @@ std::string Templates::nondependentCall(syntax::NodeId call) const {
         const std::string written = st.text(st.child(call, 0)), name = written.substr(0, written.find('<'));
         const std::string::size_type cut = name.rfind("::");
         if (fnTemplates_.count(cut == std::string::npos ? name : name.substr(cut + 2)) != 0)
-            return "a qualified or explicit-argument call a function template may answer, which the replay deduces or specializes";
+            return TemplateCallee;
         return "a call with a type-dependent argument or a dependent-name callee, resolved at the instantiation";
     }
     const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(call.v);
@@ -497,17 +500,19 @@ std::string Templates::nondependentCall(syntax::NodeId call) const {
 
 // [temp.dep.candidate]: an unqualified dependent-name call is resolved at the instantiation over what the definition's lookup
 // found and ADL's, which an arithmetic argument has none of ([basic.lookup.argdep]/2), ranked as any call (Overload::bestViable).
-std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, std::size_t *chosen) const {
+std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, std::size_t *chosen) {
     const syntax::Tree &st = p_.syntaxTree_;
     if (st.node(call).count == 0) return nondependentCall(call);
     const syntax::NodeId callee = st.child(call, 0);
     if (st.node(callee).kind != syntax::Kind::Name || (st.node(callee).marks & syntax::DependentName) == 0 ||
-        st.text(callee).find_first_of(":<") != std::string::npos)
-        return nondependentCall(call);
+        st.text(callee).find_first_of(":<") != std::string::npos) {
+        const std::string why = nondependentCall(call);
+        return why == TemplateCallee ? templateCandidates(call, s) : why;
+    }
     const std::vector<std::string> found = st.foundSymbols(callee);
     std::vector<std::size_t> set;
     for (std::size_t i = 0; i < found.size(); i++) {
-        if (found[i].empty()) return "a dependent-name call a function template may answer, which the replay deduces";
+        if (found[i].empty()) return templateCandidates(call, s);
         std::size_t q = 0;
         while (q < p_.lookup_.functions_.size() && p_.lookup_.functions_[q].symbol != found[i]) q++;
         const Signature &f = p_.lookup_.functions_[q < p_.lookup_.functions_.size() ? q : 0];
@@ -559,6 +564,41 @@ std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, 
     return std::string();
 }
 
+// [temp.deduct.call]: the function templates a call reaches, deduced from the bound argument types as the replay's call
+// deduces them (deductionArgType's types, deduceTemplateArguments); the specialization is not requested yet.
+std::string Templates::templateCandidates(syntax::NodeId call, const Substituted &s) {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const std::string written = st.text(st.child(call, 0));
+    if (written.find('<') != std::string::npos) return "an explicit-argument call of a function template, which the replay specializes";
+    const std::string::size_type cut = written.rfind("::");
+    std::string scope = cut == std::string::npos ? std::string() : written.substr(0, cut);
+    if (scope.compare(0, 2, "::") == 0) scope.erase(0, 2);
+    std::vector<const Type *> argTypes;
+    for (std::uint32_t c = 1; c < st.node(call).count; c++) {
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(st.child(call, c).v);
+        if (st.node(st.child(call, c)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Local ||
+            r->second.type == nullptr)
+            return "a call a function template may answer over an argument other than a local, which the instantiation does not type here";
+        const Type *t = substituted(s, r->second.type);
+        const Type *v = (t->isReference() ? t->referent() : t)->unqualified();
+        if (!v->isScalar() || (cut == std::string::npos && (!v->isArithmetic() || v->isEnumeration())))
+            return "a call a function template may answer over an argument whose type ADL would search";
+        argTypes.push_back(t->isReference() ? t : p_.types_.referenceTo(t));     // a local named is an lvalue
+    }
+    std::string ns;
+    const std::vector<TemplateDecl> reached = templatesNamed(cut == std::string::npos ? written : written.substr(cut + 2), scope, &ns);
+    std::size_t deduced = 0;
+    for (std::size_t k = 0; k < reached.size(); k++) {
+        std::vector<const Type *> binding;
+        std::vector<long long> values;
+        Packs packs;
+        std::string why;
+        if (deduceTemplateArguments(reached[k], argTypes, &binding, &values, &packs, &why)) deduced++;
+    }
+    if (deduced == 0) return "a call no function template it reaches deduces for, which the replay resolves or refuses";
+    return "a call a function template answers, deduced at the instantiation, whose specialization is not requested yet";
+}
+
 // What the replay's resolution of each call in `body` marks used ([basic.def.odr]/3), made for a body built from the read.
 void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std::size_t> &calls) {
     for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
@@ -574,7 +614,7 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
     }
 }
 
-std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls) const {
+std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls) {
     typedef syntax::Kind Kind;
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
     for (int pass = 1; pass <= 2; pass++)
