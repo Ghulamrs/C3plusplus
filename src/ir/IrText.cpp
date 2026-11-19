@@ -107,6 +107,25 @@ FuncId Module::find(const std::string &symbol) const {
     return FuncId();
 }
 
+// What may let an exception out of a body with no pad, as cl's /EHsc counts it: a call through a pointer, the runtime's
+// throw, or a C++ function not known noexcept - an extern "C" one (no `?`) does not throw, nor does a destructor.
+bool mayLetOut(const Module &m, const Function &f) {
+    bool may = false;
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const Block &blk = f.block(f.blocks[b]);
+        if (blk.pad) return false;
+        for (std::size_t n = 0; n < blk.insts.size() && !may; n++) {
+            const Inst &i = f.inst(blk.insts[n]);
+            if (i.op != Op::Call) continue;
+            const std::string &s = f.calls[i.call].symbol;
+            const FuncId id = s.empty() ? FuncId() : m.find(s);
+            may = s.empty() || s == "_CxxThrowException" ||
+                  (s[0] == '?' && s.compare(0, 3, "??1") != 0 && !(id.valid() && m.functions[id.v].noexcept_));
+        }
+    }
+    return may;
+}
+
 std::string dump(const Function &f, const TypeTable &types) {
     std::string out = "function @" + f.symbol + "(";
     for (std::size_t p = 0; p < f.params.size(); p++)

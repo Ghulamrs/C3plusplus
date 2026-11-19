@@ -984,7 +984,7 @@ std::string MasmCodeGen::beginFunclet(std::size_t pos, int number, bool cleanup)
 }
 
 void MasmCodeGen::emitExceptionTables(const ir::Function &fn) {
-    if (msStates().empty()) {
+    if (msStates().empty() && !msBareNoexcept_) {
         if (!callSites().empty()) emitLsda(fn.symbol, false);
         out_ += a_->takeFunclets();
         funcletIndex_ = 0;
@@ -1004,7 +1004,7 @@ void MasmCodeGen::emitExceptionTables(const ir::Function &fn) {
     o += "\n.xdata SEGMENT READONLY ALIGN(8) 'DATA'" + masm_.associative() + "\n";
     o += "$cppxdata$" + m + " DD 019930522H\n";
     o += "  DD " + std::to_string(states.size()) + "\n";
-    o += "  DD imagerel $stateUnwindMap$" + m + "\n";
+    o += states.empty() ? "  DD 00H\n" : "  DD imagerel $stateUnwindMap$" + m + "\n";
     o += "  DD " + std::to_string(tries.size()) + "\n";
     o += tries.empty() ? "  DD 00H\n" : "  DD imagerel $tryMap$" + m + "\n";
     o += "  DD " + std::to_string(1 + msIpRows().size() + msFuncletRows().size()) + "\n";
@@ -1013,7 +1013,7 @@ void MasmCodeGen::emitExceptionTables(const ir::Function &fn) {
     o += "  DD 00H\n";                      // no exception specification
     o += fn.noexcept_ ? "  DD 05H\n" : "  DD 01H\n";    // EHFlags: /EHsc, and 4 for noexcept - FH3 terminates in its search
 
-    o += "$stateUnwindMap$" + m;
+    if (!states.empty()) o += "$stateUnwindMap$" + m;
     for (std::size_t k = 0; k < states.size(); k++) {
         o += (k == 0 ? " DD " : "  DD ");
         o += (states[k].toState < 0 ? std::string("0ffffffffH")

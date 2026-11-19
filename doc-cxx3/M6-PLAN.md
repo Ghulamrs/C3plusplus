@@ -4917,3 +4917,50 @@ the global-qualified lookup (m6d-glob), run.sh on Windows (m6d-runcr: 1241/0) an
 x86_64-windows (m6d-winterm) on main and m3-line. The first gate (m6dw4g, 58a4b2c2) failed identical x4 alone, on the 48
 differences the lanes had named (the two global-qualified cases on four targets, eight noexcept cases on
 x86_64-windows): rows in ef88a1d1. tests/wave-expected.txt emptied.
+
+### M6d: a noexcept function with no state of its own terminates on x86_64-windows - cl's stateless FuncInfo, EHFlags 5 - lane m6d-winterm2, 2026-11-19
+
+Brief boxkit/brief-m6d-winterm2.txt; from 70e42b2f (m6d-winterm) on branch m6d-winterm2; REF built from 63063db0 on Linux.
+**Measured first** (boxkit/m6d-winterm2-meas*.cmd, cl 19.44 `/EHsc /std:c++14`, FH3 and FH4; noexcept-terminates-callee
+itself does not compile under cl - its `abort` declaration clashes with the UCRT's noreturn one - so a probe with its
+shapes was measured): for `void escapes() noexcept { thrower(); }` cl writes UNWIND_INFO flags 019H naming
+`__CxxFrameHandler3` and a FuncInfo of magic 019930522H, **0 states, pUnwindMap 0**, 0 try blocks, one ip2state row (the
+function's start, state -1), dispUnwindHelp at a slot the body sets to -2 at entry, and EHFlags 05H; a call that would
+return into the epilogue is followed by `npad 1`. A noexcept leaf that calls nothing (`pure`), one that calls only a
+noexcept function (`leaf`) and one that calls only an extern "C" one (`quiet`, printf - /EHsc's `c`) get no handler and
+no FuncInfo. cxx3 wrote none for `escapes`, so a handler above it caught 2; noexcept-terminates-callee's own output was
+the same either way (nothing above `escapes` catches), and it ran and passed once its row went.
+**The mend**: `ir::mayLetOut(Module, Function)` (IrText.cpp) is the one fact - a body with no pad that calls through a
+pointer, calls `_CxxThrowException`, or calls a C++ (`?`) function other than a destructor that the module does not
+define noexcept. X86_64Linux::emit sets `msBareNoexcept_` from it for a noexcept function on a funclet target; the frame
+takes the unwind-help word and stores -2 (SsaSelect.cpp), the spelling's unwind header names the handler, and both
+spellings' FuncInfo writers (Masm.cpp, X86_64Linux.cpp) write pUnwindMap 0 and no map label when there is no state. Two
+more were needed for -O2: the return label is a state label there, so a call just before the epilogue gets the nop cl
+writes (without it the return address lies in `lea rsp, ...`, the unwinder runs no handler in an epilogue, and the
+handler above caught 2); and SsaInline refuses such a callee by name (`inline-callee-noexcept-may-throw`), as an inlined
+body leaves no noexcept frame to find. tools/win-unwind-check takes maxState 0 with no unwind map under EHFlags 5.
+**noexcept-callee-search-terminates** (new; `.expected` the Windows box's clang, "6 q 7 ") holds it on every target:
+`escapes` under `via`, called in a `try`. noexcept-terminates-callee's x86_64-windows row and its EXCLUSIONS entry are
+removed. Over-approximation, recorded: a callee declared noexcept but not defined in the unit counts as throwing, so such
+a caller gets a stateless FuncInfo cl would not write - harmless at run time. src/: +38 -11 (IrText +19, Ir.h +3,
+X86_64Linux.{h,cpp} +7 -4, SsaSelect +5 -3, Masm +3 -3, SsaInline +1 -1).
+
+**Gates** (af9a0fce). identical.sh REF (63063db0) against af9a0fce at -O0 and -O2: x86_64-linux, arm64-darwin and tms6747 1864
+compared, 0 differ; x86_64-windows 3728 compared, 48 differ, 12 cases x4 - the eight m6d-winterm named (the EHFlags word;
+noexcept-terminates-callee, ssa-noexcept-throw and std-function, std-function-ledger also gain a stateless FuncInfo) and
+constexpr-body-noexcept-call (`outer`, and at -O2 no longer inlined), noexcept-callee-search-terminates (new),
+noexcept-set-terminate-callee (`escapes`), thread-pool (the atomics' noexcept `load` and friends, which call
+`mutex::lock`) - each a noexcept function with no state of its own, the coordinator's rows. Linux run.sh 1274 passed, 0
+failed. Static at af9a0fce: exclusions 129 sites, 0 uncited, 0 stale; comments 0 over the cap; memory gate rc 0
+(raw-pointers 89); ast-residue rc 0 (ExprPtr 2012, StmtPtr 0, node-casts 141, node-refs 298, visits 0, readers 9,
+ast-lines 513 - unchanged); ide/generate.py --check up to date. Self-compile of the five changed .cpp files at -O2 rc 0.
+g++ -Werror clean; cl /W4 /WX clean (msvc\build.cmd alone on the box: about 3 minutes from clean, 1 minute a delta).
+Windows box (work\m6d-winterm2w): run.sh 1246 passed, 0 failed (893 printed their recorded output, 349 refused as
+recorded) - 1244 at m6d-winterm, the two more being noexcept-terminates-callee and the new case. win-structure.sh over the
+twelve cases: 0 unwind faults (44 objects, 1188 functions, 304 funclets), layout 0 differ, names 0 differ. winpass -O2:
+winout 892 same, 0 differ; winout\masm 891 same, 0 differ (349 refused as recorded, 33 and 34 skipped). winpass -O0: winout 892 same, 0 differ;
+winout\masm 891 same, 0 differ (349 refused as recorded, 33 and 34 skipped). names.sh 931 passed, 1 failed at af9a0fce -
+the new case on x86_64-linux and arm64-darwin, cxx1 naming `_Unwind_Resume` where clang has its excluded terminate
+guard; recorded in its `.nonames` in the next commit (x86_64-windows: all 14 names agree).
+**Left:** a callee declared noexcept but not defined in the unit is taken to throw (a stateless FuncInfo cl would not
+write); the cases' own comments still speak of the Itanium region only.

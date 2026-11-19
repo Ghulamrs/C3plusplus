@@ -155,6 +155,9 @@ struct Module {
     FuncId find(const std::string &symbol) const;
 };
 
+// [except.spec]/9 on the Microsoft ABI: whether a body with no pad may let an exception out (IrText.cpp).
+bool mayLetOut(const Module &m, const Function &f);
+
 // **-dump=ssa**: every function of the module in the format of M3-IR 3.3, one instruction a line.
 std::string dump(const Module &m, const TypeTable &types);
 std::string dump(const Function &f, const TypeTable &types);

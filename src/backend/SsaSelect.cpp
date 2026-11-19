@@ -168,7 +168,7 @@ int X86_64Linux::layoutSsa(const ir::Function &f) {
     ssaValuesTo_ = x87 ? 0 : cur;   // finish-frame closes up only 8-byte slots
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
     ssaUnwindHelpSlot_ = 0;
-    if (usesFunclets() && landingPads_) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
+    if (usesFunclets() && (landingPads_ || msBareNoexcept_)) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
     if (ssaUnwindHelpSlot_ != 0 && ssaOutgoing(f) == 0) cur += 8;   // no call: the word stays off rsp+0, dispUnwindHelp > 0
     return static_cast<int>(roundUp(cur, 16));
 }
@@ -972,7 +972,7 @@ void X86_64Linux::selectBody(const ir::Function &f) {
         bool any = false;
         for (std::size_t b = 0; b < f.blocks.size(); b++)
             if (f.block(f.blocks[b]).pad) { ssaPadState_[f.blocks[b].v] = msAddState(); any = true; }
-        if (any) { msSetUnwindHelpSlot(ssaUnwindHelpSlot_); storeUnwindHelp(ssaUnwindHelpSlot_); }
+        if (any || msBareNoexcept_) { msSetUnwindHelpSlot(ssaUnwindHelpSlot_); storeUnwindHelp(ssaUnwindHelpSlot_); }
     }
     const std::vector<ir::BlockId> order = passesRun() ? ssaBlockOrder(f) : f.blocks;
     for (std::size_t b = 0; b < order.size(); b++) {
@@ -1057,6 +1057,8 @@ void X86_64Linux::selectBody(const ir::Function &f) {
     if (isX87(laidType(f.laid.returns)))              a_->ins("fldz");
     else if (laidType(f.laid.returns)->isFloating())  a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
     else                                  a_->ins("mov", immText("0"), reg("%rax"));
-    a_->defLabel(returnLabel_);
+    // A call just before the epilogue returns into it, and the unwinder runs no handler there: cl writes `npad 1`.
+    if (msBareNoexcept_) a_->stateLabel(returnLabel_);
+    else a_->defLabel(returnLabel_);
     returnThis(f);
 }
