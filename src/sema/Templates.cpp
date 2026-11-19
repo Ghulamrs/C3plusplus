@@ -829,10 +829,14 @@ static const char *frameStepName(char kind) {
     return "a step the check does not know";
 }
 
-// **Slice 2c, step 1**: the frame the read's steps lay under `s`, held against the replay's step by step - kind, type, offset.
-std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s) const {
-    struct Frame { int size; std::vector<Parser::FreeSlot> free; };
-    Frame now = { 0, std::vector<Parser::FreeSlot>() };
+// **Slice 2c**: the frame the read's steps lay under `s` from `start`, the parser's frameAlign_ before it - held against the
+// replay's step by step: kind, type, offset - and in `raised` the widest slot past the alignment it started at, outside a nested
+// function: what allocateFrameSlot records in frameAligns_. Nothing but the check reads the replay's steps.
+std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised) const {
+    struct Frame { int size, align; std::vector<Parser::FreeSlot> free; };
+    Frame now = { 0, 16, std::vector<Parser::FreeSlot>() };
+    int nested = 0;
+    *raised = 0;
     std::vector<Frame> saved;
     std::vector<int> laid(read.size(), 0);
     for (std::size_t k = 0; k < read.size() && k < replay.size(); k++) {
@@ -851,6 +855,7 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
             const int align = std::max(objectAlign(stored, p_.target_), r.align);
             now.size = alignTo(now.size + stored->size(p_.target_), align);
             at = now.size;
+            if (align > now.align) { now.align = align; if (nested == 0) *raised = align; }
         } else if (r.kind == 'f') {
             // The local this scope gives back: its declaration in this frame, a nested function's steps passed over.
             std::size_t d = k;
@@ -867,9 +872,16 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
             if (r.kind != 'z') saved.push_back(now);
             now.size = 0;
             now.free.clear();
+            // The parser resets frameAlign_ for a nested function alone; any other frame starts where the last one left it.
+            if (r.kind == 'p') { now.align = 16; nested++; }
+            if (r.kind == 'z' && y.align != start) return step + ": its alignment, which the replay found apart";
+            if (r.kind == 'z') now.align = start;
         } else if (r.kind == 'q' || r.kind == 'c') {
             if (saved.empty()) return step + ": a frame put back that was never saved";
+            const int align = now.align;
             now = saved.back();
+            if (r.kind == 'q') nested--;
+            else now.align = align;
             saved.pop_back();
             at = now.size;
         } else if (r.kind == 'S') {
@@ -1019,10 +1031,18 @@ void Templates::instantiatePending() {
                 std::vector<FrameEvent> replayed;
                 struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
                 if (bound != bound_.end()) p_.frameLog_ = &replayed;
+                const int startAlign = p_.frameAlign_;
+                const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
+                const int alignHad = had != p_.frameAligns_.end() ? had->second : 0;
                 p_.topLevel(*p_.current_);
                 p_.frameLog_ = logBack.was;
                 if (bound != bound_.end()) {
-                    const std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s);
+                    int raised = 0;
+                    std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s, startAlign, &raised);
+                    const std::map<std::string, int>::const_iterator has = p_.frameAligns_.find(sp.symbol);
+                    const int alignHas = has != p_.frameAligns_.end() ? has->second : 0;
+                    if (apart.empty() && std::max(alignHad, raised) != alignHas) apart = "the frame's alignment";
+                    if (apart.empty() && std::max(startAlign, raised) != p_.frameAlign_) apart = "the alignment the next frame starts at";
                     frameCensus_[apart.empty() ? "equal" : "differ: " + apart]++;
                 }
             }

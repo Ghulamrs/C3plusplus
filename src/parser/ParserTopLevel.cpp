@@ -257,7 +257,7 @@ void Parser::topLevel(Program &program) {
     enterScope();
     frameSize_ = 0;
     freeSlots_.clear();
-    logFrame('z', nullptr, 0, 0);
+    logFrame('z', nullptr, frameAlign_, 0);     // as aligned as the last frame left it: only a nested function resets it
     // The guards this frame makes start here, a constructor's mem-initialisers' among them (M1).
     const std::size_t frameGuards = guardSlots_.size();
     const std::size_t declMark = syntaxTree_.size(), declLo = peek().pos;

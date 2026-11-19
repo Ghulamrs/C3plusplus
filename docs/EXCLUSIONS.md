@@ -104,13 +104,13 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2343` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2986`, `src/parser/ParserTopLevel.cpp:837` |
-| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2986`, `src/parser/ParserTopLevel.cpp:838` |
+| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:766` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:468` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:485`, `src/parser/ParserExprNew.cpp:429` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:213` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:486`, `src/parser/ParserExprNew.cpp:429` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:213` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:89` |
-| an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:291` |
+| an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:292` |
 
 ## Lexer and preprocessor
 
@@ -157,7 +157,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:1650`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:1817`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1146`
@@ -218,19 +218,19 @@ is left:
   has no body. `src/parser/ParserType.cpp:1342`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2553`
+  `src/parser/ParserTopLevel.cpp:2557`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1347`
+  array member** - `src/parser/ParserTopLevel.cpp:1348`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1314`
+  `src/parser/ParserTopLevel.cpp:1315`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:727`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:865`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:125`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:884`
@@ -316,7 +316,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1641`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:953`
+  deduced one does not - `src/sema/Templates.cpp:1120`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -382,12 +382,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a constructor's or destructor's function try block in a class with a virtual base** - the
   complete object's constructor or destructor builds or destroys those, outside the one the handler
-  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1173`
+  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1174`
 - **a pack expansion in a dynamic exception specification**, `throw(Ts...)` - the list is read
   as types written out. `src/parser/ParserConst.cpp:264`
 - **a `throw(...)` list on a constructor or destructor of a class with a virtual base** - the
   filter would have to cover what the complete object's constructor builds outside this one, as
-  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1182`
+  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1183`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
   class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1060`
@@ -398,7 +398,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:985`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2466`
+  C++14. `src/parser/ParserTopLevel.cpp:2470`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -497,7 +497,7 @@ between the two lists.**
   the C6000 has no thread storage to put one in (measured 2026-10-20).
   `src/parser/ParserType.cpp:2079`, `tests/cases/thread-local.notarget`
 - **`alignas` past the stack's 8 on a local, on tms6747** - the C6000 backend
-  builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:839`,
+  builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:846`,
   `tests/cases/alignas-local.notarget`
 - **an over-aligned local in a function with a `try` or a local with a
   destructor, on x86_64-windows** - a funclet reaches the frame through the
@@ -535,7 +535,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:901` - a template instantiating itself past
+- `src/sema/Templates.cpp:1068` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 

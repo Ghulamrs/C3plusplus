@@ -2621,3 +2621,51 @@ minutes), names.sh 928 passed 0 failed, overload.sh 46/0.
 the laid frame (params' and locals' offsets from the `d` steps, `frameSize` from `e`, `sretSlot`, `regSaveSlot`; `frameAlign`,
 `declared`, scope and serial for `-g` from the same steps) and skip the replay - `substituteFunction`'s constructor is the model.
 The 34 wait on the class door (M8.3).
+
+## M8.2 slice 2c, step 2's first part: the frame's alignment held, and where skipping the replay stops (lane m82e, 2026-11-19)
+
+Branch `m8-2e` from `977f40f8` (m82d). **Two commits.** (1) The wave gate m6dw3g's memory-gate finding on `a559360a`
+(raw-pointers 92 against 89): `Typer::bound` takes and returns a `TypeId` (`Typing.h`, `Typing.cpp`: the declaration's two
+declarators and the definition's parameter), its seven callers through `TypeTable::id` and `TypeTable::type` - back to 89.
+(2) **The frame's alignment in the frame check**, which step 1 owed: the parser logs the alignment a frame starts at on its `z`
+step (`frameAlign_`, reset only by a nested function, so a frame starts where the last one left it); `Templates::layFrame` lays
+from the parser's `frameAlign_` before the replay - not from the replay's step, which it only checks - tracks each frame's
+alignment as `allocateFrameSlot` does (a nested function's reset at `p`, put back at `q`; a synthesised frame's `o`/`c` keeping
+it) and returns the widest slot past it outside a nested function; `instantiatePending` holds that against what the replay left
+in `frameAligns_[symbol]` and in `frameAlign_` for the next frame. With it, the frame a covered body lays reads nothing of the
+replay. The same commit re-points `docs/EXCLUSIONS.md`'s 15 stale citations (the wave gate's 4 and 11 more in `Parser.cpp` and
+`ParserTopLevel.cpp`, moved by m82d's lines): 0 uncited, 0 stale.
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,276 cases): covered 238, replayed by reason as m82d
+(a class or array argument 288, a non-type/pack/template parameter 177, `call` 77, `cast` 49, `member` 13, `literal` 9, `sizeof`
+8, no body read 6). **Frame equal 187 with the alignment held, differ 34** (all `a local: typed apart`, the class door's); no
+frame differs in its alignment. **Substituted with no replay 0; substituted beside a replay 180** (46 cases); replayed at the
+lowering by name 41 (a `var` typed apart 34, a `function` in its parts 3, a `conditional` 3, a `unary` 1); the rest of the
+fixed point replays by the reasons above.
+
+**Where skipping the replay stops.** The frame is now the read's own, but three things the replay makes are not: (a) the shell's
+records - a `d` step carries type, alignment, offset and serial, and a `::Local` wants its name, `isParam`, `scope` (the replay's
+block number, `currentBlock()`), `staticName`, `declared`; `Param`s are the `d` steps under `inParams_`, unmarked in the log;
+`-g` wants `fnVars_` and the block table as the replay numbers them; (b) the body's proof - the 180 substitute because
+`Typer::typedApart` holds the read's typed body against the replay's, node for node, and takes each local's serial from the
+replay's; with no replay there is nothing to hold it against at the lowering, and the brief's rule (a body that differs falls
+back) has no fallback once the parse is over: a no-replay body needs its proof at parse time or an accepted trust in the read,
+which is a decision, not a step; (c) the replay's side effects on the unit - `lookup_.functions_[].defined`, the `holdBodies` root
+the driver lowers, string labels and anything `topLevel` numbers in order. Step (2) is then: the log's `d` steps carrying name,
+parameter mark and block; the shell made from them as `substituteFunction` makes one; the body root the driver walks for the
+symbol; and the decision about (b).
+
+**src/** `ParserTopLevel.cpp` +1 -1, `Templates.h` +1 -1, `Templates.cpp` +25 -5, `Typing.h` +1 -1, `Typing.cpp` +9 -9: src/ 94,602 ->
+94,622 lines.
+
+**Gates** (REF `977f40f8` and NEW built in one Linux tree, `~/m82e-ref.exe` and `~/m82e-n1.exe`; the cases alone; measured on commit (2)'s tree, commit (1) its subset): `identical.sh` REF against NEW without the flag at -O0 and -O2 -
+x86_64-linux 1,856, tms6747 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with `-templates=subst` on NEW - x86_64-linux
+1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ** (the 180 bodies built from the read); `-g` at -O0, without and with the flag,
+x86_64-linux 927 the same (349 refused alike) and x86_64-windows 902 (374), 0 differ each; run.sh 1270/0, and with `-templates=subst`
+1270/0; subst.sh 0 failed (self 102 of 102 reached, the self shape record 34 bodies in 21 units, ceilings 17 under 17 and 26 under 26);
+`-check=fold` over tests/cases compared 16,475, agreed 12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0 failed;
+self-compile of `Templates.cpp`, `Typing.cpp`, `ParserTopLevel.cpp` by NEW rc 0; static, each tool's own exit status (m82d's
+script printed `tail`'s, which is how 92 and the stale citations passed it): exclusions 0/0, comments 0 over, memory gate raw-pointers
+89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to date; g++ `-Werror` clean; **Windows** cl /W4 /WX clean
+(first and alone: the whole tree 09:24-09:25, about 1 minute; the final delta 09:27:54-09:28:55), names.sh 928 passed 0 failed,
+overload.sh 46/0.
