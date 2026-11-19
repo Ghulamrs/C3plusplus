@@ -3150,7 +3150,7 @@ rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after the re-poi
 gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
 **Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:11:05-16:12:09 (about a minute); names.sh 934/0, overload.sh 46/0.
 
-**(2) The specialization requested, ranked and recorded** (the next commit). A body whose calls (1) deduced is made from the read
+**(2) The specialization requested, ranked and recorded** (this commit, `73f1ff02`). A body whose calls (1) deduced is made from the read
 when it holds one such call: `substShape` collects it (`requests`) instead of refusing, and once the body's whole shape is known
 - so a body that replays for another reason has asked for nothing the replay would not ask for first -
 `Templates::requestCall` makes the request where and as the replay's call door makes it, without the replay's tokens: in the
@@ -3207,3 +3207,94 @@ ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, 
 first); arguments that are not locals (a typed argument is read only from a local's record); class, enumeration and pointer
 arguments of an unqualified call (ADL); a chosen specialization over a reference (`std::move`, `std::forward`, `std::swap` -
 the read's call lowered for reference parameters); explicit-argument calls (`twice<T>`); the 10 through a value or a member.
+
+## M8.2 slice 2d, sixth part: more than one template call in a body, and specializations over a reference (lane m82o, 2026-11-19)
+
+Branch `m8-2o` from `73f1ff02` (m82n; its own final commit checked clean, so no base re-check here). m82n's nit mended: its
+(2) paragraph said "(the next commit)" where it meant that commit, `73f1ff02`.
+
+**(a) More than one call a function template answers, in the replay's order** (this commit). A body m82n refused by name
+because it held two or more deduced calls is made from the read: `Templates::instantiate` makes the requests in the order the
+replay's doors make them. **What fixes that order is the read's node order**: a call's `syntax` node is noted when its parse
+completes, after its arguments (`note` in ParserExpr/ParserTemplate), which is where the replay's call door fires
+(`instantiateViableTemplates` deduces from the arguments' types, so it runs after them), and no request's argument holds
+another request (each argument is a local, `callArgTypes`), so ordering the requests by `NodeId` is ordering them as the
+replay's tokens are read - not the walk's order (`substShape` pops a stack, children last first), and not the fixed point's
+worklist, which only sees the specializations once they are declared. A body that a later request refuses replays; the
+requests made before the refusal are a prefix of the replay's, in its order. **Shown equal**: the specializations' order in
+the object and each symbol's definition are `identical.sh`'s compare (REF replaying every body, NEW making them from the
+read): 0 differ with `-templates=subst`; under `-check=templates` each body made 14 equal in the probe.
+
+**The probe** `tests/cases/template-subst-order` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++
+-std=c++11 -pedantic-errors` on the Windows box): `chain` (four calls of three templates, one twice), `pair2` (two calls in
+one expression), `calls` (two calls as statements, for `int` and `float`) - 14 bodies with no replay, plain and `-g`, made 14
+equal under the check; its output is clang's with and without the flag. tests/subst.sh: the probe added to the probes step,
+for exactly that; no other probe line changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,285 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 252** (236 + the probe's 14 + 2 in library-cppparse-pieces); without the check **182 substituted with no
+replay** (166 + 16), 70 replayed by reason (as before). Of m82n's 12 bodies with more than one such call: 2 made
+(library-cppparse-pieces), 4 now refused after the request for a chosen function over a reference (`std::move`, `std::swap`:
+array-header, std-swap-two-ints, thread-pool, thread-sleep-yield), 6 for a candidate over a class beside the deduced one
+(std-function 3, std-function-ledger 3: `std::swap`'s overloads over `std::function`).
+
+**src/** (a): `Templates.cpp` +6 -2: 95,260 -> 95,264 (+4). EXCLUSIONS re-pointed (Templates.cpp 1500, 1552, 2249).
+
+**Gates of (a)** (REF `73f1ff02` in `~/m82ob`, NEW in `~/m82oc`, one path length; every check on this commit's own tree):
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,872,
+x86_64-windows 3,744, arm64-darwin 1,872, tms6747 1,872) and **0 on three with `-templates=subst`** (the same counts) - the
+specializations in the replay's order in the object, each defined as the replay defines it; **-g 0 differ** with and without
+the flag (x86_64-linux 717 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 699, 375, 211 - re-read
+by `boxkit/m82o-gre.sh`); `-check=templates -templates=subst` over the cases: 1,285 units, 350 nonzero exits as before, none
+failing on a difference (frame 252 equal, shell 252 equal, made 182 equal, the 70 replayed apart by reason); `-check=fold`
+compared 16,604, agreed 12,324, differ 0; run.sh 1278/0 without and with `-templates=subst`; **subst.sh 0 failed** (self 102
+of 102, the ceiling 26 of 26, 3 shapes of 3); syntax.sh 6/0; typed.sh 928/0; self-compile of `Templates.cpp` and
+`ParserTemplate.cpp` rc 0; static, each tool's own exit status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0
+(raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
+**Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:51:06-16:53:26 (about two minutes); names.sh 936/0,
+overload.sh 46/0.
+
+**(b) A deduced call whose specialization takes or returns a reference** (this commit, on `f0264874`). The chosen
+function may now take a parameter by reference and return a reference: `Templates::requestCall` accepts a reference return
+whose referent is a scalar (the call an lvalue for `T &`, an xvalue for `T &&`; the typed tree reads it through the reference
+as every call of a function returning one is lowered, `Typer::resolvedType`), and a reference parameter that binds the named
+local directly ([dcl.init.ref]/5: the referent's unqualified type the argument's, so no temporary; the local's address is
+passed as the replay's call passes it). **Deduction through a forwarding reference and reference collapsing** are the
+replay's own: the argument is given to `deduceTemplateArguments` as `deductionArgType` gives it (a named local an lvalue, so
+`T &&` deduces `T = int &` and the parameter collapses to `int &`), and the candidates are ranked by `rankArgument` with the
+argument an lvalue, as before. **The argument's value category** is the typed tree's for a name: an lvalue, whatever the
+local's declared type. The specialization the call reaches over a reference binding (`mv<int &>`) is itself replayed, by
+reason ("a type parameter bound to a class or an array"); the body that calls it is made from the read.
+
+**The probe** `tests/cases/template-subst-ref` (`.flags` `-templates=subst`; `.expected` clang 19's on the Windows box):
+`mv` (a `std::move` of its own: `T &&` with `unref<T>::type &&` returned), `sw` (a `std::swap`: `T &` twice, three `mv`s),
+`pick` (`T &` returned and assigned through), `cref` (`const T &`), each for an `int` and a `double` - 14 bodies with no
+replay, plain and `-g`, made 14 equal under the check; its output is clang's with and without the flag. tests/subst.sh: the
+probe added to the probes step, for exactly that; no other probe line changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,286 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 270** (252 + the probe's 14 + 4); without the check **200 substituted with no replay** (182 + 18), 70
+replayed by reason (as before). The 4 are (a)'s bodies refused for a reference, now made: `std::swap`'s and `std::move`'s
+callers in array-header, std-swap-two-ints, thread-pool and thread-sleep-yield; the reason "a deduced call of a function over
+a class, a reference or a default" is gone from the census. Left of m82n's 12: the 6 beside a candidate over a class
+(`std::swap`'s overloads over `std::function`, whose converting constructors the read does not ask).
+
+**src/** (b): `Templates.cpp` +8 -3: 95,264 -> 95,269 (+5). EXCLUSIONS re-pointed (Templates.cpp 1505, 1557, 2254).
+
+**Gates of (b)** (REF `73f1ff02` in `~/m82ob`, NEW in `~/m82oe` - `~/m82oc`'s copy with (b) shipped, one path length; every
+check on this commit's own tree): `identical.sh` **0 differ on four targets without the flag** (x86_64-linux 1,874,
+x86_64-windows 3,748, arm64-darwin 1,874, tms6747 1,874) and **0 on three with `-templates=subst`**; **-g 0 differ** with and
+without the flag (x86_64-linux 718 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 700, 375, 211);
+`-check=templates -templates=subst`: 1,286 units, 350 nonzero exits as before, none failing on a difference (frame and shell
+270 equal, made 200 equal, the 70 replayed apart by reason); `-check=fold` compared 16,604, agreed 12,324, differ 0; run.sh
+1279/0 without and with `-templates=subst`; **subst.sh 0 failed** (self 102 of 102, the ceiling 26 of 26, 3 shapes of 3);
+syntax.sh 6/0; typed.sh 929/0; self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool's own exit
+status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not
+raised), ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, the delta
+17:08:24-17:13:42 (about five minutes); names.sh 937/0, overload.sh 46/0.
+
+**Left**: (c) an argument that is not a local (15 bodies: a parameter is already a local; a member, a literal or a temporary
+needs its type under the binding from the typed tree, which `callArgTypes` does not read yet) - not started, the hour spent on
+(a) and (b) and their gates; a candidate over a class beside a deduced call (6: the read does not ask converting
+constructors); class, enumeration and pointer arguments of an unqualified call (ADL, 14); explicit-argument calls
+(`std::forward<T>`, `twice<T>`); the 10 through a value or a member.
