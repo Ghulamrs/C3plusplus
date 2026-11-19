@@ -4867,3 +4867,45 @@ older than this lane, record a wrong answer of cxx3 for x86_64-windows rather th
 dtor-throws-unwinding (no funclet marked terminating: a handler catches where the standard says terminate) and
 noexcept-local-terminates (no noexcept wrap on that target) - owed as defects, not as targets; array-at-throws,
 vector-at-throws and string-stoi cite "a class-typed throw is refused on that target", to be re-measured; Git's bash runs the Windows cases without a CPU limit.
+
+### M6d: three terminates on x86_64-windows - what cl does for each, EHFlags 5 on a noexcept FuncInfo, oldnames.lib - lane m6d-winterm, 2026-11-19
+
+Brief boxkit/brief-m6d-winterm.txt; from 63063db0 on branch m6d-winterm; REF built from 63063db0 on Linux (`~/m6d-winterm-ref.exe`).
+**Measured first** (boxkit/m6d-winterm-meas*.cmd; cl 19.44 `/EHsc /std:c++14`, `/d2FH4-` and FH4 alike, and the tree's
+cxx3-msvc.exe in both spellings, each program run): cl terminates in all three (0xC0000409). catch-copy-throws prints
+"before copy1 copy2 " and dtor-throws-unwinding "before ~Loud " - each its `.expected` - and **cxx3 already did the same**:
+the runtime makes the by-value catch object with the type's copy constructor and runs a cleanup funclet from
+`__FrameUnwindToState`, and each terminates on a throw itself, so the rows' "a handler catches" was no longer true. What
+kept both from running was the link: `close` unresolved, because the driver's link line had no oldnames.lib, which cl's
+objects name by `/DEFAULTLIB:OLDNAMES`. noexcept-local-terminates is the real one: cxx3 printed "+1 -1 caught 2"; cl prints
+"+1 " and terminates - its FuncInfo for `withLocal` has EHFlags 05H (4 is FI_EHNOEXCEPT_FLAG) and no state at all, and
+`__CxxFrameHandler3` terminates in its search phase, before any cleanup. clang's "+1 -1 " (unwound first) is the other
+answer [except.terminate]/2 allows, so this case's `.expected` cannot hold cl's.
+**63bcd194**: a noexcept function's FuncInfo carries EHFlags 5 in both spellings (Masm.cpp, X86_64Linux.cpp, from
+`ir::Function::noexcept_`, which tms6747 already reads); cxx3 now prints "+1 " and terminates, as cl. The case's
+x86_64-windows row says that; **noexcept-search-terminates** (new, the same with a destructor that prints nothing; its
+`.expected` is clang's on the Windows box, "+1 ") holds the terminate on x86_64-windows and the C6000, with the Itanium
+hosts' rows of the original. tools/win-unwind-check takes EHFlags 1 or 5. The two rows of catch-copy-throws and
+dtor-throws-unwinding were removed in this commit too, so 63bcd194 alone has 2 stale citations in docs/EXCLUSIONS.md and
+those two cases fail to link on Windows there. **e434b400**: the driver links oldnames.lib (VS link and the project's LINK,
+which reads weak externals); EXCLUSIONS re-pointed - the entry is now the one shape left, a noexcept function with no state
+of its own, which gets no FuncInfo and so no flag (noexcept-terminates-callee's `escapes`, its row unchanged).
+src/: 94737 lines, 0 net (Driver +1, X86_64Linux -1).
+
+**Gates.** identical.sh REF against e434b400's build at -O0 and -O2: x86_64-linux 1862, arm64-darwin 1862, tms6747 1862
+compared, 0 differ; x86_64-windows 3724 compared, 32 differ - only the EHFlags word (1 to 5), in the eight cases with a
+noexcept function that has a state: noexcept-local-terminates, noexcept-search-terminates (new, so also in REF's run),
+noexcept-terminates-callee, noexcept-terminates, ssa-eh-tail, ssa-noexcept-throw, std-function, std-function-ledger, each
+gnu/masm at -O0/-O2. Linux run.sh 1273 passed, 0 failed. win-structure.sh over the ten cases (Windows box, clang 19): 0
+unwind faults (32 objects, 724 functions), layout 0 differ, names 0 differ. Static at e434b400: exclusions 129 sites, 0
+uncited, 0 stale; comments 0 over the cap; memory gate rc 0 (raw-pointers 89); ast-residue rc 0 (ExprPtr 2012, StmtPtr 0,
+node-casts 141, node-refs 298, visits 0, readers 9, ast-lines 513 - unchanged). Self-compile of the three changed files at
+-O2 rc 0. g++ -Werror clean; cl /W4 /WX clean (msvc\build.cmd alone, about 2.5 minutes from clean).
+Windows box (work\m6d-wintermw, built from e434b400's tree): run.sh 1244 passed, 0 failed (891 printed their recorded output, 349
+refused as recorded) - 1241 at m6d-runcr, the three more being catch-copy-throws, dtor-throws-unwinding and
+noexcept-search-terminates. winpass at -O2 and at -O0: winout 890 same, 0 differ; winout\masm 889 same, 0 differ (349
+refused as recorded, 34 and 35 skipped) - the masm spelling linked by the project's LINK, so oldnames.lib holds there too.
+names.sh 931 passed, 0 failed. **Left:** a noexcept function with no state of its own still lets an exception through on
+x86_64-windows - cl writes it a FuncInfo with no state, EHFlags 5, and __CxxFrameHandler3 in its UNWIND_INFO; cxx3 writes
+no handler for such a function (noexcept-terminates-callee's row, EXCLUSIONS); the cases' own comments still speak of
+the Itanium region only.
