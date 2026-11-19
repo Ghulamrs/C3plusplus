@@ -27,6 +27,7 @@ OUT=tests/out-run
 # emit.sh applies to every target, said out loud on every run.
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) HOST=arm64-darwin ;;
+    MINGW*|MSYS*|CYGWIN*) HOST=x86_64-windows ;;  # Git's bash on the Windows box, as subst.sh names it
     *) HOST=x86_64-linux ;;
 esac
 
