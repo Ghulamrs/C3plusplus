@@ -231,16 +231,16 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
 
 // **What cl's most-derived flag guards**: the vbtable pointers this class
 // stores and the virtual bases it builds.
-std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
+std::vector<Kept> Parser::guardedVirtualBaseInit(
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
         std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
         std::vector<Alive> *vbs, bool record) {
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     if (!target_.microsoftNames() || !type->hasVirtualBase() || flagSlot < 0)
         return out;
 
-    std::vector<StmtPtr> inside;
+    std::vector<Kept> inside;
     std::vector<Effect> vbp;
     std::vector<sema::VptrStore> *stores = record ? &msVbptrs_[currentFunction_] : nullptr;
     std::vector<std::string> *order = record ? &msVbaseOrder_[currentFunction_] : nullptr;
@@ -248,7 +248,7 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
     classes_.storeVbptr(cls, type, thisSlot, vbp, stores);
     appendEffects(vbp, inside);
     std::vector<int> builtBase;
-    std::vector<StmtPtr> built = virtualBaseCalls(type, thisSlot, true, pos,
+    std::vector<Kept> built = virtualBaseCalls(type, thisSlot, true, pos,
                                                   srcSlot, moving, vbaseArgs, &builtBase, order);
     const int count = vbs != nullptr ? allocateFrameSlot(types_.intType()) : 0;
     auto counted = [&](long long n) {
@@ -258,7 +258,7 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
         value->setType(types_.intType());
         ExprPtr set(new Assign(std::move(slot), std::move(value)));
         set->setType(types_.intType());
-        return StmtPtr(new ExprStmt(std::move(set)));
+        return Kept(std::move(set));
     };
     for (std::size_t i = 0; i < built.size(); i++) {
         inside.push_back(std::move(built[i]));
@@ -277,13 +277,13 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
     ExprPtr flag(Var::local(".initVBases", flagSlot));
     flag->setType(types_.intType());
     out.push_back(ifStatement(std::move(flag),
-                                 StmtPtr(new Block(std::move(inside))),
-                                 StmtPtr()));
+                                 Kept(std::move(inside)),
+                                 Kept()));
     return out;
 }
 
 // The virtual bases of `type`, built or destroyed through `this`.
-std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
+std::vector<Kept> Parser::virtualBaseCalls(const Type *type, int thisSlot,
                                               bool building, std::size_t pos,
                                               int srcSlot, bool moving,
                                               std::map<std::string,
@@ -291,7 +291,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
                                                   *vbaseArgs,
                                               std::vector<int> *builtBase,
                                               std::vector<std::string> *order) {
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     // **[class.base.init]/10's order, which is not the layout's**: a base's
     // own virtual bases come before it, each direct base in turn - clang's
     // vbases(), and V before the W that names V virtually.
@@ -472,9 +472,9 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
         // **A virtual base is a subobject and not the complete object**, so
         // the flag it is handed is 0: anything *it* has virtually is this
         // class's to build as well.
-        out.push_back(StmtPtr(new ExprStmt(
+        out.push_back(Kept(
             completeCall(base->tag(), symbol, nullptr, types_.get(Kind::Void),
-                         ps, false, pos, std::move(args), false, 0))));
+                         ps, false, pos, std::move(args), false, 0)));
         if (builtBase != nullptr)
             builtBase->push_back(building && destructorOf(base) != nullptr ? bsIndex[i] : -1);
     }
@@ -515,8 +515,8 @@ ExprPtr Parser::destructorCall(ExprPtr address, const Signature &dtor,
 // **RAII is this function**: everything constructed since `from` is destroyed, last
 // first. **One region per stretch, and the stretches do not overlap** - which is what
 // lets a call-site table hold them, and what the Microsoft chain walks backwards.
-std::vector<StmtPtr> Parser::wrapMsCleanups(
-    std::vector<StmtPtr> body,
+std::vector<Kept> Parser::wrapMsCleanups(
+    std::vector<Kept> body,
     const std::vector<std::pair<std::size_t, std::size_t> > &built,
     std::size_t aliveAtEntry, std::size_t pos,
     const std::vector<Temporary> &temps) {
@@ -526,7 +526,7 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
     msUnwindHelp();     // the runtime's scratch word keeps its slot in the frame
     functionHasPads_ = true;
 
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     for (std::size_t i = 0; i < built[0].first; i++)
         out.push_back(std::move(body[i]));
 
@@ -534,11 +534,11 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
         const std::size_t from = built[k].first;
         const std::size_t to = k + 1 < built.size() ? built[k + 1].first
                                                     : body.size();
-        std::vector<StmtPtr> guarded;
+        std::vector<Kept> guarded;
         for (std::size_t i = from; i < to; i++) guarded.push_back(std::move(body[i]));
         if (guarded.empty()) continue;
 
-        std::vector<StmtPtr> steps;
+        std::vector<Kept> steps;
         // The block's temporaries, each under its guard - see cleanupPad. The
         // funclets chain, so clearing as it destroys is what stops the next
         // one in the chain destroying the same object again.
@@ -546,13 +546,13 @@ std::vector<StmtPtr> Parser::wrapMsCleanups(
             releaseGuarded(steps, temps[j]);
         emitDestructors(steps, k == 0 ? aliveAtEntry : built[k - 1].second,
                         pos, -1, built[k].second);
-        out.push_back(tryRegion(std::move(guarded), StmtPtr(new Block(std::move(steps)))));
+        out.push_back(tryRegion(std::move(guarded), Kept(std::move(steps))));
     }
     return out;
 }
 
-std::vector<StmtPtr> Parser::wrapCleanups(
-    std::vector<StmtPtr> body,
+std::vector<Kept> Parser::wrapCleanups(
+    std::vector<Kept> body,
     const std::vector<std::pair<std::size_t, std::size_t> > &built,
     std::size_t aliveAtEntry, std::size_t pos,
     const std::vector<Temporary> &temps,
@@ -566,7 +566,7 @@ std::vector<StmtPtr> Parser::wrapCleanups(
     if (!intoTry) allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
 
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     for (std::size_t i = 0; i < built[0].first; i++)
         out.push_back(std::move(body[i]));
 
@@ -580,7 +580,7 @@ std::vector<StmtPtr> Parser::wrapCleanups(
             std::size_t stop = to;
             for (std::size_t t = 0; t < tryAt.size(); t++)
                 if (tryAt[t] >= cur && tryAt[t] < stop) stop = tryAt[t];
-            std::vector<StmtPtr> guarded;
+            std::vector<Kept> guarded;
             for (std::size_t i = cur; i < stop; i++)
                 guarded.push_back(std::move(body[i]));
             if (!guarded.empty()) {
@@ -602,16 +602,16 @@ std::vector<StmtPtr> Parser::wrapCleanups(
 // **A statement list under a cleanup action of its own**: `onUnwind` runs when an exception leaves it, then
 // unwinding goes on - for a non-destructor cleanup, such as the guard a throwing static local's initialiser
 // leaves "being built", [stmt.dcl]/4 (2026-10-21, review of 1.25, fix 3). Shapes: wrapMsCleanups, wrapCleanups.
-StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
+Kept Parser::cleanupRegion(std::vector<Kept> body, Kept onUnwind) {
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
     functionHasPads_ = true;
-    std::vector<StmtPtr> steps;
+    std::vector<Kept> steps;
     steps.push_back(std::move(onUnwind));
     if (target_.microsoftNames()) {
         allocateFrameSlot(voidPtr);
         allocateFrameSlot(types_.intType());
         msUnwindHelp();
-        return tryRegion(std::move(body), StmtPtr(new Block(std::move(steps))));
+        return tryRegion(std::move(body), Kept(std::move(steps)));
     }
     int targetPtr = 0, targetSel = 0;
     const std::string handOver = unwindTarget(&targetPtr, &targetSel);
@@ -625,18 +625,18 @@ StmtPtr Parser::cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind) {
 
 // **One temporary of a block, released on the way out of it, under its
 // guard.**
-void Parser::releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t) {
+void Parser::releaseGuarded(std::vector<Kept> &steps, const Temporary &t) {
     if (t.flag == 0) return;
-    std::vector<StmtPtr> both;
+    std::vector<Kept> both;
     if (t.exceptionStorage) {
         const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
         std::vector<ExprPtr> args;
         ExprPtr held(Var::local("$copy", t.slot));
         held->setType(voidPtr);
         args.push_back(std::move(held));
-        both.push_back(StmtPtr(new ExprStmt(
+        both.push_back(Kept(
             runtimeCall("__cxa_free_exception", types_.get(Kind::Void),
-                        std::move(args)))));
+                        std::move(args))));
     } else if (t.newStorage) {
         const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
         const Type *chars = types_.pointerTo(types_.get(Kind::Char));
@@ -655,28 +655,28 @@ void Parser::releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t) {
         ExprPtr give = t.newNothrow ? callNothrowDeallocator(t.newArray, std::move(raw))
                      : t.newArray  ? deallocateArray(t.type, std::move(raw), 0)
                                    : deallocate(t.type, std::move(raw), 0);
-        both.push_back(StmtPtr(new ExprStmt(std::move(give))));
+        both.push_back(Kept(std::move(give)));
     } else {
         ExprPtr gone = temporaryDestruction(t, 0);
         if (gone == nullptr) return;
-        both.push_back(StmtPtr(make_owned<ExprStmt>(std::move(gone))));
+        both.push_back(Kept(std::move(gone)));
     }
-    both.push_back(StmtPtr(new ExprStmt(setGuard(t.flag, 0))));
+    both.push_back(Kept(setGuard(t.flag, 0)));
     ExprPtr live(Var::local("$guard", t.flag));
     live->setType(types_.intType());
     steps.push_back(ifStatement(std::move(live),
-                                   StmtPtr(new Block(std::move(both))),
-                                   StmtPtr()));
+                                   Kept(std::move(both)),
+                                   Kept()));
 }
 
 // **What an exception has to do on its way out of a scope.** The objects are the ones
 // a `return` unwinds - `alive_` holds them and nothing new had to track them - and
 // the difference is where the code runs from: a pad, ending in _Unwind_Resume.
-StmtPtr Parser::cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
+Kept Parser::cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
                            const std::vector<Temporary> &temps,
                            std::size_t pos, const std::string &chainLabel) {
     // **Bounded rather than truncated.**
-    std::vector<StmtPtr> steps;
+    std::vector<Kept> steps;
     // **The temporaries of this block go first**, being the most recently
     // built - and each under its own guard, because the pad may be reached
     // from a point in the statement where this one does not exist yet.
@@ -692,31 +692,29 @@ StmtPtr Parser::cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
     return unwindPad(std::move(steps));
 }
 
-StmtPtr Parser::resumeUnwinding(int pointerSlot) {
+Kept Parser::resumeUnwinding(int pointerSlot) {
     std::vector<ExprPtr> args;
     if (target_.resumeTakesException()) {
         ExprPtr ptr(Var::local(".ex.ptr", pointerSlot));
         ptr->setType(types_.pointerTo(types_.get(Kind::Void)));
         args.push_back(std::move(ptr));
-        return StmtPtr(new ExprStmt(runtimeCall("_Unwind_Resume", types_.get(Kind::Void), std::move(args))));
+        return Kept(runtimeCall("_Unwind_Resume", types_.get(Kind::Void), std::move(args)));
     }
-    return StmtPtr(new ExprStmt(runtimeCall("__cxa_end_cleanup", types_.get(Kind::Void), std::move(args))));
+    return Kept(runtimeCall("__cxa_end_cleanup", types_.get(Kind::Void), std::move(args)));
 }
 
-StmtPtr Parser::unwindPad(std::vector<StmtPtr> steps) {
-    StmtPtr last = std::move(steps.back());
+Kept Parser::unwindPad(std::vector<Kept> steps) {
+    Kept last = std::move(steps.back());
     steps.pop_back();
-    Block *inner = new Block(std::move(steps));
-    inner->setScope(-1);
-    std::vector<StmtPtr> outer;
-    outer.push_back(StmtPtr(inner));
+    Kept inner(std::move(steps));
+    std::vector<Kept> outer;
+    outer.push_back(std::move(inner));
     outer.push_back(std::move(last));
-    Block *b = new Block(std::move(outer));
-    b->setScope(-1);
-    return StmtPtr(b);
+    Kept b(std::move(outer));
+    return b;
 }
 
-void Parser::emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
+void Parser::emitDestructors(std::vector<Kept> &into, std::size_t from,
                              std::size_t pos, int except, std::size_t to) {
     std::vector<Effect> made;
     emitDestructors(made, from, pos, except, to);
@@ -1185,7 +1183,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
     return result;
 }
 
-StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
+Kept Parser::constructLocalArray(const Declared &d, int offset,
                                     int indexSlot) {
     const Type *elem = d.type;
     long long count = 1;
@@ -1232,7 +1230,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
                                made, nullptr, 0, 0 };
         ctorBySerial_[built->serial] = b;
     }
-    StmtPtr one(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
+    Kept one(Kept(completeCall(plain->tag(), chosen.symbol, nullptr,
                                           types_.get(Kind::Void), ps, false,
                                           d.pos, std::move(args))));
     return guardElements(eachElement(indexSlot, count, std::move(one)),
@@ -1242,7 +1240,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
 // `S a[3] = { S(1), {2, 3}, x };` - [dcl.init.aggr]/2: each element copy-initialised from its
 // initialiser, in order, nested braces for each dimension or elided; the rest value-initialised,
 // as from `{}`. What each one becomes is what `S s = ...;` would make of it.
-StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
+Kept Parser::constructLocalArrayFromList(Declared &d, int offset,
                                             const std::function<int()> &declareLate,
                                             const std::string &symbol) {
     // `S a[] = {...}` takes its length from the list: read first, declared after.
@@ -1350,7 +1348,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
     // Each element in turn, as the object `S e = init;` - its temporaries gone before the next.
     Declared one = d;
     one.type = plain;
-    std::vector<StmtPtr> all;
+    std::vector<Kept> all;
     long long firstDefault = total;
     for (long long i = total; i > 0 && !inits[static_cast<std::size_t>(i - 1)].given; i--)
         firstDefault = i - 1;
@@ -1363,7 +1361,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
         value->setType(types_.intType());
         ExprPtr set(new Assign(std::move(slot), std::move(value)));
         set->setType(types_.intType());
-        return StmtPtr(new ExprStmt(std::move(set)));
+        return Kept(std::move(set));
     };
     if (counted) all.push_back(builtNow(ExprPtr(new Num(0LL))));
     ListBuilt record;     // each element's construction, for the SSA lowering (M3b.2)
@@ -1384,7 +1382,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             ExprPtr dst = objectAt(one, symbol, at);
             ExprPtr store(new Assign(std::move(dst), std::move(e.args[0])));
             store->setType(plain);
-            all.push_back(StmtPtr(new ExprStmt(std::move(store))));
+            all.push_back(Kept(std::move(store)));
             made.bytes = true;
         } else {
             const bool copyInit = !e.direct && (!e.braced || !empty);
@@ -1451,7 +1449,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                 const LocalBuilt b = { chosen.symbol, record.tailSig, true, false, tailDefaults, nullptr, 0, 0 };
                 ctorBySerial_[built->serial] = b;
             }
-            StmtPtr call(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
+            Kept call(Kept(completeCall(plain->tag(), chosen.symbol, nullptr,
                                                    types_.get(Kind::Void), ps, false, d.pos,
                                                    std::move(args))));
             if (counted) {
@@ -1459,10 +1457,10 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                 was->setType(types_.intType());
                 ExprPtr step(new Num(1LL));
                 step->setType(types_.intType());
-                std::vector<StmtPtr> both;
+                std::vector<Kept> both;
                 both.push_back(std::move(call));
                 both.push_back(builtNow(ExprPtr(new Binary(BinOp::Add, std::move(was), std::move(step)))));
-                call = StmtPtr(new Block(std::move(both)));
+                call = Kept(std::move(both));
             }
             all.push_back(eachElement(indexSlot, total - firstDefault, std::move(call)));
         }
@@ -1470,10 +1468,10 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
     // The record, by the local's serial until its `var` node is made, or in the static's guard (M3b.2).
     if (symbol.empty()) { if (const Local *l = lookup_.findLocal(d.name)) listBySerial_[l->serial] = record; }
     else staticGuards_[symbol].elements = record;
-    if (!counted) return StmtPtr(new Block(std::move(all)));
+    if (!counted) return Kept(std::move(all));
     Alive built{ d.name, offset, plain };
     built.builtSlot = builtSlot;
-    return guardSubobject(StmtPtr(new Block(std::move(all))), built, d.pos);
+    return guardSubobject(Kept(std::move(all)), built, d.pos);
 }
 
 // The loop functions: the first element's address and a count, a frame of
@@ -1554,12 +1552,12 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
     }
     const MemberBuilt e = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false };
     memberBuilt_[name + "|^element|0"] = e;
-    StmtPtr one(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
+    Kept one(Kept(completeCall(cls->tag(), chosen.symbol, nullptr,
                                           types_.get(Kind::Void), ps, false,
                                           pos, std::move(args))));
     ExprPtr n(Var::local("n", countSlot));
     n->setType(sizeT);
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     Alive built{ "base", baseSlot, cls };
     built.byAddress = true;
     body.push_back(guardElements(eachElement(indexSlot, convert(std::move(n), types_.intType()),
@@ -1568,7 +1566,7 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
     body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(name, types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, pos, std::vector<::Local>()));
     current_->functions.back().setSynthesised("vector constructor");
@@ -1616,16 +1614,16 @@ std::string Parser::vectorDestructor(const Type *cls, std::size_t pos) {
     ExprPtr base(Var::local("base", baseSlot));
     base->setType(ptr);
     ExprPtr at = indexBytes(types_, std::move(base), cls, indexSlot, target_);
-    std::vector<StmtPtr> inner;
-    inner.push_back(StmtPtr(new ExprStmt(std::move(step))));
-    inner.push_back(StmtPtr(new ExprStmt(destructorCall(std::move(at), *dtor, pos))));
-    std::vector<StmtPtr> body;
-    body.push_back(StmtPtr(new ExprStmt(std::move(init))));
-    body.push_back(loopStatement(StmtPtr(), std::move(cond), Effect(), StmtPtr(new Block(std::move(inner)))));
+    std::vector<Kept> inner;
+    inner.push_back(Kept(std::move(step)));
+    inner.push_back(Kept(destructorCall(std::move(at), *dtor, pos)));
+    std::vector<Kept> body;
+    body.push_back(Kept(std::move(init)));
+    body.push_back(loopStatement(Kept(), std::move(cond), Effect(), Kept(std::move(inner))));
     body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(name, types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, pos, std::vector<::Local>()));
     current_->functions.back().setSynthesised("vector destructor");
@@ -1700,27 +1698,25 @@ Parser::Effect Parser::selfDestructorCall(const Type *cls, int thisSlot, std::si
                                 params, false, pos, std::move(args), false, 0), 0 };
 }
 
-StmtPtr Parser::guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done,
+Kept Parser::guardConstruction(std::vector<Kept> steps, std::vector<Alive> done,
                                   std::size_t pos, bool *guarded) {
     OwnPads own(*this);
     done.resize(steps.size());
-    std::vector<StmtPtr> rest;
+    std::vector<Kept> rest;
     for (std::size_t i = steps.size(); i-- > 0; ) {
         if (done[i].owner != nullptr && !rest.empty()) {
-            Block *after = new Block(std::move(rest));
-            after->setScope(-1);
+            Kept after(std::move(rest));
             rest.clear();
-            rest.push_back(guardSubobject(StmtPtr(after), done[i], pos));
+            rest.push_back(guardSubobject(std::move(after), done[i], pos));
             *guarded = true;
         }
         rest.insert(rest.begin(), std::move(steps[i]));
     }
-    Block *b = new Block(std::move(rest));
-    b->setScope(-1);
-    return StmtPtr(b);
+    Kept b(std::move(rest));
+    return b;
 }
 
-StmtPtr Parser::guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos) {
+Kept Parser::guardElements(Kept loop, Alive a, int indexSlot, std::size_t pos) {
     if (destructorOf(a.cls) == nullptr) return loop;
     a.builtSlot = indexSlot;
     // For the SSA builder (M3b.7): the loop the guard destroys a member's elements built by, "~[]" and the member's name.
@@ -1732,60 +1728,57 @@ StmtPtr Parser::guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t 
     return guardSubobject(std::move(loop), a, pos);
 }
 
-StmtPtr Parser::withVirtualBases(std::vector<StmtPtr> init, const std::vector<Alive> &vbs, StmtPtr rest,
+Kept Parser::withVirtualBases(std::vector<Kept> init, const std::vector<Alive> &vbs, Kept rest,
                                  std::size_t pos) {
     if (init.empty()) return rest;
-    std::vector<StmtPtr> guarded;
+    std::vector<Kept> guarded;
     for (std::size_t i = vbs.empty() ? 0 : 1; i < init.size(); i++) guarded.push_back(std::move(init[i]));
     guarded.push_back(std::move(rest));
-    std::vector<StmtPtr> all;
+    std::vector<Kept> all;
     if (!vbs.empty()) all.push_back(std::move(init[0]));
-    all.push_back(guardSubobjects(StmtPtr(new Block(std::move(guarded))), vbs, pos));
-    Block *b = new Block(std::move(all));
-    b->setScope(-1);
-    return StmtPtr(b);
+    all.push_back(guardSubobjects(Kept(std::move(guarded)), vbs, pos));
+    Kept b(std::move(all));
+    return b;
 }
 
-StmtPtr Parser::guardSubobjects(StmtPtr rest, const std::vector<Alive> &as, std::size_t pos) {
+Kept Parser::guardSubobjects(Kept rest, const std::vector<Alive> &as, std::size_t pos) {
     if (as.empty()) return rest;
     for (const Alive &a : as) alive_.push_back(a);
-    std::vector<StmtPtr> one;
+    std::vector<Kept> one;
     one.push_back(std::move(rest));
     const std::vector<std::pair<std::size_t, std::size_t> > built(
         1, std::make_pair(std::size_t(0), alive_.size()));
-    std::vector<StmtPtr> out = target_.microsoftNames()
+    std::vector<Kept> out = target_.microsoftNames()
         ? wrapMsCleanups(std::move(one), built, alive_.size() - as.size(), pos)
         : wrapCleanups(std::move(one), built, alive_.size() - as.size(), pos);
     alive_.resize(alive_.size() - as.size());
-    Block *b = new Block(std::move(out));
-    b->setScope(-1);
-    return StmtPtr(b);
+    Kept b(std::move(out));
+    return b;
 }
 
-StmtPtr Parser::guardSubobject(StmtPtr rest, const Alive &a, std::size_t pos,
+Kept Parser::guardSubobject(Kept rest, const Alive &a, std::size_t pos,
                                const std::vector<Alive> &before) {
     for (const Alive &b : before) alive_.push_back(b);
     alive_.push_back(a);
-    std::vector<StmtPtr> one;
+    std::vector<Kept> one;
     one.push_back(std::move(rest));
     const std::vector<std::pair<std::size_t, std::size_t> > built(
         1, std::make_pair(std::size_t(0), alive_.size()));
-    std::vector<StmtPtr> out = target_.microsoftNames()
+    std::vector<Kept> out = target_.microsoftNames()
         ? wrapMsCleanups(std::move(one), built, alive_.size() - 1, pos)
         : wrapCleanups(std::move(one), built, alive_.size() - 1, pos);
     alive_.resize(alive_.size() - 1 - before.size());
-    Block *b = new Block(std::move(out));
-    b->setScope(-1);
-    return StmtPtr(b);
+    Kept b(std::move(out));
+    return b;
 }
 
-StmtPtr Parser::eachElement(int indexSlot, long long count, StmtPtr one) {
+Kept Parser::eachElement(int indexSlot, long long count, Kept one) {
     ExprPtr n(new Num(count));
     n->setType(types_.intType());
     return eachElement(indexSlot, std::move(n), std::move(one));
 }
 
-StmtPtr Parser::eachElement(int indexSlot, ExprPtr n, StmtPtr one) {
+Kept Parser::eachElement(int indexSlot, ExprPtr n, Kept one) {
     const Type *idx = types_.intType();
 
     ExprPtr i0(Var::local("$i", indexSlot));
@@ -1811,14 +1804,14 @@ StmtPtr Parser::eachElement(int indexSlot, ExprPtr n, StmtPtr one) {
     ExprPtr step(new Assign(std::move(i3), std::move(sum)));
     step->setType(idx);
 
-    std::vector<StmtPtr> inner;
+    std::vector<Kept> inner;
     inner.push_back(std::move(one));
-    inner.push_back(StmtPtr(new ExprStmt(std::move(step))));
+    inner.push_back(Kept(std::move(step)));
 
-    std::vector<StmtPtr> all;
-    all.push_back(StmtPtr(new ExprStmt(std::move(init))));
-    all.push_back(loopStatement(StmtPtr(), std::move(cond), Effect(), StmtPtr(new Block(std::move(inner)))));
-    return StmtPtr(new Block(std::move(all)));
+    std::vector<Kept> all;
+    all.push_back(Kept(std::move(init)));
+    all.push_back(loopStatement(Kept(), std::move(cond), Effect(), Kept(std::move(inner))));
+    return Kept(std::move(all));
 }
 
 
@@ -2660,11 +2653,11 @@ bool Parser::hasMemberInitialiser(const std::string &tag) const {
            it->first.compare(0, prefix.size(), prefix) == 0;
 }
 
-std::vector<StmtPtr> Parser::memberInitialisers(const std::string &tag,
+std::vector<Kept> Parser::memberInitialisers(const std::string &tag,
                                                 const Type *type, int thisSlot,
                                                 const std::set<std::string> &already,
                                                 std::size_t pos) {
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     const std::vector<Member> &ms = type->members();
     const std::set<const Type *> taken = unionsNamedBy(type, already);
     for (std::size_t i = 0; i < ms.size(); i++) {
@@ -2672,7 +2665,7 @@ std::vector<StmtPtr> Parser::memberInitialisers(const std::string &tag,
         if (ms[i].anonUnion != nullptr && taken.count(ms[i].anonUnion) != 0) continue;
         std::vector<Effect> laid;
         if (!memberInitialiser(tag, type, ms[i], thisSlot, pos, laid)) continue;
-        std::vector<StmtPtr> made;
+        std::vector<Kept> made;
         appendEffects(laid, made);
         out.push_back(oneStatement(std::move(made)));
     }
@@ -2839,9 +2832,9 @@ bool Parser::memberInitialiser(const std::string &tag, const Type *type,
 }
 
 // Statements as one: the statement itself where there is one, a block of them otherwise.
-StmtPtr Parser::oneStatement(std::vector<StmtPtr> all) {
+Kept Parser::oneStatement(std::vector<Kept> all) {
     if (all.size() == 1) return std::move(all[0]);
-    return StmtPtr(new Block(std::move(all)));
+    return Kept(std::move(all));
 }
 
 // **A class-typed member is built, not left.** [class.base.init]/8: one the list does
@@ -2964,13 +2957,13 @@ Parser::Effect Parser::constructMember(const std::string &cls, const Type *type,
 }
 
 // An array member's loop, under its elements' guard ([except.ctor]/3) when they have a destructor.
-StmtPtr Parser::memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos) {
+Kept Parser::memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos) {
     const int indexSlot = e.loop;
     Alive built{ "this", thisSlot, memberClass(m.type) };
     built.owner = type;
     for (std::size_t k = 0; k < type->members().size(); k++)
         if (&type->members()[k] == &m) built.member = static_cast<int>(k);
-    StmtPtr loop = effectStatement(std::move(e));
+    Kept loop = effectStatement(std::move(e));
     return built.member < 0 ? std::move(loop) : guardElements(std::move(loop), built, indexSlot, pos);
 }
 

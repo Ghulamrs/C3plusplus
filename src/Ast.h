@@ -26,8 +26,6 @@ class StrLit;
 class VaStart;
 class VaArg;
 class MemberAccess;
-class ExprStmt;
-class Block;
 class Conditional;
 class Comma;
 
@@ -46,8 +44,6 @@ public:
     virtual void visit(const VaStart &) = 0;
     virtual void visit(const VaArg &) = 0;
     virtual void visit(const MemberAccess &) = 0;
-    virtual void visit(const ExprStmt &) = 0;
-    virtual void visit(const Block &) = 0;
     virtual void visit(const Conditional &) = 0;
     virtual void visit(const Comma &) = 0;
 };
@@ -87,17 +83,7 @@ private:
     std::uint32_t resolved_ = 0;
 };
 
-// A statement is lowered from its syntax node, which noteStmt records here; it holds its expressions, and no more.
-class Stmt : public Node {
-public:
-    syntax::NodeId syntax() const { return syntax_; }
-    void setSyntax(syntax::NodeId s) { syntax_ = s; }
-private:
-    syntax::NodeId syntax_;
-};
-
 using ExprPtr = std::unique_ptr<Expr>;
-using StmtPtr = std::unique_ptr<Stmt>;
 
 class Num final : public Expr {
 public:
@@ -341,44 +327,45 @@ private:
     int bitOffset_;
 };
 
-class ExprStmt final : public Stmt {
+// **What a statement held, kept and read by nothing**: a statement is lowered from its syntax node, and its expressions are
+// owned here as long as ConstexprFn and ConstexprCtor point into them. The record is on the heap, so a goto's cleanups,
+// filled after the jump is placed, stay where they are; null where no statement was made.
+struct KeptRecord;
+class Kept {
 public:
-    explicit ExprStmt(ExprPtr e) : expr_(std::move(e)) {}
-    void accept(Visitor &v) const override { v.visit(*this); }
+    Kept();
+    explicit Kept(ExprPtr e);
+    explicit Kept(std::vector<Kept> parts);
+    explicit operator bool() const { return held_ != nullptr; }
+    KeptRecord *held() const { return held_.get(); }
 private:
-    ExprPtr expr_;
+    std::unique_ptr<KeptRecord> held_;
 };
-
-class Block final : public Stmt {
-public:
-    explicit Block(std::vector<StmtPtr> body) : body_(std::move(body)) {}
-    // For the one block that is filled in after it is placed.
-    void append(StmtPtr s) { body_.push_back(std::move(s)); }
-
-    void setScope(int s) { scope_ = s; }
-    void accept(Visitor &v) const override { v.visit(*this); }
-private:
-    std::vector<StmtPtr> body_;
-    int scope_ = -1;
+struct KeptRecord {
+    ExprPtr expr;
+    std::vector<Kept> parts;
+    void append(Kept k) { parts.push_back(std::move(k)); }
 };
+inline Kept::Kept() {}
+inline Kept::Kept(ExprPtr e) : held_(make_owned<KeptRecord>()) { held_->expr = std::move(e); }
+inline Kept::Kept(std::vector<Kept> parts) : held_(make_owned<KeptRecord>()) { held_->parts = std::move(parts); }
 
-// A return or an if is lowered from its syntax; what it held is kept in a Block, where nothing reads it.
-inline StmtPtr returnStatement(ExprPtr value) {
-    std::vector<StmtPtr> held;
-    if (value) held.push_back(StmtPtr(new ExprStmt(std::move(value))));
-    return StmtPtr(new Block(std::move(held)));
+// A return, an if, a try, a cleanup region and its pad are lowered from the syntax tree: what they held is kept.
+inline Kept returnStatement(ExprPtr value) {
+    std::vector<Kept> held;
+    if (value) held.push_back(Kept(std::move(value)));
+    return Kept(std::move(held));
 }
-inline StmtPtr ifStatement(ExprPtr cond, StmtPtr thenArm, StmtPtr elseArm) {
-    std::vector<StmtPtr> held;
-    held.push_back(StmtPtr(new ExprStmt(std::move(cond))));
+inline Kept ifStatement(ExprPtr cond, Kept thenArm, Kept elseArm) {
+    std::vector<Kept> held;
+    held.push_back(Kept(std::move(cond)));
     held.push_back(std::move(thenArm));
     if (elseArm) held.push_back(std::move(elseArm));
-    return StmtPtr(new Block(std::move(held)));
+    return Kept(std::move(held));
 }
-// A try, a cleanup region and its pad are lowered from the syntax tree too: the statements are kept in a Block.
-inline StmtPtr tryRegion(std::vector<StmtPtr> body, StmtPtr pad) {
+inline Kept tryRegion(std::vector<Kept> body, Kept pad) {
     if (pad) body.push_back(std::move(pad));
-    return StmtPtr(new Block(std::move(body)));
+    return Kept(std::move(body));
 }
 
 struct Param {
@@ -421,11 +408,11 @@ struct Local {
 class Function {
 public:
     Function(std::string name, const Type *returns, std::vector<Param> params,
-             StmtPtr body, int frameSize, bool isStatic, int sretSlot = 0,
+             Kept body, int frameSize, bool isStatic, int sretSlot = 0,
              bool variadic = false, int regSaveSlot = 0, std::size_t pos = 0,
              std::vector<Local> locals = std::vector<Local>())
         : name_(std::move(name)), returns_(returns), params_(std::move(params)),
-          body_(std::move(body)), frameSize_(frameSize), isStatic_(isStatic),
+          kept_(std::move(body)), frameSize_(frameSize), isStatic_(isStatic),
           sretSlot_(sretSlot), variadic_(variadic), regSaveSlot_(regSaveSlot),
           pos_(pos), locals_(std::move(locals)) {}
     const std::string &name() const { return name_; }
@@ -501,7 +488,7 @@ private:
     std::string alias_;
     const Type *returns_;
     std::vector<Param> params_;
-    StmtPtr body_;   // read by nothing: it owns the expressions ConstexprFn and ConstexprCtor point into
+    Kept kept_;   // read by nothing: it owns the expressions ConstexprFn and ConstexprCtor point into
     int frameSize_;
     int frameAlign_ = 16;
     bool isStatic_;

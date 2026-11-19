@@ -291,13 +291,13 @@ ExprPtr Parser::finishCall(const std::string &name, const std::string &symbol,
 // The caller's half of passing a class by value - a temporary, the copy run into
 // it, its address handed over, all one expression - and below it the end of a full
 // expression, where those temporaries are destroyed in the reverse of their order.
-void Parser::flushTemporaries(std::vector<StmtPtr> &into) {
+void Parser::flushTemporaries(std::vector<Kept> &into) {
     std::vector<Effect> steps;
     temporaryEffects(steps);
     appendEffects(steps, into);
 }
 
-void Parser::appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into) {
+void Parser::appendEffects(std::vector<Effect> &made, std::vector<Kept> &into) {
     for (Effect &x : made) into.push_back(effectStatement(std::move(x)));
     made.clear();
 }
@@ -314,8 +314,8 @@ void Parser::temporaryEffects(std::vector<Effect> &into) {
 }
 
 // **Under its guard, and cleared with it.**
-StmtPtr Parser::effectStatement(Effect x) {
-    StmtPtr call(make_owned<ExprStmt>(std::move(x.expr)));
+Kept Parser::effectStatement(Effect x) {
+    Kept call(std::move(x.expr));
     if (x.loop >= 0) call = eachElement(x.loop, x.count, std::move(call));
     if (x.when >= 0) {
         ExprPtr n(Var::local("$vb", x.when));
@@ -324,17 +324,17 @@ StmtPtr Parser::effectStatement(Effect x) {
         above->setType(types_.intType());
         ExprPtr built(make_owned<Binary>(BinOp::Gt, std::move(n), std::move(above)));
         built->setType(types_.intType());
-        std::vector<StmtPtr> calls;
+        std::vector<Kept> calls;
         calls.push_back(std::move(call));
-        call = ifStatement(std::move(built), StmtPtr(make_owned<Block>(std::move(calls))), StmtPtr());
+        call = ifStatement(std::move(built), Kept(std::move(calls)), Kept());
     }
     if (x.guard == 0) return call;
     ExprPtr live(Var::local("$guard", x.guard));
     live->setType(types_.intType());
-    std::vector<StmtPtr> both;
+    std::vector<Kept> both;
     both.push_back(std::move(call));
-    both.push_back(StmtPtr(make_owned<ExprStmt>(setGuard(x.guard, 0))));
-    return ifStatement(std::move(live), StmtPtr(make_owned<Block>(std::move(both))), StmtPtr());
+    both.push_back(Kept(setGuard(x.guard, 0)));
+    return ifStatement(std::move(live), Kept(std::move(both)), Kept());
 }
 
 ExprPtr Parser::temporaryDestruction(const Temporary &t, std::size_t pos) {

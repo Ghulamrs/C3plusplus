@@ -180,13 +180,13 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
         params.push_back(Param{ flagType, flagSlot });
     }
 
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
 
     const Signature *dtor = p_.destructorOf(type);
     if (dtor != nullptr) {
         ExprPtr me(Var::local("this", thisSlot));
         me->setType(self);
-        body.push_back(StmtPtr(new ExprStmt(p_.destructorCall(std::move(me), *dtor, pos))));
+        body.push_back(Kept(p_.destructorCall(std::move(me), *dtor, pos)));
     }
 
     // operator delete(this)
@@ -201,7 +201,7 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
         const Parser::MemberBuilt u = { c->symbol(), p_.types_.functionType(p_.types_.get(Kind::Void), std::vector<const Type *>(1, vp), false), false, false };
         p_.memberBuilt_[symbol + "|$delete|0"] = u;
     }
-    StmtPtr freeIt(new ExprStmt(std::move(freed)));
+    Kept freeIt(std::move(freed));
 
     if (ms) {
         // if (flags & 1) operator delete(this);
@@ -211,7 +211,7 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
         one->setType(flagType);
         ExprPtr test(new Binary(BinOp::BitAnd, std::move(flags), std::move(one)));
         test->setType(flagType);
-        body.push_back(ifStatement(std::move(test), std::move(freeIt), nullptr));
+        body.push_back(ifStatement(std::move(test), std::move(freeIt), Kept()));
 
         ExprPtr back(Var::local("this", thisSlot));
         back->setType(self);
@@ -226,7 +226,7 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
     const Type *returns = ms ? vp : p_.types_.get(Kind::Void);
     p_.current_->functions.push_back(Function(cls + "::deleting", returns,
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
@@ -287,7 +287,7 @@ void Classes::synthesizeCompleteCtor(const Type *type,
     std::vector<int> builtBase;
     // The virtual bases it builds, "^V" each in its order, and the C2 and VTT it hands them - records for the SSA builder (M3b.3).
     const Keyed keyed(p_.currentFunction_, c1);
-    std::vector<StmtPtr> body = p_.virtualBaseCalls(type, thisSlot, true, pos,
+    std::vector<Kept> body = p_.virtualBaseCalls(type, thisSlot, true, pos,
                                                  srcSlot, moving, vbaseArgs, &builtBase, &p_.msVbaseOrder_[c1]);
     recordPart(type, c1, c2, "$C2", ctorParams);
 
@@ -328,18 +328,18 @@ void Classes::synthesizeCompleteCtor(const Type *type,
             done[i].owner = type;
             done[i].base = builtBase[i];
         }
-    body.push_back(StmtPtr(new ExprStmt(
+    body.push_back(Kept(
         p_.completeCall(cls, c2, nullptr, p_.types_.get(Kind::Void), ps, false, pos,
-                     std::move(args)))));
+                     std::move(args))));
     bool guarded = false;
-    StmtPtr whole = p_.guardConstruction(std::move(body), std::move(done), pos, &guarded);
+    Kept whole = p_.guardConstruction(std::move(body), std::move(done), pos, &guarded);
     body.clear();
     body.push_back(std::move(whole));
 
     p_.current_->functions.push_back(Function(cls + "::complete",
                                            p_.types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
@@ -363,7 +363,7 @@ void Classes::synthesizeCompleteDtor(const Type *type, const std::string &d1,
     params.push_back(Param{ self, thisSlot });
 
     // D2 first - it destroys what C2 built - and the virtual bases after it.
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     ExprPtr me(Var::local("this", thisSlot));
     me->setType(self);
     std::vector<ExprPtr> args;
@@ -374,21 +374,21 @@ void Classes::synthesizeCompleteDtor(const Type *type, const std::string &d1,
         args.push_back(vttOfClass(type, 0));
         ps.push_back(p_.vttType());
     }
-    body.push_back(StmtPtr(new ExprStmt(
+    body.push_back(Kept(
         p_.completeCall(cls, d2, nullptr, p_.types_.get(Kind::Void), ps, false, pos,
-                     std::move(args)))));
+                     std::move(args))));
 
     // The D2 it calls and the virtual bases it destroys, "~V" each in its order - records for the SSA builder (M3b.3).
     const Keyed keyed(p_.currentFunction_, d1);
     recordPart(type, d1, d2, "$D2", std::vector<const Type *>());
-    std::vector<StmtPtr> after = p_.virtualBaseCalls(type, thisSlot, false, pos, -1, false, nullptr, nullptr, &p_.msVbaseOrder_[d1]);
+    std::vector<Kept> after = p_.virtualBaseCalls(type, thisSlot, false, pos, -1, false, nullptr, nullptr, &p_.msVbaseOrder_[d1]);
     for (std::size_t i = 0; i < after.size(); i++)
         body.push_back(std::move(after[i]));
 
     p_.current_->functions.push_back(Function(cls + "::completeDtor",
                                            p_.types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
@@ -472,12 +472,12 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
     ExprPtr call = p_.completeCall(slot.name, slot.symbol, nullptr, returns, full,
                                 false, pos, std::move(args), true);
     if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     body.push_back(returnStatement(returns->isVoid() ? nullptr : std::move(call)));
-    if (returns->isVoid()) body.insert(body.begin(), StmtPtr(new ExprStmt(std::move(call))));
+    if (returns->isVoid()) body.insert(body.begin(), Kept(std::move(call)));
 
     p_.current_->functions.push_back(Function(name, returns, std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
     p_.current_->functions.back().setSynthesised("thunk");
@@ -541,15 +541,15 @@ std::string Classes::synthesizeVcallThunk(const Type *cls, const Signature &f,
     ExprPtr call = p_.completeCall(f.name, f.symbol, std::move(entry), f.returns,
                                 full, f.variadic, pos, std::move(args), true);
     if (f.returns->isReference()) call = p_.bindReference(f.returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     if (f.returns->isVoid()) {
-        body.push_back(StmtPtr(new ExprStmt(std::move(call))));
+        body.push_back(Kept(std::move(call)));
         body.push_back(returnStatement(nullptr));
     } else {
         body.push_back(returnStatement(std::move(call)));
     }
     p_.current_->functions.push_back(Function(name, f.returns, std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
     p_.current_->functions.back().setSynthesised("vcall thunk");
@@ -1453,7 +1453,7 @@ void Classes::synthesizeDestructor(std::size_t which) {
         params.push_back(Param{ p_.vttType(), p_.vttSlot_ });
     }
 
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
 
     const std::vector<Type::BaseSpec> &bs = type->bases();
 
@@ -1506,16 +1506,16 @@ void Classes::synthesizeDestructor(std::size_t which) {
         // What destroys this base, for the SSA builder (M3b.3): keyed as a written destructor's record is, "~B".
         const Parser::MemberBuilt u = { sym, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), false, false };
         p_.memberBuilt_[symbol + "|~" + base->tag() + "|0"] = u;
-        body.push_back(StmtPtr(new ExprStmt(
+        body.push_back(Kept(
             p_.completeCall("~" + base->tag(), sym, nullptr, p_.types_.get(Kind::Void),
-                         ps, false, pos, std::move(args)))));
+                         ps, false, pos, std::move(args))));
     }
     p_.vttSlot_ = savedVtt;
 
     p_.current_->functions.push_back(Function(cls + "::~" + Parser::localOf(cls),
                                            p_.types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
     p_.current_->functions.back().setSynthesised("implicit destructor");
@@ -1865,12 +1865,12 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         params.push_back(Param{ p_.types_.intType(), flagSlot });
     }
 
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     // What each statement of `body` finishes building, for [except.ctor]/3.
     std::vector<Parser::Alive> done;
     // cl's virtual bases, built under the most-derived flag and guarded around the rest, [except.ctor]/3.
     std::vector<Parser::Alive> vbs;
-    std::vector<StmtPtr> vbInit =
+    std::vector<Kept> vbInit =
         p_.guardedVirtualBaseInit(type, cls, thisSlot, flagSlot, pos, -1, false, nullptr, &vbs, true);
 
     const std::vector<Type::BaseSpec> &bs = type->bases();
@@ -1948,9 +1948,9 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         recordBaseDestructor(symbol, base);
         // A base subobject, so cl's flag is 0: its virtual bases are this
         // class's to build, and it built them above.
-        body.push_back(StmtPtr(new ExprStmt(
+        body.push_back(Kept(
             p_.completeCall(base->tag(), sym, nullptr, p_.types_.get(Kind::Void), ps,
-                         false, pos, std::move(args), false, 0))));
+                         false, pos, std::move(args), false, 0)));
         done.resize(body.size());
         if (p_.destructorOf(base) != nullptr) {
             done.back() = Parser::Alive{ "this", thisSlot, type };
@@ -1978,10 +1978,10 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         if (memberFromBase(type, ms[i])) continue;
         p_.memberDefaultFor_ = symbol;      // the initialiser's syntax recorded under this constructor (M3b.3)
         std::vector<Effect> laid;
-        StmtPtr one;
+        Kept one;
         std::vector<ExprPtr> none;
         if (p_.memberInitialiser(cls, type, ms[i], thisSlot, pos, laid)) {
-            std::vector<StmtPtr> made;
+            std::vector<Kept> made;
             p_.appendEffects(laid, made);
             one = p_.oneStatement(std::move(made));
         } else if (type->kind() != Kind::Union && ms[i].anonUnion == nullptr) {
@@ -1989,7 +1989,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
             if (built.loop >= 0) one = p_.memberLoop(std::move(built), type, ms[i], thisSlot, pos);
             else if (built.expr != nullptr) one = p_.effectStatement(std::move(built));
         }
-        if (one == nullptr) continue;
+        if (!one) continue;
         body.push_back(std::move(one));
         done.resize(body.size());
         if (p_.memberHasDestructor(ms[i].type)) {
@@ -2000,7 +2000,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
     }
 
     bool guarded = false;
-    StmtPtr built = p_.withVirtualBases(std::move(vbInit), vbs,
+    Kept built = p_.withVirtualBases(std::move(vbInit), vbs,
                                      p_.guardConstruction(std::move(body), std::move(done), pos, &guarded),
                                      pos);
     p_.current_->functions.push_back(Function(cls + "::" + cls, p_.types_.get(Kind::Void),
@@ -2111,11 +2111,11 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         params.push_back(Param{ p_.types_.intType(), flagSlot });
     }
 
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     // What each statement of `body` finishes building - a constructor's, for [except.ctor]/3.
     std::vector<Parser::Alive> finished;
     std::vector<Parser::Alive> vbs;
-    std::vector<StmtPtr> vbInit;
+    std::vector<Kept> vbInit;
     {
         // **Copied out of the source's own virtual base**, which is what the
         // Itanium C1 does with the argument forwarded to it. cl's guard is recorded under this constructor for the Builder (M3b.3).
@@ -2183,10 +2183,10 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         const Parser::MemberBuilt b = { sym, p_.types_.functionType(cc->returns, ps, false), false, false };
         p_.memberBuilt_[symbol + "|^" + base->tag() + "|0"] = b;
         if (!assigning) recordBaseDestructor(symbol, base);
-        body.push_back(StmtPtr(new ExprStmt(
+        body.push_back(Kept(
             p_.completeCall(base->tag(), sym, nullptr, cc->returns, ps,
                          false, pos, std::move(args), false,
-                         assigning ? 1 : 0))));
+                         assigning ? 1 : 0)));
         finished.resize(body.size());
         if (!assigning && p_.destructorOf(base) != nullptr) {
             finished.back() = Parser::Alive{ "this", thisSlot, type };
@@ -2279,7 +2279,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         // After the array unwrap, so that it lands on the element actually handed over.
         if (moving) src->setXvalue();
 
-        StmtPtr one;
+        Kept one;
         if (cc != nullptr) {
             ExprPtr addr(new Unary('&', std::move(dst)));
             addr->setType(p_.types_.pointerTo(elem->unqualified()));
@@ -2292,13 +2292,13 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
             // What copies this member, each element of an array, for the SSA builder (M3b.3): keyed as a written entry's record.
             const Parser::MemberBuilt b = { cc->symbol, p_.types_.functionType(cc->returns, ps, false), false, false };
             p_.memberBuilt_[symbol + "|" + ms[i].name + "|0"] = b;
-            one = StmtPtr(new ExprStmt(
+            one = Kept(
                 p_.completeCall(elem->unqualified()->tag(), cc->symbol, nullptr,
-                             cc->returns, ps, false, pos, std::move(args))));
+                             cc->returns, ps, false, pos, std::move(args)));
         } else {
             ExprPtr store(new Assign(std::move(dst), std::move(src)));
             store->setType(elem);
-            one = StmtPtr(new ExprStmt(std::move(store)));
+            one = Kept(std::move(store));
         }
 
         if (mt->isArray()) {
@@ -2329,7 +2329,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
     }
 
     bool guarded = false;
-    StmtPtr built = p_.withVirtualBases(std::move(vbInit), vbs,
+    Kept built = p_.withVirtualBases(std::move(vbInit), vbs,
                                      p_.guardConstruction(std::move(body), std::move(finished), pos, &guarded),
                                      pos);
     p_.current_->functions.push_back(Function(cls + "::" + (assigning ? "operator="
@@ -2658,8 +2658,8 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
     keep->setType(chars);
     ExprPtr save(new Assign(std::move(keep), std::move(stepped)));
     save->setType(chars);
-    std::vector<StmtPtr> body;
-    body.push_back(StmtPtr(new ExprStmt(std::move(save))));
+    std::vector<Kept> body;
+    body.push_back(Kept(std::move(save)));
 
     // (T *)(held + *(ptrdiff_t *)(*(char **)held - vcallBack))
     ExprPtr obj(Var::local(".vt", held));
@@ -2703,14 +2703,14 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
                                 false, pos, std::move(args), true);
     if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     if (returns->isVoid()) {
-        body.push_back(StmtPtr(new ExprStmt(std::move(call))));
+        body.push_back(Kept(std::move(call)));
         body.push_back(returnStatement(nullptr));
     } else {
         body.push_back(returnStatement(std::move(call)));
     }
 
     p_.current_->functions.push_back(Function(name, returns, std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
     p_.current_->functions.back().setSynthesised("virtual thunk");

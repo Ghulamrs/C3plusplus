@@ -1154,9 +1154,9 @@ void Parser::leaveInitFunction(const FunctionState &outer, const std::string &sy
 void Parser::finishDynamicInit(Program &program) {
     if (dynInit_.empty()) return;
     dynInitStatements_ = dynInit_.size();
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     for (std::size_t i = 0; i < dynInitGuards_.size(); i++)
-        body.push_back(StmtPtr(new ExprStmt(setGuard(dynInitGuards_[i], 0))));
+        body.push_back(Kept(setGuard(dynInitGuards_[i], 0)));
     for (std::size_t i = 0; i < dynInit_.size(); i++)
         body.push_back(std::move(dynInit_[i]));
     dynInit_.clear();
@@ -1164,7 +1164,7 @@ void Parser::finishDynamicInit(Program &program) {
     const std::string symbol = linkage_.initFunctionSymbol();
     program.functions.push_back(Function(symbol, types_.get(Kind::Void),
                                          std::vector<Param>(),
-                                         StmtPtr(new Block(std::move(body))),
+                                         Kept(std::move(body)),
                                          alignTo(dynInitFrame_, 16), true, 0,
                                          false, 0, 0, std::vector<::Local>()));
     program.functions.back().setSynthesised("init function");
@@ -1184,9 +1184,9 @@ void Parser::finishTlsInit(Program &program) {
         program.module.data.tlsWrappers.push_back(TlsWrapper{ s, true, true, true });
     if (tlsInit_.empty()) return;
     tlsInitStatements_ = tlsInit_.size();
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     for (std::size_t i = 0; i < tlsInitGuards_.size(); i++)
-        body.push_back(StmtPtr(new ExprStmt(setGuard(tlsInitGuards_[i], 0))));
+        body.push_back(Kept(setGuard(tlsInitGuards_[i], 0)));
     if (target_.microsoftNames()) {
         for (std::size_t i = 0; i < tlsInit_.size(); i++) body.push_back(std::move(tlsInit_[i]));
     } else {
@@ -1210,16 +1210,16 @@ void Parser::finishTlsInit(Program &program) {
         one->setType(byte);
         ExprPtr mark(new Assign(guard(), std::move(one)));
         mark->setType(byte);
-        std::vector<StmtPtr> once;
-        once.push_back(StmtPtr(new ExprStmt(std::move(mark))));
+        std::vector<Kept> once;
+        once.push_back(Kept(std::move(mark)));
         for (std::size_t i = 0; i < tlsInit_.size(); i++) once.push_back(std::move(tlsInit_[i]));
-        body.push_back(ifStatement(std::move(fresh), StmtPtr(new Block(std::move(once))), StmtPtr()));
+        body.push_back(ifStatement(std::move(fresh), Kept(std::move(once)), Kept()));
     }
     tlsInit_.clear();
     tlsInitGuards_.clear();
     program.functions.push_back(Function("__tls_init", types_.get(Kind::Void),
                                          std::vector<Param>(),
-                                         StmtPtr(new Block(std::move(body))),
+                                         Kept(std::move(body)),
                                          alignTo(tlsInitFrame_, 16), true, 0,
                                          false, 0, 0, std::vector<::Local>()));
     program.functions.back().setSynthesised("tls init");
@@ -1313,7 +1313,7 @@ std::vector<Parser::Effect> Parser::buildStaticConstruction(const Declared &d, c
 // **An array of a class with static storage duration**: built by the class's
 // loop before main, destroyed last first at exit by a helper calling the
 // other loop - __cxa_atexit with the array on Itanium, atexit on Microsoft.
-std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
+std::vector<Kept> Parser::buildStaticArrayConstruction(Declared &d,
                                                           const std::string &symbol,
                                                           const std::string &helper) {
     const Type *elem = d.type;
@@ -1336,7 +1336,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
         src_.fail(d.pos, "'" + d.name + "' has no length and no initialiser "
                          "to take one from");
     // `S g[] = {...}`: each element copy-initialised from its initialiser, as a local's are.
-    std::vector<StmtPtr> out;
+    std::vector<Kept> out;
     if (listed) {
         consume("=");
         out.push_back(constructLocalArrayFromList(d, 0, [] { return 0; }, symbol));
@@ -1359,7 +1359,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
         n->setType(sizeT);
         const std::string loop = vectorConstructor(plain, d.pos);
         staticGuards_[symbol].vectorLoop = loop;
-        out.push_back(StmtPtr(new ExprStmt(callVectorLoop(loop, plain, std::move(base), std::move(n), d.pos))));
+        out.push_back(Kept(callVectorLoop(loop, plain, std::move(base), std::move(n), d.pos)));
     }
     if (destructorOf(plain) == nullptr) return out;
 
@@ -1384,18 +1384,18 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     first->setType(ptr);
     ExprPtr n2(new Num(count));
     n2->setType(sizeT);
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     const std::string loop = vectorDestructor(plain, d.pos);
     // For the SSA builder (M3b.3): the loop the helper calls, "~elements", and the array it destroys, "$array", by its type.
     const MemberBuilt u = { loop, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ ptr, sizeT }, false), false, false };
     memberBuilt_[fn + "|~elements|0"] = u;
     const MemberBuilt a = { symbol, d.type, false, false };
     memberBuilt_[fn + "|$array|0"] = a;
-    body.push_back(StmtPtr(new ExprStmt(callVectorLoop(loop, plain, std::move(first), std::move(n2), d.pos))));
+    body.push_back(Kept(callVectorLoop(loop, plain, std::move(first), std::move(n2), d.pos)));
     body.push_back(returnStatement(nullptr));
     current_->functions.push_back(Function(fn, types_.get(Kind::Void),
                                            std::move(params),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, d.pos, std::vector<::Local>()));
     current_->functions.back().setSynthesised("array destructor helper");
@@ -1409,8 +1409,8 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
         const Type *helperType = types_.functionType(types_.get(Kind::Void),
                                                      std::vector<const Type *>(), false);
         args.push_back(functionAddress(fn, helperType));
-        out.push_back(StmtPtr(new ExprStmt(runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit",
-                                                       types_.intType(), std::move(args)))));
+        out.push_back(Kept(runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit",
+                                                       types_.intType(), std::move(args))));
         return out;
     }
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
@@ -1428,8 +1428,8 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     handleAddr->setType(voidPtr);
     args.push_back(std::move(handleAddr));
     current_->module.data.usesDsoHandle = true;
-    out.push_back(StmtPtr(new ExprStmt(runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
-                                                   types_.intType(), std::move(args)))));
+    out.push_back(Kept(runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
+                                                   types_.intType(), std::move(args))));
     return out;
 }
 
@@ -1479,7 +1479,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     // cl makes it (its object is one for the program). Built in a frame of its own, as the implicit special members are.
     const bool shared = sharedStaticLocal(symbol);
     const FrameSave savedFrame = openFrame();
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     ExprPtr addr(new Unary('&', objectAt(d, symbol, 0)));
     addr->setType(clsPtr);
     ExprPtr call = destructorCall(std::move(addr), *dtor, d.pos);
@@ -1489,10 +1489,10 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
         memberBuilt_[helper + "|$object|0"] = o;
         memberBuilt_[helper + "|~object|0"] = k;
     }
-    body.push_back(StmtPtr(new ExprStmt(std::move(call))));
+    body.push_back(Kept(std::move(call)));
     current_->functions.push_back(Function(helper, types_.get(Kind::Void),
                                            std::vector<Param>(),
-                                           StmtPtr(new Block(std::move(body))),
+                                           Kept(std::move(body)),
                                            alignTo(frameSize_, 16), !shared, 0,
                                            false, 0, d.pos,
                                            std::vector<::Local>()));
@@ -1523,7 +1523,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
     const FunctionState outer = enterInitFunction();
     currentClass_ = scope;
     inStaticMember_ = scopeStatic;
-    std::vector<StmtPtr> built;
+    std::vector<Kept> built;
     std::vector<Effect> steps;
     if (d.type->isArray()) built = buildStaticArrayConstruction(d, symbol, helper);
     else steps = buildStaticConstruction(d, symbol, helper);
@@ -1541,7 +1541,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
     }
     appendEffects(steps, built);
     if (once) {
-        StmtPtr guarded = guardTemplateMember(symbol, std::move(built));
+        Kept guarded = guardTemplateMember(symbol, std::move(built));
         built.clear();
         built.push_back(std::move(guarded));
     }
@@ -1615,8 +1615,8 @@ void Parser::dynamicInitialiseScalar(const std::string &name, const std::string 
     leaveInitFunction(outer, symbol);
 }
 
-StmtPtr Parser::guardTemplateMember(const std::string &symbol,
-                                    std::vector<StmtPtr> built) {
+Kept Parser::guardTemplateMember(const std::string &symbol,
+                                    std::vector<Kept> built) {
     const bool ms = target_.microsoftNames();
     const std::string guard = ms ? symbol + "$guard"
                                  : "_ZGV" + symbol.substr(symbol.compare(0, 2, "_Z") == 0 ? 2 : 0);
@@ -1646,19 +1646,19 @@ StmtPtr Parser::guardTemplateMember(const std::string &symbol,
     ExprPtr set(new Assign(std::move(marked), std::move(one)));
     set->setType(readAs);
 
-    std::vector<StmtPtr> body;
-    body.push_back(StmtPtr(new ExprStmt(std::move(set))));
+    std::vector<Kept> body;
+    body.push_back(Kept(std::move(set)));
     for (std::size_t i = 0; i < built.size(); i++)
         body.push_back(std::move(built[i]));
-    return ifStatement(std::move(fresh), StmtPtr(new Block(std::move(body))),
-                          StmtPtr());
+    return ifStatement(std::move(fresh), Kept(std::move(body)),
+                          Kept());
 }
 
 void Parser::dynamicInitialiseStaticMember(const std::string &name,
                                            const std::string &symbol,
                                            const Type *type, Init &in, bool once) {
     const FunctionState outer = enterInitFunction();
-    std::vector<StmtPtr> built;
+    std::vector<Kept> built;
     Var *v = Var::global(name);
     v->setSymbol(symbol);
     if (tlsObject_) tlsVar(v, false, false);
@@ -1667,10 +1667,10 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
     checkAssignable(*in.value, type, in.pos, "'" + name + "'");
     ExprPtr a(new Assign(std::move(target), convert(decay(std::move(in.value)), type)));
     a->setType(type);
-    built.push_back(StmtPtr(new ExprStmt(std::move(a))));
+    built.push_back(Kept(std::move(a)));
     flushTemporaries(built);
     if (once) {
-        StmtPtr guarded = guardTemplateMember(symbol, std::move(built));
+        Kept guarded = guardTemplateMember(symbol, std::move(built));
         built.clear();
         built.push_back(std::move(guarded));
     }
@@ -1682,7 +1682,7 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
 // **A block-scope thread_local built once per thread** - [stmt.dcl]/4 - needs no lock: the
 // guard is a thread_local byte of its own, set after the construction so that one which throws
 // is tried again. Measured from clang, which writes `_ZGV<name>` in .tbss and no __cxa_guard call.
-StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body) {
+Kept Parser::guardOnceThread(const std::string &symbol, std::vector<Kept> body) {
     const std::string guard = symbol + (target_.microsoftNames() ? "$tguard" : ".tguard");
     staticGuards_[symbol].guard = guard;
     const Type *byte = types_.get(Kind::UChar);
@@ -1704,14 +1704,14 @@ StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> 
     one->setType(byte);
     ExprPtr set(new Assign(flag(), std::move(one)));
     set->setType(byte);
-    body.push_back(StmtPtr(new ExprStmt(std::move(set))));
-    return ifStatement(std::move(fresh), StmtPtr(new Block(std::move(body))), StmtPtr());
+    body.push_back(Kept(std::move(set)));
+    return ifStatement(std::move(fresh), Kept(std::move(body)), Kept());
 }
 
 // [stmt.dcl]/4 under the ABI's own guard: __cxa_guard_acquire / _release
 // around the construction on Itanium; _Init_thread_header / _footer with the
 // guard at -1 on Microsoft, without cl's TLS epoch fast path - CONFORMANCE.md.
-StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) {
+Kept Parser::guardOnce(const std::string &symbol, std::vector<Kept> body) {
     guardedStatics_.insert(symbol);
     if (tlsObject_) return guardOnceThread(symbol, std::move(body));
     const bool ms = target_.microsoftNames();
@@ -1764,8 +1764,8 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
     auto guarded = [&](const char *abort) {
         std::vector<ExprPtr> a;
         a.push_back(guardAddr());
-        StmtPtr onUnwind(new ExprStmt(runtimeCall(abort, types_.get(Kind::Void), std::move(a))));
-        std::vector<StmtPtr> region;
+        Kept onUnwind(runtimeCall(abort, types_.get(Kind::Void), std::move(a)));
+        std::vector<Kept> region;
         region.push_back(cleanupRegion(std::move(body), std::move(onUnwind)));
         return region;
     };
@@ -1776,40 +1776,40 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
                                        std::move(a1));
         std::vector<ExprPtr> a2;
         a2.push_back(guardAddr());
-        std::vector<StmtPtr> built = guarded("__cxa_guard_abort");
-        built.push_back(StmtPtr(new ExprStmt(
+        std::vector<Kept> built = guarded("__cxa_guard_abort");
+        built.push_back(Kept(
             runtimeCall("__cxa_guard_release", types_.get(Kind::Void),
-                        std::move(a2)))));
-        std::vector<StmtPtr> inner;
+                        std::move(a2))));
+        std::vector<Kept> inner;
         inner.push_back(ifStatement(std::move(acquired),
-                                       StmtPtr(new Block(std::move(built))),
-                                       StmtPtr()));
+                                       Kept(std::move(built)),
+                                       Kept()));
         return ifStatement(guardIs(0, Kind::UChar),
-                              StmtPtr(new Block(std::move(inner))), StmtPtr());
+                              Kept(std::move(inner)), Kept());
     }
 
-    std::vector<StmtPtr> whole;
+    std::vector<Kept> whole;
     std::vector<ExprPtr> a1;
     a1.push_back(guardAddr());
-    whole.push_back(StmtPtr(new ExprStmt(
+    whole.push_back(Kept(
         runtimeCall("_Init_thread_header", types_.get(Kind::Void),
-                    std::move(a1)))));
+                    std::move(a1))));
     std::vector<ExprPtr> a2;
     a2.push_back(guardAddr());
-    std::vector<StmtPtr> built = inHandlerBody_ ? std::move(body) : guarded("_Init_thread_abort");
-    built.push_back(StmtPtr(new ExprStmt(
+    std::vector<Kept> built = inHandlerBody_ ? std::move(body) : guarded("_Init_thread_abort");
+    built.push_back(Kept(
         runtimeCall("_Init_thread_footer", types_.get(Kind::Void),
-                    std::move(a2)))));
+                    std::move(a2))));
     whole.push_back(ifStatement(guardIs(-1, Kind::Int),
-                                   StmtPtr(new Block(std::move(built))),
-                                   StmtPtr()));
-    return StmtPtr(new Block(std::move(whole)));
+                                   Kept(std::move(built)),
+                                   Kept()));
+    return Kept(std::move(whole));
 }
 
 // The Microsoft helper for a static local is scoped to its function -
 // `??__Floc@?1??f@@YAHXZ@YAXXZ` - with an undecorated owner written ?name@@9.
 void Parser::staticLocalWithConstructor(Declared &d,
-                                        std::vector<StmtPtr> &inits) {
+                                        std::vector<Kept> &inits) {
     const std::string symbol = linkage_.uniqueStaticSymbol(d.name, tlsObject_ ? nullptr : d.type);
     std::string helper;
     if (target_.microsoftNames()) {
@@ -1821,7 +1821,7 @@ void Parser::staticLocalWithConstructor(Declared &d,
     const bool early = initialiserNames(d.name);
     if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
     const std::size_t mine = locals_.size() - 1;
-    std::vector<StmtPtr> body;
+    std::vector<Kept> body;
     std::vector<Effect> steps;
     if (d.type->isArray()) body = buildStaticArrayConstruction(d, symbol, helper);
     else steps = buildStaticConstruction(d, symbol, helper);
@@ -1870,7 +1870,7 @@ void Parser::staticTemporary(const Declared &d, const std::string &symbol, bool 
 // local's guarded statement. A temporary gets static storage of its own (staticTemporary).
 void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
                                  std::vector<GlobalPiece> &pieces, bool &hasInit,
-                                 std::vector<StmtPtr> *into, bool local) {
+                                 std::vector<Kept> *into, bool local) {
     if (!peek().is("="))
         src_.fail(d.pos, "'" + d.name + "' is a reference and has to be "
                          "initialised here - there is no later assignment "
@@ -1907,6 +1907,6 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
     t->setType(slot);
     ExprPtr bind(new Assign(std::move(t), std::move(addr)));
     bind->setType(slot);
-    into->push_back(StmtPtr(new ExprStmt(std::move(bind))));
+    into->push_back(Kept(std::move(bind)));
     flushTemporaries(*into);
 }

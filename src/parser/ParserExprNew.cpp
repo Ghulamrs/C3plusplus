@@ -1418,13 +1418,12 @@ std::vector<Parser::Effect> Parser::microsoftThrow(ExprPtr value, std::size_t po
 // **`throw x;` is three calls and a store, and no new machinery**:
 // __cxa_allocate_exception, the store, __cxa_throw with the type that identifies
 // it. That type_info pointer is the work - fundamental types, the rest refused.
-StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
+Kept Parser::throwStatement(ExprPtr value, std::size_t pos) {
     std::vector<Effect> made = throwEffects(std::move(value), pos);
-    std::vector<StmtPtr> steps;
+    std::vector<Kept> steps;
     for (Effect &x : made) steps.push_back(effectStatement(std::move(x)));
-    std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
-    b->setScope(-1);
-    return StmtPtr(std::move(b));
+    Kept b(std::move(steps));
+    return Kept(std::move(b));
 }
 
 std::vector<Parser::Effect> Parser::throwEffects(ExprPtr value, std::size_t pos) {

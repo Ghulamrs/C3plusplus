@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2342` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3004`, `src/parser/ParserTopLevel.cpp:837` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2997`, `src/parser/ParserTopLevel.cpp:837` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:468` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -245,7 +245,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2321`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2247`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2240`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2067`
 - **a covariant return that moves the result** - an override may return a
@@ -289,7 +289,7 @@ is left:
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1375`
 - **a braced list for an array of a class with a destructor and no
   constructor** - `src/parser/ParserInit.cpp:1332`,
-  `src/parser/ParserStmt.cpp:248`
+  `src/parser/ParserStmt.cpp:250`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:726`
 ## Objects that would run code before `main`
 
@@ -301,7 +301,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2059`
+  destroyed element by element. `src/parser/ParserClass.cpp:2052`
 - **a static-duration reference bound to a temporary of an incomplete class, an
   array or void** - [class.temporary]/5's object of static storage is made for a
   scalar or a complete class only. `src/parser/ParserInit.cpp:1846`
@@ -334,11 +334,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1714`
+  `src/parser/ParserExprNew.cpp:1713`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1651`
+  `src/parser/ParserExprNew.cpp:1650`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1684`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1683`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -360,7 +360,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
   Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1205`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1715`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1709`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -393,10 +393,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1060`
 - **a switch's condition declaring an object of class type** - its value would be the
   conversion function's, and its destructor would run at the switch's end; an integer or an
-  enumeration declared there works. `src/parser/ParserStmt.cpp:1163`
+  enumeration declared there works. `src/parser/ParserStmt.cpp:1162`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
-  the handler's funclet. `src/parser/ParserStmt.cpp:984`
+  the handler's funclet. `src/parser/ParserStmt.cpp:985`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
   C++14. `src/parser/ParserTopLevel.cpp:2467`
 - **an expression form the Itanium name was not measured for, over a template's
@@ -409,7 +409,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2201`
+  `src/parser/ParserStmt.cpp:2189`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -424,7 +424,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1795`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2192`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2180`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas

@@ -62,7 +62,7 @@ private:
     typedef sema::Local Local;
     typedef sema::Effect Effect;
     // A mem-initialiser's steps; `statement` instead where an array member's loop is under its elements' guard.
-    struct MemberStep { std::vector<Effect> effects; StmtPtr statement; };
+    struct MemberStep { std::vector<Effect> effects; Kept statement; };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
     struct FreeSlot { const Type *stored; int offset; int align; };
@@ -335,15 +335,15 @@ private:
     const Type *decltypeSpecifier();
     bool atNamePath() const;
     bool atRangeFor() const;
-    StmtPtr rangeForStatement();
+    Kept rangeForStatement();
     // [stmt.ranged]'s begin-expr and end-expr for a class range, and the slots
     // holding them. Returns the iterator type; fills `setup` with the three
     // assignments the loop needs in front of it.
     const Type *classRangeEnds(ExprPtr range, std::size_t rpos,
-                               std::vector<StmtPtr> &setup, int *bSlot,
+                               std::vector<Kept> &setup, int *bSlot,
                                int *eSlot, std::string *bName,
                                std::string *eName);
-    StmtPtr initRangeLocal(const std::string &name, const Type *t, int off, ExprPtr init,
+    Kept initRangeLocal(const std::string &name, const Type *t, int off, ExprPtr init,
                            std::size_t pos);
     // Where a range-for's own objects became alive: a statement index and how many then.
     std::vector<std::pair<std::size_t, std::size_t> > rangeBuilt_;
@@ -449,7 +449,7 @@ private:
     // The `if (mostDerived)` a Microsoft constructor opens with: the vbtable pointers and the virtual
     // bases, built only by the complete object. With `vbs`, a count of those built is zeroed first and
     // `vbs` gets each one's destruction on that count, for a region over the rest, [except.ctor]/3.
-    std::vector<StmtPtr> guardedVirtualBaseInit(
+    std::vector<Kept> guardedVirtualBaseInit(
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
         std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
@@ -557,19 +557,13 @@ private:
     ExprPtr notePostfix(ExprPtr n, PostfixStep &st);
     syntax::Tree syntaxTree_;
     // A node over the parts parsed since node `mark` whose locations lie from `lo` to the last token read: a statement's
-    // or a declaration's, each part having taken its own (Tree::adopt). noteStmt puts it on the Ast.h statement too.
+    // or a declaration's, each part having taken its own (Tree::adopt).
     syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo,
                              const std::vector<syntax::NodeId> &after = std::vector<syntax::NodeId>()) {
         const std::size_t hi = at_ > 0 && tokens_[at_ - 1].pos > lo ? tokens_[at_ - 1].pos : lo;
         std::vector<syntax::NodeId> parts = syntaxTree_.adopt(mark, lo, hi);
         parts.insert(parts.end(), after.begin(), after.end());
         return syntaxTree_.add(kind, text, pos, parts);
-    }
-    StmtPtr noteStmt(StmtPtr s, syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark,
-                     std::size_t lo) {
-        const syntax::NodeId id = noteParts(kind, text, pos, mark, lo);
-        if (s) s->setSyntax(id);
-        return s;
     }
     // The type each `var` node declares, by node - what Sema's typing reads a name's type from (M2.10).
     std::unordered_map<std::uint32_t, const Type *> declaredTypes_;
@@ -735,7 +729,7 @@ private:
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> varBounds_;  // an array declarator's written bounds: its `var` node's first parts (M3b.2)
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
-    int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
+    int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for statement()
     int builtForParts_ = -1;    // the `for` forStatement just returned as itself: its parts; -1 for any other shape
     bool builtTry_ = false;     // tryStatement returned the `try` itself, not a block of it and its exits
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
@@ -1052,8 +1046,8 @@ private:
         ~OwnPads() { p.tryChainLabel_ = chain; p.handlerResumeLabel_ = handler; p.functionHasPads_ = pads; }
     };
     // [except.ctor]/3 over an element loop: `loop` counts in `indexSlot` the elements of `a` built.
-    StmtPtr guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos);
-    StmtPtr memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos);
+    Kept guardElements(Kept loop, Alive a, int indexSlot, std::size_t pos);
+    Kept memberLoop(Effect e, const Type *type, const Member &m, int thisSlot, std::size_t pos);
 
     // One automatic object a jump may not land past - see Local::guardsJump - or with `region`
     // a `try` block (1) or a handler (2), which [except.handle]/2 lets a jump leave and never enter.
@@ -1088,7 +1082,7 @@ private:
         // not is a jump out of that object's scope and destroys it on the way: the calls
         // go into `cleanups`, filled by resolveGotos(). Null for a label.
         std::vector<Alive> alive;
-        Block *cleanups;
+        KeptRecord *cleanups;
         // A goto's own: whether it destroys what it leaves (a parent's half of a funclet's jump
         // does not), and the exit a Microsoft handler leaves its funclet by.
         bool destroys;
@@ -1097,19 +1091,19 @@ private:
         // C++11 has no aggregate with a member initialiser, so the braces call this.
         LabelDef(std::string name = std::string(), std::size_t pos = 0,
                  std::vector<JumpGuard> guards = std::vector<JumpGuard>(),
-                 std::vector<Alive> alive = std::vector<Alive>(), Block *cleanups = nullptr,
+                 std::vector<Alive> alive = std::vector<Alive>(), KeptRecord *cleanups = nullptr,
                  bool destroys = true, std::string msExit = std::string())
             : name(std::move(name)), pos(pos), guards(std::move(guards)), alive(std::move(alive)),
               cleanups(cleanups), destroys(destroys), msExit(std::move(msExit)) {}
     };
     // `goto name;` as written here - what the jump destroys, ends and leaves is decided once the label is read.
-    StmtPtr gotoStatement(const std::string &name, std::size_t pos, bool destroys);
+    Kept gotoStatement(const std::string &name, std::size_t pos, bool destroys);
     // alive_.size() at the entry to each loop body, and to each loop body
     // or switch body: what `continue` and `break` respectively destroy on
     // the way out is everything built since.
     std::vector<std::size_t> loopMarks_;
     std::vector<std::size_t> breakMarks_;
-    StmtPtr jumpLeaving(StmtPtr jump, std::size_t mark, std::size_t pos,
+    Kept jumpLeaving(Kept jump, std::size_t mark, std::size_t pos,
                       int endsCatches);
     std::vector<LabelDef> labels_;
     std::vector<LabelDef> gotos_;
@@ -1157,21 +1151,21 @@ private:
     Effect selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos);
     // A constructor the compiler writes, `steps` in order with `done[i]` what step i finishes (no owner:
     // nothing) - each guarding the steps after it. Written on its own, so no enclosing `try` is its own.
-    StmtPtr guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done, std::size_t pos,
+    Kept guardConstruction(std::vector<Kept> steps, std::vector<Alive> done, std::size_t pos,
                               bool *guarded);
     // cl's virtual-base `init` in front of `rest`: the count zeroed, and the rest guarded by `vbs`.
-    StmtPtr withVirtualBases(std::vector<StmtPtr> init, const std::vector<Alive> &vbs, StmtPtr rest,
+    Kept withVirtualBases(std::vector<Kept> init, const std::vector<Alive> &vbs, Kept rest,
                              std::size_t pos);
     // `rest` in one region destroying all of `as`, last first, on unwind.
-    StmtPtr guardSubobjects(StmtPtr rest, const std::vector<Alive> &as, std::size_t pos);
+    Kept guardSubobjects(Kept rest, const std::vector<Alive> &as, std::size_t pos);
     // [except.ctor]/3: `rest`, run after a subobject is built, in a region destroying it on unwind - and
     // `before` with it, which a pad handing over to a function try block's handlers owes as well.
-    StmtPtr guardSubobject(StmtPtr rest, const Alive &a, std::size_t pos,
+    Kept guardSubobject(Kept rest, const Alive &a, std::size_t pos,
                            const std::vector<Alive> &before = std::vector<Alive>());
     // The construction calls for a class's virtual bases, reached by the
     // constant offset this class laid them down at. Shared by both of the
     // above and by the implicit members, which need the identical walk.
-    std::vector<StmtPtr> virtualBaseCalls(const Type *type, int thisSlot,
+    std::vector<Kept> virtualBaseCalls(const Type *type, int thisSlot,
                                           bool building, std::size_t pos,
                                           int srcSlot = -1, bool moving = false,
                                           std::map<std::string,
@@ -1196,8 +1190,8 @@ private:
         return cls + "::operator=";
     }
     // `int i = 0; while (i < count) { one; i = i + 1; }` over an array member's elements.
-    StmtPtr eachElement(int indexSlot, long long count, StmtPtr one);
-    StmtPtr eachElement(int indexSlot, ExprPtr count, StmtPtr one);
+    Kept eachElement(int indexSlot, long long count, Kept one);
+    Kept eachElement(int indexSlot, ExprPtr count, Kept one);
     // The two loops an array of a class needs, each a file-local function
     // synthesized once per class: `(T *base, size_t n)` building every
     // element with the default constructor, and destroying them last first.
@@ -1208,7 +1202,7 @@ private:
                            ExprPtr count, std::size_t pos);
     // The bytes before an array from `new T[n]` that hold n, for delete[].
     int arrayCookie(const Type *elem) const;
-    std::vector<StmtPtr> buildStaticArrayConstruction(Declared &d,
+    std::vector<Kept> buildStaticArrayConstruction(Declared &d,
                                                       const std::string &symbol,
                                                       const std::string &helper);
     const Signature *destructorOf(const Type *cls) const;
@@ -1396,32 +1390,32 @@ private:
     // alive_[from..to), last first, and hand the exception back to the unwinder.
 
     // A pad's steps as a block: all but the last (the resume, or the hand-over) in an inner block marked as unwinding.
-    static StmtPtr unwindPad(std::vector<StmtPtr> steps);
+    static Kept unwindPad(std::vector<Kept> steps);
 
     // The call that hands the exception in `pointerSlot` back to the unwinder, as this target's runtime takes it.
-    StmtPtr resumeUnwinding(int pointerSlot);
-    StmtPtr cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
+    Kept resumeUnwinding(int pointerSlot);
+    Kept cleanupPad(std::size_t from, std::size_t to, int pointerSlot,
                        const std::vector<Temporary> &temps,
                        std::size_t pos,
                        const std::string &chainLabel = std::string());
     // The block's statements with each stretch that has objects alive turned
     // into a cleanup region of its own.
-    std::vector<StmtPtr> wrapMsCleanups(
-        std::vector<StmtPtr> body,
+    std::vector<Kept> wrapMsCleanups(
+        std::vector<Kept> body,
         const std::vector<std::pair<std::size_t, std::size_t> > &built,
         std::size_t aliveAtEntry, std::size_t pos,
         const std::vector<Temporary> &temps = std::vector<Temporary>());
     // `tryAt` names the statements a region must not span: a `try` is a row of
     // its own in the same table and destroys what it found alive itself.
-    std::vector<StmtPtr> wrapCleanups(
-        std::vector<StmtPtr> body,
+    std::vector<Kept> wrapCleanups(
+        std::vector<Kept> body,
         const std::vector<std::pair<std::size_t, std::size_t> > &built,
         std::size_t aliveAtEntry, std::size_t pos,
         const std::vector<Temporary> &temps = std::vector<Temporary>(),
         const std::vector<std::size_t> &tryAt = std::vector<std::size_t>());
     // `to` bounds the top of the range, for a cleanup pad that must destroy
     // only what existed at its point in the block.
-    void emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
+    void emitDestructors(std::vector<Kept> &into, std::size_t from,
                          std::size_t pos, int except = -1,
                          std::size_t to = static_cast<std::size_t>(-1));
     void emitDestructors(std::vector<Effect> &into, std::size_t from, std::size_t pos, int except = -1,
@@ -1460,7 +1454,7 @@ private:
     // **Dynamic initialisation** - [basic.start.init]/2 and [stmt.dcl]/4. The
     // statements of _GLOBAL__sub_I_<file>, its frame and its guards, built as
     // objects are met; parse() makes them one function the backends register.
-    std::vector<StmtPtr> dynInit_;
+    std::vector<Kept> dynInit_;
     int dynInitFrame_ = 0;
     std::vector<int> dynInitGuards_;
     // The same statements as the SSA builder reads them (M3b.3): each object's, by its symbol, `var` node and count, in order;
@@ -1472,11 +1466,11 @@ private:
     // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
     // built while tlsObject_ says the object being declared is a thread_local; the init functions
     // below write to initSink(), and registerDestruction asks the target's threadAtexit().
-    std::vector<StmtPtr> tlsInit_;
+    std::vector<Kept> tlsInit_;
     int tlsInitFrame_ = 0;
     std::vector<int> tlsInitGuards_;
     bool tlsObject_ = false;
-    std::vector<StmtPtr> &initSink() { return tlsObject_ ? tlsInit_ : dynInit_; }
+    std::vector<Kept> &initSink() { return tlsObject_ ? tlsInit_ : dynInit_; }
     // The external thread_locals this unit defines, those __tls_init builds (external and internal),
     // and those it reaches: what the Itanium wrappers and `_ZTH` aliases are made from.
     std::set<std::string> tlsDefined_, tlsDynamic_, tlsReached_, tlsInternalDynamic_, tlsHere_;
@@ -1515,12 +1509,12 @@ private:
     void dynamicInitialise(Declared &d, const std::string &symbol,
                            const std::string &helper, bool once, std::vector<GlobalPiece> *folded = nullptr);
     // [stmt.dcl]/4.
-    StmtPtr guardOnce(const std::string &symbol, std::vector<StmtPtr> body);
-    StmtPtr guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body);
+    Kept guardOnce(const std::string &symbol, std::vector<Kept> body);
+    Kept guardOnceThread(const std::string &symbol, std::vector<Kept> body);
     // Where guardSlots_ stood when the init function's frame was entered.
     std::size_t initGuardMark_ = 0;
     void staticLocalWithConstructor(Declared &d,
-                                    std::vector<StmtPtr> &inits);
+                                    std::vector<Kept> &inits);
     // Whether that symbol is one - the per-unit `owner.name` has a dot, the ABI's names have none -
     // so that it and its guard are external and in a COMDAT, one object for the program.
     bool sharedStaticLocal(const std::string &symbol) const {
@@ -1530,7 +1524,7 @@ private:
     // initialiser is the address of a global, and before main otherwise.
     void bindStaticReference(const Declared &d, const std::string &symbol,
                              std::vector<GlobalPiece> &pieces, bool &hasInit,
-                             std::vector<StmtPtr> *into, bool local = false);
+                             std::vector<Kept> *into, bool local = false);
     void staticTemporary(const Declared &d, const std::string &symbol, bool local);
 
     // Whether a call to this function has to be given an object. A member's
@@ -1592,8 +1586,8 @@ private:
     // `S a[4];` - the default constructor once per element, and `S a[3] = { ... };` - each element
     // from its initialiser, the rest value-initialised. Apart from constructLocal, which builds a
     // single object and names the class through d.type, which for an array is the array.
-    StmtPtr constructLocalArray(const Declared &d, int offset, int indexSlot);
-    StmtPtr constructLocalArrayFromList(Declared &d, int offset,
+    Kept constructLocalArray(const Declared &d, int offset, int indexSlot);
+    Kept constructLocalArrayFromList(Declared &d, int offset,
                                         const std::function<int()> &declareLate,
                                         const std::string &symbol = std::string());
     ExprPtr memberCall(ExprPtr object, const Type *cls, const std::string &name,
@@ -1814,7 +1808,7 @@ private:
     // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
-    StmtPtr oneStatement(std::vector<StmtPtr> all);
+    Kept oneStatement(std::vector<Kept> all);
     ExprPtr zeroOf(const Type *to);
     ExprPtr enumeratorValue(const EnumConst &e);
     ExprPtr thisObject();
@@ -1886,7 +1880,7 @@ private:
     // `try { ... } catch (T e) { ... }` - rung 6.3.
     // A constructor's function try block hands its body in as `bodyFn` - parsed and assembled with the
     // `try` open - and `rethrows`: each handler ends rethrowing, [except.handle]/15.
-    StmtPtr tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn = nullptr,
+    Kept tryStatement(std::size_t pos, const std::function<Kept()> &bodyFn = nullptr,
                          bool rethrows = false, const std::string &spec = std::string());
     // Inside a handler of a constructor's function try block, where `return` is ill-formed.
     bool inCtorTryHandler_ = false;
@@ -1914,15 +1908,15 @@ private:
     // Where an exception leaving this point goes.
     std::string unwindTarget(int *ptrSlot, int *selSlot) const;
     // One temporary of a block, released under its guard by a pad.
-    void releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t);
+    void releaseGuarded(std::vector<Kept> &steps, const Temporary &t);
     // `body` under a cleanup of its own: `onUnwind` runs when an exception leaves it, and the unwinding goes on.
-    StmtPtr cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind);
+    Kept cleanupRegion(std::vector<Kept> body, Kept onUnwind);
     // Where each open handler's block begins, telling a `goto` from a jump.
     std::vector<std::size_t> handlerFrom_;
     // Where each open `try` block begins, for the jumps [except.handle]/2 forbids into one.
     std::vector<std::size_t> tryFrom_;
     // The `__cxa_end_catch` calls a jump out of `count` handlers has to make, appended after whatever destructors that jump already runs.
-    void endCatches(std::vector<StmtPtr> &into, int count);
+    void endCatches(std::vector<Kept> &into, int count);
     // How many handlers a `break` or a `continue` here leaves.
     int handlersLeftByBreak() const;
     int handlersLeftByContinue() const;
@@ -1946,7 +1940,7 @@ private:
     // Set where a function writes a `try`.
     bool functionHasTry_ = false;
     // `throw x;` - rung 6.2. Answers the statement it lowers to.
-    StmtPtr throwStatement(ExprPtr value, std::size_t pos);
+    Kept throwStatement(ExprPtr value, std::size_t pos);
     // The copy constructors and destructor a Microsoft ThrowInfo chain names, marked used, and the chain recorded.
     void finishMicrosoftThrow(MicrosoftThrow &names, bool thrown);
     // A call to something in the runtime, named by its symbol and needing no
@@ -2042,21 +2036,21 @@ private:
     bool extendTemporary(const Expr &addr, const std::string &name);
     // The index in pendingTemps_ of the temporary a bound address names, or -1.
     int pendingTemporaryOf(const Expr &e) const;
-    void flushTemporaries(std::vector<StmtPtr> &into);
+    void flushTemporaries(std::vector<Kept> &into);
     void temporaryEffects(std::vector<Effect> &into);
-    StmtPtr effectStatement(Effect x);
+    Kept effectStatement(Effect x);
     // A jump and a label are lowered from their syntax: the parse keeps an empty block, or one holding the labelled statement.
-    static StmtPtr jumpStatement(const std::string &) { return StmtPtr(new Block({})); }
-    static StmtPtr labelStatement(const std::string &, StmtPtr s) { std::vector<StmtPtr> held; held.push_back(std::move(s)); return StmtPtr(new Block(std::move(held))); }
-    static StmtPtr loopStatement(StmtPtr init, Effect cond, Effect step, StmtPtr body) {   // a loop's parts, likewise
-        std::vector<StmtPtr> parts;
+    static Kept jumpStatement(const std::string &) { return Kept(std::vector<Kept>()); }
+    static Kept labelStatement(const std::string &, Kept s) { std::vector<Kept> held; held.push_back(std::move(s)); return Kept(std::move(held)); }
+    static Kept loopStatement(Kept init, Effect cond, Effect step, Kept body) {   // a loop's parts, likewise
+        std::vector<Kept> parts;
         parts.push_back(std::move(init));
-        parts.push_back(StmtPtr(new ExprStmt(std::move(cond.expr))));
-        parts.push_back(StmtPtr(new ExprStmt(std::move(step.expr))));
+        parts.push_back(Kept(std::move(cond.expr)));
+        parts.push_back(Kept(std::move(step.expr)));
         parts.push_back(std::move(body));
-        return StmtPtr(new Block(std::move(parts)));
+        return Kept(std::move(parts));
     }
-    void appendEffects(std::vector<Effect> &made, std::vector<StmtPtr> &into);
+    void appendEffects(std::vector<Effect> &made, std::vector<Kept> &into);
     std::vector<Effect> throwEffects(ExprPtr value, std::size_t pos);
     std::vector<Effect> microsoftThrow(ExprPtr value, std::size_t pos);
     ExprPtr completeCall(const std::string &name, const std::string &symbol,
@@ -2165,7 +2159,7 @@ private:
     // The statements a constructor of this class needs for the members it did
     // not initialise itself - [class.base.init]/9, where an initialiser the
     // class wrote stands in for a mem-initialiser nobody wrote.
-    std::vector<StmtPtr> memberInitialisers(const std::string &tag,
+    std::vector<Kept> memberInitialisers(const std::string &tag,
                                             const Type *type, int thisSlot,
                                             const std::set<std::string> &already,
                                             std::size_t pos);
@@ -2277,8 +2271,8 @@ private:
                                        Init &in, bool once);
     // The weak guard a template's static member is built under, so a second
     // unit's copy does not build it again; wraps `body` and returns the test.
-    StmtPtr guardTemplateMember(const std::string &symbol,
-                                std::vector<StmtPtr> body);
+    Kept guardTemplateMember(const std::string &symbol,
+                                std::vector<Kept> body);
     // The initialiser inside the parentheses of `int z(5);` - one expression, [dcl.init]/16.
     Init parenthesisedInitialiser(const Declared &d);
     // **Is the `(` this sits on an initialiser rather than a parameter list?**
@@ -2344,20 +2338,20 @@ private:
 
     void topLevel(Program &program);
     // A `{...}`, or with `functionTry` a function's whole body that is one `try` statement, [dcl.fct.def.general].
-    StmtPtr block(bool functionTry = false);
-    StmtPtr statement(bool *madeTry = nullptr);
-    StmtPtr statementBody();
-    StmtPtr declarationBody();
-    StmtPtr forStatement();
-    StmtPtr switchStatement();
-    StmtPtr caseLabel();
-    StmtPtr gotoLabel();
-    StmtPtr declaration();
+    Kept block(bool functionTry = false);
+    Kept statement(bool *madeTry = nullptr);
+    Kept statementBody();
+    Kept declarationBody();
+    Kept forStatement();
+    Kept switchStatement();
+    Kept caseLabel();
+    Kept gotoLabel();
+    Kept declaration(syntax::NodeId *noted = nullptr);
     // **A declaration in a condition** - [stmt.select]/2 and [stmt.iter]/2.
     bool conditionDecl_ = false;
     std::string conditionName_;
     bool atConditionDeclaration() const;
-    ExprPtr ifConditionDeclaration(std::vector<StmtPtr> &setup);
+    ExprPtr ifConditionDeclaration(std::vector<Kept> &setup, syntax::NodeId *decl = nullptr);
     ExprPtr whileConditionDeclaration();
     void resolveGotos();
 

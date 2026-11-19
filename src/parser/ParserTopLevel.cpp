@@ -1603,7 +1603,7 @@ void Parser::topLevel(Program &program) {
     // there, so what this function allocates is what it added to the list - from its frame's start, so a guard
     // a mem-initialiser made is cleared here and not left to the function this one was instantiated inside.
     const std::size_t guardsFrom = frameGuards;
-    StmtPtr body;
+    Kept body;
     // A constexpr constructor's steps, in the order the body runs them; `bodyWrapped` when wrapUp put more round the block.
     ConstexprCtor ctorSteps;
     bool bodyWrapped = false;
@@ -1615,12 +1615,12 @@ void Parser::topLevel(Program &program) {
         // **Every guard this function made is cleared at its entry.**
         if (guardSlots_.size() > guardsFrom) {
             bodyWrapped = true;
-            std::vector<StmtPtr> withClears;
+            std::vector<Kept> withClears;
             for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
-                withClears.push_back(StmtPtr(new ExprStmt(
-                    setGuard(guardSlots_[i], 0))));
+                withClears.push_back(Kept(
+                    setGuard(guardSlots_[i], 0)));
             withClears.push_back(std::move(body));
-            body = StmtPtr(new Block(std::move(withClears)));
+            body = Kept(std::move(withClears));
             guardSlots_.resize(guardsFrom);
         }
         // **[except.spec]/9 over the whole body**, for an exception this function
@@ -1642,15 +1642,15 @@ void Parser::topLevel(Program &program) {
             ExprPtr held(Var::local(".ex.ptr", pointerSlot));
             held->setType(voidPtr);
             beginArgs.push_back(std::move(held));
-            std::vector<StmtPtr> padSteps;
-            padSteps.push_back(StmtPtr(new ExprStmt(
-                runtimeCall("__cxa_begin_catch", voidPtr, std::move(beginArgs)))));
-            padSteps.push_back(StmtPtr(new ExprStmt(
+            std::vector<Kept> padSteps;
+            padSteps.push_back(Kept(
+                runtimeCall("__cxa_begin_catch", voidPtr, std::move(beginArgs))));
+            padSteps.push_back(Kept(
                 runtimeCall("abort", types_.get(Kind::Void),
-                            std::vector<ExprPtr>()))));
-            std::vector<StmtPtr> guarded;
+                            std::vector<ExprPtr>())));
+            std::vector<Kept> guarded;
             guarded.push_back(std::move(body));
-            body = tryRegion(std::move(guarded), StmtPtr(new Block(std::move(padSteps))));
+            body = tryRegion(std::move(guarded), Kept(std::move(padSteps)));
         }
 
         resolveGotos();
@@ -1661,10 +1661,10 @@ void Parser::topLevel(Program &program) {
         // appended for the one path that does not go through one: falling off the end.
         if (aliveParams != 0) {
             bodyWrapped = true;
-            std::vector<StmtPtr> withParams;
+            std::vector<Kept> withParams;
             withParams.push_back(std::move(body));
             emitDestructors(withParams, paramsFrom, d.pos);
-            body = StmtPtr(new Block(std::move(withParams)));
+            body = Kept(std::move(withParams));
             alive_.resize(paramsFrom);
         }
     };
@@ -1704,19 +1704,19 @@ void Parser::topLevel(Program &program) {
                     ahead(Effect());
                 }
             }
-            std::vector<StmtPtr> withInit;
+            std::vector<Kept> withInit;
             std::vector<Effect> &steps = memberInits[i].effects;
-            if (memberInits[i].statement != nullptr) {
+            if (memberInits[i].statement) {
                 ahead(Effect());
                 withInit.push_back(std::move(memberInits[i].statement));
             } else {
                 for (std::size_t k = steps.size(); k-- > 0; ) ahead(steps[k]);
-                std::vector<StmtPtr> made;
+                std::vector<Kept> made;
                 appendEffects(steps, made);
                 withInit.push_back(oneStatement(std::move(made)));
             }
             withInit.push_back(std::move(body));
-            body = StmtPtr(new Block(std::move(withInit)));
+            body = Kept(std::move(withInit));
         }
 
         if (delegateCall.expr != nullptr) {
@@ -1728,10 +1728,10 @@ void Parser::topLevel(Program &program) {
                 ahead(Effect());
             }
             ahead(delegateCall);
-            std::vector<StmtPtr> withTarget;
+            std::vector<Kept> withTarget;
             withTarget.push_back(effectStatement(std::move(delegateCall)));
             withTarget.push_back(std::move(body));
-            body = StmtPtr(new Block(std::move(withTarget)));
+            body = Kept(std::move(withTarget));
         }
 
         // **And in front of all of it, on Microsoft, the most-derived guard.**
@@ -1742,22 +1742,22 @@ void Parser::topLevel(Program &program) {
             stores.clear();
             std::vector<Effect> vp = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
             for (std::size_t k = vp.size(); k-- > 0; ) ahead(vp[k]);
-            std::vector<StmtPtr> withVptr;
+            std::vector<Kept> withVptr;
             appendEffects(vp, withVptr);
             withVptr.push_back(std::move(body));
-            body = StmtPtr(new Block(std::move(withVptr)));
+            body = Kept(std::move(withVptr));
         }
 
         // **[class.dtor]/8: a written destructor destroys the class's members
         // too**, after its body and before its bases.
         if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier)) {
-            std::vector<StmtPtr> withMembers;
+            std::vector<Kept> withMembers;
             withMembers.push_back(std::move(body));
             // A `return` in the body comes here, so the members and bases are destroyed on that way out too.
-            if (dtorExitTaken_) withMembers.push_back(labelStatement(dtorExit_, make_owned<Block>(std::vector<StmtPtr>())));
+            if (dtorExitTaken_) withMembers.push_back(labelStatement(dtorExit_, Kept(std::vector<Kept>())));
             std::vector<Effect> mine = classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
             appendEffects(mine, withMembers);
-            body = StmtPtr(new Block(std::move(withMembers)));
+            body = Kept(std::move(withMembers));
         }
 
         // **A constructor runs the base's first and a destructor runs it last**, which is
@@ -1882,10 +1882,10 @@ void Parser::topLevel(Program &program) {
                         ahead(Effect());
                     }
                     ahead(copy);
-                    std::vector<StmtPtr> wrapped;
+                    std::vector<Kept> wrapped;
                     wrapped.push_back(effectStatement(std::move(copy)));
                     wrapped.push_back(std::move(body));
-                    body = StmtPtr(new Block(std::move(wrapped)));
+                    body = Kept(std::move(wrapped));
                     continue;
                 }
                 std::vector<ExprPtr> args;
@@ -1922,7 +1922,7 @@ void Parser::topLevel(Program &program) {
                                          types_.get(Kind::Void), params2, false,
                                          d.pos, std::move(args), false, 0));
 
-                std::vector<StmtPtr> wrapped;
+                std::vector<Kept> wrapped;
                 if (building) {
                     // [except.ctor]/3: everything after this base's construction destroys it on unwind.
                     if (destructorOf(base) != nullptr) {
@@ -1939,7 +1939,7 @@ void Parser::topLevel(Program &program) {
                     wrapped.push_back(std::move(body));
                     wrapped.push_back(effectStatement(std::move(call)));
                 }
-                body = StmtPtr(new Block(std::move(wrapped)));
+                body = Kept(std::move(wrapped));
             }
         }
 
@@ -1949,7 +1949,7 @@ void Parser::topLevel(Program &program) {
         if (msVbInitSlot_ >= 0 && memberOf != nullptr &&
             d.name == localOf(d.qualifier)) {
             std::vector<Alive> vbs;
-            std::vector<StmtPtr> guarded =
+            std::vector<Kept> guarded =
                 guardedVirtualBaseInit(memberOf, d.qualifier, thisOffset_,
                                        msVbInitSlot_, d.pos, -1, false, &baseArgs, &vbs, true);
             if (!guarded.empty()) ctorSteps.steps.assign(1, nullptr);
@@ -2005,10 +2005,10 @@ void Parser::topLevel(Program &program) {
     if (noexceptWrapped) noexceptWraps_.insert(definedSymbol);
     if (ctorTry && (isCtor || !specFilter) && !noexceptWrapped) ctorTries_.insert(definedSymbol);
 
-    const bool constexprCtor = isCtor && body != nullptr &&
+    const bool constexprCtor = isCtor && body &&
                                (constexprFunction || constant_.constexprCtorSymbols_.count(definedSymbol));
     const int ctorThis = thisOffset_;
-    const bool constexprBody = constexprFunction && body != nullptr && !isCtor;
+    const bool constexprBody = constexprFunction && body && !isCtor;
     currentClass_ = nullptr;
     currentFunction_.clear();
     currentFunctionName_.clear();
