@@ -523,7 +523,6 @@ std::vector<Kept> Parser::wrapMsCleanups(
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
     allocateFrameSlot(voidPtr);     // the exception's pointer and selector slots, unread on Microsoft
     allocateFrameSlot(types_.intType());
-    msUnwindHelp();     // the runtime's scratch word keeps its slot in the frame
     functionHasPads_ = true;
 
     std::vector<Kept> out;
@@ -610,7 +609,6 @@ Kept Parser::cleanupRegion(std::vector<Kept> body, Kept onUnwind) {
     if (target_.microsoftNames()) {
         allocateFrameSlot(voidPtr);
         allocateFrameSlot(types_.intType());
-        msUnwindHelp();
         return tryRegion(std::move(body), Kept(std::move(steps)));
     }
     int targetPtr = 0, targetSel = 0;

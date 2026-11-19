@@ -1327,12 +1327,6 @@ int Parser::handlersLeftByContinue() const {
     return left;
 }
 
-// **A fresh slot per region, never one cached here**: an implicit member is synthesized
-// mid-function with frameSize_ zeroed and put back, so a cached slot lands in the wrong frame.
-int Parser::msUnwindHelp() {
-    return allocateFrameSlot(types_.pointerTo(types_.get(Kind::Void)));
-}
-
 std::string Parser::msExitLabel(std::string &label, const char *kind) {
     if (label.empty()) label = std::string("$ms") + kind + std::to_string(refTemps_++);
     return label;
@@ -2035,10 +2029,6 @@ Kept Parser::tryStatement(std::size_t pos, const std::function<Kept()> &bodyFn, 
         guardedMs.push_back(std::move(body));
         for (std::size_t k = 0; k < msHeld.size(); k++) guardedMs.push_back(std::move(msHeld[k]));
         Kept t = tryRegion(std::move(guardedMs), Kept());
-        // The runtime's scratch word, which the personality routine finds through the
-        // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
-        // like any other, so where it lives is decided where every local's is.
-        msUnwindHelp();
         std::vector<std::pair<std::string, std::string> > gotoExits;
         // A goto to a label inside this `try` statement never leaves its funclet, so it needs no exit.
         for (const std::pair<std::string, std::string> &e : msExit.gotos) {
