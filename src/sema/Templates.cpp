@@ -673,10 +673,15 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     const int best = viable.empty() ? -1 : p_.overload_.bestViable(viable, ranks, given, false);
     if (best < 0) return "a deduced call with no best candidate, which the replay refuses";
     const Signature &f = p_.lookup_.functions_[viable[static_cast<std::size_t>(best)]];
+    // A reference returned is to a scalar (the call an lvalue or an xvalue); a reference parameter binds the named local
+    // directly ([dcl.init.ref]/5: the same type, so no temporary), the local's address passed as the replay's call passes it.
+    const Type *ret = f.returns->isReference() ? f.returns->referent() : f.returns;
     bool scalars = f.owner.empty() && !f.deleted && p_.overload_.leastArguments(f) == f.params.size() &&
-                   (f.returns->isVoid() || f.returns->isScalar());
-    for (std::size_t k = 0; scalars && k < f.params.size(); k++) scalars = f.params[k]->isScalar();
-    if (!scalars) return "a deduced call of a function over a class, a reference or a default, which the read's call does not make";
+                   (f.returns->isVoid() || ret->isScalar());
+    for (std::size_t k = 0; scalars && k < f.params.size(); k++)
+        scalars = f.params[k]->isReference() ? f.params[k]->referent()->unqualified() == given[k]->unqualified() && given[k]->isScalar()
+                                             : f.params[k]->isScalar();
+    if (!scalars) return "a deduced call of a function over a class, a default, or a reference that binds no local as it is";
     *chosen = viable[static_cast<std::size_t>(best)];
     return std::string();
 }

@@ -3253,3 +3253,48 @@ of 102, the ceiling 26 of 26, 3 shapes of 3); syntax.sh 6/0; typed.sh 928/0; sel
 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
 **Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:51:06-16:53:26 (about two minutes); names.sh 936/0,
 overload.sh 46/0.
+
+**(b) A deduced call whose specialization takes or returns a reference** (this commit, on `f0264874`). The chosen
+function may now take a parameter by reference and return a reference: `Templates::requestCall` accepts a reference return
+whose referent is a scalar (the call an lvalue for `T &`, an xvalue for `T &&`; the typed tree reads it through the reference
+as every call of a function returning one is lowered, `Typer::resolvedType`), and a reference parameter that binds the named
+local directly ([dcl.init.ref]/5: the referent's unqualified type the argument's, so no temporary; the local's address is
+passed as the replay's call passes it). **Deduction through a forwarding reference and reference collapsing** are the
+replay's own: the argument is given to `deduceTemplateArguments` as `deductionArgType` gives it (a named local an lvalue, so
+`T &&` deduces `T = int &` and the parameter collapses to `int &`), and the candidates are ranked by `rankArgument` with the
+argument an lvalue, as before. **The argument's value category** is the typed tree's for a name: an lvalue, whatever the
+local's declared type. The specialization the call reaches over a reference binding (`mv<int &>`) is itself replayed, by
+reason ("a type parameter bound to a class or an array"); the body that calls it is made from the read.
+
+**The probe** `tests/cases/template-subst-ref` (`.flags` `-templates=subst`; `.expected` clang 19's on the Windows box):
+`mv` (a `std::move` of its own: `T &&` with `unref<T>::type &&` returned), `sw` (a `std::swap`: `T &` twice, three `mv`s),
+`pick` (`T &` returned and assigned through), `cref` (`const T &`), each for an `int` and a `double` - 14 bodies with no
+replay, plain and `-g`, made 14 equal under the check; its output is clang's with and without the flag. tests/subst.sh: the
+probe added to the probes step, for exactly that; no other probe line changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,286 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 270** (252 + the probe's 14 + 4); without the check **200 substituted with no replay** (182 + 18), 70
+replayed by reason (as before). The 4 are (a)'s bodies refused for a reference, now made: `std::swap`'s and `std::move`'s
+callers in array-header, std-swap-two-ints, thread-pool and thread-sleep-yield; the reason "a deduced call of a function over
+a class, a reference or a default" is gone from the census. Left of m82n's 12: the 6 beside a candidate over a class
+(`std::swap`'s overloads over `std::function`, whose converting constructors the read does not ask).
+
+**src/** (b): `Templates.cpp` +8 -3: 95,264 -> 95,269 (+5). EXCLUSIONS re-pointed (Templates.cpp 1505, 1557, 2254).
+
+**Gates of (b)** (REF `73f1ff02` in `~/m82ob`, NEW in `~/m82oe` - `~/m82oc`'s copy with (b) shipped, one path length; every
+check on this commit's own tree): `identical.sh` **0 differ on four targets without the flag** (x86_64-linux 1,874,
+x86_64-windows 3,748, arm64-darwin 1,874, tms6747 1,874) and **0 on three with `-templates=subst`**; **-g 0 differ** with and
+without the flag (x86_64-linux 718 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 700, 375, 211);
+`-check=templates -templates=subst`: 1,286 units, 350 nonzero exits as before, none failing on a difference (frame and shell
+270 equal, made 200 equal, the 70 replayed apart by reason); `-check=fold` compared 16,604, agreed 12,324, differ 0; run.sh
+1279/0 without and with `-templates=subst`; **subst.sh 0 failed** (self 102 of 102, the ceiling 26 of 26, 3 shapes of 3);
+syntax.sh 6/0; typed.sh 929/0; self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool's own exit
+status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not
+raised), ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, the delta
+17:08:24-17:13:42 (about five minutes); names.sh 937/0, overload.sh 46/0.
+
+**Left**: (c) an argument that is not a local (15 bodies: a parameter is already a local; a member, a literal or a temporary
+needs its type under the binding from the typed tree, which `callArgTypes` does not read yet) - not started, the hour spent on
+(a) and (b) and their gates; a candidate over a class beside a deduced call (6: the read does not ask converting
+constructors); class, enumeration and pointer arguments of an unqualified call (ADL, 14); explicit-argument calls
+(`std::forward<T>`, `twice<T>`); the 10 through a value or a member.
