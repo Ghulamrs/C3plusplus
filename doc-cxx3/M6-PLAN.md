@@ -4909,3 +4909,11 @@ names.sh 931 passed, 0 failed. **Left:** a noexcept function with no state of it
 x86_64-windows - cl writes it a FuncInfo with no state, EHFlags 5, and __CxxFrameHandler3 in its UNWIND_INFO; cxx3 writes
 no handler for such a function (noexcept-terminates-callee's row, EXCLUSIONS); the cases' own comments still speak of
 the Itanium region only.
+
+**m6d-w4's wave landed, 2026-11-19 (gate m6dw4h at ef88a1d1 against main 8d5464a1: 40 passed, 0 failed; the fixed point
+checked not owed - src/ +245 net, no file added or deleted).** The gate's family fix (ssa1 and ssa2 beside run1, run2,
+maketest and subst, 8c3fc0aa), M8.2 slice 2c's end (m82f-m82i: the replay skipped for 128 bodies under -templates=subst),
+the global-qualified lookup (m6d-glob), run.sh on Windows (m6d-runcr: 1241/0) and the noexcept FuncInfo's EHFlags on
+x86_64-windows (m6d-winterm) on main and m3-line. The first gate (m6dw4g, 58a4b2c2) failed identical x4 alone, on the 48
+differences the lanes had named (the two global-qualified cases on four targets, eight noexcept cases on
+x86_64-windows): rows in ef88a1d1. tests/wave-expected.txt emptied.
