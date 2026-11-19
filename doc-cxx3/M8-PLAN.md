@@ -3794,3 +3794,36 @@ does; names.sh 950 passed 0 failed, overload.sh 46 agreed 0 differed, on the fin
 
 **Left**: item (2) as diagnosed above; item (3) (`case N`, `sizeof(T) * N`, `enum { E = N }`, static and array locals over a
 parameter); a scoped local enumeration's `?:` in a read; the read's local enumeration as a type the binding carries.
+
+## M8.2 slice 2f, fourth part: a const local over a parameter, read from its slot (lane m82y, 2026-11-20)
+
+(lane m82y, branch `m8-2y` from `270e9b6e`; one lane-hour.) m82x's diagnosis mended: in a read, `const int c = N + 1;`
+then `return x + c` replayed by name ("a value-dependent name the binding does not fold"), because the read resolves `c`
+as a Local, as the replay does, and `Templates::foldUnder` folded a Name only where it resolves as an Enumerator. Now a
+marked Name that resolves as a Local is a const int local of the body (`consts`, declared once, not a parameter's name)
+whose initialiser folds under the binding; `valueShape` records no value for it - the typed tree reads it from its slot,
+as the replay's record does - and `foldUnder` follows a Local through its initialiser, so `const int d = c * 2` folds too.
+The probe `template-subst-nontype`'s `add` (two const locals, two specializations) is made with no replay: the probe
+counts 6 made, 6 equal under `-check=templates` (REF 4, and 2 replayed by name); its `.expected` unchanged.
+`template-subst-value` is unchanged (its `f` replays for the static local, `g` for `enum { E = N }`, `h` for the switch).
+
+**src/**: Templates.cpp +4 -2: 95,404 -> 95,406 (+2). EXCLUSIONS re-pointed (Templates.cpp 1563, 1615, 2312).
+
+**The census** (Linux, `-check=templates -templates=subst`, 1,299 cases): 350 nonzero exits as REF; covered 387 (REF 385);
+without the check 313 substituted with no replay (REF 311) and 74 replayed (REF 74); **without the lanes' probes 132 of the
+suite's own bodies made with no replay (REF 132, +0)**.
+
+**Gates** (REF `270e9b6e` in `~/m82yb`, NEW in `~/m82yc`, one path length; every check on this commit's tree): **tests/subst.sh
+0 failed** (self 102 of 102, 26 under 26; the probe lines for `template-subst-nontype` 4 -> 6 made and equal, its refused line
+gone). identical.sh without the flag 0 differ on four targets (x86_64-linux 1,900, x86_64-windows 3,800, arm64-darwin 1,900,
+tms6747 1,900) and with `-templates=subst` 0 differ on three (1,900, 3,800, 1,900): `add` made from the read emits what the
+replay did. **-g** both ways: x86_64-linux 730 same, 350 refused alike, 219 differ by the tree path alone; x86_64-windows 712,
+375, 212 by the path alone. `-check=fold` 16,789 compared, 0 differ, 0 units failing. run.sh 1292/0 without and with
+`-templates=subst`. syntax 7/0, typed 942/0. Self-compile of Templates.cpp and ParserType.cpp rc 0. Static, each tool's own
+status: exclusions rc 0 0/0 (after the re-point), comments rc 0, memory gate rc 0 (89), ast-residue rc 0 (2012/298: not
+raised), ide up to date. g++ `-Werror` clean. Wine stand-in 14/14 with `-templates=subst` and at -O0. **Windows**: cl /W4 /WX
+clean (1 m 44 s with the ship, alone); names.sh 950 passed 0 failed, overload.sh 46 agreed 0 differed, on the final tree.
+
+**Left**: item (2) - `case N` (a 'switch' in the body), `sizeof(T) * N`, `enum { E = N }` (its enumerator resolves as an
+Enumerator that is neither a parameter nor a const local: its initialiser is not in the read's walk), a static local and an
+array local `T a[N]` over a parameter; item (3), a scoped local enumeration's `?:` that leaves a read unread. Not started.

@@ -97,7 +97,7 @@ census)
         probe template-subst-adl $how "-check=templates replay (9): substituted with no replay"
         probe template-subst-nest $how "-check=templates replay (9): substituted with no replay"
         probe template-subst-classarg $how "-check=templates replay (18): substituted with no replay"
-        probe template-subst-nontype $how "-check=templates replay (4): substituted with no replay"
+        probe template-subst-nontype $how "-check=templates replay (6): substituted with no replay"
     done
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
@@ -114,8 +114,7 @@ census)
     probe template-subst-classarg check "-check=templates made (18): equal"
     probe template-subst-adl check "-check=templates subst (2): replayed: a type parameter bound to a class or an array"
     probe template-subst-classarg check "-check=templates subst (2): replayed: a deduced call of a function over a class, a default, or a reference that binds no local as it is"
-    probe template-subst-nontype check "-check=templates made (4): equal"
-    probe template-subst-nontype check "-check=templates subst (2): replayed: a value-dependent name the binding does not fold, bound by name"
+    probe template-subst-nontype check "-check=templates made (6): equal"
     probe template-subst-value check "-check=templates subst (2): replayed: a static local over a non-type parameter, its value the read's stand-in"
     probe template-subst-value check "-check=templates subst (1): replayed: a value-dependent name the binding does not fold, bound by name"
     probe template-subst-value check "-check=templates subst (2): replayed: a 'switch' in the body"

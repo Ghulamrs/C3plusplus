@@ -1,5 +1,5 @@
 // M8.2 2f: a non-type parameter of type int is worth its argument in the read, and a const int local made from one is worth
-// its initialiser (M8rev L2): scale and pick are made with no replay; add replays by name (its second const local reads as a local).
+// its initialiser (M8rev L2): scale, add and pick are made with no replay; add reads `c` and `d` from their slots, as the replay.
 extern "C" int printf(const char *, ...);
 
 template <int N> int scale(int x) { return x * N + (N > 2); }

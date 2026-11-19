@@ -432,6 +432,7 @@ std::string Templates::valueShape(syntax::NodeId body, const Specialization &sp,
         if (st.node(marked[k]).kind != syntax::Kind::Name || declared[name] > 1 || (declared[name] != 0 && params.count(name) != 0) ||
             !foldUnder(marked[k], params, consts, 0, &v))
             return "a value-dependent name the binding does not fold, bound by name";
+        if (p_.resolutions_.at(marked[k].v).what == Parser::Resolved::Local) continue;     // read as the replay reads it, from its slot
         (*values)[marked[k].v] = static_cast<std::size_t>(v + 2147483648LL);     // in int, so 0 to 2^32 - 1
     }
     return std::string();
@@ -447,8 +448,9 @@ bool Templates::foldUnder(syntax::NodeId id, const std::map<std::string, int> &p
     if (depth > 64) return false;
     if (n.kind == syntax::Kind::Name) {
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-        if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Enumerator) return false;
-        const std::map<std::string, int>::const_iterator p = params.find(op);
+        const bool local = r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Local;     // a const local: its initialiser
+        if (r == p_.resolutions_.end() || (r->second.what != Parser::Resolved::Enumerator && !local)) return false;
+        const std::map<std::string, int>::const_iterator p = local ? params.end() : params.find(op);
         if (p != params.end()) { *out = p->second; return true; }
         const std::map<std::string, int>::const_iterator c = consts.find(op);
         return c != consts.end() && foldUnder(syntax::NodeId(static_cast<std::uint32_t>(c->second)),
