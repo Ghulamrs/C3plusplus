@@ -680,7 +680,7 @@ void Parser::requireAssignable(const Expr &e, std::size_t pos, const char *what)
                        "', and a const cannot be assigned to");
 }
 
-ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t pos) {
+ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t pos, bool *bytes) {
     if (dependentOperand(target->type()) || dependentOperand(value->type())) return zeroOf(dependentResult());
     requireAssignable(*target, pos, "the left of a compound assignment");
     const Type *to = target->type();
@@ -745,15 +745,16 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
             : arithmetic(op, std::move(readBack), std::move(value), pos);
         ExprPtr node(new Assign(std::move(target), convert(std::move(combined), to)));
         node->setType(to);
+        if (bytes != nullptr) *bytes = true;
         return node;
     }
 
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(target.get()))
-        if (m->isBitField())
-            src_.fail(pos, "'" + m->name() + "' is a bit-field, so it has no "
-                           "address to take - and the object it is reached "
-                           "through has an effect that cannot happen twice; "
-                           "give that object a name first");
+    std::string unaddressedName;
+    if (noAddressOf(*target, unaddressedName) == NoAddress::BitField)
+        src_.fail(pos, "'" + unaddressedName + "' is a bit-field, so it has no "
+                       "address to take - and the object it is reached "
+                       "through has an effect that cannot happen twice; "
+                       "give that object a name first");
 
     const Type *ptr = types_.pointerTo(to);
     int slot = allocateFrameSlot(ptr);
@@ -849,10 +850,10 @@ ExprPtr Parser::incDec(ExprPtr target, bool increment, bool prefix, std::size_t 
     if (!t->isScalar() || t->isNullPtr())
         src_.fail(pos, std::string(what) + " needs a number or a pointer, not '" +
                        t->describe() + "'");
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(target.get()))
-        if (m->isBitField())
-            src_.fail(pos, "postfix '++' and '--' on a bit-field are not supported "
-                           "yet - the prefix form works, and so does 'f.a = f.a + 1'");
+    std::string unaddressedName;
+    if (noAddressOf(*target, unaddressedName) == NoAddress::BitField)
+        src_.fail(pos, "postfix '++' and '--' on a bit-field are not supported "
+                       "yet - the prefix form works, and so does 'f.a = f.a + 1'");
     if (t->isPointer() && !t->pointee()->isComplete())
         src_.fail(pos, std::string(what) + " is '" + t->describe() +
                        "', and there is no size to step by");
@@ -1153,8 +1154,9 @@ ExprPtr Parser::assign() {
             const syntax::NodeId l = syn(n);
             ExprPtr value = decay(assign());
             const syntax::NodeId vs = syn(value);
-            ExprPtr r = compound(c.op, std::move(n), std::move(value), pos);
-            if (dynamic_cast<const Assign *>(r.get())) r->setDeclCategory(Expr::Category::Lvalue);
+            bool bytes = false;
+            ExprPtr r = compound(c.op, std::move(n), std::move(value), pos, &bytes);
+            if (bytes) r->setDeclCategory(Expr::Category::Lvalue);
             return note(std::move(r), syntax::Kind::Assign, c.tok, pos, {l, vs});
         }
     }
@@ -1196,7 +1198,7 @@ ExprPtr Parser::assign() {
 
 // `n = value` once both are read - by the class's `operator=` where it has one, else by bytes. Also
 // what `Base::operator=(o)` in a member of a derived class is, on the base subobject (M1 L8).
-ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
+ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *bytes) {
     if (dependentOperand(n->type()) || dependentOperand(value->type())) return zeroOf(dependentResult());
     const Type *to = n->type();
     // **`t = 5` where the class declares an `operator=` that takes an int.**
@@ -1274,6 +1276,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     ExprPtr node(new Assign(std::move(n), convert(std::move(value), to)));
     node->setType(to);
     node->setDeclCategory(Expr::Category::Lvalue);
+    if (bytes != nullptr) *bytes = true;
     return node;
 }
 

@@ -4739,3 +4739,38 @@ checked not owed).** S4's close (StmtPtr 0), S5, S7's first family and the two c
 x4 on the four new running cases (48 rows, named in fc26c04f) and subst and maketest on a race of the gate's own: both
 ran in tests/out-run at once (subst was not of the run family; it is now). tests/subst-self.ceiling's functions shape
 8 -> 34 by the coordinator's ruling (the three recorded places alone). tests/wave-expected.txt emptied.
+
+### M6d S7, second family: ParserOperator.cpp's and ParserExpr.cpp's shape tests - two answered by the builder beside the node, seven made one, the rest named - lane m6d-s7b, 2026-11-19
+
+Brief boxkit/brief-m6d-s7b.txt; from 2ae0bb1f (m6d-w3) on branch m6d-s7b; REF built from 2ae0bb1f on Linux from clean
+(`~/m6d-s7b-ref.exe`); the compares are S6's (tools/identical.sh one target a job; every case's `-g -S` text, four targets).
+
+**(1) An Assign answered by its builder** (c08b4130, src/ 94,482 -> 94,490): `compound` and `assignValue` (ParserOperator.cpp) set `*bytes`
+where they build the built-in assignment - the clone path's `a = a @ b` and the bytewise `=` - and their two callers read
+the flag where they asked `dynamic_cast<const Assign *>` of the result: the compound operator's lvalue mark (:1159) and a
+base's `B::operator=(x)` called by name inside a member (ParserExpr.cpp:1879). By construction the same: every other return
+of the two is `zeroOf`'s `Num`, `memberCallWith`'s call or `Comma`, `completeCall`'s call or its dereference, the class
+`operator=`'s `*call`, or the slot path's `Comma` - none an `Assign`. The design's "a value the building function returns
+beside the node", for expressions.
+**(2) One test of an operand with no address** (same commit): `Parser::noAddressOf` (ParserExpr.cpp) answers a bit-field
+or a register object and its name; the seven copies of that test - a reference's binding (`bindReference`), `&x`, `sizeof`,
+the compound assignment's slot path and postfix `++`/`--` - ask it. Two casts where there were seven; it moves to a record
+in one place when a member's width is one (no `Resolved` field carries it today: a `Member` record is put on the reference
+member's dereference and on a virtual base's access, so the record is not the cast's shape yet).
+Citations re-pointed: ParserExpr.cpp:2342 -> 2343, :2067 -> 2068; ParserOperator.cpp:854 -> 855, :972 -> 973.
+**Shown** against REF: identical tms6747 1,856, x86_64-linux 1,856, x86_64-windows (both spellings) 3,712, arm64-darwin 1,856 compared, 0 differ; `-g -S` 912/927/902/927 same (tms6747, x86_64-linux, x86_64-windows, arm64-darwin; the rest refused alike), 0 differ; -check=fold over tests/cases 16,475 compared, 12,243 agreed, 0 differ (the same not-reached counts as S6).
+
+**What could not move, and why** (each still a cast):
+- ParserOperator.cpp `clonePure` (7: Num, Var, StrLit, Cast, Unary, Binary, MemberAccess, :586-641) - it copies Ast nodes
+  to build Ast nodes (a compound assignment's read-back, `*(a = b, &a)`, a call's object named twice): it goes with S8,
+  which deletes what it builds; `requireAssignable`'s `Var` (:672) - the read-only flag of a local has no record.
+- ParserExpr.cpp: `decltype`'s `MemberAccess` (:2419) and `StrLit` (:2430), `bindReference`'s `Conditional` (:2473),
+  `StrLit` (:2489) and `Assign` (:2501), the `Conditional` at :2584, `&`'s `Unary`/`Conditional`/`Call` (:3584-3599): each
+  asks the shape the parser built, which no `Resolved` record matches (a `Member` record sits on a reference member's
+  dereference and on a virtual base's access; a `?:` has none) and the syntax kind does not either (a wrapper the
+  parser adds has no node): they wait for the typed node of the whole expression (S6 types an asked constant only). `overloadArgOf`'s `Num` (:838, a placeholder's serial), the literal's `StrLit` (:1112, S8's
+  literal record), the callee's `Call` (:1133), sizeof's folded `Num` (:3388, the builder has no syntax node yet).
+- s7a's 25 (ParserExprCall.cpp, ParserInit.cpp): unchanged - S6's `typeExpression` reaches integer constants only; the
+  temporary walks, `foldAddress`, `addressOfObject` and `bindStaticReference` wait as s7a named.
+**ast-residue** on Linux: node-casts 148 -> 141, node-refs 301 -> 298, the rest unchanged (ExprPtr 2,012, StmtPtr 0, visits 0, readers 9, ast-lines 513); recorded. **Left of S7**: ParserOperator.cpp 8 and ParserExpr.cpp 14 as named above, s7a's 25, Parser.h 13, Parser.cpp 5, ParserExprNew.cpp 14 and the rest of s7a's by-file list.
+**Gates** (c08b4130): g++ -Werror clean; cl /W4 /WX clean (work\m6d-s7bw, a full build of the first edit 08:16-08:17 and a delta build of the final source 08:20:44-08:22:45, about 2 min); names.sh 928 passed, 0 failed and overload.sh 46 agreed, 0 differed (Windows, clang 19.1.5); tests/tms6747.sh SIM=1 -O2 shards 1-3 146/0 (1 skipped), 148/0, 147/0; self-compile of ParserExpr.cpp and ParserOperator.cpp at x86_64-linux -O2 rc 0, ParserExpr.cpp at tms6747 -O2 refused as REF is (`overloadedBinary`, stack arguments); static: exclusions 0 uncited 0 stale, comments 0 over, memory gate pass, ide --check up to date. **run.sh was still running at the hand-back** (~/m6d-s7b-run-n1.log): owed to the wave gate with winpass, ssa.sh, make test and shards 4-6.

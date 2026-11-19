@@ -1811,7 +1811,8 @@ private:
     ExprPtr convertNode(ExprPtr e, const Type *to, bool allowExplicit) const;
     // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
-    ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
+    // `*bytes` set where the built-in `=` moved the bytes, an Assign: not a call of `operator=`.
+    ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *bytes = nullptr);
     Kept oneStatement(std::vector<Kept> all);
     ExprPtr zeroOf(const Type *to);
     ExprPtr enumeratorValue(const EnumConst &e);
@@ -1841,6 +1842,9 @@ private:
     void declareStaticLocal(const std::string &name, const Type *type,
                             std::size_t pos, const std::string &symbol);
     void requireAssignable(const Expr &e, std::size_t pos, const char *what);
+    // An operand with no address of its own - a bit-field ([class.bit]/3) or an object declared register - and its name.
+    enum class NoAddress { None, BitField, Register };
+    static NoAddress noAddressOf(const Expr &e, std::string &name);
     // **A template's own scope has none of the locals of the function that named it**: held aside
     // while its declaration or class body is read, put back on every way out.
     struct LocalsHidden {
@@ -2436,7 +2440,8 @@ private:
     ExprPtr bitOr();
     ExprPtr bitXor();
     ExprPtr bitAnd();
-    ExprPtr compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t pos);
+    // `*bytes` set where it is the built-in `a = a @ b` over an operand named twice, an Assign.
+    ExprPtr compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t pos, bool *bytes = nullptr);
     ExprPtr incDec(ExprPtr target, bool increment, bool prefix, std::size_t pos);
     ExprPtr clonePure(const Expr &e);
     ExprPtr cloneLvalue(const Expr &e, std::size_t pos);

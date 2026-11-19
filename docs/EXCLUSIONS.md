@@ -102,7 +102,7 @@ goes in the same commit.
 | `1'000`, a digit separator | C++14 | `src/Lexer.cpp:358` |
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:527` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
-| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2342` |
+| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2343` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2986`, `src/parser/ParserTopLevel.cpp:837` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:765` |
@@ -247,7 +247,7 @@ is left:
   object to be a field of. `src/parser/ParserType.cpp:2367`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2229`
 - **one name holding both a static and a non-static member**, where overload
-  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2067`
+  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2068`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
@@ -325,11 +325,11 @@ many, or has no object of its own:
   `= h`; an initialiser, an assignment, a cast, a return and a call's parameter pick one -
   `src/parser/ParserExpr.cpp:739`
 - **postfix `++` / `--` on a bit-field** - the prefix form works.
-  `src/parser/ParserOperator.cpp:854`
+  `src/parser/ParserOperator.cpp:855`
 - **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1406`
 - **`?:` with a `throw` arm and an arm of class type** - the class arm would want a temporary the
   `throw` arm never builds; throw in a statement of its own, or give the class arm to a variable
-  first. `src/parser/ParserOperator.cpp:972`
+  first. `src/parser/ParserOperator.cpp:973`
 
 ## `new` and `delete`
 
