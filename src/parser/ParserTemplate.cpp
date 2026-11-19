@@ -1786,7 +1786,8 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
             src_.fail(pos, "'" + name + "' is a function template and " + why);
         }
 
-        const Signature sig = overload_.resolveOverload(templateCallKey(name, named, decl), callArgs, pos);
+        const Signature sig = overload_.resolveOverload(templateCallKey(name, named, decl), callArgs, pos, nullptr, true,
+                                                        scope.empty() ? name : std::string());     // ADL: [temp.dep.candidate]
         // **A specialization's defaults, as every ordinary call reads them.**
         applyDefaults(sig, callArgs, pos);
         return completeCall(sig.name, sig.symbol, nullptr, sig.returns,

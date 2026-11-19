@@ -562,7 +562,7 @@ std::string Overload::lookupName(const std::string &written, const std::vector<c
 
 const std::vector<std::size_t> *Overload::candidateSet(const std::string &name, const std::string &written,
                                                        const std::vector<const Type *> &types, const Type *object,
-                                                       std::vector<std::size_t> *merged) const {
+                                                       std::vector<std::size_t> *merged, const std::string &unqualified) const {
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(name);
     // **For an operator the candidate set is the union, not the first scope
     // that answers.**
@@ -595,11 +595,12 @@ const std::vector<std::size_t> *Overload::candidateSet(const std::string &name, 
             keys.push_back(scope + last);
             keys.push_back(scope + tag + last);
         }
+        const std::string &asked = unqualified.empty() ? written : unqualified;
         bool blockDeclared = false;
-        for (std::size_t i = 0; i < p_.blockFunctions_.size(); i++) blockDeclared |= p_.blockFunctions_[i].first == written;
-        if (written.find("::") == std::string::npos && !types.empty() && !blockDeclared) {
-            const std::vector<std::string> adl = p_.lookup_.lookupKeys(written, types);
-            for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);
+        for (std::size_t i = 0; i < p_.blockFunctions_.size(); i++) blockDeclared |= p_.blockFunctions_[i].first == asked;
+        if (asked.find("::") == std::string::npos && !types.empty() && !blockDeclared) {
+            const std::vector<std::string> adl = p_.lookup_.lookupKeys(asked, types);
+            for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != asked) keys.push_back(adl[i]);
         }
         for (std::size_t i = 0; i < keys.size(); i++)
             if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
@@ -614,7 +615,7 @@ const std::vector<std::size_t> *Overload::candidateSet(const std::string &name, 
 Signature Overload::resolveOverload(const std::string &written,
                                           const std::vector<ExprPtr> &args,
                                           std::size_t pos,
-                                          const Type *object, bool objectLvalue) {
+                                          const Type *object, bool objectLvalue, const std::string &unqualified) {
     // A pattern's call with a dependent argument is resolved where it is instantiated: a signature of its own arguments.
     bool dependent = false;
     for (std::size_t i = 0; object == nullptr && i < args.size(); i++) dependent = dependent || p_.dependentOperand(args[i]->type());
@@ -638,7 +639,7 @@ Signature Overload::resolveOverload(const std::string &written,
         p_.tmpl_.instantiateViableMemberTemplatesUnder(name, argTypes, pos);
     }
     std::vector<std::size_t> merged;
-    const std::vector<std::size_t> *set = candidateSet(name, written, types, object, &merged);
+    const std::vector<std::size_t> *set = candidateSet(name, written, types, object, &merged, unqualified);
 
     if (set == nullptr) {
         // Only constructor templates, and none of them deduced from these arguments.

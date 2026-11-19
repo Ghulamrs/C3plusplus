@@ -552,12 +552,19 @@ std::vector<std::string> Lookup::lookupKeys(const std::string &name, const std::
     add(name);
     add(qualifyForLookup(name, &Lookup::hasFunctionNamed));
 
-    for (std::size_t i = 0; i < operands.size(); i++) {
-        const Type *t = operands[i];
+    std::vector<const Type *> asked(operands);
+    for (std::size_t i = 0; i < asked.size(); i++) {
+        const Type *t = asked[i];
         while (t != nullptr && (t->isPointer() || t->isReference()))
             t = t->pointee();
         if (t == nullptr) continue;
         t = t->unqualified();
+        // [basic.lookup.argdep]/2: a specialization's type arguments are asked as arguments, `vector<n::X>` reaches n.
+        if (t->isStructOrUnion() && t->isSpecialization() && asked.size() < 64)
+            for (const TemplateArg &a : t->templateArgs()) {
+                if (a.isType && !a.isTemplate && a.type != nullptr) asked.push_back(a.type);
+                if (a.isPack && !a.packIsValue) asked.insert(asked.end(), a.pack.begin(), a.pack.end());
+            }
         // [basic.lookup.argdep]/2: a class's namespace; and an enumeration's, the innermost namespace
         // around it - a class-scoped one's is its class's - so that `N::A | N::B` reaches N's
         // operator| and not the built-in (1.27, review item 3; the enumeration case was missing).

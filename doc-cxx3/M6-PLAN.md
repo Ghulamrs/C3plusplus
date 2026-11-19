@@ -4964,3 +4964,40 @@ the new case on x86_64-linux and arm64-darwin, cxx1 naming `_Unwind_Resume` wher
 guard; recorded in its `.nonames` in the next commit (x86_64-windows: all 14 names agree).
 **Left:** a callee declared noexcept but not defined in the unit is taken to throw (a stateless FuncInfo cl would not
 write); the cases' own comments still speak of the Itanium region only.
+
+### M6d: a function template's call asks argument-dependent lookup - the replay's door and the instantiation's request through one candidate set - lane m8-adl, 2026-11-19
+
+Brief boxkit/brief-m8-adl.txt; from 05ca1fac (m8-2q) on branch m8-adl; REF built from 05ca1fac on Linux.
+**The defect** (lane m82q, tests/open/template-adl-ordinary): the parser's function-template call door ranks under its own
+key (`Parser::templateCallKey`: `$global:weigh`, or `lib::size` - the template's namespace), and `Overload::candidateSet`
+asked [basic.lookup.argdep] only of a name written without `::`, so it never asked the key, and an argument's namespace's
+ordinary function was no candidate ([temp.dep.candidate]). cxx3 printed `1 1 1 1 / 3 3`, clang `70 7 1 1 / 9 3`.
+**The mend** (the coordinator's decision: on the replay path, through m8-2q's lookup, one lookup): `resolveOverload` and
+`candidateSet` take the unqualified name ADL asks where the key is not it; the door passes its bare name when the call
+was written unqualified, and `Templates::requestCall` passes the same under -templates=subst, so the replay and the
+instantiation rank one set. `Lookup::lookupKeys` asks a class specialization's type arguments (and a type pack's members)
+as arguments too ([basic.lookup.argdep]/2), so `std::vector<pal::Tile>` reaches pal - for every call, not only the door's.
+src/ 95,350 -> 95,363 lines (+13: Overload.h/.cpp +3, Lookup.cpp +7, ParserTemplate.cpp +1, Templates.cpp +2).
+**Cases** (clang 19 on the Windows box, `-x c++ -std=c++11 -pedantic-errors -nostdinc++ -isystem include`, = g++ 11):
+template-adl-ordinary (moved from tests/open), template-adl-class (a class argument's namespace, from the global
+namespace and from another), template-adl-template-argument (`std::vector<pal::Tile>`, `kit::Pair<pal::Hue> *`),
+template-adl-hidden-friend (a friend defined in its class, [namespace.memdef]/3). REF printed `1 1 1 1/3 3`,
+`-1 -1 -2 -2/-1`, `1 1 2 2`, `-1 -1 -1`; now clang's, with and without -templates=subst, on x86_64-linux and
+x86_64-windows (cxx3-msvc).
+**identical.sh against REF** (four targets, -O0 and -O2; three with -templates=subst): only the four new cases differ -
+x86_64-linux 8, x86_64-windows 16 (both spellings), arm64-darwin 8, tms6747 8, the same with the flag; no existing case's
+output changed, so no call the suite makes reached a new candidate. -g against REF: 4 differ beyond the tree path on
+x86_64-linux and x86_64-windows both ways, the same four cases. -check=templates over the suite: 338 covered (325 + 13,
+the new cases' bodies), the frame 338 equal, 0 differ; without the probes 111 with no replay (98 + 13).
+**Gates** (Linux, ~/m8-adlc at the final tree): run.sh 1287 passed, 0 failed, with and without -templates=subst;
+subst.sh 0 failed; typed.sh 937/0; syntax.sh 6/0; fold 16721 compared, 0 differ; tests/tms6747.sh SIM=1 -O2 shards
+1-3/6 154/151/145 passed, 0 failed; self-compile of Templates.cpp, Overload.cpp, Lookup.cpp and ParserTemplate.cpp at
+-O2 rc 0; static: exclusions 129 sites 0 uncited 0 stale (re-pointed: Overload 655, Templates 1560/1612/2309,
+ParserTemplate 1809/1894/1898/1968), comments 0 over the cap, memory gate rc 0 (raw-pointers 89), ast-residue rc 0
+(node-refs 298, unchanged), ide/generate.py --check up to date. g++ -Werror clean; cl /W4 /WX clean (msvc\build.cmd
+from clean on the Windows box, about 1 minute).
+**Left:** an associated namespace that is the global one (a global class argument from inside a namespace's template
+call) is still not searched - lookupKeys skips it, since the bare index also holds other namespaces' specializations;
+function templates of an associated namespace are not instantiated by the door (only templatesNamed's are); a class's
+bases' namespaces and a template template argument's are not asked; under -templates=subst a class argument still
+replays by name (callArgTypes: "ADL and a constructor would answer" - the constructor half).
