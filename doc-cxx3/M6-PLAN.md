@@ -4666,3 +4666,9 @@ over, memory gate pass, ide --check up to date. src/ 94,162 lines (+27).
 **What is left**: `struct ::n::S {` (a leading `::`) and a class template's definition through its namespace are not
 taken and are refused as before; the outside definition of a member class template stays behind its listed refusal.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
+
+**M6d's wave landed, 2026-11-19 (gate m6dh at 6b97ad9a against main b582a877: 44 passed, 0 failed, 127 minutes).** S3c,
+S4a-S4i and the merge with main (lane mw12) on main and m3-line. The first gate (m6dg, 55b3b02d) passed 40 and failed only
+identical, identlnx, identwin and identa64 on the wave's own 93 differences - eight cases new to M6d (constexpr-body-*,
+converting-constructor-*) that main refuses - named row by row in 6b97ad9a from the gate's lists. Cycles: 71 worse, every
+one owed or accepted; 192,025,550 -> 149,248,103 at -O2. tests/wave-expected.txt emptied.
