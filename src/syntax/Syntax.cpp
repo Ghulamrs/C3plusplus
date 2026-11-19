@@ -108,11 +108,22 @@ void Tree::dumpNode(std::string &out, NodeId id) const {
     if ((n.marks & TypeDependent) != 0) out += " type-dependent";
     if ((n.marks & DependentName) != 0) out += " dependent-name";
     if ((n.marks & Unfound) != 0) out += " unfound";
+    const std::unordered_map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t> > >::const_iterator f = found_.find(id.v);
+    if (f != found_.end())
+        for (std::size_t i = 0; i < f->second.size(); i++) { out += " found "; quoted(out, strings_.at(f->second[i].first)); }
     for (std::uint32_t i = 0; i < n.count; i++) {
         out += ' ';
         dumpNode(out, children_[n.first + i]);
     }
     out += ')';
+}
+
+std::vector<std::string> Tree::foundSymbols(NodeId id) const {
+    std::vector<std::string> out;
+    const std::unordered_map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t> > >::const_iterator f = found_.find(id.v);
+    if (f != found_.end())
+        for (std::size_t i = 0; i < f->second.size(); i++) out.push_back(strings_.at(f->second[i].second));
+    return out;
 }
 
 std::vector<NodeId> Tree::adopt(std::size_t from, std::size_t lo, std::size_t hi) {

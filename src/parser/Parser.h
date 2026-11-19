@@ -833,6 +833,7 @@ private:
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
     // M8rev M7: `dependentName` is [temp.dep]/1's - an unqualified callee with a type-dependent argument, or a dependent scope's.
     void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName);
+    void noteDefinitionLookup(syntax::NodeId callee, const std::string &written);
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e && kind == syntax::Kind::Call && !defaultGroups_.empty()) {

@@ -100,8 +100,15 @@ public:
     void forget(const std::pair<std::size_t, std::size_t> &n) { read_.erase(read_.begin() + static_cast<long>(n.first), read_.end()); unread_.erase(unread_.begin() + static_cast<long>(n.second), unread_.end()); }
     void mark(NodeId id, std::uint8_t marks) { nodes_[id.v].marks |= marks; }
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
+    // [temp.dep.candidate] (M8rev M7): a dependent-name callee's functions as unqualified lookup found them at the
+    // definition - each its spelling for the dump and its symbol, empty for a template, for the instantiation.
+    void noteFound(NodeId id, const std::string &spelling, const std::string &symbol) {
+        found_[id.v].push_back(std::make_pair(strings_.intern(spelling), strings_.intern(symbol)));
+    }
+    std::vector<std::string> foundSymbols(NodeId id) const;
 private:
     void dumpNode(std::string &out, NodeId id) const;
+    std::unordered_map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t> > > found_;
     std::vector<Node> nodes_;
     std::vector<std::pair<std::size_t, std::string> > unread_;
     std::vector<NodeId> read_;

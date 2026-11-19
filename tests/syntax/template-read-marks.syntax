@@ -1,5 +1,5 @@
 tests/syntax/template-read-marks.cpp:4:5: (function "g" (var "int v") (block (return (name "v"))))
 tests/syntax/template-read-marks.cpp:9:5: (function "main" (block (return (int "0"))))
-tests/syntax/template-read-marks.cpp:5:24: (read (function "comma" (var "template parameter x") (var "int k") (block (return (call (name "g" type-dependent dependent-name) (comma "," (assign "+=" (name "x" type-dependent) (int "1")) (name "k")))))))
+tests/syntax/template-read-marks.cpp:5:24: (read (function "comma" (var "template parameter x") (var "int k") (block (return (call (name "g" type-dependent dependent-name found "g(int)") (comma "," (assign "+=" (name "x" type-dependent) (int "1")) (name "k")))))))
 tests/syntax/template-read-marks.cpp:6:24: (read (function "member" (var "template parameter b") (var "int k") (block (return (binary "+" (call (member ".template cv<int>" (name "b" type-dependent)) (name "k")) (call (member ".cv" (name "b" type-dependent)) (name "k")))))))
-tests/syntax/template-read-marks.cpp:8:42: (read (function "f" (block (expr (assign "=" (name "nb" unfound) (int "1"))) (return (binary "+" (call (name "g" type-dependent dependent-name) (name "nb" unfound)) (member "->nb" (this "this")))))))
+tests/syntax/template-read-marks.cpp:8:42: (read (function "f" (block (expr (assign "=" (name "nb" unfound) (int "1"))) (return (binary "+" (call (name "g" type-dependent dependent-name found "g(int)") (name "nb" unfound)) (member "->nb" (this "this")))))))

@@ -1,3 +1,3 @@
 tests/syntax/template-read.cpp:4:5: (function "g" (var "int v") (block (return (name "v"))))
 tests/syntax/template-read.cpp:6:5: (function "main" (block (return (int "0"))))
-tests/syntax/template-read.cpp:5:24: (read (function "twice" (var "template parameter x") (block (decl (var "int k" (int "2"))) (return (binary "+" (binary "+" (call (name "g" type-dependent dependent-name) (name "x" type-dependent)) (call (name "T::type" typename type-dependent dependent-name) (name "k"))) (name "k"))))))
+tests/syntax/template-read.cpp:5:24: (read (function "twice" (var "template parameter x") (block (decl (var "int k" (int "2"))) (return (binary "+" (binary "+" (call (name "g" type-dependent dependent-name found "g(int)") (name "x" type-dependent)) (call (name "T::type" typename type-dependent dependent-name) (name "k"))) (name "k"))))))

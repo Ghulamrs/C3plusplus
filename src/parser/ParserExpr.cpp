@@ -1138,8 +1138,9 @@ ExprPtr Parser::primary(Program *program) {
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
         noteCallee(call[0], r.get());
-        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"),
-                     scoped || (argGen_ != gen && argsDependent_ && name.find("::") == std::string::npos));
+        const bool unqualified = argGen_ != gen && argsDependent_ && name.find("::") == std::string::npos;
+        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"), scoped || unqualified);
+        if (unqualified && patternBody_) noteDefinitionLookup(call[0], name);
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -1177,6 +1178,25 @@ void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten
     syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::TypeDependent : 0) |
                                                    (typenameWritten ? syntax::Typename : 0) |
                                                    (dependentName ? syntax::DependentName : 0)));
+}
+
+// [temp.dep.candidate]: an unqualified dependent-name callee keeps what unqualified lookup finds at the definition - a
+// member, or the functions and the template of the name - and ADL from both contexts is the instantiation's (M8rev M7).
+void Parser::noteDefinitionLookup(syntax::NodeId callee, const std::string &written) {
+    const std::string name = written.substr(0, written.find('<'));
+    const Type *owner = currentClass_ != nullptr ? lookup_.findMemberOwner(currentClass_, name) : nullptr;
+    const std::string key = owner != nullptr ? owner->tag() + "::" + name
+                                             : lookup_.qualifyForLookup(name, &sema::Lookup::hasFunctionNamed);
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key))
+        for (std::size_t i : *set) {
+            const Signature &f = lookup_.functions_[i];
+            if (f.fromTemplate) continue;       // a specialization made earlier: the template is the candidate
+            std::string spelling = (owner != nullptr ? "member " + name : f.name) + "(";
+            for (std::size_t j = 0; j < f.params.size(); j++) spelling += (j != 0 ? ", " : "") + f.params[j]->describe();
+            spelling += f.variadic ? (f.params.empty() ? "...)" : ", ...)") : ")";
+            syntaxTree_.noteFound(callee, spelling, f.symbol);
+        }
+    if (owner == nullptr && isTemplateName(name)) syntaxTree_.noteFound(callee, "template " + name, std::string());
 }
 
 // The operator a name spells after `operator`, from token k - `+`, `()`, `[]` - added to `name`; the token after it.
