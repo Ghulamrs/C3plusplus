@@ -4964,3 +4964,10 @@ the new case on x86_64-linux and arm64-darwin, cxx1 naming `_Unwind_Resume` wher
 guard; recorded in its `.nonames` in the next commit (x86_64-windows: all 14 names agree).
 **Left:** a callee declared noexcept but not defined in the unit is taken to throw (a stateless FuncInfo cl would not
 write); the cases' own comments still speak of the Itanium region only.
+
+**m6d-w5's wave landed, 2026-11-19 (gate m6dw5h at 1a72d67c against main 09b2e441: 40 passed, 0 failed; the fixed point
+checked not owed).** m6d-winterm2 (a noexcept function that may let an exception out gets cl's stateless FuncInfo, EHFlags 5,
+and is not inlined) and M8.2 slice 2d's first parts (m82j: the mark split into type-dependent and dependent-name, the
+definition's candidates kept; m82k: a call with no type-dependent part made from the read) on main and m3-line. The first
+gate (m6dw5g, bb00b349) failed identwin alone, on the 23 x86_64-windows outputs m6d-winterm2 named: rows in 1a72d67c.
+tests/wave-expected.txt emptied.
