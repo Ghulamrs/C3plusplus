@@ -3298,3 +3298,51 @@ needs its type under the binding from the typed tree, which `callArgTypes` does 
 (a) and (b) and their gates; a candidate over a class beside a deduced call (6: the read does not ask converting
 constructors); class, enumeration and pointer arguments of an unqualified call (ADL, 14); explicit-argument calls
 (`std::forward<T>`, `twice<T>`); the 10 through a value or a member.
+
+## M8.2 slice 2d, seventh part: arguments that are not named locals, and a class candidate beside a deduced call (lane m82p, 2026-11-19)
+
+Branch `m8-2p` from `50f39adb` (m82o; its own final commit checked clean, so no base re-check here).
+
+**(a) A deduced call over an argument that is not a named local** (this commit). `Templates::callArgTypes` gives deduction and
+the ranking each argument as `deductionArgType` gives it - an lvalue as a reference to its type, a prvalue as its type - for
+more forms than a local: a dereference (`*p`, an lvalue, [expr.unary.op]/1), an address (`&a`), a unary or binary arithmetic or
+comparison expression and a literal (prvalues), a member through `->` or of a named object (an lvalue), each through parentheses.
+**The type is the typed tree's**: `Typer::typeUnder` types the argument's syntax under the specialization's binding as the body
+itself is typed (`bound`, the binding put in `Templates::bound_` for the call), no second rule for a type. The value category
+is the form's (`argumentCategory`); any other form replays by reason ("whose value category the read does not decide here"),
+and an argument that holds a call replays ("that holds a call") - so no request's argument holds another, which is what orders
+the requests by node (m82o (a)). `requestCall` ranks a prvalue as one (`RankedArgument::lvalue` false) and binds a reference
+parameter only to an lvalue: a reference over a prvalue - a temporary materialised for it - is refused by name ("a reference
+that binds no local as it is"), not made.
+
+**The probe** `tests/cases/template-subst-arg` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++
+-std=c++11 -pedantic-errors` on the Windows box): `pick(*p) = *p + 1` and `ns::twice(*p)`, `ns::first(&a)`, `ns::twice(a - b)`
+and `ns::twice(-a)`, `ns::mix(a, 2)` over a literal, each for an `int` and a `double` - 18 bodies with no replay, plain and `-g`,
+made 18 equal under the check; `viaMember` (`ns::mix(a, b->v)`) replays by reason ("a 'member' in the body": the body walk does
+not take a member yet). Its output is clang's with and without the flag. tests/subst.sh: the probe added to the probes step,
+for exactly that; no other probe line changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,287 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 292** (270 + the probe's 18 + 4); without the check **222 substituted with no replay** (200 + 22),
+70 replayed by reason (as before). **Without the lanes' probes** (`template-subst*`): **88 with no replay** (84 + 4), covered
+158 (154 + 4) - the suite's own 4 made: algorithm-sort-large 2, range-for-vector 1, library-cppparse-pieces 1
+(`std::move(*b)`, `std::__sort_by_less(.., &*x)`, `std::__sort_swap(.., j - 1)`). Of m82o's 15: 4 made, 8 now refused for an
+argument that holds a call (`a.data()` in `__cxx1_compare_n`'s 4 callers, `std::__sort_less<T>()`, `std::forward<T>(x)`), 2
+beside a candidate over a class, 1 a call with a type-dependent argument resolved at the instantiation.
+
+**src/** (a): `Templates.cpp` +48 -11, `Templates.h` +1 -1, `Typing.cpp` +7, `Typing.h` +2: 95,269 -> 95,315 (+46).
+EXCLUSIONS re-pointed (Templates.cpp 1542, 1594, 2291).
+
+**Gates of (a)** (REF `50f39adb` in `~/m82pb`, NEW in `~/m82pe`, one path length; every check on this commit's own tree):
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,876,
+x86_64-windows 3,752, arm64-darwin 1,876, tms6747 1,876) and **0 on three with `-templates=subst`**; **-g 0 differ** with and
+without the flag (x86_64-linux 719 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 701, 375, 211 -
+re-read by `boxkit/m82p-gre.sh`); `-check=templates -templates=subst` over the cases: 1,287 units, 350 nonzero exits as before,
+none failing on a difference; `-check=fold` 0 units failing on a difference; run.sh 1280/0 without and with `-templates=subst`;
+**subst.sh 0 failed** (run 1280/0 and typed 930/0 at -O0 and -O2, same 994 of 994, self 102 of 102, the ceiling 26 of 26, 3
+shapes of 3; the cases ceiling 17 of 17, 53 shapes of 53, 4 counts below the record - not re-recorded); syntax.sh 6/0; typed.sh
+930/0; self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool's own exit status: exclusions rc 0 0/0
+(after the re-point), comments rc 0, memory gate rc 0 (raw-pointers 89: a first build's `typeUnder` returned a `const Type *`,
+90, so it returns a `TypeId`), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
+**Windows**: cl /W4 /WX clean, first and alone, the whole tree 17:37:07-17:38:11 and the delta 17:48:22-17:49:26 (about a
+minute each); names.sh 938/0, overload.sh 46/0.

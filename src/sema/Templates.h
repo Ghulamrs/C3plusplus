@@ -228,7 +228,7 @@ public:
     std::string dependentCall(syntax::NodeId call, const Substituted &s, std::size_t *chosen);   // why it waits, or empty
     std::string templateCandidates(syntax::NodeId call, const Substituted &s);    // a function template deduced at the instantiation
     std::string requestCall(const Specialization sp, syntax::NodeId call, const Substituted &s, std::size_t *chosen);
-    std::string callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes) const;
+    std::string callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes);
     std::string nondependentCall(syntax::NodeId call) const;       // why a call in a read body waits for the instantiation, or empty
     void callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std::size_t> &calls);
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
