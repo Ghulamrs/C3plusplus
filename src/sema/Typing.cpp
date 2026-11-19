@@ -76,7 +76,7 @@ TypedId Typer::node(syntax::NodeId id) {
         const std::string &text = st.text(id);
         const std::string::size_type space = text.rfind(' ');
         if (t != p_.declaredTypes_.end() && space != std::string::npos) {
-            const Declared d = { bound(t->second), id };
+            const Declared d = { p_.types_.type(bound(TypeTable::id(t->second))), id };
             scopes_.back()[text.substr(space + 1)] = d;
         }
     }
@@ -106,9 +106,9 @@ TypedId Typer::node(syntax::NodeId id) {
     syntax::NodeId decl;
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
-    if (type == nullptr && isExpression(n.kind)) type = bound(recordedValue(id));
+    if (type == nullptr && isExpression(n.kind)) type = p_.types_.type(bound(TypeTable::id(recordedValue(id))));
     // A `var` is typed as declared, its `&` kept (M3b.1, M3-IR 3.8): what the lowering sizes its alloca by.
-    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = bound(p_.declaredTypes_.at(id.v));
+    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = p_.types_.type(bound(TypeTable::id(p_.declaredTypes_.at(id.v))));
     if (scoped) scopes_.pop_back();
     const TypedId made = tree_.add(id, type, kids, decl);
     record(id, made);
@@ -127,14 +127,14 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.what = Resolution::Local;
         out.symbol = p_.declaredLocals_.at(id.v).staticName;
         out.serial = p_.declaredLocals_.at(id.v).serial;
-        out.type = TypeTable::id(bound(p_.declaredLocals_.at(id.v).type));
+        out.type = bound(TypeTable::id(p_.declaredLocals_.at(id.v).type));
         out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
-        if (!binding_.empty() && out.type.valid()) out.type = TypeTable::id(bound(p_.types_.type(out.type)));
+        if (!binding_.empty() && out.type.valid()) out.type = bound(out.type);
         tree_.setResolution(t, out);
     }
     const auto cast = p_.castTypes_.find(id.v);
@@ -280,7 +280,7 @@ const Type *Typer::named(syntax::NodeId id, syntax::NodeId *decl) {
         if (it != scopes_[i - 1].end()) { t = it->second.type; *decl = it->second.decl; }
     }
     if (t != nullptr && t->isReference()) t = t->referent();
-    if (t == nullptr && (t = bound(resolvedType(id, syntax::Kind::Name))) != nullptr) source_[id.v] = 'e';
+    if (t == nullptr && (t = p_.types_.type(bound(TypeTable::id(resolvedType(id, syntax::Kind::Name))))) != nullptr) source_[id.v] = 'e';
     return t;
 }
 
@@ -305,7 +305,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         (i == 0 ? a : b) = r.isReference() ? r.referent() : &r;
     }
     // A call, an overloaded operator, a member access, `this` or a class temporary: what the parser recorded.
-    if (const Type *r = bound(resolvedType(id, kind))) { source_[id.v] = 'e'; return r; }
+    if (const Type *r = p_.types_.type(bound(TypeTable::id(resolvedType(id, kind))))) { source_[id.v] = 'e'; return r; }
     // An array operand of arithmetic is its first element's address.
     const Type *da = a != nullptr && a->isArray() ? types.pointerTo(a->pointee()) : a;
     const Type *db = b != nullptr && b->isArray() ? types.pointerTo(b->pointee()) : b;
@@ -959,8 +959,8 @@ TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
     return t;
 }
 
-const Type *Typer::bound(const Type *t) const {
-    return binding_.empty() ? t : p_.tmpl_.substituted(p_.tmpl_.bound_.at(binding_).s, t);
+TypeId Typer::bound(TypeId t) const {
+    return binding_.empty() ? t : TypeTable::id(p_.tmpl_.substituted(p_.tmpl_.bound_.at(binding_).s, p_.types_.type(t)));
 }
 
 // Every fact of a typed node the lowering reads, but its syntax and declaration ids: the two bodies' own nodes.
