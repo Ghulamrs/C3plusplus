@@ -2781,3 +2781,52 @@ pushed where the replay pushes it, `syntaxFunctions_`/`definedBodies_` for the r
 display name, `inline`, `noexcept`, `discardableInline_`, `lookup_.functions_[].defined`, `frameAligns_[symbol]` and `frameAlign_` (m82e's
 check computes both) - each to be shown equal to the replay's under `-check=templates`; then (4) `Typer::typeBody` with no replay and the
 replay skipped under `-templates=subst` for the 180 whose frame, shell and body the check holds.
+
+## M8.2 slice 2c, step 2's end: the replay's side effects made from the read, and where skipping it stopped (lane m82h, 2026-11-19)
+
+Branch `m8-2h` from `bac0c670` (m6d-w4: main `8d5464a1`, m8-2f, m6d-glob `b4fc3fa8`, m8-2g `1802a01b`). **Two commits.** (0) `shellApart`'s
+`::Local` built by its constructor again, not field by field: m6d-glob reads `::Local(...)` inside `namespace sema` as the global one,
+and the self-compile of `Templates.cpp` takes it (rc 0). (1) **The replay's side effects made from the read and held against the
+replay's**: the read of a function template keeps the `Function` it made at the declaration (`readFns_`, by `afterParams`: name, return
+type, linkage, variadic, position, `this`, pads, `noexcept`, throw list); `Templates::madeFromRead` makes the specialization's function
+from it and the shell (m82f's records and m82g's block table) - symbol, display name as the definition path sets it, `inline` unless
+internal - and `madeApart` holds it against the replay's function, with the unit's records the replay leaves: one function pushed
+where it pushes it, no declaration or specialization made, every declaration of the symbol defined, `discardableInline_`, no
+`constexprFns_` entry, one body root (`syntaxFunctions_`/`definedBodies_`). What the made function cannot carry is named: a return
+type the binding does not carry, a `decltype` return (the replay works it out), a `noexcept`, a throw list or pads.
+`-check=templates made (N): equal | differ: <record> | differ: replayed: <reason>`. The frame's alignment (`frameAligns_`,
+`frameAlign_`) is m82e's check, unchanged. Nothing uses the made function for code yet.
+
+**The census** (Linux, `-check=templates -templates=subst` over the 1,279 cases): substituted 180, frame 180 equal, shell 180 equal,
+**made 111 equal, 0 differ in a record**; replayed by name 69 (a return type the binding does not carry 40, a `decltype` return 29); the
+fixed point's reasons as m82g; units with a nonzero exit 350 on (0) and on (1). Substituted with no replay 0, beside a replay 180.
+
+**src/** (0) `Templates.cpp` +1 -3: 94,737 -> 94,735; (1) `Templates.h` +7 -1, `Templates.cpp` +68 -6: -> 94,803 (the lane +66).
+
+**Gates** (REF `bac0c670` and NEW built in one Linux tree `~/m82h`, `~/m82h-ref.exe`, `~/m82h-n0.exe`, `~/m82h-n1b.exe`): `identical.sh` REF
+against NEW at -O0 and -O2, x86_64-linux 1,860 and x86_64-windows 3,720, without the flag and with `-templates=subst`, **0 differ** on
+each commit; self-compile of `Templates.cpp` rc 0 on each (a first form of (1) put a `Function` in a `std::pair`, which cxx3's
+`<utility>` copies and a `Function` cannot be: the self-compile refused it, and a vector holds them now); static on each commit's tree,
+each tool's own exit status: exclusions 0/0 (the three `Templates.cpp` citations re-pointed: 1162/1214/1911, then 1224/1276/1973),
+comments 0 over, memory gate raw-pointers 89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to date; g++
+`-Werror` clean; **Windows** cl /W4 /WX clean, first and alone (the whole tree with (1) in its first form 11:13:45-11:16:33, under 3
+minutes; the delta with (1) as committed and the work below, 11:28:26-11:31:10). Four targets, -g, run.sh, fold and subst.sh were run on
+the tree below, which holds (1).
+
+**Where it stopped, exactly: (2), the replay skipped, written and not committed** (`boxkit/m82h-c2-wip.patch`, src/ 94,849):
+under `-templates=subst` without `-check=templates`, `Templates::madeWithoutReplay` lays the frame from the read alone (`layFrame`
+with no replay), pushes the made function, defines the declarations, marks it discardable, sets `frameAligns_[symbol]` and `frameAlign_`,
+and records the symbol in `unreplayed_`; `Typer::census` roots it at its read, `typeBody` types the read under the binding alone,
+`declaredReturnOf` substitutes the read's return; tms6747 replays (its generator may walk the Ast body). Measured on it (`~/m82i`, a
+path of the same length): **without the check 128 bodies built with no replay, 69 beside a replay**; `identical.sh` 0 differ on four
+targets without the flag and on three with `-templates=subst`; `-g` 0 differ (x86_64-linux 929 the same, 350 refused alike;
+x86_64-windows 904, 375) without and with the flag; run.sh 1273/0 both; `-check=fold` compared 16,594, agreed 12,314, differ 0;
+self-compile of `Templates.cpp`, `Typing.cpp`, `Driver.cpp` rc 0. **subst.sh: 5 failed**, which is why it is not committed: (a) typed.sh
+under the switch, untyped 158 against the 46 recorded - `Typer::check`'s walk types every census root with `typeFunction` and no
+binding, so a read root typed there is its pattern's `$T0`; it wants the binding the lowering types it under, and then
+`recordDiffers` holds the bound records against the read's, which name `$T0`, so the check needs a rule for a bound root as well;
+(b) the M8.1 probes, `template-subst` by-substitution 0 (not 16) and `template-subst-refused` 0 (not 1) with its reason missing: a
+body made with no replay has no root of its own, so `substituteFunction` must not take it as a sibling's pattern (the patch
+excludes it), and the sibling then takes the read path instead. Either M8.1 takes an unreplayed pattern (its root the read, typed
+under the pattern's binding and retyped to its own) or the probe's numbers move with the coordinator's decision; that is a
+decision. Also owed: the 128 include the bodies the check's stand-in takes first (m82g's 17), which no check holds.
