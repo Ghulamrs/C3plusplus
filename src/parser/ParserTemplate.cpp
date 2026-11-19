@@ -1677,6 +1677,24 @@ std::vector<std::string> Parser::namespacePathStack(const std::string &ns) {
     return stack;
 }
 
+// **In the template's own namespace**, whose ordinary functions of this name are candidates
+// beside its specializations - [over.match.best]: an exact non-template beats a template.
+// The global namespace's is its ordinary functions and its own specializations, no other's.
+std::string Parser::templateCallKey(const std::string &name, std::string named, const TemplateDecl &decl) {
+    const std::string bare = name.substr(name.rfind("::") == std::string::npos ? 0 : name.rfind("::") + 2);
+    if (named == "::") {
+        std::vector<std::size_t> mine;
+        if (const std::vector<std::size_t> *all = lookup_.overloadsOf(bare))
+            for (std::size_t i : *all) if (!lookup_.functions_[i].fromTemplate) mine.push_back(i);
+        if (const std::vector<std::size_t> *own = lookup_.overloadsOf("::" + bare))
+            mine.insert(mine.end(), own->begin(), own->end());
+        lookup_.functionIndex_["$global:" + bare] = mine;
+        named = "$global:";
+    }
+    return !named.empty() && lookup_.overloadsOf(named + bare) != nullptr ? named + bare
+         : !decl.ns.empty() && lookup_.overloadsOf(decl.ns + name) != nullptr ? decl.ns + name : name;
+}
+
 // A template named in an expression. 5.2 wants the arguments written out:
 // deducing them from the call is 5.3, and a class template is 5.4.
 ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
@@ -1768,23 +1786,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
             src_.fail(pos, "'" + name + "' is a function template and " + why);
         }
 
-        const std::string bare = name.substr(name.rfind("::") == std::string::npos ? 0 : name.rfind("::") + 2);
-        // **In the template's own namespace**, whose ordinary functions of this name are candidates
-        // beside its specializations - [over.match.best]: an exact non-template beats a template.
-        // The global namespace's is its ordinary functions and its own specializations, no other's.
-        if (named == "::") {
-            std::vector<std::size_t> mine;
-            if (const std::vector<std::size_t> *all = lookup_.overloadsOf(bare))
-                for (std::size_t i : *all) if (!lookup_.functions_[i].fromTemplate) mine.push_back(i);
-            if (const std::vector<std::size_t> *own = lookup_.overloadsOf("::" + bare))
-                mine.insert(mine.end(), own->begin(), own->end());
-            lookup_.functionIndex_["$global:" + bare] = mine;
-            named = "$global:";
-        }
-        const std::string key = !named.empty() && lookup_.overloadsOf(named + bare) != nullptr ? named + bare
-                              : !decl.ns.empty() && lookup_.overloadsOf(decl.ns + name) != nullptr
-                              ? decl.ns + name : name;
-        const Signature sig = overload_.resolveOverload(key, callArgs, pos);
+        const Signature sig = overload_.resolveOverload(templateCallKey(name, named, decl), callArgs, pos);
         // **A specialization's defaults, as every ordinary call reads them.**
         applyDefaults(sig, callArgs, pos);
         return completeCall(sig.name, sig.symbol, nullptr, sig.returns,

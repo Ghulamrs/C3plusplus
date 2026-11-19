@@ -83,27 +83,26 @@ census)
         awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d M8.2:%s\n", s[k], k}' | sort -rn
     # The probes, on M8.2's census (2026-11-19, decision ii): what substitutes with no replay, and beside one under the check;
     # each refused shape replayed with its reason. M8.1's stand-in is not run where M8.2 makes the body: it takes none here.
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall; do for how in plain check g; do
+    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce; do for how in plain check g; do
         case $how in plain) f= ;; check) f=-check=templates ;; g) f=-g ;; esac
         CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo $f -templates=subst -S tests/cases/$p.cpp -o /dev/null 2>&1 | tr -d '\r' > "$OUT/$p.$how"
     done; done
     probe() { grep -qxF -- "$3" "$OUT/$1.$2" || { echo "FAIL $1 ($2): no \"$3\""; bad=$((bad + 1)); }; }      # <case> <how> <line>
     for how in plain g; do
         probe template-subst $how "-check=templates replay (42): substituted with no replay"
-        probe template-subst-refused $how "-check=templates replay (10): substituted with no replay"
-        probe template-subst-call $how "-check=templates replay (8): substituted with no replay"
-        probe template-subst-depcall $how "-check=templates replay (9): substituted with no replay"
+        probe template-subst-refused $how "-check=templates replay (12): substituted with no replay"
+        probe template-subst-call $how "-check=templates replay (10): substituted with no replay"
+        probe template-subst-depcall $how "-check=templates replay (10): substituted with no replay"
+        probe template-subst-deduce $how "-check=templates replay (14): substituted with no replay"
     done
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
-    probe template-subst-refused check "-check=templates replay (10): beside a replay, under -check=templates"
-    probe template-subst-refused check "-check=templates subst (2): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
-    probe template-subst-call check "-check=templates made (8): equal"
-    probe template-subst-call check "-check=templates subst (2): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
-    probe template-subst-depcall check "-check=templates made (9): equal"
-    probe template-subst-depcall check "-check=templates subst (1): replayed: a call a function template answers, deduced at the instantiation, whose specialization is not requested yet"
-    probe template-subst-refused plain "template-replayed (2): a name the template does not declare: a lookup"
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall; do
+    probe template-subst-refused check "-check=templates replay (12): beside a replay, under -check=templates"
+    probe template-subst-call check "-check=templates made (10): equal"
+    probe template-subst-depcall check "-check=templates made (10): equal"
+    probe template-subst-deduce check "-check=templates made (14): equal"
+    probe template-subst-deduce check "-check=templates subst (1): replayed: a call a function template may answer over an argument whose type ADL would search"
+    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce; do
         grep -q ' by-substitution=0$' "$OUT/$p.plain" || { echo "FAIL $p: the stand-in substituted where M8.2 makes the body"; bad=$((bad + 1)); }
     done ;;
 same)
