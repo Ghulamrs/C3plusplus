@@ -860,7 +860,7 @@ static const char *frameStepName(char kind) {
     case 'z': return "the frame's start"; case 'p': return "a nested function's frame"; case 'q': return "the outer frame put back";
     case 'o': return "a synthesised frame"; case 'c': return "the frame it closed into"; case 'd': return "a local";
     case 'a': return "a slot no local names"; case 'f': return "a slot given back"; case 'S': return "the sret slot";
-    case 'V': return "the variadic save area"; case 'e': return "the frame's size";
+    case 'V': return "the variadic save area"; case 'e': return "the frame's size"; case 'b': return "a block";
     }
     return "a step the check does not know";
 }
@@ -926,6 +926,9 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
             at = now.size = alignTo(now.size, 16) + 176;
         } else if (r.kind == 'e') {
             at = alignTo(now.size, 16);
+        } else if (r.kind == 'b') {
+            if (r.block != y.block) return step + ": the block it opens in";     // its offset is where it opens
+            at = r.offset;
         } else return step;
         laid[k] = at;
         if (at != y.offset) return step + ": its offset";
@@ -941,12 +944,15 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
 std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const {
     std::vector<Param> params;
     std::vector< ::Local> locals;
+    std::vector<int> blocks(1, 0);      // the block table -g reads, from topLevel's outermost block as enterBlock adds to it
+    std::vector<std::size_t> opens;
     int depth = 0, size = 0, sret = 0, save = 0;
     for (std::size_t k = 0; k < read.size() && k < laid.size(); k++) {
         const FrameEvent &r = read[k];
         if (r.kind == 'p' || r.kind == 'o') depth++;
         else if (r.kind == 'q' || r.kind == 'c') depth--;
         if (depth != 0) continue;
+        if (r.kind == 'b') { blocks.push_back(r.block); opens.resize(blocks.size(), 0); opens.back() = static_cast<std::size_t>(laid[k]); }
         if (r.kind == 'S') sret = laid[k];
         else if (r.kind == 'V') save = laid[k];
         else if (r.kind == 'e') size = laid[k];
@@ -976,6 +982,7 @@ std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std
     }
     if (sret != f.sretSlot() || save != f.regSaveSlot()) return "the sret slot or the save area";
     if (size != f.frameSize()) return "the frame's size";
+    if (blocks != f.blocks() || opens != f.blockPositions()) return "the block table";
     return std::string();
 }
 

@@ -2754,3 +2754,30 @@ self-compile of `Templates.cpp` by NEW rc 0; static, each tool's own exit status
 re-pointed), comments 0 over, memory gate raw-pointers 89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to
 date; g++ `-Werror` clean; **Windows** cl /W4 /WX clean (first and alone: the whole tree 10:41:16-10:43:21, about 2 minutes; the delta
 10:46:59-10:48:39), names.sh 928 passed 0 failed, overload.sh 46/0.
+
+(2) **The -g block table logged on the read**: `Parser::enterBlock` logs a `b` step - the block it opens in (`currentBlock()`) and
+where it opens (`pos`) - `Templates::layFrame` holds each against the replay's, and `Templates::shellApart` builds the table
+`Function::blocks()` and `blockPositions()` carry (topLevel's outermost block 0, then one entry per `b` of the outermost frame, a
+nested or synthesised frame's passed over) and holds it whole against the replay's function. With it every record `-g` reads of a
+covered body - `fnVars_`'s locals with their blocks (m82f's `d` steps) and the block numbering - is the read's own, checked.
+**The census after (2)**: as after (1) - covered 197, frame equal 180, **shell equal 180 with the block table**, differ 0;
+substituted beside a replay 180, with no replay 0.
+
+**src/ (2)** `Parser.cpp` +1, `Templates.cpp` +8 -1: src/ 94,716 -> 94,724 lines (the lane: 94,682 -> 94,724, +42).
+**Gates (2)** (NEW `~/m82g-c2.exe`, built in a second Linux tree `~/m82g2` so (1)'s chain ran undisturbed): `identical.sh` REF against NEW
+without the flag at -O0 and -O2 - x86_64-linux 1,856, tms6747 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with
+`-templates=subst` - x86_64-linux 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; `-g` at -O0, without and with the flag,
+x86_64-linux 927 the same (349 refused alike) and x86_64-windows 902 (374), 0 differ each - once the tree's own path is read alike: the
+second tree bakes `m82g2` into its include directory and the cases' paths, which 217 and 210 outputs spell, and nothing else differs;
+run.sh 1270/0, and with `-templates=subst` 1270/0; subst.sh 0 failed (self 102 of 102, the self shape record 34 bodies in 21 units,
+ceilings 17 under 17 and 26 under 26); `-templates=subst -check=templates` no frame, shell or body apart; `-check=fold` compared 16,475,
+agreed 12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0 failed; self-compile of `Templates.cpp` and `Parser.cpp` by
+NEW rc 0; static: exclusions 0/0 (the three `Templates.cpp` citations and `Parser.cpp:846` re-pointed), comments 0 over, memory gate
+raw-pointers 89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to date; g++ `-Werror` clean; **Windows** cl /W4
+/WX clean (first and alone, the delta 10:58:05-10:59:06), names.sh 928 passed 0 failed, overload.sh 46/0.
+
+**Where it stopped, exactly**: (1) and (2) are done. Not started: (3) the replay's side effects made without it - the `Function`
+pushed where the replay pushes it, `syntaxFunctions_`/`definedBodies_` for the read root, `setBlocks` (now from the `b` steps),
+display name, `inline`, `noexcept`, `discardableInline_`, `lookup_.functions_[].defined`, `frameAligns_[symbol]` and `frameAlign_` (m82e's
+check computes both) - each to be shown equal to the replay's under `-check=templates`; then (4) `Typer::typeBody` with no replay and the
+replay skipped under `-templates=subst` for the 180 whose frame, shell and body the check holds.
