@@ -15,3 +15,15 @@ template-local-enum-twice x86_64-linux 2 lane m82v/m82w: a local enumeration is 
 template-local-enum-twice x86_64-windows 0 lane m82v/m82w: a local enumeration is its own function's (82ad1782); REF refuses the case (declared twice)
 template-local-enum-twice x86_64-windows 1 lane m82v/m82w: a local enumeration is its own function's (82ad1782); REF refuses the case (declared twice)
 template-local-enum-twice x86_64-windows 2 lane m82v/m82w: a local enumeration is its own function's (82ad1782); REF refuses the case (declared twice)
+template-local-enum-read arm64-darwin 0 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read arm64-darwin 1 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read arm64-darwin 2 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read tms6747 0 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read tms6747 1 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read tms6747 2 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-linux 0 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-linux 1 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-linux 2 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-windows 0 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-windows 1 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
+template-local-enum-read x86_64-windows 2 lanes m82v-m82x: a local enumeration is its own function's (82ad1782) and a read finds its enumerators (270e9b6e); REF refuses the case
