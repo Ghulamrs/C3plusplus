@@ -601,7 +601,6 @@ static int argumentCategory(const syntax::Tree &st, syntax::NodeId a) {
 // as its type - a local by its record, any other form the typed tree's (Typer::typeUnder); else why not.
 std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes) {
     const syntax::Tree &st = p_.syntaxTree_;
-    const bool qualified = st.text(st.child(call, 0)).find("::") != std::string::npos;
     for (std::uint32_t c = 1; c < st.node(call).count; c++) {
         const syntax::NodeId a = st.child(call, c);
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(a.v);
@@ -627,9 +626,9 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, s
             if (t == nullptr || t->isReference()) return "a call a function template may answer over an argument the typed tree does not type";
             t = lvalue == 1 ? p_.types_.referenceTo(t) : t->unqualified();
         }
-        const Type *v = (t->isReference() ? t->referent() : t)->unqualified();
-        if (!v->isScalar() || (!qualified && (!v->isArithmetic() || v->isEnumeration())))
-            return "a call a function template may answer over an argument whose type ADL would search";
+        // A pointer's or an enumeration's namespaces are searched as the replay's (requestCall: Overload::candidateSet).
+        if (!(t->isReference() ? t->referent() : t)->unqualified()->isScalar())
+            return "a call a function template may answer over an argument of a class or an array, which ADL and a constructor would answer";
         argTypes->push_back(t);
     }
     return std::string();
@@ -683,15 +682,18 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     const std::vector<TemplateDecl> reached = templatesNamed(name, scope, &named);
     instantiateViableTemplates(reached, argTypes, st.node(st.child(call, 0)).loc);
     const std::string key = p_.templateCallKey(name, named, templates_[name]);
+    std::vector<const Type *> given;
+    for (std::size_t q = 0; q < argTypes.size(); q++) given.push_back(argTypes[q]->isReference() ? argTypes[q]->referent() : argTypes[q]);
+    // The door's set as its resolveOverload looks it up there: the key's, the unnamed namespace's and ADL's ([basic.lookup.argdep]).
+    const std::string looked = p_.overload_.lookupName(key, given, nullptr);
+    std::vector<std::size_t> merged;
+    const std::vector<std::size_t> *set = memberTemplates_.count(looked) != 0 ? nullptr : p_.overload_.candidateSet(looked, key, given, nullptr, &merged);
     p_.namespaceStack_ = wasStack, p_.replayingInline_ = wasInline;
     p_.instantiationKey_ = wasKey, p_.instantiationOf_ = wasOf, p_.instantiationDisplay_ = wasDisplay, p_.instantiationDepth_ = wasDepth;
     unbindTemplateParameters(undo);
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
     if (set == nullptr) return "a deduced call whose specialization was not made, which the replay refuses";
     std::vector<std::size_t> viable;
     std::vector<std::vector<Rank> > ranks;
-    std::vector<const Type *> given;
-    for (std::size_t q = 0; q < argTypes.size(); q++) given.push_back(argTypes[q]->isReference() ? argTypes[q]->referent() : argTypes[q]);
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != given.size() || f.variadic) continue;

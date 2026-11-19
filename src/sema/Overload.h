@@ -64,6 +64,11 @@ public:
                                      std::size_t pos,
                                      const Type *object = nullptr,
                                      bool objectLvalue = true);
+    // resolveOverload's lookup over the arguments' types: the key it starts from, then the candidate set (in `merged`
+    // or the index) - the enclosing scopes', the unnamed namespace's and the arguments' namespaces' ([basic.lookup.argdep]).
+    std::string lookupName(const std::string &written, const std::vector<const Type *> &types, const Type *object) const;
+    const std::vector<std::size_t> *candidateSet(const std::string &name, const std::string &written, const std::vector<const Type *> &types,
+                                                 const Type *object, std::vector<std::size_t> *merged) const;
     // [over.match.funcs]/4: whether a member with this ref-qualifier and const takes the object.
     static bool refQualifierViable(RefQual ref, bool constThis, bool objectLvalue);
     static std::string refQualifierRefusal(const std::string &name, bool objectLvalue);

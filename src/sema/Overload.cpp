@@ -543,6 +543,74 @@ template <class Args> static std::vector<const Type *> argumentTypes(const Args 
     return types;
 }
 
+std::string Overload::lookupName(const std::string &written, const std::vector<const Type *> &types, const Type *object) const {
+    // An unqualified name inside a namespace names that namespace's function
+    // if it has one - the enclosing scopes are tried from the innermost out,
+    // then whatever a `using namespace` has opened.
+    std::string name = object != nullptr
+                     ? written
+                     : p_.lookup_.qualifyForLookup(written, &sema::Lookup::hasFunctionNamed);
+    // An argument's own namespace is searched too - `twice(s)` finds
+    // `N::twice` when `s` is an `N::S`. Only where nothing else answered, so a
+    // name that is in scope is never quietly outranked by a far one.
+    if (object == nullptr && p_.lookup_.overloadsOf(name) == nullptr && !types.empty()) {
+        const std::vector<std::string> keys = p_.lookup_.lookupKeys(written, types);
+        if (!keys.empty()) name = keys.back();
+    }
+    return name;
+}
+
+const std::vector<std::size_t> *Overload::candidateSet(const std::string &name, const std::string &written,
+                                                       const std::vector<const Type *> &types, const Type *object,
+                                                       std::vector<std::size_t> *merged) const {
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(name);
+    // **For an operator the candidate set is the union, not the first scope
+    // that answers.**
+    if (object == nullptr && !types.empty() &&
+        written.compare(0, 8, "operator") == 0) {
+        const std::vector<std::string> keys =
+            p_.lookup_.lookupKeys(written, types[0],
+                       types.size() > 1 ? types[1] : nullptr);
+        for (std::size_t i = 0; i < keys.size(); i++)
+            if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
+                for (std::size_t k = 0; k < s->size(); k++) {
+                    bool seen = false;
+                    for (std::size_t j = 0; j < merged->size() && !seen; j++)
+                        seen = (*merged)[j] == (*s)[k];
+                    if (!seen) merged->push_back((*s)[k]);
+                }
+        if (!merged->empty()) set = merged;
+    }
+    // One set from three places: the scope found, its unnamed namespace seen from outside it ([namespace.unnamed]/1),
+    // and the arguments' namespaces, [basic.lookup.argdep]/3 - not after a qualified name or a member.
+    if (object == nullptr && set != nullptr && merged->empty() && p_.lookup_.functions_[set->front()].owner.empty()) {
+        const std::string tag = "_GLOBAL__N_1::";
+        const std::size_t cut = name.rfind("::");
+        std::string scope = cut == std::string::npos ? std::string() : name.substr(0, cut + 2);
+        if (scope.size() >= tag.size() && scope.compare(scope.size() - tag.size(), tag.size(), tag) == 0)
+            scope.erase(scope.size() - tag.size());
+        const std::string last = cut == std::string::npos ? name : name.substr(cut + 2);
+        std::vector<std::string> keys(1, name);
+        if (p_.namespacePrefix().compare(0, scope.size() + tag.size(), scope + tag) != 0) {
+            keys.push_back(scope + last);
+            keys.push_back(scope + tag + last);
+        }
+        bool blockDeclared = false;
+        for (std::size_t i = 0; i < p_.blockFunctions_.size(); i++) blockDeclared |= p_.blockFunctions_[i].first == written;
+        if (written.find("::") == std::string::npos && !types.empty() && !blockDeclared) {
+            const std::vector<std::string> adl = p_.lookup_.lookupKeys(written, types);
+            for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);
+        }
+        for (std::size_t i = 0; i < keys.size(); i++)
+            if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
+                for (std::size_t k = 0; k < s->size(); k++)
+                    if (std::find(merged->begin(), merged->end(), (*s)[k]) == merged->end())
+                        merged->push_back((*s)[k]);
+        if (merged->size() > set->size()) set = merged;
+    }
+    return set;
+}
+
 Signature Overload::resolveOverload(const std::string &written,
                                           const std::vector<ExprPtr> &args,
                                           std::size_t pos,
@@ -560,19 +628,8 @@ Signature Overload::resolveOverload(const std::string &written,
         return unresolved;
     }
     p_.refuseOverloadArguments(args, written);
-    // An unqualified name inside a namespace names that namespace's function
-    // if it has one - the enclosing scopes are tried from the innermost out,
-    // then whatever a `using namespace` has opened.
-    std::string name = object != nullptr
-                     ? written
-                     : p_.lookup_.qualifyForLookup(written, &sema::Lookup::hasFunctionNamed);
-    // An argument's own namespace is searched too - `twice(s)` finds
-    // `N::twice` when `s` is an `N::S`. Only where nothing else answered, so a
-    // name that is in scope is never quietly outranked by a far one.
-    if (object == nullptr && p_.lookup_.overloadsOf(name) == nullptr && !args.empty()) {
-        const std::vector<std::string> keys = p_.lookup_.lookupKeys(written, argumentTypes(args));
-        if (!keys.empty()) name = keys.back();
-    }
+    const std::vector<const Type *> types = argumentTypes(args);
+    const std::string name = lookupName(written, types, object);
     // **A constructor template is a candidate too**: every one under this key that
     // deduces from the arguments is instantiated before the set is read.
     if (p_.tmpl_.memberTemplates_.count(name) != 0) {
@@ -580,54 +637,8 @@ Signature Overload::resolveOverload(const std::string &written,
         for (std::size_t i = 0; i < args.size(); i++) argTypes.push_back(p_.tmpl_.deductionArgType(*args[i]));
         p_.tmpl_.instantiateViableMemberTemplatesUnder(name, argTypes, pos);
     }
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(name);
-
-    // **For an operator the candidate set is the union, not the first scope
-    // that answers.**
     std::vector<std::size_t> merged;
-    if (object == nullptr && !args.empty() &&
-        written.compare(0, 8, "operator") == 0) {
-        const std::vector<std::string> keys =
-            p_.lookup_.lookupKeys(written, args[0]->type(),
-                       args.size() > 1 ? args[1]->type() : nullptr);
-        for (std::size_t i = 0; i < keys.size(); i++)
-            if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
-                for (std::size_t k = 0; k < s->size(); k++) {
-                    bool seen = false;
-                    for (std::size_t j = 0; j < merged.size() && !seen; j++)
-                        seen = merged[j] == (*s)[k];
-                    if (!seen) merged.push_back((*s)[k]);
-                }
-        if (!merged.empty()) set = &merged;
-    }
-    // One set from three places: the scope found, its unnamed namespace seen from outside it ([namespace.unnamed]/1),
-    // and the arguments' namespaces, [basic.lookup.argdep]/3 - not after a qualified name or a member.
-    if (object == nullptr && set != nullptr && merged.empty() && p_.lookup_.functions_[set->front()].owner.empty()) {
-        const std::string tag = "_GLOBAL__N_1::";
-        const std::size_t cut = name.rfind("::");
-        std::string scope = cut == std::string::npos ? std::string() : name.substr(0, cut + 2);
-        if (scope.size() >= tag.size() && scope.compare(scope.size() - tag.size(), tag.size(), tag) == 0)
-            scope.erase(scope.size() - tag.size());
-        const std::string last = cut == std::string::npos ? name : name.substr(cut + 2);
-        std::vector<std::string> keys(1, name);
-        if (p_.namespacePrefix().compare(0, scope.size() + tag.size(), scope + tag) != 0) {
-            keys.push_back(scope + last);
-            keys.push_back(scope + tag + last);
-        }
-        bool blockDeclared = false;
-        for (std::size_t i = 0; i < p_.blockFunctions_.size(); i++) blockDeclared |= p_.blockFunctions_[i].first == written;
-        if (written.find("::") == std::string::npos && !args.empty() && !blockDeclared) {
-            const std::vector<std::string> adl =
-                p_.lookup_.lookupKeys(written, argumentTypes(args));
-            for (std::size_t i = 0; i < adl.size(); i++) if (adl[i] != written) keys.push_back(adl[i]);
-        }
-        for (std::size_t i = 0; i < keys.size(); i++)
-            if (const std::vector<std::size_t> *s = p_.lookup_.overloadsOf(keys[i]))
-                for (std::size_t k = 0; k < s->size(); k++)
-                    if (std::find(merged.begin(), merged.end(), (*s)[k]) == merged.end())
-                        merged.push_back((*s)[k]);
-        if (merged.size() > set->size()) set = &merged;
-    }
+    const std::vector<std::size_t> *set = candidateSet(name, written, types, object, &merged);
 
     if (set == nullptr) {
         // Only constructor templates, and none of them deduced from these arguments.
