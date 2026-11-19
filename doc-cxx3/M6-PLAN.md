@@ -4833,3 +4833,37 @@ base to initialise"); the read is ParserTopLevel.cpp's, which lane m82g holds, s
 tests/open/global-qualified-base-initialiser with clang's answer. Templates.cpp's field-by-field fill of `::Local`
 (lane m82f's work-round) can go back to `::Local(...)` once m82g lets go of the file.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
+
+### M6d: tests/run.sh on the Windows box - the CRLF compare, the host's `.notarget` rows, a `.nomasm` case's spelling - lane m6d-runcr, 2026-11-19
+
+Brief boxkit/brief-m6d-runcr.txt; from 7b816998 on branch m6d-runcr; REF built from 7b816998 on Linux (`~/m6d-runcr-ref.exe`).
+Three commits, all in tests/run.sh; no src/ line changed. Windows numbers are `CXX1=cxx3-msvc.exe` (work\m6d-runcrw, built
+from 7b816998, the same compiler at every commit) over a copy of tests/ holding each commit's run.sh.
+
+**Before** (7b816998): Windows 353 passed, 920 failed - the program's CRLF output compared as is, so only the 349 refusals,
+2 printed cases and 2 of the 4 checks passed. Linux 1273 passed, 0 failed.
+**4eabfce7, (1)**: a case's output and its `.expected` compared with `tr -d '\r'` on both sides, as syntax.sh and subst.sh do;
+the host `-g` check likewise. No `.expected` holds a CR, so Linux and the Mac read the same. Windows: 1243 passed, 30 failed.
+**c276689e**: the 30 were not 30 defects. run.sh named every host but the Mac `x86_64-linux`, so on the Windows box (Git's
+bash, `MINGW64_NT`) it read the Linux `.notarget` rows and none of the 36 `x86_64-windows` rows; it names x86_64-windows
+there now, as subst.sh does. Windows: 1239 passed, 2 failed, 35 skipped each with its reason; windows-h-layout, skipped
+before by its x86_64-linux row, runs and passes. The 28 this skips (26 that did not compile; string-stoi, which aborts where `stoi` throws, and typeid,
+which prints the Microsoft type_info names against an Itanium `.expected`) are each already recorded with its reason: Microsoft-ABI refusals by name
+(a polymorphic base after the first, a polymorphic virtual base, a class-typed throw, a funclet's realigned frame, a class
+returned inside a handler), the throw-from-a-funclet terminate rows, cl's own rules (UCRT has no `gets`, no POSIX headers,
+`throw(...)` ignored, a cv-decorated variable name). No row was added or changed.
+**a20c0cad**: the last two were run.sh's own. ucn-identifier has a `.nomasm` (no MASM takes a name past ASCII): run.sh now
+spells such a case `-masm=gnu` on x86_64-windows, as emit.sh, subst.sh and win-structure.sh do (it compiles and prints its
+`.expected` there). The quoted-pattern check failed because Git's bash cannot set `ulimit -t` and says so on stderr, which
+the check sends to the stdout it wants empty; the complaint is dropped (the Windows box keeps no CPU limit, as before).
+Windows: 1241 passed, 0 failed (888 printed their recorded output, 349 refused as recorded), 35 skipped. Linux 1273 passed, 0 failed at each commit.
+
+**Gates.** identical.sh REF against the tip's build, four targets at -O0 and -O2: x86_64-linux 1860, x86_64-windows 3720,
+arm64-darwin 1860, tms6747 1860 compared, 0 differ (a test-file change changes no compiler output). Static gates at the tip:
+exclusions 129 sites, 0 uncited, 0 stale; comments 0 over the cap; memory gate rc 0 (raw-pointers 89); ast-residue rc 0
+(ExprPtr 2012, StmtPtr 0, node-casts 141, node-refs 298, visits 0, readers 9, ast-lines 513). winpass not run (no compiler
+change). **Left:** no new defect for tests/open, and no row added; the 36 rows were read, not re-measured. Three of them,
+older than this lane, record a wrong answer of cxx3 for x86_64-windows rather than a refusal - catch-copy-throws and
+dtor-throws-unwinding (no funclet marked terminating: a handler catches where the standard says terminate) and
+noexcept-local-terminates (no noexcept wrap on that target) - owed as defects, not as targets; array-at-throws,
+vector-at-throws and string-stoi cite "a class-typed throw is refused on that target", to be re-measured; Git's bash runs the Windows cases without a CPU limit.
