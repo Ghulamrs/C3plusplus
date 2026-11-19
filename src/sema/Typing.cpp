@@ -450,7 +450,7 @@ void Typer::expectBraces(syntax::NodeId list, TypeId t, std::uint32_t first) {
 
 // **The copy held against its source** (M3b.0): the record, cast type, folded value and literal token the Typer put on
 // typed node `t` against the parser's maps for its syntax node - what is missing, or copied differently, by name.
-std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId t) {
+std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId t, const std::string &binding) {
     const TypedNode &n = tree.node(t);
     const std::uint32_t id = n.syntax.v;
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator pr = p.resolutions_.find(id);
@@ -459,7 +459,9 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     if ((pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
     if (n.resolved != 0) {
         const Resolution &r = tree.resolution(t);
-        if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
+        // Under a binding (M8.2's read, no replay) the parser's record names the pattern's parameters, the typed tree its types.
+        const TypeId want = TypeTable::id(binding.empty() ? pr->second.type : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
+        if (r.what != pr->second.what || p.types_.type(r.type) != p.types_.type(want) ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
             r.viaWrapper != pr->second.viaWrapper || r.isVolatile != pr->second.isVolatile ||
@@ -938,6 +940,13 @@ bool Typer::fromTemplate(const std::string &symbol) const {
 TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
     const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
     const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
+    if (s == p_.tmpl_.substituted_.end() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v) {
+        binding_ = symbol;     // step 2's end: no replay, the read typed under the binding is the body
+        const TypedId read = typeFunction(fn);
+        binding_.clear();
+        p_.tmpl_.builtCensus_["substituted with no replay"]++;
+        return read;
+    }
     if (s == p_.tmpl_.substituted_.end() && b != p_.tmpl_.bound_.end()) {
         // Slice 2b: the read typed under the binding; lowered only where it types as the replay does, else the replay, by name.
         const TypedId own = typeFunction(fn);
@@ -1012,6 +1021,9 @@ std::string Typer::typedApart(TypedId a, TypedId b, std::map<int, int> &serials,
 TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const {
     const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
     const TypeId declared = declaredReturn(fn);
+    const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
+    if (s == p_.tmpl_.substituted_.end() && declared.valid() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v)
+        return TypeTable::id(p_.tmpl_.substituted(b->second.s, p_.types_.type(declared)));
     if (s == p_.tmpl_.substituted_.end() || !declared.valid()) return declared;
     return TypeTable::id(p_.tmpl_.substituted(s->second, p_.types_.type(declared)));
 }
@@ -1049,6 +1061,14 @@ Census Typer::census(const Parser &p, const Program &program) {
             break;
         }
     }
+    // M8.2: a specialization made with no replay has its read for its root, placed where its own function stands.
+    for (std::set<std::string>::const_iterator k = p.tmpl_.unreplayed_.begin(); k != p.tmpl_.unreplayed_.end(); ++k) {
+        const std::map<std::string, std::size_t>::const_iterator at = bySymbol.find(*k);
+        if (at == bySymbol.end()) continue;
+        std::size_t to = 0;
+        while (to < c.bodies.size() && c.bodies[to].second < at->second) to++;
+        c.bodies.insert(c.bodies.begin() + static_cast<long>(to), std::make_pair(p.tmpl_.bound_.at(*k).read, at->second));
+    }
     for (std::map<std::string, int>::const_iterator k = kinds.begin(); k != kinds.end(); ++k) c.synthesised.push_back(*k);
     return c;
 }
@@ -1075,9 +1095,16 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     typer.recorded_ = 0;
     std::map<std::string, int> untyped;
     int nodes = 0;
+    std::vector<std::string> under(1);      // by typed id: the binding its body was typed under, empty for none
     for (std::size_t i = 0; i < c.bodies.size(); i++) {
         const std::size_t before = typer.tree().size();
+        // M8.2: a body made with no replay is its read, typed under its binding as the lowering types it (typeBody).
+        const std::string &symbol = program.functions[c.bodies[i].second].symbol();
+        const std::map<std::string, Templates::Bound>::const_iterator b = p.tmpl_.bound_.find(symbol);
+        if (p.tmpl_.unreplayed_.count(symbol) && b != p.tmpl_.bound_.end() && c.bodies[i].first.v == b->second.read.v) typer.binding_ = symbol;
         typer.typeFunction(c.bodies[i].first);
+        under.resize(typer.tree().size() + 1, typer.binding_);
+        typer.binding_.clear();
         nodes += static_cast<int>(typer.tree().size() - before);
     }
     std::string out;
@@ -1085,7 +1112,7 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     for (std::uint32_t i = 1; i <= typer.tree().size(); i++) {
         const TypedNode &n = typer.tree().node(TypedId(i));
         const syntax::Kind kind = st.node(n.syntax).kind;
-        const std::string differs = recordDiffers(p, typer.tree(), TypedId(i));
+        const std::string differs = recordDiffers(p, typer.tree(), TypedId(i), i < under.size() ? under[i] : std::string());
         if (!differs.empty()) {
             copy++;
             out += src.where(st.node(n.syntax).loc) + ": " + syntax::kindName(kind) + " '" + st.text(n.syntax) +

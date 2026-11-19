@@ -313,8 +313,8 @@ private:
         out.name = r.name;
         return out;
     }
-    // -check=typed's half for the copy: what on typed node `t` is not the parser's, or nothing.
-    static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t);
+    // -check=typed's half for the copy: what on typed node `t` is not the parser's (under `binding`'s types), or nothing.
+    static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t, const std::string &binding);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);
     const Type *literal(syntax::NodeId id);
     const Type *named(syntax::NodeId id, syntax::NodeId *decl);

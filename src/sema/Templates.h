@@ -235,7 +235,16 @@ public:
     std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laid) const;
     // Step 2: the shell substituteFunction makes, from the laid `d`, `S`, `V` and `e` steps - held against the replay's function.
     std::map<std::string, int> shellCensus_;
-    std::string shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const;
+    std::string shellApart(const Function &g, const Function &f) const;
+    // Step 2's end: the function the read made at its declaration, by `afterParams`; the replay's made from it and the shell.
+    std::vector<Function> readFns_;
+    std::map<std::size_t, std::size_t> readFnAt_;
+    std::map<std::string, int> madeCensus_;
+    std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
+    std::string madeApart(const Function &g, const Function &f) const;
+    bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why);
+    std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
+    std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
     std::string builtReport() const;
 
 private:
