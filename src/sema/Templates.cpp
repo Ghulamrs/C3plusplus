@@ -370,10 +370,6 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
             p_.types_.type(b.types[q])->unqualified()->isStructOrUnion() &&
             readFns_[fn->second].returns()->unqualified() == p_.types_.templateParam(static_cast<int>(q)))
             return *why = "replayed: a bound class returned by value, which its copy would build", false;
-    const Type *gives = fn != readFnAt_.end() ? readFns_[fn->second].returns() : nullptr;
-    for (std::size_t q = 0; gives != nullptr && p_.dependentType(gives) && q < b.types.size(); q++)
-        if (b.types[q].valid() && p_.types_.type(b.types[q])->isReference())
-            return *why = "replayed: a dependent return type over a type parameter bound to a reference, collapsed apart from the replay's", false;
     // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
     Bound made;
     made.read = read->second;
@@ -1378,7 +1374,12 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
     }
     const std::map<std::size_t, std::size_t>::const_iterator at = readFnAt_.find(sp.start);
     const Function *f = at != readFnAt_.end() ? &readFns_[at->second] : nullptr;
-    const Type *returns = f != nullptr ? substituted(s, f->returns()) : nullptr;
+    // A reference return is emitted as a pointer (emittedReturn): substituted as written, so `T &&` or `T` with T = U & is U *.
+    const std::map<std::size_t, syntax::NodeId>::const_iterator body = readBody_.find(sp.start);
+    const std::unordered_map<std::uint32_t, const Type *>::const_iterator written =
+        body != readBody_.end() ? p_.declaredReturns_.find(body->second.v) : p_.declaredReturns_.end();
+    const Type *as = written != p_.declaredReturns_.end() && written->second != nullptr ? substituted(s, written->second) : f != nullptr ? substituted(s, f->returns()) : nullptr;
+    const Type *returns = as != nullptr && as->isReference() ? p_.types_.pointerTo(as->referent()) : as;
     out->push_back(Function(f != nullptr ? f->name() : std::string(), returns, params, p_.oneStatement({}), size, f != nullptr && f->isStatic(), sret,
                             f != nullptr && f->isVariadic(), save, f != nullptr ? f->pos() : 0, locals));
     Function &g = out->back();

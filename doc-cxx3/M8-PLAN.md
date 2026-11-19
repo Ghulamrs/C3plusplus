@@ -3946,3 +3946,30 @@ folds as builtins, recorded in `template-subst-fwd.nonames` as a header differen
 **Left**: the dependent return type over a reference binding (56 in the suite) - why `same`'s made return type is apart from
 the replay's; a reference to a class (83 / 2,808, with boundClass's rules and the member record), to an array (7), an rvalue
 reference (2); class template specializations (64 / 207); the constructor half of m82z's (1); an array bound to T.
+
+## M8.2 slice 2f: the dependent return over a reference binding, diagnosed and mended (lane m82ab, 2026-11-20)
+
+(lane m82ab, branch `m8-2ab` from `1ca3569f`; step (1) of the lane's brief.) **The diagnosis**: m82aa's `same(T &&a) {
+return a; }` with T = `int &` was apart from the replay in its return type alone. A function returning a reference is
+emitted with a pointer return (ParserTopLevel's `emittedReturn`: `int &` returns as `int *`), so the read's own function holds
+`T &&` as `T *`; `madeFromRead` substituted that pointer - `int & *` - where the replay re-reads `T &&` with T = `int &`, collapses
+it to `int &` ([dcl.ref]/6) and emits `int *`. **The mend**: `madeFromRead` substitutes the return type as written (the
+parser's `declaredReturns_`, the one record the typed tree reads it from) and emits a reference so substituted as a pointer
+to its referent - `T &&` or `T` with T = `U &` is `U *`, as the replay's; m82aa's refusal ("a dependent return type over a
+type parameter bound to a reference, collapsed apart from the replay's") is deleted, not kept as a stand-in.
+
+**The probe** `template-subst-fwd` (unchanged; its `.expected` stands): 7 made, 7 equal under `-check=templates` (REF 6) -
+`same` is made; `fwd` and the specializations of `std::forward` and `std::move` over a reference now replay by "a 'cast' in the
+body", their `static_cast<T &&>`. tests/subst.sh: the probe's lines 6 -> 7 and the reason re-pointed.
+
+**The census** (Linux, `-check=templates -templates=subst`, 1,301 units, 350 nonzero as REF): covered 406 (REF 405), made 332
+equal, none differ beyond the 74 replayed as REF; without the check 332 with no replay (REF 331), 74 replayed; **without the
+probes 136 of the suite's own bodies with no replay (REF 136, +0)**: the 56 the refusal held now stop at their bodies' own
+reasons ("a 'cast' in the body" 112 without probes, the largest; a dependent-name call, an explicit-argument call). The
+self-host (102 sources, 0 nonzero): covered 356 as REF (+0); its 616 references to a scalar stop at their bodies (a 'cast'
+651, the library's `std::forward` and `std::move`); 2,808 references to a class as split.
+
+**src/**: Templates.cpp +1: 95,516 -> 95,517. EXCLUSIONS re-pointed (Templates.cpp 1656, 1708, 2405).
+
+**Gates** (REF `1ca3569f` in `~/m82abb`, NEW in `~/m82abc`, one path length; every check on this commit's tree):
+identical.sh without the flag 0 differ on four targets (x86_64-linux 1,904, x86_64-windows 3,808, arm64-darwin 1,904, tms6747 1,904) and with `-templates=subst` 0 differ on three (1,904, 3,808, 1,904); **-g** with and without the flag: x86_64-linux 731 same, 350 refused alike, 220 differ by the tree path alone; x86_64-windows 713, 375, 213 by the path alone. `-check=templates -templates=subst` over tests/cases: 350 nonzero exits as REF, none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1294/0 without and with `-templates=subst`. typed 944/0, syntax 7/0. `-check=fold` 16,866 compared, 0 differ, 0 units failing. Self-compile of Templates.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\\m82abw, this source): cl /W4 /WX clean (3 m 54 s with the ship, alone); names.sh 952 passed 0 failed; overload.sh 46 agreed 0 differed.
