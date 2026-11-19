@@ -325,10 +325,52 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
         if (r->isReference()) return t->isRValueReference() ? r : p_.types_.referenceTo(r->referent());   // [dcl.ref]/6
         return t->isRValueReference() ? p_.types_.rvalueReferenceTo(r) : p_.types_.referenceTo(r);
     }
+    if (t->kind() == Kind::DependentMember) return memberUnder(s, t);
     if (!t->isFunction()) return t;
     std::vector<const Type *> params;
     for (std::size_t k = 0; k < t->params().size(); k++) params.push_back(substituted(s, t->params()[k]));
     return p_.types_.functionType(substituted(s, t->returns()), params, t->isVariadicFn());
+}
+
+// `X<T>::m` under the binding: the specialization X<U> the replay made (by the key it is declared under), and its member type
+// m as memberTypeWalk's lookup finds it; `t`, still dependent, where an argument is no type or the class was not made.
+const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
+    const Type *o = t->pointee();
+    if (o->isSpecialization()) {
+        std::vector<TemplateArg> args = o->templateArgs();
+        for (std::size_t k = 0; k < args.size(); k++) {
+            if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return t;
+            args[k].type = substituted(s, args[k].type);
+        }
+        o = p_.lookup_.findTypedef(specializationKey(o->templateName(), args));
+    } else {
+        o = substituted(s, o);
+    }
+    if (o == nullptr || p_.dependentType(o) || !o->isStructOrUnion()) return t;
+    const Type *m = p_.lookup_.lookupInClass(o, t->tag());
+    return m != nullptr ? m : t;
+}
+
+const Type *Templates::valueUnder(const Substituted &s, const Type *t) const {
+    const Type *u = substituted(s, t);
+    return u != nullptr && u->isReference() ? u->referent() : u;      // [expr]/5
+}
+
+// A reference cast's referent and category as the read records them (Parser::staticCast), collapsed as written ([dcl.ref]/6).
+std::pair<const Type *, bool> Templates::castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const {
+    const Type *w = substituted(s, read.second ? p_.types_.rvalueReferenceTo(read.first) : p_.types_.referenceTo(read.first));
+    return std::make_pair(w->referent(), w->isRValueReference());
+}
+
+// A node's cast as the typed tree records it (Typer::record) and holds it (recordDiffers): the parser's, under `binding`.
+std::pair<TypeId, bool> Templates::castRecord(std::uint32_t id, const std::string &binding) const {
+    const std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator ref = p_.refCastTypes_.find(id);
+    const std::unordered_map<std::uint32_t, const Type *>::const_iterator cast = p_.castTypes_.find(id);
+    std::pair<const Type *, bool> c(ref != p_.refCastTypes_.end() ? ref->second.first : cast != p_.castTypes_.end() ? cast->second : nullptr,
+                                    ref != p_.refCastTypes_.end() && ref->second.second);
+    if (!binding.empty() && c.first != nullptr)
+        c = ref != p_.refCastTypes_.end() ? castUnder(bound_.at(binding).s, c) : std::make_pair(substituted(bound_.at(binding).s, c.first), false);
+    return std::make_pair(TypeTable::id(c.first), c.second);
 }
 
 // A dependent decltype's operand the read holds as an expression and notes no syntax for, so its parts are not the replay's.
@@ -358,8 +400,8 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): a class is bound where no
         // object of it is built, copied or destroyed - reached by reference or pointer alone (boundObject, in substShape).
         const Type &bt = *p_.types_.type(b.types[q])->unqualified();
-        const bool scalarRef = bt.isReference() && !bt.isRValueReference() && bt.referent()->isScalar();  // `T &&` from an lvalue
-        const std::string plain = bt.isScalar() || scalarRef ? std::string() : boundClass(bt);
+        const Type *to = bt.isReference() && !bt.isRValueReference() ? bt.referent()->unqualified() : nullptr;   // `T &&` from an lvalue
+        const std::string plain = bt.isScalar() || (to != nullptr && to->isScalar()) ? std::string() : boundClass(to != nullptr && to->kind() == Kind::Struct ? *to : bt);
         if (!plain.empty()) return *why = "replayed: a type parameter bound to " + plain, false;
     }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
@@ -370,10 +412,6 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
             p_.types_.type(b.types[q])->unqualified()->isStructOrUnion() &&
             readFns_[fn->second].returns()->unqualified() == p_.types_.templateParam(static_cast<int>(q)))
             return *why = "replayed: a bound class returned by value, which its copy would build", false;
-    const Type *gives = fn != readFnAt_.end() ? readFns_[fn->second].returns() : nullptr;
-    for (std::size_t q = 0; gives != nullptr && p_.dependentType(gives) && q < b.types.size(); q++)
-        if (b.types[q].valid() && p_.types_.type(b.types[q])->isReference())
-            return *why = "replayed: a dependent return type over a type parameter bound to a reference, collapsed apart from the replay's", false;
     // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
     Bound made;
     made.read = read->second;
@@ -783,6 +821,9 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
     }
 }
 
+// What a type parameter bound to `t` reaches: the class or scalar itself, or what an lvalue reference to one refers to.
+static const Type *boundTo(const Type *t) { return (t->isReference() ? t->referent() : t)->unqualified(); }
+
 // A plain struct of the unit: no template's specialization, base or virtual function, its members public scalars at their place.
 std::string Templates::boundClass(const Type &t) const {
     if (t.isArray()) return "an array";
@@ -824,7 +865,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                                   std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
     bool classBound = false;
-    for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || s.to[q]->unqualified()->isStructOrUnion();
+    for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || boundTo(s.to[q])->isStructOrUnion();
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
     for (int pass = 1; pass <= 2; pass++)
     for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
@@ -865,7 +906,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 if (c != nullptr && c->isReference()) c = c->referent();
                 if (c != nullptr && (arrow || named.v != o.v)) c = c->isPointer() ? c->pointee() : nullptr;
                 bool bound = false;
-                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == s.to[q]->unqualified();
+                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == boundTo(s.to[q]);
                 if (!bound || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
                     return "a member that is no data member of a bound class reached by name";
                 continue;
@@ -882,6 +923,19 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 if (why == DeducedCall) { requests->push_back(id); continue; }
                 if (!why.empty()) return why;
                 (*calls)[id.v] = (*calls)[p_.syntaxTree_.child(id, 0).v] = chosen;
+                continue;
+            }
+            case Kind::Cast: {
+                // A static_cast to a reference names its operand (Parser::staticCast): a name of the referent's type, as std::forward's.
+                const std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator c = p_.refCastTypes_.find(id.v);
+                const syntax::NodeId o = n.count == 1 ? p_.syntaxTree_.child(id, 0) : syntax::NodeId();
+                const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = o.valid() ? p_.resolutions_.find(o.v) : p_.resolutions_.end();
+                if (p_.syntaxTree_.text(id).compare(0, 12, "static_cast<") != 0 || c == p_.refCastTypes_.end())
+                    return "a cast other than a static_cast to a reference, which the read records no type for";
+                if (p_.dependentType(castUnder(s, c->second).first)) return "a static_cast to a member type of a class the binding has not made";
+                if (p_.syntaxTree_.node(o).kind != Kind::Name || r == p_.resolutions_.end() || r->second.type == nullptr ||
+                    valueUnder(s, r->second.type)->unqualified() != castUnder(s, c->second).first->unqualified())
+                    return "a static_cast to a reference over another type, which the replay converts";
                 continue;
             }
             default:
@@ -1378,7 +1432,12 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
     }
     const std::map<std::size_t, std::size_t>::const_iterator at = readFnAt_.find(sp.start);
     const Function *f = at != readFnAt_.end() ? &readFns_[at->second] : nullptr;
-    const Type *returns = f != nullptr ? substituted(s, f->returns()) : nullptr;
+    // A reference return is emitted as a pointer (emittedReturn): substituted as written, so `T &&` or `T` with T = U & is U *.
+    const std::map<std::size_t, syntax::NodeId>::const_iterator body = readBody_.find(sp.start);
+    const std::unordered_map<std::uint32_t, const Type *>::const_iterator written =
+        body != readBody_.end() ? p_.declaredReturns_.find(body->second.v) : p_.declaredReturns_.end();
+    const Type *as = written != p_.declaredReturns_.end() && written->second != nullptr ? substituted(s, written->second) : f != nullptr ? substituted(s, f->returns()) : nullptr;
+    const Type *returns = as != nullptr && as->isReference() ? p_.types_.pointerTo(as->referent()) : as;
     out->push_back(Function(f != nullptr ? f->name() : std::string(), returns, params, p_.oneStatement({}), size, f != nullptr && f->isStatic(), sret,
                             f != nullptr && f->isVariadic(), save, f != nullptr ? f->pos() : 0, locals));
     Function &g = out->back();
