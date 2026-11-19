@@ -3892,3 +3892,57 @@ agreed 0 differed. The Wine stand-in was not run (the box answered). lifetime.h 
 read needs written by the replay's parse writer; a reference bound to T (the 159 / 3,425 above, to be named apart first);
 class template specializations (64 / 207); classes with bases, private or class-typed members; (2) an array bound to T;
 slice 2f's items owed by m82y.
+
+## M8.2 slice 2f's bucket, split: a type parameter bound to an lvalue reference to a scalar (lane m82aa, 2026-11-20)
+
+(lane m82aa, branch `m8-2aa` from `71c540e8`; one lane-hour.) **Step (0), m82z's "a union or a type that is no class" split
+by what T is bound to** (`Templates::boundClass` names it; measured on a build that changes the reason's words alone, Linux,
+`-check=templates -templates=subst`): over tests/cases, 159 = 83 an lvalue reference to a class, 66 an lvalue reference to a
+scalar, 7 an lvalue reference to an array, 2 an rvalue reference to a scalar, 1 void (none a union, a function type or any
+other); without the lanes' probes 157 = 83 / 64 / 7 / 2 / 1. Over the self-host's 102 sources, 3,425 = 2,808 an lvalue
+reference to a class, 616 an lvalue reference to a scalar, 1 an lvalue reference to an array. So every one is a reference -
+the forwarding reference `T &&` deduced from an lvalue ([temp.deduct.call]/3: T = U &) - and the largest part is a reference
+to a class; this lane took the reference to a scalar, which needs neither boundClass's rules nor a member record.
+
+**What lands**: a type parameter may bind an lvalue reference to a scalar (`int &`, `const int &`, `double &`). The Binding
+already carries the reference's TypeId; `Templates::substituted` - the one substitution the Typer, the shell and the requests
+use - now collapses as [dcl.ref]/6 does (`T &&` and `T &` with T = U & are U &; `T &` with T = U && is U &) and drops a const
+over a reference ([dcl.ref]/1: `const T` with T = U & is U &), as the replay's re-read declaration does. A bound class's
+"returned by value" refusal now asks for a class (a reference returned is no copy). **Refused by name**: a function whose
+read return type is dependent while a type parameter is bound to a reference replays ("a dependent return type over a type
+parameter bound to a reference, collapsed apart from the replay's"): under `-check=templates` the first measurement made
+`same(T &&a) { return a; }` with T = `int &` and `madeApart` found its return type apart from the replay's - not diagnosed
+within the hour, so refused rather than trusted. A reference to a class, to an array, an rvalue reference stay as split above.
+
+**The probe** `tests/cases/template-subst-fwd` (`.flags` `-templates=subst`; clang 19 on Windows with cxx3's own `<utility>`,
+g++ on Linux and cxx3-msvc print its `.expected`): `inc`, `twice` (from an lvalue, a const lvalue and a prvalue), `setTo`
+(`T b = a;` a reference local), `through`, `viaStd`, `moved` made with no replay - 6 made, 6 equal under `-check=templates`
+(REF 1 made, 12 replayed "a union or a type that is no class"); `same` and the three `fwd`/`std::forward`/`std::move`
+specializations over a reference replay by the new reason, `static_cast` bodies by "a 'cast' in the body". tests/subst.sh:
+the probe's lines added (its 6 made in each spelling, 6 equal, the new reason's 4); no other probe's count moves.
+
+**The census** (Linux, `-check=templates -templates=subst`, 1,301 units, 350 nonzero exits - the same 350 as the build that
+changes the words alone): covered 405 (REF 398); made 331 equal, 0 differ beyond the 74 replayed by reason as REF; without the
+check 331 with no replay (REF 324), 74 replayed; **without the probes 136 of the suite's own bodies with no replay (REF 135,
++1**: forwarding-reference 0 -> 1). Of the old 66 / 64 references to a scalar, 56 now replay by the new reason, the rest by
+reasons of their bodies (a dependent-name call, a sizeof, an explicit-argument call). The self-host (102 sources, 0 nonzero): covered 356 as REF (+0); its 616 references to a scalar
+all replay by the new reason (its library's `std::forward` and `std::move`), its 2,808 references to a class as split.
+
+**src/**: Templates.cpp +17: 95,499 -> 95,516. EXCLUSIONS re-pointed (Templates.cpp 1655, 1707, 2404).
+
+**Gates** (REF `71c540e8` in `~/m82aab`, NEW in `~/m82aac`, one path length; every check on this commit's tree): identical.sh
+without the flag 0 differ on four targets (x86_64-linux 1,904, x86_64-windows 3,808, arm64-darwin 1,904, tms6747 1,904) and
+with `-templates=subst` 0 differ on three (1,904, 3,808, 1,904), the new case among them; **-g** both ways:
+x86_64-linux 731 same, 350 refused alike, 220 differ by the tree path alone; x86_64-windows 713, 375, 213 by the path alone.
+`-check=templates -templates=subst` over tests/cases: 350 nonzero exits, the set of the build that changes the words alone,
+none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1294/0
+without and with `-templates=subst`. typed 944/0, syntax 7/0. `-check=fold` 16,866 compared, 0 differ, 0 units failing.
+Self-compile of Templates.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0
+(89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\m82aaw, this source):
+cl /W4 /WX clean (95 s alone, the first build of the step-1 edit 164 s); clang 19 and cxx3-msvc print the probe's
+`.expected`; overload.sh 46 agreed 0 differed; names.sh 952 passed 0 failed, after the first run's one failure was recorded - the probe's std::forward and std::move, which clang 19
+folds as builtins, recorded in `template-subst-fwd.nonames` as a header difference.
+
+**Left**: the dependent return type over a reference binding (56 in the suite) - why `same`'s made return type is apart from
+the replay's; a reference to a class (83 / 2,808, with boundClass's rules and the member record), to an array (7), an rvalue
+reference (2); class template specializations (64 / 207); the constructor half of m82z's (1); an array bound to T.

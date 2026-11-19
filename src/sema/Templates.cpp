@@ -313,12 +313,16 @@ bool Templates::memberIsUsed(const std::string &key) const {
 // A type as a specialization's binding has it: each of `from` is `to`, under any declarator.
 const Type *Templates::substituted(const Substituted &s, const Type *t) const {
     if (t == nullptr) return t;
-    if (t->unqualified() != t) return p_.types_.withConst(substituted(s, t->unqualified()));
+    if (t->unqualified() != t) {
+        const Type *u = substituted(s, t->unqualified());
+        return u->isReference() ? u : p_.types_.withConst(u);        // [dcl.ref]/1: `const T` with T = U & is U &
+    }
     for (std::size_t k = 0; k < s.from.size(); k++) if (t == s.from[k]) return s.to[k];
     if (t->isPointer()) return p_.types_.pointerTo(substituted(s, t->pointee()));
     if (t->isArray() && t->boundParam() < 0) return p_.types_.arrayOf(substituted(s, t->pointee()), t->length());
     if (t->isReference()) {
         const Type *r = substituted(s, t->referent());
+        if (r->isReference()) return t->isRValueReference() ? r : p_.types_.referenceTo(r->referent());   // [dcl.ref]/6
         return t->isRValueReference() ? p_.types_.rvalueReferenceTo(r) : p_.types_.referenceTo(r);
     }
     if (!t->isFunction()) return t;
@@ -354,16 +358,22 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): a class is bound where no
         // object of it is built, copied or destroyed - reached by reference or pointer alone (boundObject, in substShape).
         const Type &bt = *p_.types_.type(b.types[q])->unqualified();
-        const std::string plain = bt.isScalar() ? std::string() : boundClass(bt);
+        const bool scalarRef = bt.isReference() && !bt.isRValueReference() && bt.referent()->isScalar();  // `T &&` from an lvalue
+        const std::string plain = bt.isScalar() || scalarRef ? std::string() : boundClass(bt);
         if (!plain.empty()) return *why = "replayed: a type parameter bound to " + plain, false;
     }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
     if (read == readBody_.end()) return *why = "replayed: no body read at the declaration", false;
     const std::map<std::size_t, std::size_t>::const_iterator fn = readFnAt_.find(sp.start);
     for (std::size_t q = 0; q < b.types.size() && fn != readFnAt_.end(); q++)
-        if (readFns_[fn->second].returns() != nullptr && b.types[q].valid() && !p_.types_.type(b.types[q])->isScalar() &&
+        if (readFns_[fn->second].returns() != nullptr && b.types[q].valid() &&
+            p_.types_.type(b.types[q])->unqualified()->isStructOrUnion() &&
             readFns_[fn->second].returns()->unqualified() == p_.types_.templateParam(static_cast<int>(q)))
             return *why = "replayed: a bound class returned by value, which its copy would build", false;
+    const Type *gives = fn != readFnAt_.end() ? readFns_[fn->second].returns() : nullptr;
+    for (std::size_t q = 0; gives != nullptr && p_.dependentType(gives) && q < b.types.size(); q++)
+        if (b.types[q].valid() && p_.types_.type(b.types[q])->isReference())
+            return *why = "replayed: a dependent return type over a type parameter bound to a reference, collapsed apart from the replay's", false;
     // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
     Bound made;
     made.read = read->second;
@@ -776,7 +786,14 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
 // A plain struct of the unit: no template's specialization, base or virtual function, its members public scalars at their place.
 std::string Templates::boundClass(const Type &t) const {
     if (t.isArray()) return "an array";
-    if (t.kind() != Kind::Struct) return "a union or a type that is no class";
+    if (t.isReference()) {
+        const Type *r = t.referent()->unqualified();
+        const char *to = r->isScalar() ? "a scalar" : r->isArray() ? "an array" : r->isStructOrUnion() ? "a class" : "another type";
+        return std::string(t.isRValueReference() ? "an rvalue" : "an lvalue") + " reference to " + to;
+    }
+    if (t.kind() == Kind::Union) return "a union";
+    if (t.isFunction()) return "a function type";
+    if (t.kind() != Kind::Struct) return t.isVoid() ? "void" : "a type that is no class";
     if (!t.templateName().empty()) return "a class template's specialization";
     if (!t.bases().empty() || t.polymorphic()) return "a class with a base or a virtual function";
     for (std::size_t m = 0; m < t.members().size(); m++) {
