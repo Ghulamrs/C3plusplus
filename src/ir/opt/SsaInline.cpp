@@ -319,7 +319,7 @@ void inlineCalls(Module &m, int level, const TypeTable &types, PassLog &log) {
             me.symbol = f.symbol;
             me.size = bodies.back().size;
             me.leaf = !bodies.back().calls && !bodies.back().loops;
-            whys.push_back(ineligible(f, bodies.back(), types));
+            whys.push_back(f.noexcept_ && mayLetOut(m, f) ? "inline-callee-noexcept-may-throw" : ineligible(f, bodies.back(), types));
             measures.push_back(me);
         }
         for (std::size_t fi = 1; fi < measures.size(); fi++) measures[fi].why = whys[fi].c_str();

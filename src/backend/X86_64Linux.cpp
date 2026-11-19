@@ -1097,6 +1097,7 @@ void X86_64Linux::emit(const ir::Function &fn) {
 
     // Every function is selected from SSA (M3b.7): the driver refused the unit where the lowering left one outside.
     landingPads_ = fn.landingPads;
+    msBareNoexcept_ = usesFunclets() && fn.noexcept_ && ssa_ != nullptr && ir::mayLetOut(*ssa_, fn);
 
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own) is
     // written past the optimizer, whose passes address the frame from rbp and take rbx, and walks no
@@ -1219,7 +1220,7 @@ void X86_64Linux::emit(const ir::Function &fn) {
         a_->defLabel(".Lfunc.end." + fn.symbol);
     // The tables are written below; tell the spelling whether there are any,
     // so its unwind info does not name a FuncInfo that never appears.
-    if (target_.microsoftNames()) a_->noteHasEh(!msStates().empty());
+    if (target_.microsoftNames()) a_->noteHasEh(!msStates().empty() || msBareNoexcept_);
     a_->functionEnd(fn.symbol);
     // The tables below measure slots from the frame as the passes left it.
     if (passesRun()) frameSize_ = optimizer_->frameSize();
@@ -1473,7 +1474,7 @@ void X86_64Linux::emitCoffEhTables(const ir::Function &fn) {
     o += "\"$cppxdata$" + m + "\":\n";
     o += "  .long 0x19930522\n";
     o += "  .long " + std::to_string(states.size()) + "\n";
-    o += "  .long \"$stateUnwindMap$" + m + "\"@IMGREL\n";
+    o += states.empty() ? "  .long 0\n" : "  .long \"$stateUnwindMap$" + m + "\"@IMGREL\n";
     o += "  .long " + std::to_string(tries.size()) + "\n";
     if (tries.empty()) o += "  .long 0\n";
     else o += "  .long \"$tryMap$" + m + "\"@IMGREL\n";
@@ -1484,7 +1485,7 @@ void X86_64Linux::emitCoffEhTables(const ir::Function &fn) {
     o += fn.noexcept_ ? "  .long 5\n" : "  .long 1\n";    // EHFlags: /EHsc, and 4 for noexcept - FH3 terminates in its search
 
     // toState, then the action: a cleanup's funclet, or nothing.
-    o += "\"$stateUnwindMap$" + m + "\":\n";
+    if (!states.empty()) o += "\"$stateUnwindMap$" + m + "\":\n";
     for (std::size_t k = 0; k < states.size(); k++) {
         o += "  .long " + std::to_string(states[k].toState) + "\n";
         if (states[k].action.empty()) o += "  .long 0\n";

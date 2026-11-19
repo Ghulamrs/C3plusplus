@@ -153,13 +153,15 @@ protected:
     bool inFunclet_ = false;
     // The function being written has an LSDA or FH3 tables: its selected body's pads (ir::Function::landingPads, or the parser's).
     bool landingPads_ = false;
+    // A noexcept function with no pad that may let an exception out: cl gives it a FuncInfo of no state, EHFlags 5.
+    bool msBareNoexcept_ = false;
 
     // Whatever this target writes after a function to describe its handlers.
     virtual void emitExceptionTables(const ir::Function &fn) {
         // Microsoft frames carry FH3 tables, not an LSDA.
         if (target_.microsoftNames()) {
             // One table for cleanups and tries alike, nested or not: a state tree.
-            if (msStates().empty()) {
+            if (msStates().empty() && !msBareNoexcept_) {
                 out_ += a_->takeFunclets(); funcletPdata_ += a_->takeFuncletPdata(); funcletIndex_ = 0;
             } else {
                 emitCoffEhTables(fn);

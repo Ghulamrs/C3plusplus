@@ -27,7 +27,7 @@ What it checks, and where each rule comes from:
   handler     a function with the flags names `__CxxFrameHandler3` and a `$cppxdata$F` this object defines;
               one without them has no `$cppxdata$F`; a funclet names its parent's. ("$cppxdata$, and a
               question asked of the wrong witness" - one signal, one place.)
-  FuncInfo    magic 0x19930522, EHFlags 1 or 5 (noexcept), no ESTypeList; maxState entries in the unwind map, each toState
+  FuncInfo    magic 0x19930522, EHFlags 1 or 5 (noexcept), no ESTypeList; maxState entries in the unwind map (0 in a bare noexcept one), each toState
               -1 or an earlier state and the chain ending at -1, an action a funclet of this function; every
               try block tryLow <= tryHigh < catchHigh < maxState with nCatches >= 1 and its handler map here;
               try blocks nest or are disjoint and inner ones come first; a handler's adjectives are
@@ -414,7 +414,7 @@ class Checker(object):
             self.fault("%s: EHFlags %d - 1 is /EHsc, 5 a noexcept function under it (cl)" % (name, eh_flags))
         if es_list != 0 or sec.reloc_at(at + 32) is not None:
             self.fault("%s: an ESTypeList, which cxx3 never writes" % name)
-        if max_state < 1:
+        if max_state < 1 and not (max_state == 0 and eh_flags == 5):
             self.fault("%s: maxState %d" % (name, max_state))
             return
         frame = fn.frame
@@ -429,10 +429,14 @@ class Checker(object):
 
         # The state unwind map.
         um = obj.place_at(sec, at + 8, coffobj.REL_ADDR32NB)
-        if um is None or not um.defined or um.section.base_name != ".xdata":
+        if max_state == 0:
+            # A noexcept function with nothing to unwind: no state and no map, as cl writes it.
+            if um is not None or sec.u32(at + 8) != 0:
+                self.fault("%s: no state and a pUnwindMap" % name)
+        elif um is None or not um.defined or um.section.base_name != ".xdata":
             self.fault("%s: pUnwindMap %s" % (name, um))
             return
-        if um.offset + 8 * max_state > um.section.size:
+        if max_state and um.offset + 8 * max_state > um.section.size:
             self.fault("%s: unwind map of %d states runs past %s" % (name, max_state, um.section.name))
             return
         to_state = []
