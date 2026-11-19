@@ -4774,3 +4774,13 @@ Citations re-pointed: ParserExpr.cpp:2342 -> 2343, :2067 -> 2068; ParserOperator
   temporary walks, `foldAddress`, `addressOfObject` and `bindStaticReference` wait as s7a named.
 **ast-residue** on Linux: node-casts 148 -> 141, node-refs 301 -> 298, the rest unchanged (ExprPtr 2,012, StmtPtr 0, visits 0, readers 9, ast-lines 513); recorded. **Left of S7**: ParserOperator.cpp 8 and ParserExpr.cpp 14 as named above, s7a's 25, Parser.h 13, Parser.cpp 5, ParserExprNew.cpp 14 and the rest of s7a's by-file list.
 **Gates** (c08b4130): g++ -Werror clean; cl /W4 /WX clean (work\m6d-s7bw, a full build of the first edit 08:16-08:17 and a delta build of the final source 08:20:44-08:22:45, about 2 min); names.sh 928 passed, 0 failed and overload.sh 46 agreed, 0 differed (Windows, clang 19.1.5); tests/tms6747.sh SIM=1 -O2 shards 1-3 146/0 (1 skipped), 148/0, 147/0; self-compile of ParserExpr.cpp and ParserOperator.cpp at x86_64-linux -O2 rc 0, ParserExpr.cpp at tms6747 -O2 refused as REF is (`overloadedBinary`, stack arguments); static: exclusions 0 uncited 0 stale, comments 0 over, memory gate pass, ide --check up to date. **run.sh was still running at the hand-back** (~/m6d-s7b-run-n1.log): owed to the wave gate with winpass, ssa.sh, make test and shards 4-6.
+
+**m6d-w3's wave landed, 2026-11-19 (gate m6dw3h at 8fdc673b against main 0155813c: 40 passed, 0 failed; the fixed point
+checked not owed).** M6d S6 (on-demand typing, `fold(TypedId)`, `-check=fold`: 16,475 compared over tests/cases, 0 differ),
+S7's second family (m6d-s7b: node-casts 141) and M8.2's slices 2a-2b and 2c's first steps (M8-PLAN, m82a-m82e) on main and
+m3-line. Its first gate (m6dw3g, a559360a) failed static (the memory gate's raw pointers 89 -> 92, Typer::bound) and
+maketest (four stale EXCLUSIONS citations after the merges) - both mended by lane m82e (cf14f98e, 8fdc673b); the lanes had
+passed them because one static script printed `tail`'s exit status. m6dw3h's one failure was maketest's ssa.sh volatile
+counts, a race of the gate's own: maketest (the run family) ran beside ssa1 and ssa2, all three in tests/out-ssa. Its
+verdict cleared, maketest alone on the same tree (`-k`): PASS. The gate's fix (maketest apart from ssa1/ssa2) is owed to
+the next wave.
