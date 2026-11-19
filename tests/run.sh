@@ -73,11 +73,13 @@ one() {
   # only the shell's commentary is dropped. A subshell does not do it: the
   # report comes from the shell that waited, not the one that ran.
   { "$OUT/$base" > "$OUT/$base.out" 2>&1 < /dev/null; } 2>/dev/null || true
-  if diff -q "tests/cases/$base.expected" "$OUT/$base.out" >/dev/null; then
+  # Lines compared with carriage returns stripped on both sides, as syntax.sh does: a Windows program writes CRLF.
+  tr -d '\r' < "$OUT/$base.out" > "$OUT/$base.lf"; tr -d '\r' < "tests/cases/$base.expected" > "$OUT/$base.want"
+  if diff -q "$OUT/$base.want" "$OUT/$base.lf" >/dev/null; then
     echo pass > "$OUT/$base.verdict"
   else
     echo "FAIL $base:"
-    diff "tests/cases/$base.expected" "$OUT/$base.out" | sed 's/^/      /'
+    diff "$OUT/$base.want" "$OUT/$base.lf" | sed 's/^/      /'
     echo fail > "$OUT/$base.verdict"
   fi
 }
@@ -138,7 +140,7 @@ fi
 
 # The host's -g too: a closure holding a reference to a 300-byte object wrote its size in one byte (M1).
 dbg=tests/cases/debug-reference-member.cpp
-if cxx1 -nologo -g "$dbg" -o "$OUT/dbg-host" 2>/dev/null && "$OUT/dbg-host" | cmp -s - tests/cases/debug-reference-member.expected; then
+if cxx1 -nologo -g "$dbg" -o "$OUT/dbg-host" 2>/dev/null && "$OUT/dbg-host" | tr -d '\r' | cmp -s - tests/cases/debug-reference-member.expected; then
     pass=$((pass + 1))
 else
     echo "FAIL -g: wanted $dbg built with -g and printing its recorded output"; fail=$((fail + 1))
