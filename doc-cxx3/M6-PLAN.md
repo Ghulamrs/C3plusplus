@@ -5042,3 +5042,9 @@ m6dw9h (6718660f) named template-local-enum-twice's 12 rows and then template-lo
 coordinator had taken 270e9b6e as no output change against its lane's base rather than the wave's. **The self-host fixed point
 on main 8c75b11a** (fp8c, run after m6d-w8 because its stand-in deletion was not covered: net -92): Linux and Windows (masm),
 -O0 and -O2, 102 of 102 the same from stages 0, 1, 2 and from 2, 3. tests/wave-expected.txt emptied.
+
+**m6d-w10's wave landed, 2026-11-20 (gate m6dw10g at 1ca3569f against main 805bc9f9: 40 passed, 0 failed, no row; the fixed
+point checked not owed; then origin/main merged, which brought only this file's m6d-w9 entry - no src/, case or tool line).**
+M8.2 (M8-PLAN, m82y-m82aa): a const local over a parameter folded under the binding; T bound to a plain struct by reference or
+pointer (Parser::memberRecord the one writer of the member record); T bound to an lvalue reference to a scalar with reference
+collapsing - 136 of the suite's own bodies with no replay under -templates=subst; nothing changes without the flag.
