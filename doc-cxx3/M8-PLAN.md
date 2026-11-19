@@ -3119,3 +3119,91 @@ alone, the delta 15:44:46-15:47:27 (2m41s); names.sh 934/0, overload.sh 46/0.
 member; (b) whole - the 32 + 17 calls a function template may answer, deduced at the instantiation from the bound argument
 types, the specialization requested where the replay's call requests it, partial ordering through the existing code. Not begun:
 the hour went to the base's checks and this measure.
+
+## M8.2 slice 2d, fifth part: a function template among a call's candidates, deduced and requested at the instantiation (lane m82n, 2026-11-19)
+
+Branch `m8-2n` from `cf45c483` (m82m; its own final commit checked clean, so no base re-check here).
+
+**(1) Deduction at the instantiation** (this commit). The 49 bodies whose call a function template may answer (m82m's 32 qualified
+or explicit-argument calls, m82l's 17 dependent-name calls with a template among `found`) are deduced where the specialization
+is made: `Templates::templateCandidates` reads each argument as `deductionArgType` gives it (a local, typed under the binding, a
+named local an lvalue so a reference to its type; an unqualified call's argument arithmetic and no enumeration, which ADL adds
+nothing for), reaches the templates the replay's door reaches (`templatesNamed`, the written scope), and deduces each through
+`deduceTemplateArguments` - Templates' one deduction, the replay's own. Nothing more is substituted: the body still replays, and
+its reason says how far the instantiation got. **The census** (Linux, `-check=templates -templates=subst` over 1,283 cases): the
+49 are **23 deduced** ("a call a function template answers, deduced at the instantiation, whose specialization is not requested
+yet"), 13 over an argument whose type ADL would search, 12 over an argument other than a local, 1 an explicit-argument call
+(`twice<T>`); everything else unchanged (215 covered, 145 with no replay, 70 replayed). tests/subst.sh's three probe reason lines
+re-pointed, for exactly that (`ident(a)`, now deduced), no count changed.
+
+**src/** (1): `Templates.cpp` +45 -5, `Templates.h` +3 -2: 95,131 -> 95,172 (+41). EXCLUSIONS re-pointed (Templates.cpp 1414,
+1466, 2163).
+
+**Gates of (1)** (REF `cf45c483` in `~/m82nb`, NEW in `~/m82nc`, one path length; every check on this commit's own tree):
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,868,
+x86_64-windows 3,736, arm64-darwin 1,868, tms6747 1,868) and **0 on three with `-templates=subst`**; **-g 0 differ** with and
+without the flag (x86_64-linux 715 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 697, 375, 211 -
+re-read by `boxkit/m82n-gre.sh`); `-check=templates -templates=subst` over the cases: 1,283 units, 350 nonzero exits as before,
+none failing on a difference; `-check=fold` 0 units failing; run.sh 1276/0 without and with `-templates=subst`; **subst.sh 0
+failed** (self 102 of 102, the ceiling 26 of 26, 3 shapes of 3); syntax.sh 6/0; typed.sh 926/0; self-compile of `Templates.cpp`
+rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after the re-point; rc 1 3/3 before it), comments rc 0, memory
+gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
+**Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:11:05-16:12:09 (about a minute); names.sh 934/0, overload.sh 46/0.
+
+**(2) The specialization requested, ranked and recorded** (the next commit). A body whose calls (1) deduced is made from the read
+when it holds one such call: `substShape` collects it (`requests`) instead of refusing, and once the body's whole shape is known
+- so a body that replays for another reason has asked for nothing the replay would not ask for first -
+`Templates::requestCall` makes the request where and as the replay's call door makes it, without the replay's tokens: in the
+instantiation's own context, as the fixed point sets it for a replay (the template's parameters bound, its namespace,
+`instantiationKey_`/`Of_`/`Display_`, its depth, `replayingInline_`), `templatesNamed` reaches the templates and
+`instantiateViableTemplates` - the door's own call - deduces and declares each viable specialization at the callee's source
+position (the node's `loc`, the token's `pos`). The candidates are the door's index, `Parser::templateCallKey` - the door's key
+code moved into one function both call (`$global:` set included) - ranked through m82l's typed `rankArgument` and chosen by
+`Overload::bestViable`, whose `betterCandidate` is the one [over.match.best] order (a non-template before a template, then
+partial ordering, [temp.func.order]). The choice is kept on `Bound::calls` like a dependent-name call's (m82l), so
+`Typer::boundCall` records it, `-check=typed`'s `recordDiffers` holds it, and `callsUsed` marks the specialization used, which
+puts its body in the fixed point as the replay's resolution does - the specialization is defined in the object (run.sh links
+and runs every case under the flag). Refused by name, after the request: a chosen function over a class, a reference or a
+default (the read's call is lowered for scalars only), a candidate over a class (its converting constructors are not asked),
+no best candidate, an ordinary function hiding the templates; before it, more than one such call in a body (the replay orders
+their requests, the read's walk does not - not yet ordered here).
+
+**The probe** `tests/cases/template-subst-deduce` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++
+-std=c++11 -pedantic-errors` on the Windows box): `twice(a)` for an int and a double, `over(a)` where an exact non-template
+`over(int)` beats the template and the template `over<double>` beats a conversion, `ns::neg(a)` qualified, `mix(a, k)` over two
+deduced parameters, a call alone as a statement, and `over(p)` over a pointer, replayed by reason (ADL) - 14 bodies with no
+replay (plain and `-g`), made 14 equal under the check; its output is clang's with and without the flag. **tests/subst.sh**, for
+exactly that: the probe added to the probes step, and the three probes whose `ident(a)` is now made re-counted (refused 10 -> 12,
+call 8 -> 10, depcall 9 -> 10; their deduced-reason lines gone).
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,284 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 236** (215 + the probes' 19 + 2 in library-cppparse-pieces), frame and shell 236 equal, made 166 equal; without the
+check **166 substituted with no replay** (145 + 21), 70 replayed by reason (as before). Of the
+49: 21 made (the probes' 19 and the suite's 2); **12 bodies with more than one call a function template answers** (array-header
+1, library-cppparse-pieces 2, std-function-ledger 3, std-function 3, std-swap-two-ints 1, thread-pool 1, thread-sleep-yield 1:
+`std::move` twice, `std::swap`'s three moves); the rest over arguments that are no local (15) or whose type ADL would search
+(14) - counted after the first deduced call, so these reasons now name what a body holds beyond it.
+
+**src/** (2): `Templates.cpp` +103 -21, `Templates.h` +4 -1, `ParserTemplate.cpp` +19 -17, `Parser.h` +1: 95,172 -> 95,260 (+88).
+EXCLUSIONS re-pointed (Templates.cpp 1496, 1548, 2245; ParserTemplate.cpp 1755, 1808, 1893, 1897, 1967).
+
+**Gates of (2)** (REF `cf45c483` in `~/m82nb`, NEW in `~/m82nc`, one path length; every check on this commit's own tree):
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,870,
+x86_64-windows 3,740, arm64-darwin 1,870, tms6747 1,870) and **0 on three with `-templates=subst`** - every case, so every body
+now made from the read emits what the replay emitted, its requested specialization included; **-g 0 differ** with and without
+the flag (x86_64-linux 716 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 698, 375, 211 - re-read by
+`boxkit/m82n-gre.sh`); `-check=templates -templates=subst` over the cases: 1,284 units, 350 nonzero exits as before, none failing
+on a difference; `-check=fold` compared 16,604, agreed 12,324, differ 0; run.sh 1277/0 without and with `-templates=subst` (each case linked and run:
+the requested specializations are defined); **subst.sh 0 failed** on the committed tree (run 1277/0 and typed 927/0 at -O0 and
+-O2, self 102 of 102, the ceiling 26 of 26, 3 shapes of 3) - a first run failed one probe line, `template-subst-refused`'s
+"template-replayed (2): a name the template does not declare: a lookup", the stand-in's refusal of `viacall`, which M8.2 now
+makes, so the stand-in is not run there (decision ii): the line removed, for exactly that; syntax.sh 6/0; typed.sh 927/0;
+self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after
+the re-point), comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised),
+ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, the delta 16:24:45-16:25:46
+(about a minute); names.sh 935/0, overload.sh 46/0.
+
+**Left**: a body with more than one such call (the requests in the replay's order: the read's calls in source order, arguments
+first); arguments that are not locals (a typed argument is read only from a local's record); class, enumeration and pointer
+arguments of an unqualified call (ADL); a chosen specialization over a reference (`std::move`, `std::forward`, `std::swap` -
+the read's call lowered for reference parameters); explicit-argument calls (`twice<T>`); the 10 through a value or a member.

@@ -208,6 +208,7 @@ private:
                    ? instantiationKey_ : name;
     }
     ExprPtr templateCall(Program *program, const std::string &scope = std::string());
+    std::string templateCallKey(const std::string &name, std::string named, const TemplateDecl &decl);     // the candidates' index
     // A static member reached through a class template-id, after its `::`.
     ExprPtr templateIdMember(const Type *cls, std::size_t pos);
     // Set while a class template is being instantiated.
