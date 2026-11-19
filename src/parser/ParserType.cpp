@@ -1765,6 +1765,9 @@ const Type *Parser::enumSpecifier() {
     if (within != nullptr) prefix = within->tag() + "::";
     else if (!namespaceStack_.empty()) prefix = namespacePrefix();
 
+    // [basic.scope.block]: a function's own enumeration is its block's, and another function or specialization has its own.
+    const bool localEnum = within == nullptr && !currentFunction_.empty();
+    std::string renamed;     // a second function's `E`: `E$2`, shown as `E`
     // The tag names a type, as a class tag does: its integer underneath, but an integer
     // reaches it only by a cast (checkAssignable, rankArgument), and it promotes back.
     Type *self = nullptr;
@@ -1772,8 +1775,18 @@ const Type *Parser::enumSpecifier() {
         const Type *before = lookup_.findTypedef(tagKey("enum", prefix + tag));
         // A read function's own enumeration is its own type (`$read$f::E`), dependent, and not the one its replay defines.
         const bool readLocal = patternBody_ && within == nullptr && !currentFunction_.empty();
-        self = types_.enumType((readLocal ? "$read$" + currentFunctionName_ + "::" : std::string()) + prefix + tag,
-                               underlying != nullptr ? underlying->kind() : Kind::Int);
+        const std::string written = (readLocal ? "$read$" + currentFunctionName_ + "::" : std::string()) + prefix + tag;
+        const bool defining = peek().is("{");
+        std::string named = written;
+        for (int n = 2; localEnum; n++) {
+            const std::map<std::string, std::string>::const_iterator had = localEnumOwner_.find(named);
+            if (had == localEnumOwner_.end()) { if (!defining) named = written; break; }
+            if (had->second == currentFunction_) break;
+            named = written + "$" + std::to_string(n);
+        }
+        if (localEnum && defining) localEnumOwner_[named] = currentFunction_;
+        self = types_.enumType(named, underlying != nullptr ? underlying->kind() : Kind::Int);
+        if (named != written) { renamed = named; self->setDisplayTag(prefix + tag); localTypes_[tagKey("enum", prefix + tag)] = self; }
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
         if (before != nullptr && before->unqualified() == self &&
             (self->isScopedEnumeration() != scoped ||
@@ -1809,7 +1822,7 @@ const Type *Parser::enumSpecifier() {
 
     // A scoped enumerator is named `E::a`, and inside the braces by its own name with the
     // underlying type ([dcl.enum]/5) - that unqualified key is taken back at the '}'.
-    const std::string within_ = scoped ? prefix + tag + "::" : prefix;
+    const std::string within_ = scoped ? (renamed.empty() ? prefix + tag : renamed) + "::" : prefix;
     std::vector<std::pair<std::string, std::size_t> > inBody;
     std::vector<std::size_t> made;
     long long next = 0;
@@ -1821,7 +1834,8 @@ const Type *Parser::enumSpecifier() {
         // Declared twice under this very key - not one an inline namespace's enumerator put here.
         const std::unordered_map<std::string, std::size_t>::const_iterator twice =
             lookup_.enumIndex_.find(within_ + name);
-        if ((twice != lookup_.enumIndex_.end() && lookup_.enums_[twice->second].name == within_ + name) ||
+        if ((twice != lookup_.enumIndex_.end() && lookup_.enums_[twice->second].name == within_ + name &&
+             (lookup_.enums_[twice->second].owner.empty() || lookup_.enums_[twice->second].owner == currentFunction_)) ||
             (!scoped && twice == lookup_.enumIndex_.end() && lookup_.findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
@@ -1838,9 +1852,11 @@ const Type *Parser::enumSpecifier() {
         lookup_.enums_.push_back(EnumConst{ within_ + name, next,
                                     scoped ? underlying : valueType });
         lookup_.enums_.back().valueDependent = dependent;
+        if (localEnum) lookup_.enums_.back().owner = currentFunction_;
         made.push_back(lookup_.enums_.size() - 1);
         // C++11's `E::a` for an unscoped E too, [dcl.enum]/11.
-        if (!scoped && !tag.empty()) lookup_.enumIndex_[prefix + tag + "::" + name] = lookup_.enums_.size() - 1;
+        if (!scoped && !tag.empty())
+            lookup_.enumIndex_[(renamed.empty() ? prefix + tag : renamed) + "::" + name] = lookup_.enums_.size() - 1;
         // And under the enclosing namespace's name where this one is inline.
         {
             const std::vector<std::string> alts = within == nullptr ? lookup_.inlineAliasPrefixes(prefix)

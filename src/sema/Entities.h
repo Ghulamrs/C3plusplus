@@ -169,6 +169,8 @@ struct EnumConst {
     const Type *paramType = nullptr;
     // A template's read: a non-type parameter standing for itself, or an enumerator made from one (M8rev L2).
     bool valueDependent = false;
+    // A local enumeration's enumerator: the symbol of the function whose block declares it ([basic.scope.block]).
+    std::string owner;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     EnumConst(std::string name = std::string(), long long value = 0,

@@ -3710,3 +3710,45 @@ local over a parameter (their value and bound from the binding, not the read's s
 enumeration or another integral type (the fold in that type); the local enum defect m82t found.
 
 **Code** `e7189622` (its message says 95,383 and +101: the line count measured on its own tree is 95,384, +102, as above).
+
+## M8.2 slice 2f, third part (1): a local enumeration is its own function's, declared twice no more (lanes m82v and m82w, 2026-11-19 and 20)
+
+Branch `m8-2v` from `e5b19923` (m82u). **The defect** (m82t found it, in a function template): a local `enum` declared in
+two functions - two specializations of one template, and REF refuses two plain functions alike - was "declared twice" (the
+unnamed enumeration's enumerators) or "defined twice" (a named one's tag): an enumerator and an enumeration's type were kept
+by name for the whole unit, where [basic.scope.block] gives each block its own. A refusal stricter than the standard.
+**The mend**, on the replay path and the plain one alike: an enumerator of a local enumeration carries its function's symbol
+(`EnumConst::owner`), and another function's is not the same declaration; a local enumeration's type takes its function's
+symbol in `Parser::localEnumOwner_`, and a second function's `E` is the type `E$2` (shown as `E` to -g, found first through
+`localTypes_`, its `E::a` keyed under it). Every program REF compiles is unchanged: the new names arise only where REF
+refused. **Not mended** (no side tasks): one function's two blocks each with `enum { A }` are still refused; a local
+enumeration that shadows a namespace's of the same tag is still "defined twice"; a local enumeration as a template argument
+mangles through its tag (`E$2`), as REF's first one mangled through `E` - local-entity mangling is not written for enums.
+The case `tests/cases/template-local-enum-twice` (clang 19 on Windows, `-nostdinc++ -isystem include`, prints its
+`.expected`; g++ agrees).
+
+**The case's two earlier forms**, each failing tests/subst.sh under m82v (the ceiling is not raised for either): a local
+class over `T` in `pick` ("the size of a dependent type" 3 above its ceiling of 2 - the read leaves that body unread; REF
+compiled it, and it was not the defect), then `Colour::Red` over the read's own local enumeration ("'' is not an enumerator
+of ''": a read's `$read$f::E` keys its enumerators under the written tag - a read defect, **found, not mended**). Both left
+the case; what is left is the defect alone.
+
+**src/**: ParserType.cpp +21 -5, Parser.h +1, Entities.h +2: 95,384 -> 95,403 (+19). EXCLUSIONS re-pointed (ParserType.cpp, 11
+lines, +16). **Every gate below ran on the final tree** (lane m82w, 2026-11-20: REF `e5b19923` built in `~/m82wb`, NEW in
+`~/m82wc`, g++ `-Werror` clean). **tests/subst.sh 0 failed** (cases 17 unread under a ceiling of 17 in 12 reasons, 53 shapes;
+self 102 of 102, 26 under 26; its "4 counts below the record" note stands as on REF - not re-recorded). **The census**
+(Linux, `-check=templates -templates=subst`, 1,298 cases): 350 nonzero exits as REF; covered 385 (REF 383); without the
+check 311 substituted with no replay (REF 309) and 74 replayed (REF 74); **without the lanes' probes 132 of the suite's own
+bodies made with no replay (REF 130, +2: the new case's)**. identical.sh without the flag - only the new case differs, at -O0
+and -O2 (REF refuses it): x86_64-linux 1,898/2, x86_64-windows 3,796/4, arm64-darwin 1,898/2, tms6747 1,898/2; with `-templates=subst`: the same on three targets (1,898/2, 3,796/4, 1,898/2). **-g** (every case, -O0, both ways): x86_64-linux
+728 same, 350 refused alike, 220 differ - 219 by the tree path alone (`m82wb` read as `m82wc`, the include directory each
+build carries) and the new case; x86_64-windows 710, 375, 213 - 212 by the path alone and the new case; the same counts with
+`-templates=subst`. -check=fold 16,776 compared 0 differ. run.sh 1291/0 without and with `-templates=subst`. syntax 7/0,
+typed 941/0. Self-compile of ParserType.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory
+gate rc 0 (89), ast-residue rc 0 (2012/298: not raised), ide up to date. Wine stand-in 14/14 both. **Windows**: cl /W4 /WX
+clean (1 m 32 s with the ship, alone); clang 19 prints the case's `.expected` (46 976 / 26 -7 / 6 15 / 7 17), as cxx3-msvc's
+build does; names.sh 949/0, overload.sh 46/0 (the code is m82v's; run again for the case's final form).
+
+**Left**: from m82u's list, (2) the second const int local made from a parameter read as a Local, (3) `case N`, `sizeof(T) *
+N`, `enum { E = N }`, static and array locals over a parameter, non-int non-type parameters; the read's `E::a` over its own
+local enumeration (above); one function's two blocks each with `enum { A }`, a local enumeration shadowing a namespace's tag.

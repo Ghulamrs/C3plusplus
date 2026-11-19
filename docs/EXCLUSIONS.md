@@ -244,7 +244,7 @@ is left:
   when it had compiled and built nothing. `src/parser/ParserType.cpp:1120`
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
-  object to be a field of. `src/parser/ParserType.cpp:2370`
+  object to be a field of. `src/parser/ParserType.cpp:2386`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2229`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2113`
@@ -258,11 +258,11 @@ is left:
 - **an attribute before a statement**, `[[x]] return 0;` - one before a
   declaration is read wherever [dcl.attr.grammar] places it, C++11's two change
   nothing and an unknown one is ignored (/5); `[[deprecated]]` is C++14.
-  `src/parser/ParserType.cpp:1944`, `src/parser/ParserType.cpp:1923`
+  `src/parser/ParserType.cpp:1960`, `src/parser/ParserType.cpp:1939`
 
 ## Conversion functions and operators
 
-- **`operator->*`** - `src/parser/ParserType.cpp:2549`
+- **`operator->*`** - `src/parser/ParserType.cpp:2565`
 - **an operator that can be named but not reached** - `operator&&`,
   `operator||` and `operator,`: refused at the declaration, because a function
   that links and can never be called is the half-built thing this project
@@ -270,7 +270,7 @@ is left:
   expression, asked of a one-line program each: `+ - * / % & | ^ << >> == != <
   <= > >=` binary, `+ - * & ! ~ ++ --` unary, `() [] = ->`, the ten compound
   assignments, and `operator new`, `operator delete` and the placement forms.
-  `src/parser/ParserType.cpp:2718`
+  `src/parser/ParserType.cpp:2734`
 
 ## Initialisation, and braces
 
@@ -434,17 +434,17 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 | refused | measured against | site |
 | --- | --- | --- |
-| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:2022` |
-| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:1987` |
+| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:2038` |
+| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:2003` |
 | a volatile member function | the cv on `this` is in the name on both ABIs | `src/parser/ParserType.cpp:1252` |
-| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:2015` |
+| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:2031` |
 
 ## Keywords the parser has no rule for
 
 Two, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
 `src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1366`,
-`src/parser/ParserType.cpp:2325`; `tests/cases/refused.cpp` holds one.
+`src/parser/ParserType.cpp:2341`; `tests/cases/refused.cpp` holds one.
 
     asm   export
 
@@ -481,13 +481,13 @@ between the two lists.**
 - **a pointer to a member of an incomplete class, on x86_64-windows** - the
   Microsoft ABI sizes one by the class's inheritance model, and an incomplete
   class takes cl's widest form. A class being defined with no base is single
-  and is taken (M1 L13). `src/parser/ParserType.cpp:2967`
+  and is taken (M1 L13). `src/parser/ParserType.cpp:2983`
 - **a `volatile` object with external linkage, on x86_64-windows** - cl
   decorates its name with the qualifier, `?g3HC` for `?g3HA`.
-  `src/parser/ParserType.cpp:2000`
+  `src/parser/ParserType.cpp:2016`
 - **`thread_local`, on tms6747** - TI's cl6x 8.2.2 does not know the word, so
   the C6000 has no thread storage to put one in (measured 2026-10-20).
-  `src/parser/ParserType.cpp:2082`, `tests/cases/thread-local.notarget`
+  `src/parser/ParserType.cpp:2098`, `tests/cases/thread-local.notarget`
 - **`alignas` past the stack's 8 on a local, on tms6747** - the C6000 backend
   builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:847`,
   `tests/cases/alignas-local.notarget`

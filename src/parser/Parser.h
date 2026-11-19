@@ -1794,6 +1794,7 @@ private:
     // from these tables - a qualified tag, and a scope emptied when the function ends.
     std::map<std::string, const Type *> localTypes_;   // written name -> type
     std::map<std::string, std::string> localClassOwner_;  // tag -> enclosing symbol
+    std::map<std::string, std::string> localEnumOwner_;   // a local enumeration's type tag -> its function's symbol
     // An operator this compiler can *name* but cannot yet reach from an expression is
     // refused where it is declared. The arity decides which - `operator-` is two
     // functions and only one is missing - so it is asked once the parameters are known.
