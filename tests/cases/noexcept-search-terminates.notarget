@@ -1,0 +1,2 @@
+x86_64-linux  the noexcept wrap is built only around a body with no landing pads of its own - a local with a destructor is one - as noexcept-local-terminates.notarget says; the exception propagates and the handler catches 2 where the standard says terminate.
+arm64-darwin  the same as x86_64-linux.

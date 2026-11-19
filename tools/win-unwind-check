@@ -27,7 +27,7 @@ What it checks, and where each rule comes from:
   handler     a function with the flags names `__CxxFrameHandler3` and a `$cppxdata$F` this object defines;
               one without them has no `$cppxdata$F`; a funclet names its parent's. ("$cppxdata$, and a
               question asked of the wrong witness" - one signal, one place.)
-  FuncInfo    magic 0x19930522, EHFlags 1, no ESTypeList; maxState entries in the unwind map, each toState
+  FuncInfo    magic 0x19930522, EHFlags 1 or 5 (noexcept), no ESTypeList; maxState entries in the unwind map, each toState
               -1 or an earlier state and the chain ending at -1, an action a funclet of this function; every
               try block tryLow <= tryHigh < catchHigh < maxState with nCatches >= 1 and its handler map here;
               try blocks nest or are disjoint and inner ones come first; a handler's adjectives are
@@ -410,8 +410,8 @@ class Checker(object):
         if magic != FH3_MAGIC:
             self.fault("%s: FuncInfo magic 0x%08x, not 0x19930522" % (name, magic))
             return
-        if eh_flags != 1:
-            self.fault("%s: EHFlags %d - 1 is /EHsc" % (name, eh_flags))
+        if eh_flags not in (1, 5):
+            self.fault("%s: EHFlags %d - 1 is /EHsc, 5 a noexcept function under it (cl)" % (name, eh_flags))
         if es_list != 0 or sec.reloc_at(at + 32) is not None:
             self.fault("%s: an ESTypeList, which cxx3 never writes" % name)
         if max_state < 1:

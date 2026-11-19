@@ -1011,7 +1011,7 @@ void MasmCodeGen::emitExceptionTables(const ir::Function &fn) {
     o += "  DD imagerel $ip2state$" + m + "\n";
     o += "  DD " + std::to_string(establisherOffset(msUnwindHelpSlot())) + "\n";
     o += "  DD 00H\n";                      // no exception specification
-    o += "  DD 01H\n";                      // EHFlags: compiled with /EHsc
+    o += fn.noexcept_ ? "  DD 05H\n" : "  DD 01H\n";    // EHFlags: /EHsc, and 4 for noexcept - FH3 terminates in its search
 
     o += "$stateUnwindMap$" + m;
     for (std::size_t k = 0; k < states.size(); k++) {

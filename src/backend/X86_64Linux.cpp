@@ -1459,7 +1459,6 @@ void X86_64Linux::closeFunclet(const std::string &resume) {
 
 // **The FH3 tables for a frame that only cleans up.**
 void X86_64Linux::emitCoffEhTables(const ir::Function &fn) {
-    (void)fn;
     const std::string m = fnSymbol_;
     const std::vector<MsState> &states = msStates();
     const std::vector<MsTryBlock> &tries = msTryBlocks();
@@ -1482,7 +1481,7 @@ void X86_64Linux::emitCoffEhTables(const ir::Function &fn) {
     o += "  .long \"$ip2state$" + m + "\"@IMGREL\n";
     o += "  .long " + std::to_string(establisherOffset(msUnwindHelpSlot())) + "\n";
     o += "  .long 0\n";                     // no exception specification
-    o += "  .long 1\n";                     // EHFlags: compiled with /EHsc
+    o += fn.noexcept_ ? "  .long 5\n" : "  .long 1\n";    // EHFlags: /EHsc, and 4 for noexcept - FH3 terminates in its search
 
     // toState, then the action: a cleanup's funclet, or nothing.
     o += "\"$stateUnwindMap$" + m + "\":\n";
