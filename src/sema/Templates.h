@@ -215,6 +215,10 @@ public:
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`.
     struct Substituted { std::vector<const Type *> from, to; };
     const Type *substituted(const Substituted &s, const Type *t) const;
+    const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
+    const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
+    std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;
+    std::pair<TypeId, bool> castRecord(std::uint32_t id, const std::string &binding) const;     // a node's cast, under `binding`
     // **M8.2**: a specialization's types and its non-type arguments' values by parameter index; a pack replays by name.
     struct Binding { std::vector<TypeId> types; std::vector<long long> values; };
     // Specialization `i` built from its template's body read at the declaration, under `b`; false with `why` the reason it replays.

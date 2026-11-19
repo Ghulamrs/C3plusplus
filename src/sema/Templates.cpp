@@ -325,10 +325,52 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
         if (r->isReference()) return t->isRValueReference() ? r : p_.types_.referenceTo(r->referent());   // [dcl.ref]/6
         return t->isRValueReference() ? p_.types_.rvalueReferenceTo(r) : p_.types_.referenceTo(r);
     }
+    if (t->kind() == Kind::DependentMember) return memberUnder(s, t);
     if (!t->isFunction()) return t;
     std::vector<const Type *> params;
     for (std::size_t k = 0; k < t->params().size(); k++) params.push_back(substituted(s, t->params()[k]));
     return p_.types_.functionType(substituted(s, t->returns()), params, t->isVariadicFn());
+}
+
+// `X<T>::m` under the binding: the specialization X<U> the replay made (by the key it is declared under), and its member type
+// m as memberTypeWalk's lookup finds it; `t`, still dependent, where an argument is no type or the class was not made.
+const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
+    const Type *o = t->pointee();
+    if (o->isSpecialization()) {
+        std::vector<TemplateArg> args = o->templateArgs();
+        for (std::size_t k = 0; k < args.size(); k++) {
+            if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return t;
+            args[k].type = substituted(s, args[k].type);
+        }
+        o = p_.lookup_.findTypedef(specializationKey(o->templateName(), args));
+    } else {
+        o = substituted(s, o);
+    }
+    if (o == nullptr || p_.dependentType(o) || !o->isStructOrUnion()) return t;
+    const Type *m = p_.lookup_.lookupInClass(o, t->tag());
+    return m != nullptr ? m : t;
+}
+
+const Type *Templates::valueUnder(const Substituted &s, const Type *t) const {
+    const Type *u = substituted(s, t);
+    return u != nullptr && u->isReference() ? u->referent() : u;      // [expr]/5
+}
+
+// A reference cast's referent and category as the read records them (Parser::staticCast), collapsed as written ([dcl.ref]/6).
+std::pair<const Type *, bool> Templates::castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const {
+    const Type *w = substituted(s, read.second ? p_.types_.rvalueReferenceTo(read.first) : p_.types_.referenceTo(read.first));
+    return std::make_pair(w->referent(), w->isRValueReference());
+}
+
+// A node's cast as the typed tree records it (Typer::record) and holds it (recordDiffers): the parser's, under `binding`.
+std::pair<TypeId, bool> Templates::castRecord(std::uint32_t id, const std::string &binding) const {
+    const std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator ref = p_.refCastTypes_.find(id);
+    const std::unordered_map<std::uint32_t, const Type *>::const_iterator cast = p_.castTypes_.find(id);
+    std::pair<const Type *, bool> c(ref != p_.refCastTypes_.end() ? ref->second.first : cast != p_.castTypes_.end() ? cast->second : nullptr,
+                                    ref != p_.refCastTypes_.end() && ref->second.second);
+    if (!binding.empty() && c.first != nullptr)
+        c = ref != p_.refCastTypes_.end() ? castUnder(bound_.at(binding).s, c) : std::make_pair(substituted(bound_.at(binding).s, c.first), false);
+    return std::make_pair(TypeTable::id(c.first), c.second);
 }
 
 // A dependent decltype's operand the read holds as an expression and notes no syntax for, so its parts are not the replay's.
@@ -881,6 +923,19 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 if (why == DeducedCall) { requests->push_back(id); continue; }
                 if (!why.empty()) return why;
                 (*calls)[id.v] = (*calls)[p_.syntaxTree_.child(id, 0).v] = chosen;
+                continue;
+            }
+            case Kind::Cast: {
+                // A static_cast to a reference names its operand (Parser::staticCast): a name of the referent's type, as std::forward's.
+                const std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator c = p_.refCastTypes_.find(id.v);
+                const syntax::NodeId o = n.count == 1 ? p_.syntaxTree_.child(id, 0) : syntax::NodeId();
+                const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = o.valid() ? p_.resolutions_.find(o.v) : p_.resolutions_.end();
+                if (p_.syntaxTree_.text(id).compare(0, 12, "static_cast<") != 0 || c == p_.refCastTypes_.end())
+                    return "a cast other than a static_cast to a reference, which the read records no type for";
+                if (p_.dependentType(castUnder(s, c->second).first)) return "a static_cast to a member type of a class the binding has not made";
+                if (p_.syntaxTree_.node(o).kind != Kind::Name || r == p_.resolutions_.end() || r->second.type == nullptr ||
+                    valueUnder(s, r->second.type)->unqualified() != castUnder(s, c->second).first->unqualified())
+                    return "a static_cast to a reference over another type, which the replay converts";
                 continue;
             }
             default:

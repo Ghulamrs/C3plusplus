@@ -106,7 +106,7 @@ TypedId Typer::node(syntax::NodeId id) {
     syntax::NodeId decl;
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
-    if (type == nullptr && isExpression(n.kind)) type = p_.types_.type(bound(TypeTable::id(recordedValue(id))));
+    if (type == nullptr && isExpression(n.kind)) type = p_.types_.type(boundValue(TypeTable::id(recordedValue(id))));
     // A `var` is typed as declared, its `&` kept (M3b.1, M3-IR 3.8): what the lowering sizes its alloca by.
     if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = p_.types_.type(bound(TypeTable::id(p_.declaredTypes_.at(id.v))));
     if (scoped) scopes_.pop_back();
@@ -152,21 +152,21 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         tree_.setResolution(t, boundMembers_.at(id.v));
     } else if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
-        if (!binding_.empty() && out.type.valid()) out.type = bound(out.type);
+        if (!binding_.empty() && out.type.valid()) out.type = r->second.what == Parser::Resolved::Value ? boundValue(out.type) : bound(out.type);
         if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).values.count(id.v) != 0)
             out.value = static_cast<long long>(p_.tmpl_.bound_.at(binding_).values.at(id.v)) - 2147483648LL;     // slice 2f: the replay's value
         tree_.setResolution(t, out);
     }
-    const auto cast = p_.castTypes_.find(id.v);
-    if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
+    if (p_.castTypes_.count(id.v) != 0 || p_.refCastTypes_.count(id.v) != 0) {
+        const std::pair<TypeId, bool> c = p_.tmpl_.castRecord(id.v, binding_);
+        tree_.setCast(t, c.first, c.second);
+    }
     const auto form = p_.varForms_.find(id.v);
     if (form != p_.varForms_.end()) tree_.setInitForm(t, form->second);
     const auto bounds = p_.varBounds_.find(id.v);
     if (bounds != p_.varBounds_.end()) tree_.setBounds(t, bounds->second);
     const auto parts = p_.forParts_.find(id.v);
     if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
-    const auto ref = p_.refCastTypes_.find(id.v);
-    if (ref != p_.refCastTypes_.end()) tree_.setCast(t, TypeTable::id(ref->second.first), ref->second.second);
     const auto k = p_.keywordValues_.find(id.v);
     if (k != p_.keywordValues_.end()) tree_.setFolded(t, k->second.first, TypeTable::id(k->second.second));
     // A case label's value as the parser folded it ([stmt.switch]/2), on the `case` node.
@@ -424,7 +424,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         case syntax::Kind::Cast: {
             std::unordered_map<std::uint32_t, const Type *>::const_iterator to = p_.castTypes_.find(id.v);
             if (to == p_.castTypes_.end()) return nullptr;
-            return to->second->isReference() ? to->second->referent() : to->second;
+            const TypeId c = p_.tmpl_.castRecord(id.v, binding_).first;
+            return p_.types_.type(c)->isReference() ? p_.types_.type(c)->referent() : p_.types_.type(c);
         }
         case syntax::Kind::Sizeof:
             if (op.compare(0, 6, "sizeof") == 0 || op.compare(0, 7, "alignof") == 0)
@@ -507,7 +508,9 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     if (!chosen && n.resolved != 0) {
         const Resolution &r = tree.resolution(t);
         // Under a binding (M8.2's read, no replay) the parser's record names the pattern's parameters, the typed tree its types.
-        const TypeId want = TypeTable::id(binding.empty() ? pr->second.type : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
+        const bool value = pr->second.what == Parser::Resolved::Value;
+        const TypeId want = TypeTable::id(binding.empty() ? pr->second.type : value ? p.tmpl_.valueUnder(p.tmpl_.bound_.at(binding).s, pr->second.type)
+                                                                                    : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
         const bool folded = !binding.empty() && p.tmpl_.bound_.at(binding).values.count(id) != 0;
         if (r.what != pr->second.what || p.types_.type(r.type) != p.types_.type(want) ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
@@ -516,11 +519,8 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
             r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)
             return "the record's fields";
     }
-    const auto cast = p.castTypes_.find(id);
-    const auto ref = p.refCastTypes_.find(id);
-    const TypeId to = TypeTable::id(ref != p.refCastTypes_.end() ? ref->second.first
-                                    : cast != p.castTypes_.end() ? cast->second : nullptr);
-    if (n.castType != to || n.castXvalue != (ref != p.refCastTypes_.end() && ref->second.second)) return "the cast's type";
+    const std::pair<TypeId, bool> to = p.tmpl_.castRecord(id, binding);
+    if (n.castType != to.first || n.castXvalue != to.second) return "the cast's type";
     const auto k = p.keywordValues_.find(id);
     if (k != p.keywordValues_.end() &&
         (!n.folded.has || n.folded.value != k->second.first || p.types_.type(n.folded.type) != k->second.second))
@@ -1015,6 +1015,10 @@ TypeId Typer::typeUnder(syntax::NodeId e, const std::string &binding) {
     const TypedId t = typeExpression(e);
     binding_.clear();
     return TypeTable::id(tree_.node(t).type);
+}
+
+TypeId Typer::boundValue(TypeId t) const {
+    return binding_.empty() ? t : TypeTable::id(p_.tmpl_.valueUnder(p_.tmpl_.bound_.at(binding_).s, p_.types_.type(t)));
 }
 
 TypeId Typer::bound(TypeId t) const {

@@ -3429,11 +3429,12 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
         (text.find('&') == std::string::npos || (f.e->type()->isMemberPointer() && text.find("&>") == std::string::npos)) &&
         (f.e->type()->isVoid() || f.e->type()->isScalar() || f.e->type()->isMemberPointer() || f.e->type()->isStructOrUnion()))
         castTypes_[f.e->syntax().v] = f.e->type();
-    // A static_cast, const_cast or reinterpret_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
+    // A static_cast, const_cast or reinterpret_cast to a reference names its operand, typed as the cast leaves it (M2.12o);
+    // a read's to a dependent `T &&` is a zero of T (staticCast), its category the written `&&` (Templates::castUnder).
     if (kind == syntax::Kind::Cast && text.find("&>") != std::string::npos && f.e->type() != nullptr &&
         (text.compare(0, 12, "static_cast<") == 0 || text.compare(0, 11, "const_cast<") == 0 ||
          text.compare(0, 17, "reinterpret_cast<") == 0))
-        refCastTypes_[f.e->syntax().v] = std::make_pair(f.e->type(), f.e->isXvalue());
+        refCastTypes_[f.e->syntax().v] = std::make_pair(f.e->type(), f.e->isXvalue() || (patternBody_ && text.compare(text.size() - 3, 3, "&&>") == 0));
     return std::move(f.e);
 }
 

@@ -4004,3 +4004,47 @@ identical.sh without the flag 0 differ on four targets (x86_64-linux 1,906, x86_
 **Left**: the bodies that hold the forwarding reference now - `std::forward` and `std::move`'s `static_cast<T &&>` ("a 'cast'
 in the body", 148 in the suite), the explicit-argument call `std::forward<T>(p)`, a return of a class's object by reference;
 a reference to an array (7), an rvalue reference (2); class template specializations (64 / 207); the constructor half of m82z's.
+
+## M8.2 slice 2f: a static_cast to a reference under the binding - std::forward's and std::move's own bodies (lane m82ac, 2026-11-20)
+
+**What the read held apart.** `static_cast<T &&>(t)` and `static_cast<typename remove_reference<T>::type &&>(t)` replayed by
+"a 'cast' in the body" (148 over tests/cases, 1,022 over the self-host), and behind the cast three facts were not the replay's:
+(a) `X<T>::m` - std::forward's parameter `typename remove_reference<T>::type &`, std::move's return and cast type - stayed a
+dependent member under the binding: `Templates::substituted` (the one substitution) now resolves it as memberTypeWalk does,
+the specialization X<U> the replay made found by the key it is declared under (`specializationKey`, `findTypedef`) and m by
+`lookupInClass` (`memberUnder`); a class not made, or an argument that is no type, leaves it dependent and replays by name.
+(b) A read's cast to a dependent reference is a zero of its referent (`Parser::staticCast`), its category lost: the read's
+`refCastTypes_` now keeps the written `&&` (ParserExpr's noteKeywordForm, a read alone), and `Templates::castUnder` collapses
+it under the binding ([dcl.ref]/6: `T &&` with T = int & is int &, an lvalue) - one `Templates::castRecord` gives a node's cast
+to `Typer::record`, the Typer's cast rule and `recordDiffers` alike. (c) A form's value record (`Resolved::Value`) substituted
+to a reference reads as its referent ([expr]/5, `valueUnder`, `Typer::boundValue`). substShape takes a static_cast to a
+reference over a name of its referent's type; any other cast replays by name ("a cast other than a static_cast to a
+reference, which the read records no type for"; "... over another type, which the replay converts"; "a static_cast to a
+member type of a class the binding has not made").
+
+**Probes** (no new case; tests/subst.sh's lines): template-subst-fwd 11 made, 11 equal under -check=templates (was 7: fwd,
+std::forward and std::move's bodies over a reference to a scalar), its 3 left replay by "an explicit-argument call";
+template-subst-fwdclass 8 (was 6); template-subst-ref 16 (was 14: `mv`'s `static_cast<typename unref<T>::type &&>`).
+
+**The census** (Linux, 1,302 units, 350 nonzero as REF): covered 511 (REF 412), 437 with no replay (REF 338), 74 replayed;
+**without the probes 227 of the suite's own bodies (REF 136, +91)**; "a 'cast' in the body" is gone: 49 casts other than a
+static_cast to a reference are left by that name (48 of the suite's own). The self-host (102 sources, 0 nonzero): covered 1,374 (REF 356, +1,018), all 1,374 made equal under -check=templates; its 1,022 at a 'cast' are 4 now, by the new name; 1,609 class template specializations remain its largest reason, then 376 "a 'name' the read resolved to a type the binding does not carry".
+
+**src/**: Templates.cpp +55, Templates.h +4, Typing.cpp +4, Typing.h +1, ParserExpr.cpp +1: 95,520 -> 95,585 (+65).
+EXCLUSIONS re-pointed (Templates.cpp 1714, 1766, 2463; ParserExpr.cpp 3771).
+
+**Gates** (REF `b0b65370` in `~/m82acb`, NEW in `~/m82acc`, one path length; every check on this commit's tree): identical.sh without the flag 0 differ on four targets (x86_64-linux 1,906, x86_64-windows 3,812, arm64-darwin 1,906, tms6747 1,906) and with `-templates=subst` 0 differ on three (1,906, 3,812, 1,906); **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path alone, 0 otherwise. g++ `-Werror` clean.
+`-check=templates -templates=subst` over tests/cases: 350 nonzero exits as REF, none failing on a difference.
+**tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1295/0 without and with
+`-templates=subst`. typed 945/0, syntax 7/0. `-check=fold` 16,938 compared, 0 differ, 0 units failing. Self-compile of
+Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory
+gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. **Windows** (work\\m82acw, this source): cl /W4 /WX
+clean (95 s with the ship, alone); names.sh 953 passed 0 failed; overload.sh 46 agreed 0 differed.
+
+**Left**: (2) the explicit-argument call `std::forward<T>(x)` / `fwd<T>(a)` (8 over the suite; templateCandidates refuses
+any written `<`): the replay's door (ParserTemplate's explicit-list path) reads the list once per overload from the tokens
+under the binding (`templateArguments` at the list, in a Trial), deduces what the list leaves, and ranks the made
+specializations under a `$explicit:` key - requestCall would take the list's token from the callee node's position and do
+the same in the instantiation's context, then rank as it ranks a deduced call; (3) functional and C-style casts over a
+scalar T (a C-style cast's `castTypes_` holds T as written, so the Typer's substitution already covers its record; substShape
+refuses it by name today); a static_cast to a non-reference dependent type (the read records no type for it).
