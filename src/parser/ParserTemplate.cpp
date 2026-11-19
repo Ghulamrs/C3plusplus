@@ -1801,6 +1801,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     // ([temp.arg.explicit]/3, `duration_cast<To>(d)`) can deduce them from these.
     const std::size_t listAt = at_;
     skipTemplateArguments();
+    const std::string explicitArgs = spelledTokens(listAt, at_);
     if (!peek().is("("))
         src_.fail(peek().pos, "'" + name + "' is a function template, and "
                               "naming one without calling it is not supported "
@@ -1869,9 +1870,9 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = !patternUses_ || lookup_.functions_[i].used; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
-    // Its syntax is a call of the name as written, the arguments after it (M2.12l).
-    std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, scope.empty() ? name : scope + "::" + name, pos,
-                                                        std::vector<syntax::NodeId>()));
+    // Its syntax is a call of the name as written, its explicit arguments kept on it (M8rev M7), the arguments after it.
+    std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, (scope.empty() ? name : scope + "::" + name) + explicitArgs,
+                                                        pos, std::vector<syntax::NodeId>()));
     kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
     ExprPtr called = completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params, sig.variadic, pos, std::move(callArgs));
     noteCallee(kids[0], called.get());
