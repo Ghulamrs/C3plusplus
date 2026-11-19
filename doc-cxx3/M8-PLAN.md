@@ -2830,3 +2830,51 @@ body made with no replay has no root of its own, so `substituteFunction` must no
 excludes it), and the sibling then takes the read path instead. Either M8.1 takes an unreplayed pattern (its root the read, typed
 under the pattern's binding and retyped to its own) or the probe's numbers move with the coordinator's decision; that is a
 decision. Also owed: the 128 include the bodies the check's stand-in takes first (m82g's 17), which no check holds.
+
+## M8.2 slice 2c's end: the replay skipped, the stand-in retired where M8.2 makes the body, and the typed check bound (lane m82i, 2026-11-19)
+
+Branch `m8-2i` from `7f420fe0`. **One commit**: m82h's step (2) (`boxkit/m82h-c2-wip.patch`, applied as it stood) and what it
+needed to pass. (i) The body proof, the coordinator's decision: under `-templates=subst` a covered body is made from the read and
+not replayed (`madeWithoutReplay`); under `-check=templates` the replay runs beside it and the frame, shell and made checks hold it.
+(ii) **M8.2 asked before the stand-in**: `instantiatePending` runs `substituteFunction` only for a specialization `instantiate` did
+not cover (`bound_`), so M8.1's sibling substitution retires wherever M8.2 makes the body - the 17 it took first (m82g) are M8.2's
+now. (b) **`Typer::check` types an unreplayed read root under its binding**, as `typeBody` does for the lowering, and
+`recordDiffers` takes the binding: a bound root's record type is held against the parser's substituted by it. (c) **The census**:
+`madeWithoutReplay` names why it replays, and `-check=templates replay (N): substituted with no replay | beside a replay, under
+-check=templates | replayed: <reason>` prints with the built report (under the check, or `CXX1_TEMPLATE_CENSUS`).
+
+**tests/subst.sh's probes re-pointed** at M8.2's census, the probe files' records only. Old: `template-subst` by-substitution 16 (the
+stand-in, from a same-layout replayed sibling), `-g` 0; `template-subst-refused` by-substitution 1 and four stand-in reasons (a
+conversion between two parameters' types, a bool argument, a name the template does not declare, a literal). New: `template-subst`
+42 substituted with no replay, plain and under `-g`, 42 beside a replay and made 42 equal under the check; `template-subst-refused` 10
+with no replay (the conversions, the bool argument and the literal are M8.2's shapes), plain and `-g`, and the call refused by reason
+twice (`subst (2): replayed: a 'call' in the body`; the stand-in then refuses it as `a name the template does not declare: a lookup`);
+the stand-in substitutes nothing in either (by-substitution=0). The census step also prints M8.2's replay lines; its door sum now
+reads "through the function door", which counts M8.2's bodies with no replay too. `template-subst-refused.cpp`'s two comment lines
+say what it now shows.
+
+**The census** (Linux, over the 1,279 cases): without the check, **128 substituted with no replay, 69 replayed by reason** (a return type
+the binding does not carry 40, a `decltype` return 29); under `-check=templates`, 197 beside a replay: covered 197 (180 + the
+stand-in's 17), frame 197 equal, shell 197 equal, made 128 equal, 69 replayed by name; the fixed point's reasons as m82g. typed.sh
+under the switch: **untyped 46** (recorded 46; m82h's step (2) alone: 158), 922 passed both levels.
+
+**src/** `Templates.cpp` +74 -40, `Templates.h` +3, `Typing.cpp` +30 -3, `Typing.h` +2 -2, `Driver.cpp` +1 -1: 94,803 -> 94,867 (+64).
+
+**Gates** (REF `7f420fe0` built in `~/m82ia`, NEW in `~/m82ib`, paths of one length): on n2 (the commit but one line, below) `identical.sh`
+REF against NEW at -O0 and -O2, **0 differ** on four targets without the flag (x86_64-linux 1,860, x86_64-windows 3,720, arm64-darwin
+1,860, tms6747 1,860) and on three with `-templates=subst`; **-g 0 differ** with and without the flag (x86_64-linux 929 the same, 350
+refused alike; x86_64-windows 904, 375 - the 218 and 211 the script first called different were the include directory's path, REF's
+`m82ia` read as `m82ib`); run.sh 1273/0 without and with `-templates=subst`; `-check=templates -templates=subst` over the cases: 350
+units with a nonzero exit, as at m82h, none failing on a difference; `-check=fold` compared 16,594, agreed 12,314, differ 0;
+self-compile of `Templates.cpp`, `Typing.cpp`, `Driver.cpp` rc 0; tms6747 SIM=1 -O2 shards 1-3 rc 0. n2's memory gate said raw-pointers
+90 (rc 1): a `const Type *` in `recordDiffers`, made a `TypeId` - **n3, the commit**: static, each tool's own exit status, exclusions
+rc 0, 0/0 (the three `Templates.cpp` citations re-pointed 1258/1310/2007), comments rc 0 (0 over), memory gate rc 0 (raw-pointers 89),
+ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; self-compile of `Typing.cpp` rc 0; `identical.sh` x86_64-linux
+and x86_64-windows 0 differ, without and with the flag; **subst.sh 0 failed** (its census: 127 with no replay, 40 and 29 replayed by
+reason, over the 922 units it counts; the "4 counts below the record" note as at m82h, nothing re-recorded); g++ `-Werror` clean.
+**Windows**: cl /W4 /WX clean, first and alone - the whole tree 12:00:10-12:03:28 (3 min 18 s), n3's delta 12:08:10-12:11:37;
+overload.sh 46/0 and names.sh 930/0 on n3 alone (a first run met the delta build relinking its exe at 12:11 and lost four consecutive
+cases to it).
+
+**Left**: the 69 a made function cannot carry (a return type the binding does not carry, a `decltype` return) replay by name; the
+census step's door count still holds M8.2's no-replay bodies as the function door's; tms6747 replays every covered body.

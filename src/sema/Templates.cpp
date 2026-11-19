@@ -379,7 +379,8 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
     bool converts = false;
     for (std::size_t k = 0; k < specializations_.size(); k++) {
         const Specialization &o = specializations_[k];
-        if (k == i || o.isClass || !o.emitted || o.explicitly || o.start != sp.start || o.name != sp.name || substituted_.count(o.symbol)) continue;
+        if (k == i || o.isClass || !o.emitted || o.explicitly || o.start != sp.start || o.name != sp.name || substituted_.count(o.symbol) ||
+            unreplayed_.count(o.symbol)) continue;      // a body made from the read has no root of its own to share
         bool fits = o.binding.size() == sp.binding.size();
         for (std::size_t q = 0; fits && q < o.binding.size(); q++) {
             const Type *b = o.binding[q];
@@ -885,12 +886,13 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
     *raised = 0;
     std::vector<Frame> saved;
     std::vector<int> laid(read.size(), 0);
-    for (std::size_t k = 0; k < read.size() && k < replay.size(); k++) {
-        const FrameEvent &r = read[k], &y = replay[k];
+    const bool held = !replay.empty() || read.empty();      // no replay: the frame laid, checked against nothing
+    for (std::size_t k = 0; k < read.size() && (!held || k < replay.size()); k++) {
+        const FrameEvent &r = read[k], &y = held ? replay[k] : read[k];
         const std::string step = frameStepName(r.kind);
-        if (r.kind != y.kind) return "the read's " + step + " where the replay has " + frameStepName(y.kind);
+        if (held && r.kind != y.kind) return "the read's " + step + " where the replay has " + frameStepName(y.kind);
         const Type *t = substituted(s, r.type);
-        if (t != y.type) return step + ": typed apart";
+        if (held && t != y.type) return step + ": typed apart";
         if (t != nullptr && p_.dependentType(t)) return step + ": a type the binding does not carry";
         const Type *stored = t != nullptr && t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         int at = 0;
@@ -920,7 +922,7 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
             now.free.clear();
             // The parser resets frameAlign_ for a nested function alone; any other frame starts where the last one left it.
             if (r.kind == 'p') { now.align = 16; nested++; }
-            if (r.kind == 'z' && y.align != start) return step + ": its alignment, which the replay found apart";
+            if (held && r.kind == 'z' && y.align != start) return step + ": its alignment, which the replay found apart";
             if (r.kind == 'z') now.align = start;
         } else if (r.kind == 'q' || r.kind == 'c') {
             if (saved.empty()) return step + ": a frame put back that was never saved";
@@ -937,13 +939,13 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
         } else if (r.kind == 'e') {
             at = alignTo(now.size, 16);
         } else if (r.kind == 'b') {
-            if (r.block != y.block) return step + ": the block it opens in";     // its offset is where it opens
+            if (held && r.block != y.block) return step + ": the block it opens in";     // its offset is where it opens
             at = r.offset;
         } else return step;
         laid[k] = at;
-        if (at != y.offset) return step + ": its offset";
+        if (held && at != y.offset) return step + ": its offset";
     }
-    if (read.size() != replay.size()) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
+    if (held && read.size() != replay.size()) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
     *laidOut = laid;
     return std::string();
 }
@@ -1031,10 +1033,32 @@ std::string Templates::madeApart(const Function &g, const Function &f) const {
     return std::string();
 }
 
+// Step 2's end: the function, its frame's alignment and the unit's records the replay's definition path leaves, made from the
+// read alone; false - and replayed - where the read leaves what the made function does not carry or a generator walks the Ast.
+bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why) {
+    if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
+    int raised = 0;
+    std::vector<int> laid;
+    *why = layFrame(readFrames_[sp.start], std::vector<FrameEvent>(), s, startAlign, &raised, &laid);
+    if (!why->empty()) return *why = "the frame: " + *why, false;
+    std::vector<Function> own;
+    if (!(*why = madeFromRead(sp, s, readFrames_[sp.start], laid, &own)).empty()) return false;
+    p_.current_->functions.push_back(std::move(own.back()));
+    for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
+        if (p_.lookup_.functions_[q].symbol == sp.symbol) p_.lookup_.functions_[q].defined = true;
+    p_.discardableInline_.insert(sp.symbol);
+    if (raised > alignHad) p_.frameAligns_[sp.symbol] = raised;
+    p_.frameAlign_ = std::max(startAlign, raised);
+    unreplayed_.insert(sp.symbol);
+    return true;
+}
+
 std::string Templates::builtReport() const {
     std::string out;
     for (std::map<std::string, int>::const_iterator i = builtCensus_.begin(); i != builtCensus_.end(); ++i)
         out += "-check=templates built (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = replayCensus_.begin(); i != replayCensus_.end(); ++i)
+        out += "-check=templates replay (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -1112,8 +1136,10 @@ void Templates::instantiatePending() {
                 if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
                 substCensus_[why]++;
                 why.clear();
-                if (substituteFunction(i, &why)) { count(BySubstitution); continue; }
-                refusedSubst_[why]++;
+                // M8.2 asked first: a body it covers is its own, and M8.1's stand-in is not run (2026-11-19, decision ii).
+                const bool covered = bound_.count(specializations_[i].symbol) != 0;
+                if (!covered && substituteFunction(i, &why)) { count(BySubstitution); continue; }
+                if (!covered) refusedSubst_[why]++;
             }
 
             // Copied, not held by reference: replaying may append to the
@@ -1170,35 +1196,43 @@ void Templates::instantiatePending() {
                 // What the replay does to the unit beyond its function, which a body made from the read must do alike.
                 const std::size_t fnsHad = p_.current_->functions.size(), declsHad = p_.lookup_.functions_.size();
                 const std::size_t specsHad = specializations_.size(), rootsHad = p_.definedBodies_.size();
-                p_.topLevel(*p_.current_);
-                p_.frameLog_ = logBack.was;
-                if (bound != bound_.end()) {
-                    int raised = 0;
-                    std::vector<int> laid;
-                    std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s, startAlign, &raised, &laid);
-                    const std::map<std::string, int>::const_iterator has = p_.frameAligns_.find(sp.symbol);
-                    const int alignHas = has != p_.frameAligns_.end() ? has->second : 0;
-                    if (apart.empty() && std::max(alignHad, raised) != alignHas) apart = "the frame's alignment";
-                    if (apart.empty() && std::max(startAlign, raised) != p_.frameAlign_) apart = "the alignment the next frame starts at";
-                    frameCensus_[apart.empty() ? "equal" : "differ: " + apart]++;
-                    const std::vector<Function> &made = p_.current_->functions;
-                    std::size_t at = made.size();
-                    while (apart.empty() && at-- > 0 && made[at].symbol() != sp.symbol) {}
-                    std::vector<Function> own;
-                    const std::string fromRead = apart.empty() && at < made.size() ? madeFromRead(sp, bound->second.s, readFrames_[sp.start], laid, &own) : std::string();
-                    if (apart.empty() && at < made.size()) {
-                        const std::string shell = shellApart(own.back(), made[at]);
-                        shellCensus_[shell.empty() ? "equal" : "differ: " + shell]++;
-                        std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
-                        if (side.empty() && (at != fnsHad || made.size() != fnsHad + 1)) side = "the functions it pushed";
-                        if (side.empty() && (specializations_.size() != specsHad || p_.lookup_.functions_.size() != declsHad)) side = "a declaration or specialization it made";
-                        for (std::size_t q = 0; side.empty() && q < p_.lookup_.functions_.size(); q++)
-                            if (p_.lookup_.functions_[q].symbol == sp.symbol && !p_.lookup_.functions_[q].defined) side = "a declaration left undefined";
-                        if (side.empty() && !p_.discardableInline_.count(sp.symbol)) side = "its inline definition kept";
-                        if (side.empty() && p_.constant_.constexprFns_.count(sp.symbol)) side = "a constexpr function";
-                        if (side.empty() && (p_.definedBodies_.size() != rootsHad + 1 || p_.syntaxFunctions_.find(p_.definedBodies_.back().v) == p_.syntaxFunctions_.end() ||
-                                           p_.syntaxFunctions_.find(p_.definedBodies_.back().v)->second != sp.symbol)) side = "its body's root";
-                        madeCensus_[side.empty() ? "equal" : "differ: " + side]++;
+                // Step 2's end: a covered body is the read's own, trusted; the replay runs beside it only under -check=templates.
+                std::string skip = "beside a replay, under -check=templates";
+                if (bound != bound_.end() && !checkBodies_ && madeWithoutReplay(sp, bound->second.s, startAlign, alignHad, &skip)) {
+                    replayCensus_["substituted with no replay"]++;
+                    p_.frameLog_ = logBack.was;
+                } else {
+                    if (bound != bound_.end()) replayCensus_[checkBodies_ ? skip : "replayed: " + skip]++;
+                    p_.topLevel(*p_.current_);
+                    p_.frameLog_ = logBack.was;
+                    if (bound != bound_.end()) {
+                        int raised = 0;
+                        std::vector<int> laid;
+                        std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s, startAlign, &raised, &laid);
+                        const std::map<std::string, int>::const_iterator has = p_.frameAligns_.find(sp.symbol);
+                        const int alignHas = has != p_.frameAligns_.end() ? has->second : 0;
+                        if (apart.empty() && std::max(alignHad, raised) != alignHas) apart = "the frame's alignment";
+                        if (apart.empty() && std::max(startAlign, raised) != p_.frameAlign_) apart = "the alignment the next frame starts at";
+                        frameCensus_[apart.empty() ? "equal" : "differ: " + apart]++;
+                        const std::vector<Function> &made = p_.current_->functions;
+                        std::size_t at = made.size();
+                        while (apart.empty() && at-- > 0 && made[at].symbol() != sp.symbol) {}
+                        std::vector<Function> own;
+                        const std::string fromRead = apart.empty() && at < made.size() ? madeFromRead(sp, bound->second.s, readFrames_[sp.start], laid, &own) : std::string();
+                        if (apart.empty() && at < made.size()) {
+                            const std::string shell = shellApart(own.back(), made[at]);
+                            shellCensus_[shell.empty() ? "equal" : "differ: " + shell]++;
+                            std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
+                            if (side.empty() && (at != fnsHad || made.size() != fnsHad + 1)) side = "the functions it pushed";
+                            if (side.empty() && (specializations_.size() != specsHad || p_.lookup_.functions_.size() != declsHad)) side = "a declaration or specialization it made";
+                            for (std::size_t q = 0; side.empty() && q < p_.lookup_.functions_.size(); q++)
+                                if (p_.lookup_.functions_[q].symbol == sp.symbol && !p_.lookup_.functions_[q].defined) side = "a declaration left undefined";
+                            if (side.empty() && !p_.discardableInline_.count(sp.symbol)) side = "its inline definition kept";
+                            if (side.empty() && p_.constant_.constexprFns_.count(sp.symbol)) side = "a constexpr function";
+                            if (side.empty() && (p_.definedBodies_.size() != rootsHad + 1 || p_.syntaxFunctions_.find(p_.definedBodies_.back().v) == p_.syntaxFunctions_.end() ||
+                                               p_.syntaxFunctions_.find(p_.definedBodies_.back().v)->second != sp.symbol)) side = "its body's root";
+                            madeCensus_[side.empty() ? "equal" : "differ: " + side]++;
+                        }
                     }
                 }
             }

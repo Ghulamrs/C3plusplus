@@ -242,6 +242,9 @@ public:
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
+    bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why);
+    std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
+    std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
     std::string builtReport() const;
 
 private:

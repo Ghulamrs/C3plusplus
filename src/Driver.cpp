@@ -1776,7 +1776,7 @@ bool Driver::compile(const Job &job) {
         int failures = 0;
         const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
-        if (checkTemplates_) {
+        if (checkTemplates_ || std::getenv("CXX1_TEMPLATE_CENSUS") != nullptr) {      // the env: bodies built with no replay
             const std::string built = parser.templatesBuiltReport();
             std::fwrite(built.data(), 1, built.size(), stdout);
         }
