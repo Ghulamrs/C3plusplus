@@ -4784,3 +4784,52 @@ passed them because one static script printed `tail`'s exit status. m6dw3h's one
 counts, a race of the gate's own: maketest (the run family) ran beside ssa1 and ssa2, all three in tests/out-ssa. Its
 verdict cleared, maketest alone on the same tree (`-k`): PASS. The gate's fix (maketest apart from ssa1/ssa2) is owed to
 the next wave.
+
+### M6d: `::X` inside a namespace that has its own `X` - the constructor's key re-qualified, `::S::k`, and `vector::value_type` - lane m6d-glob, 2026-11-19
+
+Brief boxkit/brief-m6d-glob.txt; from 7774bb42 on branch m6d-glob; REF built from 7774bb42 on Linux (`~/m6d-glob-ref.exe`).
+Found by lane m82f's self-compile: inside `namespace sema`, `::Local(...)` and `typedef ::Local X;` built `sema::Local`.
+**Not a listed exclusion** - a wrong answer. The type was always found right (`findGlobalTypedef`, ParserType.cpp's and
+ParserExpr.cpp's `::` branches); the fault was one step later: a class's constructors are resolved under its key
+`tag::local` ("X::X"), and `Lookup::qualifyForLookup` read that key as a name written in the source, so inside `n` it
+tried `n::X::X` first - n's constructor was called on the global X's storage (a segfault when the arity matched, "no
+function called 'n::X::X' takes these 1 argument(s)" when it did not). Every road that names a class by its tag went
+through it: a declaration `::X a(1)`, `::X(2)`, a typedef of `::X`, `new ::X(5)`, `::X f = 6`, a base `::X`.
+
+**The mend** (src/sema/Lookup.cpp, `qualifyForLookup`, +4): a qualified name that is a class's constructor key - the class
+found under that exact key with that tag, and the key present in the table asked - is returned as it stands, since a
+tag is absolute. **`::S::k`** (src/parser/ParserExpr.cpp, the `::` branch, +9): a static data member of a class found from
+the global namespace, one level deep, through `staticMemberRef` as `S::k` is; `::S::f()`, `::S::T::k` and `::f<int>()`
+stay behind the listed refusal, its entry re-worded and re-pointed. **include/vector** gains `typedef T value_type;`:
+`std::vector< ::Local>::value_type` was refused because cxx3's vector had no such member, not because of the `::`.
+A first draft compared the lookup's member-function pointer (`exists == &Lookup::hasFunctionNamed`); the self-compile of
+Lookup.cpp refused it ("a 'binary' the typer did not type") and the test became a call through it.
+
+**Cases** (clang 19 on the Windows box, `-x c++ -std=c++11 -pedantic-errors -nostdinc++ -isystem include`):
+`global-qualified-class-in-namespace` (a type, a functional cast, a typedef, `std::vector< ::X>` and its `value_type`,
+`::X::count` beside `n::X::count`, under the ledger: built=7 gone=7, the rest 0; `.nonames` for <vector>, the
+standard-library reason), `global-qualified-constructor-same-arity` (n's constructor takes the same arguments: REF
+compiles it and the program segfaults), `global-qualified-class-only-in-namespace` (`::Y` with only `n::Y`: refused,
+"'::Y' was not declared in the global namespace", clang "no type named 'Y' in the global namespace"; REF the same).
+**Names**: names.sh (Windows clang, three ABIs) on the final tree: 929 passed, 1 failed - the same-arity case on
+arm64-darwin, where cxx1 names __Unwind_Resume (the cleanup of `new ::X(5)`) and clang does not, now its `.nonames`;
+re-run over the three new cases, 2 passed, 0 failed. cl 19.44's defined external symbols match cxx3-msvc's for the
+same-arity case, 10 of 10 (cl and dumpbin in work\m6d-globc). overload.sh 46 agreed, 0 differed.
+**Shown** against REF (tools/identical.sh at -O0 and -O2, n3): x86_64-linux 1,860 compared, x86_64-windows (both
+spellings) 3,720, arm64-darwin 1,860, tms6747 1,860 - **4, 8, 4 and 4 differ, every one `global-qualified-class-in-namespace`
+or `global-qualified-constructor-same-arity`**, 0 outside them; `-g -S` x86_64-linux 927 same / 350 refused alike / 2
+differ, x86_64-windows 902 / 375 / 2, the same two cases. **For the wave's rows**: those two cases differ from REF on all
+four targets, at -O0 and -O2, both Windows spellings, and under `-g` (REF refuses the first and miscompiles the
+second); the refusal case is refused by both.
+**ast-residue** on Linux: ExprPtr 2,012, StmtPtr 0, node-casts 141, node-refs 298, visits 0, readers 9, ast-lines 513 -
+the baseline, not raised. Exclusions 0 uncited, 0 stale (four ParserExpr.cpp citations re-pointed).
+
+**Gates on the final tree**: g++ -Werror clean (Linux); cl /W4 /WX clean (work\m6d-globw: a full build in 68 s, the final
+delta 10:46:44-10:48:21); run.sh 1,273 passed, 0 failed; tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 149/0, 148/0,
+143/0; self-compile of Lookup.cpp and ParserExpr.cpp by the new compiler at x86_64-linux -O2: both compile. Comment
+cap 0 over, memory gate pass (raw-pointers 89), ide --check up to date. src/ 94,682 -> 94,695 lines (+13).
+**What is left**: `: ::X(a)` - a base named with a leading `::` in a mem-initializer - is refused ("expected a member or
+base to initialise"); the read is ParserTopLevel.cpp's, which lane m82g holds, so it is registered as
+tests/open/global-qualified-base-initialiser with clang's answer. Templates.cpp's field-by-field fill of `::Local`
+(lane m82f's work-round) can go back to `::Local(...)` once m82g lets go of the file.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.

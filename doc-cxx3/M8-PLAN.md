@@ -2669,3 +2669,56 @@ script printed `tail`'s, which is how 92 and the stale citations passed it): exc
 89 (rc 0), ast-residue node-refs 298 (rc 0, not raised), ide/generate.py up to date; g++ `-Werror` clean; **Windows** cl /W4 /WX clean
 (first and alone: the whole tree 09:24-09:25, about 1 minute; the final delta 09:27:54-09:28:55), names.sh 928 passed 0 failed,
 overload.sh 46/0.
+
+## M8.2 slice 2c, step 2's second part: the shell's records from the read, held against the replay's function (lane m82f, 2026-11-19)
+
+Branch `m8-2f` from `8fdc673b` (m82e). **What it does, under `-templates=subst` only**: a `d` step of the parser's frame log
+carries the local's name, the parameter mark (`inParams_`) and the block it is declared in (`currentBlock()`, the number the
+replay's `fnVars_` and block table use) - `FrameEvent` +3 fields, `logFrame` +3 arguments, one call. `Templates::layFrame` hands
+back the offsets it laid, and `Templates::shellApart` makes from them the records `substituteFunction` gives a `Function` - each
+`Param` (stored type, offset) and `::Local` (name, stored type, offset, `isParam`, scope, alignment, `declared`, serial) from the
+outermost frame's `d` steps, `sretSlot` from `S`, `regSaveSlot` from `V`, `frameSize` from `e` (the frame's alignment is set on every function at the
+unit's end from `frameAligns_`, which m82e's check holds) - and, where the frame is `equal`, holds them against the function the replay made, record for record.
+`-check=templates shell (N): equal | differ: <record>`. Nothing uses the shell for code yet.
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,276 cases): covered 238, frame equal 187, differ 34 (as
+m82e). **Shell: 187 equal of the 187 whose frame is equal, 0 differ.** Every record is the replay's - parameters, locals' names, types,
+offsets, blocks, alignments, `declared`, the sret slot, the save area, the frame's size - but the serials: the read numbers its locals as it
+read them, so a no-replay shell takes the read's serials, which its own typed body resolves to, and the check holds them one for
+one against the replay's (a first build compared them equal and found all 187 renumbered). Substituted with no replay 0; beside a
+replay 180 (46 cases); replayed by reason as m82e (a class or array argument 288, a non-type/pack/template parameter 177, `call`
+77, `cast` 49, `member` 13, `literal` 9, `sizeof` 8, no body read 6; at the lowering by name 41).
+
+**Two defects found on the way** (not mended here: no side tasks), self-compiling `Templates.cpp`: cxx3 reads `::Local` - the
+global `Local`, written inside `namespace sema` - as `sema::Local` in a functional cast `::Local(...)` ("no function called
+'sema::Local::Local' takes these 6 argument(s)") and in `typedef ::Local X`, though `std::vector< ::Local>` is read right; and
+`std::vector< ::Local>::value_type` is refused ("has no member type called 'value_type'"). g++ and cl take all three. `shellApart` fills each `::Local` field by field after `resize`.
+
+**Where the skip stops, exactly.** (a) The shell's records are the read's now, checked; the block table (`Function::blocks()`,
+`blockPositions()`, which `-g` reads) is not logged yet - a `b` step at `Parser.cpp`'s `blocks_.push_back` would carry it.
+(b) Decided by the coordinator: trusted under `-templates=subst`, the replay beside it only under `-check=templates`. What the
+parse-time fallback must name is the 7 bodies whose frame and shell are equal but whose typed body is not (`function` in its parts
+3, `conditional` resolved apart 3, `unary` 1): at parse time the read's shape has to refuse them by name, which nothing does yet.
+(c) The replay's side effects on the unit, read off `ParserTopLevel.cpp`'s definition path for a free function: the `Function`
+pushed where the replay pushes it (its index orders the module); `syntaxFunctions_[read]` and `definedBodies_` (the census's
+root - a read root shared by several specializations, so by a map of its own as `Typer::census` places `substituted_`);
+`setBlocks`; `setDisplayName`, `setInline` (replayingInline_), `setNoexcept`, `setFrameAlign`; `discardableInline_`;
+`lookup_.functions_[].defined`; `frameAligns_[symbol]` and `frameAlign_` for the next frame (m82e's check computes both);
+`constexprFns_` for a `constexpr` one. String labels and `topLevel`'s numbering are not reached: the covered shape has no string
+literal, call or lambda. `Typer::typeBody` then types the read under the binding with no replay to hold it against.
+
+**src/** `Parser.h` +3 -1, `Parser.cpp` +1 -1, `Entities.h` +1 -1, `Templates.h` +4 -1, `Templates.cpp` +57 -2: src/ 94,622 -> 94,682 lines.
+
+**Gates** (REF `8fdc673b` and NEW built in one Linux tree, `~/m82f-ref.exe` and `~/m82f-n4.exe`; the cases alone): `identical.sh` REF against
+NEW without the flag at -O0 and -O2 - x86_64-linux 1,856, tms6747 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with
+`-templates=subst` on NEW - x86_64-linux 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ** (the 180 bodies built from
+the read); `-g` at -O0, without and with the flag, x86_64-linux 927 the same (349 refused alike) and x86_64-windows 902 (374), 0
+differ each; run.sh 1270/0, and with `-templates=subst` 1270/0; subst.sh 0 failed (self 102 of 102 reached, the self shape record
+34 bodies in 21 units, ceilings 17 under 17 and 26 under 26); `-templates=subst -check=templates` over the 1,276 cases no check
+failure; `-check=fold` compared 16,475, agreed 12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0 failed;
+self-compile of `Templates.cpp` and `Parser.cpp` by NEW rc 0 (after the two defects above were written round); static, each tool's
+own exit status: exclusions 0/0 (three citations in `Templates.cpp` re-pointed), comments 0 over, memory gate raw-pointers 89 (rc 0),
+ast-residue node-refs 298 (rc 0, not raised: a `const Var &` alias of `::Local` read 299, and went), ide/generate.py up to date; g++
+`-Werror` clean; **Windows** cl /W4 /WX clean (first and alone: the whole tree 09:44:46-09:47:06, about 2 minutes 20; the deltas
+09:58:16-10:00:39 and 10:15:46-10:17:23), names.sh 928 passed 0 failed, overload.sh 46/0 (on the final tree; the same on the first).
+

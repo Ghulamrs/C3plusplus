@@ -1636,6 +1636,15 @@ ExprPtr Parser::primaryNode(Program *program) {
             if (named->isStructOrUnion()) { at_++; return classTemporary(named, qpos); }
             return functionalCast(named, qpos);
         }
+        // `::S::k` - a static data member of a class found from the global namespace, one level deep.
+        const Type *cls = last.kind == TokenKind::Ident && peekAt(k + 1).is("::") && peekAt(k + 2).kind == TokenKind::Ident &&
+                          !peekAt(k + 3).is("::") && !peekAt(k + 3).is("(") && !peekAt(k + 3).is("<")
+                        ? lookup_.findGlobalTypedef(full) : nullptr;
+        if (cls != nullptr && cls->isStructOrUnion())
+            if (const Type::StaticMember *m = cls->findStaticMember(peekAt(k + 2).text)) {
+                at_ += k + 3;
+                return staticMemberRef(cls, *m, cls->tag(), qpos);
+            }
     }
     if (peek().is("::"))
         src_.fail(peek().pos, "a class or a template named with '::' alone is not "

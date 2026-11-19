@@ -232,7 +232,10 @@ public:
     // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.
     std::map<std::size_t, std::vector<FrameEvent> > readFrames_;
     std::map<std::string, int> frameCensus_;
-    std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised) const;
+    std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laid) const;
+    // Step 2: the shell substituteFunction makes, from the laid `d`, `S`, `V` and `e` steps - held against the replay's function.
+    std::map<std::string, int> shellCensus_;
+    std::string shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const;
     std::string builtReport() const;
 
 private:
