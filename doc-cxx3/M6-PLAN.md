@@ -4672,3 +4672,34 @@ S4a-S4i and the merge with main (lane mw12) on main and m3-line. The first gate 
 identical, identlnx, identwin and identa64 on the wave's own 93 differences - eight cases new to M6d (constexpr-body-*,
 converting-constructor-*) that main refuses - named row by row in 6b97ad9a from the gate's lists. Cycles: 71 worse, every
 one owed or accepted; 192,025,550 -> 149,248,103 at -O2. tests/wave-expected.txt emptied.
+
+### M6d S6: on-demand typing and `-check=fold`, design C2 - lane m6d-s6, 2026-11-19
+
+Brief boxkit/brief-m6d-s6.txt; from 4f91ee2f (m6d-w2 merged with m8-2b) on branch m6d-s6; REF built from 4f91ee2f on Linux
+(`~/m6d-s6-ref.exe`). Opus 5.5, by the user's word of 2026-11-19.
+
+**The design.** *Where a constant is asked.* `Constexpr::fold(const Expr &)` is asked during the parse - an array bound, a
+case label, an enumerator, a static or `constexpr` initialiser, a template argument - and at that moment the expression's
+syntax node is complete and every `Resolved` record the parser made for its names, calls and members is in
+`Parser::resolutions_` (written where each was resolved, keyed by syntax node). *Typing one full-expression on demand*:
+`Typer::typeExpression(syntax::NodeId)` runs the per-body Typer's own `node()` over that subtree with no scopes, so a name
+is typed by its record (`named` falls back to `resolvedType`), and every other fact the Typer copies (folded literals,
+sizeof's `keywordValues_`, cast types) is the parser's as it stands at the ask. One Typer and one `TypedTree` an ask: the
+per-body trees the driver types after the parse are not touched, and no parser map is written. *The key* is the syntax
+node of the asked expression (`Expr::syntax()`), which carries the token offset it was read at (`Node::loc`); nothing is
+numbered anew, so a replay, which re-reads the same token indices and builds its own syntax nodes, asks again with its own
+node. *A replayed template expression* is therefore typed again per instantiation by construction: the replay's ask names
+the replay's node, whose records are the replay's (under `-templates=subst` the binding is m82b's `Typer::bound`, which an
+on-demand Typer starts empty - the read body's typing stays slice 2b's, not a second path). *What `fold(TypedId)` covers
+here*: literals, `sizeof`/`alignof` (their recorded values), names of constant locals, globals, enumerators and folded
+static members (the same lookups `fold(const Expr &)` makes, by the record's name or symbol), parentheses, unary `+ - ! ~`,
+the integer binary operators and `&& ||`, `?:`, the comma whose left folds, and a written cast between integers. Where the
+Ast has an implicit conversion node the typed tree has none, so an operand is narrowed to its operator's type - the usual
+arithmetic conversions, or the promoted operand of a shift - only where that type differs from its own, as the Ast's
+inserted `Cast` narrows it, and the ask's result to the Ast's top type. *Later* (each counted as "not reached" by reason):
+a constexpr call (the frame of parameters, a `ConstexprFn`'s operand as a typed root - S7/S8 move the body to the syntax
+tree), a member of a constant object and `*p` (`foldLeaf`), addresses (`foldAddress`, `addressOfObject`,
+`bindStaticReference` - s7a's list), floating operands (`foldFloating`, `foldDouble`), a comma whose left is an effect
+(`runConstexprEffect`), and an expression with no syntax node (one the parser built itself). *`-check=fold`* folds every
+ask from outside the fold twice and fails the unit on a difference, printing compared / agreed / differ / not reached by
+reason; nothing without the flag reads what it adds.
