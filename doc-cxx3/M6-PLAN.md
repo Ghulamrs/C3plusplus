@@ -4452,3 +4452,39 @@ make_owned more (the new cxx3 over main's sources holds 7 and 3); the ceilings a
 them. Windows run.sh compares the program's CRLF output as is (m8h1's owed fault): with diff's
 --strip-trailing-cr, 1232 passed, 31 failed, the same 31 as REF's 1222/31 (x86_64-windows refusals such as
 alignas-local-unwind's over-aligned local beside a try).
+
+### M6d S4's close: `ExprStmt`, `Block`, `Function::body` and `StmtPtr` leave Ast.h for `Kept` - lane m6d-s4j, 2026-11-19
+
+Brief boxkit/brief-m6d-s4j.txt; from 6b97ad9a on branch m6d-s4j; REF built from 6b97ad9a on Linux (`~/m6d-s4j-ref.exe`);
+the compares are S4a's (tools/identical.sh one target a job, the m6dh gate holding the other slots; every case's `-g -S` text).
+
+**(1) `Kept`, a value and no node** (src/ 94,181 -> 94,139). What the statement nodes did - own the expressions
+`ConstexprFn` and `ConstexprCtor` point into - a `Kept` does: a handle on a heap `KeptRecord` (an expression and the
+parts under it), null where a `StmtPtr` was null. `StmtPtr(new ExprStmt(e))` is `Kept(std::move(e))`, `StmtPtr(new
+Block(v))` is `Kept(std::move(v))`, an empty block `Kept(std::vector<Kept>())`; a goto's cleanups are the
+`KeptRecord *` its `LabelDef` holds, which resolveGotos appends to after the jump is placed - the record stays where it
+is when the handle moves. Deleted from Ast.h: `Stmt`, `ExprStmt`, `Block` (and `setScope`, which nothing read, with the
+locals that only fed it), `StmtPtr`, the Visitor's two statement visits, and `Function::body_` (the
+Function keeps a `Kept`, read by nothing). `noteStmt` went: `Stmt::syntax`'s readers take the id noteParts returns -
+statement()'s eight records keyed by `noted`, and the `if` condition's `decl` through `ifConditionDeclaration`'s and
+declaration()'s out-parameter. **Found**: cxx3 refuses a nested class defined outside its class (`struct Kept::Held {`,
+"expected a name") - every self-compile failed, so the record is `KeptRecord` at namespace scope (a gap to register for
+the self-host, not mended here). 12 exclusion citations re-pointed, 0 uncited, 0 stale.
+**ast-residue** on Linux: ExprPtr 2,012, StmtPtr 477 -> 0, node-casts 149, node-refs 325 -> 302, visits 0, readers 9,
+ast-lines 526 -> 513, recorded. **Shown** against REF (c91b44f4): identical tms6747 1,848 compared, x86_64-linux 1,848,
+x86_64-windows (both spellings) 3,696, arm64-darwin 1,848 - 0 differ on each; `-g -S` of 1,269 cases 908/923/898/923 same (the rest refused alike), 0 differ on tms6747, x86_64-linux, x86_64-windows and arm64-darwin; run.sh 1,263
+passed, 0 failed; self-compile for x86_64-linux -O2 of the eight changed .cpp files: all compile; tms6747 -O2 refuses
+seven by the stack-arguments refusal, Parser.cpp compiles. REF cannot read its own text over the new headers (`StmtPtr`).
+
+**Gates on the final tree** (c91b44f4): g++ -Werror clean (Linux build); cl /W4 /WX clean, started first and alone - a
+full build of the base in 2 min 42 s (work\m6d-s4jy), a delta of the first spelling in 2 min 26 s, a full build of the
+final tree in 2 min 44 s (work\m6d-s4jz); tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 148/0, 146/0, 141/0 and 4-6 on
+Windows 142/0, 149/0, 144/0; comment cap 0 over, memory gate pass, ide --check up to date, exclusions 0 uncited 0 stale.
+
+**What tools/ast-residue reads now**: StmtPtr 0 - no statement class is left in Ast.h; what is left is the expression
+nodes (ExprPtr 2,012, node-casts 149, node-refs 302), which the constant evaluator and the parser's building half
+read. **S5 starts with** the design's S5: the frame without the nodes - the dead slots (pad pointer, selector, unwind
+help) and the setters only nodes had, each shown identical by itself; `Kept` itself goes when ConstexprFn and
+ConstexprCtor read the typed tree instead of pointing into the parser's expressions. **Owed to the wave gate:** winpass
+in both spellings, ssa.sh 1/2, names.sh, make test; and a register entry for cxx3's refusal of a nested class defined
+outside its class.
