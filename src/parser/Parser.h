@@ -56,6 +56,7 @@ public:
     // -check=templates (M8.1): hold each replayed template body against the first read of it, and say what differed.
     void checkTemplates() { tmpl_.checkBodies_ = true; }
     std::string templatesReport() const { return tmpl_.bodiesReport(); }
+    std::string templatesBuiltReport() const { return tmpl_.builtReport(); }    // after the lowering: slice 2b's bodies
     Program parse();
 
 private:

@@ -2474,3 +2474,60 @@ passed 0 failed, overload.sh 46/0.
 **Where it stopped**: 2b is the next commit - the Typer typing the read root under the binding. Not done in the hour because the
 read's records type each operand as `Kind::TemplateParam`, so a retype after typing (the stand-in's way) misses the conversions
 a bound type asks for (`T a = x * 2` with `T = double`): the binding must be in the Typer while it types.
+
+## M8.2 slice 2b: the read body typed under the binding, lowered where it types as the replay does (lane m82b, 2026-11-19)
+
+Branch `m8-2b` from `2e824d8b` (slice 2a). **What it does, under `-templates=subst` only**: `Templates::instantiate`, for a
+specialization 2a counted `covered` whose type parameters are bound to scalars (a class's locals are built by records keyed on the
+replay's own nodes, `Typer::localBuilt`), keeps `Bound` - the read root and a `Substituted` from `$T<i>` to the argument - by
+symbol, and lets the replay run as before (it still lays the frame: 2c's). `Typer::typeBody` types the replay's root, then the read
+root with `bind_` set, so `Typer::bound` maps each type the Typer takes from the parser - a `var`'s declared type, a name's, a
+record's, a local's - *while* it types, and the arithmetic conversions are the bound types' own. `Typer::typedApart` holds the two
+typed bodies against each other field by field, every fact the lowering reads but the node ids (kind, text, place, type, cast,
+folded value, literal, forms, the record whole); the lowering takes the read where nothing is apart, else the replay's, by name.
+`-check=templates built (N): substituted | replayed: <where>` is printed after the lowering. The stand-in, where it takes a
+specialization first, is left as it was.
+Two facts the read keeps apart from the replay and the hold had to know: a `var`'s text is its type's spelling and its name
+(`$T0 a` against `int a`; an unnamed parameter is its type alone), so what follows the type is held; and the read numbers its
+locals as a function of its own, so a local's serial - a frame fact, the replay's in 2b - is taken from the replay's `var` in its
+place, mapped one to one and refused where the map does not hold.
+
+**src/** `Templates.h` +5, `Templates.cpp` +18, `Typing.h` +5, `Typing.cpp` +66, `Parser.h` +1, `Driver.cpp` +4: src/ 94,235 ->
+94,334 lines. Without the flag `bound_` is empty and `bound` returns its argument: nothing reads what 2b adds.
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,269 cases): at the fixed point - covered 238; replayed
+by reason, a type parameter bound to a class or an array 288, a non-type, pack or template parameter 177, a `call` 77, a `cast` 49,
+a `member` 13, a `literal` 9, a `sizeof` 8, no body read 6. At the lowering, of the 238 (each a specialization's body typed once per
+unit): **substituted 180**; replayed by name - a `var` typed apart from its replay 34 (a type `substituted` does not carry: an
+array of `T`, `volatile`), a `function` read apart in its parts 3, a `conditional` resolved apart in its type 3, a `unary` in its
+kind 1. **The shapes that substitute** are slice 1's (names, literals, unary/binary/assign/conditional/comma/subscript, the plain
+statements) over scalar arguments, in 46 cases: adl-block-declaration-outlives-nested, algorithm-upper-bound, alias-template,
+char16-char32, const-return-name, default-arg-base-init, default-arg-declares, direct-init-scalar, enum-template-argument,
+extern-template(.part), function-template-default-argument, function-template-explicit-specialization,
+function-template-partial-ordering, inline-namespace-template, lambda-capture-hides-template, library-self-compile-pieces(-2),
+member-template-bare-name, namespace-function-hides-template, namespace-function-template-name,
+namespace-template-replay-from-outside, read-dependent-local, static-function-template-linkage, template-deduction,
+template-function, template-in-namespace, template-name-shadowed, template-nondependent-argument, template-overload,
+template-param-hides-enclosing, template-read-pack-name, template-sfinae-expression, template-sfinae-fallback,
+template-sfinae-leading-decltype, template-sfinae-misc, template-sfinae-substitution-table, template-subst-refused, template-subst,
+template-two-of-a-name, template-unnamed-parameter, trailing-return-template-decltype, trailing-return-type, ucn-identifier,
+wchar-targets, wstring.
+
+**Gates** (REF `2e824d8b` and NEW built in one Linux tree, `~/m82b-ref.exe` and `~/m82b-new.exe`; the cases alone, as 2a): `identical.sh`
+REF against NEW without the flag at -O0 and -O2 - x86_64-linux 1,848, tms6747 1,848, x86_64-windows 3,696, arm64-darwin 1,848, **0
+differ**; with `-templates=subst` on NEW (the 180 bodies built from the read) - x86_64-linux 1,848, x86_64-windows 3,696, arm64-darwin
+1,848, **0 differ**; `-g` at -O0, without and with the flag, x86_64-linux 924 and x86_64-windows 1,848, 0 differ each; run.sh
+1263/0, and with `-templates=subst` 1263/0 (none falls back as a failure: 41 of the 238 replay by name, counted above); subst.sh 0
+failed (952 the same, ceilings 17 under 17 and 26 under 26); self-compile of `Templates.cpp`, `Typing.cpp`, `Driver.cpp` by NEW rc 0;
+static: exclusions 0/0, comments 0 over, memory gate held, ast-residue node-refs 325 (not raised); g++ `-Werror` clean; **Windows** cl
+/W4 /WX clean (first and alone, about 2 minutes, 07:06-07:08), names.sh 924 passed 0 failed, overload.sh 46/0.
+
+**The `syntax::Node` copy in `substShape`** (2a's): the count was a false positive of `tools/ast-residue`'s pattern. Its node-refs
+regex takes the identifier just before a `&` or `*`, so `const syntax::Node &n` reads as `Node`, which `node_kinds` seeds as `Ast.h`'s
+base class; the `syntax::` qualifier is never seen (`Typing.cpp`'s own `const syntax::Node &n` in `Typer::node` is in the baseline
+the same way). `syntax::Node` (`Syntax.h:47`) is a 32-byte trivially copyable record, so the copy is one small copy per node walked,
+no allocation. The tool and its count are left as they are.
+
+**Where it stopped, and what is next**: 2b is done for its shapes. Left: the 34 `var`s typed apart (an array of `T`, `volatile` - 
+`Templates::substituted` carries pointers, references, `const` and functions only), the three `conditional`s, a `unary`, three
+functions in their parts; then 2c (the frame from the binding, no replay for a covered shape), 2d (calls), as 2a's table says.

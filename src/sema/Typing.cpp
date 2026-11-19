@@ -76,7 +76,7 @@ TypedId Typer::node(syntax::NodeId id) {
         const std::string &text = st.text(id);
         const std::string::size_type space = text.rfind(' ');
         if (t != p_.declaredTypes_.end() && space != std::string::npos) {
-            const Declared d = { t->second, id };
+            const Declared d = { bound(t->second), id };
             scopes_.back()[text.substr(space + 1)] = d;
         }
     }
@@ -106,9 +106,9 @@ TypedId Typer::node(syntax::NodeId id) {
     syntax::NodeId decl;
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
-    if (type == nullptr && isExpression(n.kind)) type = recordedValue(id);
+    if (type == nullptr && isExpression(n.kind)) type = bound(recordedValue(id));
     // A `var` is typed as declared, its `&` kept (M3b.1, M3-IR 3.8): what the lowering sizes its alloca by.
-    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = p_.declaredTypes_.at(id.v);
+    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = bound(p_.declaredTypes_.at(id.v));
     if (scoped) scopes_.pop_back();
     const TypedId made = tree_.add(id, type, kids, decl);
     record(id, made);
@@ -127,12 +127,16 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.what = Resolution::Local;
         out.symbol = p_.declaredLocals_.at(id.v).staticName;
         out.serial = p_.declaredLocals_.at(id.v).serial;
-        out.type = TypeTable::id(p_.declaredLocals_.at(id.v).type);
+        out.type = TypeTable::id(bound(p_.declaredLocals_.at(id.v).type));
         out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-    if (r != p_.resolutions_.end()) tree_.setResolution(t, copied(r->second));
+    if (r != p_.resolutions_.end()) {
+        Resolution out = copied(r->second);
+        if (!binding_.empty() && out.type.valid()) out.type = TypeTable::id(bound(p_.types_.type(out.type)));
+        tree_.setResolution(t, out);
+    }
     const auto cast = p_.castTypes_.find(id.v);
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
@@ -276,7 +280,7 @@ const Type *Typer::named(syntax::NodeId id, syntax::NodeId *decl) {
         if (it != scopes_[i - 1].end()) { t = it->second.type; *decl = it->second.decl; }
     }
     if (t != nullptr && t->isReference()) t = t->referent();
-    if (t == nullptr && (t = resolvedType(id, syntax::Kind::Name)) != nullptr) source_[id.v] = 'e';
+    if (t == nullptr && (t = bound(resolvedType(id, syntax::Kind::Name))) != nullptr) source_[id.v] = 'e';
     return t;
 }
 
@@ -301,7 +305,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         (i == 0 ? a : b) = r.isReference() ? r.referent() : &r;
     }
     // A call, an overloaded operator, a member access, `this` or a class temporary: what the parser recorded.
-    if (const Type *r = resolvedType(id, kind)) { source_[id.v] = 'e'; return r; }
+    if (const Type *r = bound(resolvedType(id, kind))) { source_[id.v] = 'e'; return r; }
     // An array operand of arithmetic is its first element's address.
     const Type *da = a != nullptr && a->isArray() ? types.pointerTo(a->pointee()) : a;
     const Type *db = b != nullptr && b->isArray() ? types.pointerTo(b->pointee()) : b;
@@ -933,12 +937,74 @@ bool Typer::fromTemplate(const std::string &symbol) const {
 
 TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
     const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
+    const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
+    if (s == p_.tmpl_.substituted_.end() && b != p_.tmpl_.bound_.end()) {
+        // Slice 2b: the read typed under the binding; lowered only where it types as the replay does, else the replay, by name.
+        const TypedId own = typeFunction(fn);
+        binding_ = symbol;
+        const TypedId read = typeFunction(b->second.read);
+        binding_.clear();
+        std::map<int, int> serials;
+        std::vector<std::pair<TypedId, TypedId> > locals;
+        const std::string apart = typedApart(own, read, serials, locals);
+        for (std::size_t i = 0; apart.empty() && i < locals.size(); i++) tree_.setResolution(locals[i].second, tree_.resolution(locals[i].first));
+        p_.tmpl_.builtCensus_[apart.empty() ? "substituted" : "replayed: " + apart]++;
+        return apart.empty() ? read : own;
+    }
     if (s == p_.tmpl_.substituted_.end()) return typeFunction(fn);
     const std::size_t node = tree_.size(), record = tree_.resolutionCount();
     const TypedId t = typeFunction(fn);
     const SubstitutedTypes retype = { &p_.tmpl_, &s->second };
     tree_.retype(node, record, p_.types_, retype);
     return t;
+}
+
+const Type *Typer::bound(const Type *t) const {
+    return binding_.empty() ? t : p_.tmpl_.substituted(p_.tmpl_.bound_.at(binding_).s, t);
+}
+
+// Every fact of a typed node the lowering reads, but its syntax and declaration ids: the two bodies' own nodes.
+std::string Typer::typedApart(TypedId a, TypedId b, std::map<int, int> &serials, std::vector<std::pair<TypedId, TypedId> > &locals) const {
+    const TypedNode &x = tree_.node(a), &y = tree_.node(b);
+    const syntax::Tree &st = p_.syntaxTree_;
+    const syntax::Kind k = st.node(x.syntax).kind;
+    const std::string at = std::string("a '") + syntax::kindName(k) + "' ";
+    // A `var` is spelled with its type, `$T0 a` against `int a` (an unnamed one is its type alone), and a function with its
+    // arguments: what follows a var's type, its name, is held, and a function's spelling not at all.
+    const std::string &u = st.text(x.syntax), &w = st.text(y.syntax);
+    const auto ut = p_.declaredTypes_.find(x.syntax.v), wt = p_.declaredTypes_.find(y.syntax.v);
+    const bool named = k == syntax::Kind::Var && ut != p_.declaredTypes_.end() && wt != p_.declaredTypes_.end() &&
+                       u.compare(0, ut->second->describe().size(), ut->second->describe()) == 0 &&
+                       w.compare(0, wt->second->describe().size(), wt->second->describe()) == 0 &&
+                       u.substr(ut->second->describe().size()) == w.substr(wt->second->describe().size());
+    const bool spelled = k == syntax::Kind::Function || named;
+    if (k != st.node(y.syntax).kind || (!spelled && u != w)) return at + "read apart from its replay: its spelling";
+    if (st.node(x.syntax).loc != st.node(y.syntax).loc) return at + "read apart from its replay: its place";
+    if (x.count != y.count) return at + "read apart from its replay: its parts";
+    if (x.type != y.type || x.castType != y.castType || x.castXvalue != y.castXvalue) return at + "typed apart from its replay";
+    if (x.folded.has != y.folded.has || x.folded.value != y.folded.value || x.folded.type != y.folded.type ||
+        (x.literal == 0) != (y.literal == 0) || tree_.literal(a).text != tree_.literal(b).text ||
+        tree_.stringLabel(a) != tree_.stringLabel(b) || x.initForm != y.initForm || x.forParts != y.forParts ||
+        x.bounds != y.bounds || x.decl.valid() != y.decl.valid())
+        return at + "folded or formed apart from its replay";
+    const Resolution &r = tree_.resolution(a), &q = tree_.resolution(b);
+    if (r.what != q.what) return at + "resolved apart from its replay: its kind";
+    if (r.what == Resolution::Local && r.serial != q.serial) {
+        // The read numbers its locals as a function of its own; each is the replay's local declared in its place.
+        if (k == syntax::Kind::Var && serials.count(q.serial) == 0) serials[q.serial] = r.serial;
+        if (serials.count(q.serial) == 0 || serials[q.serial] != r.serial) return at + "resolved apart from its replay: its serial";
+        locals.push_back(std::make_pair(a, b));
+    } else if (r.serial != q.serial) return at + "resolved apart from its replay: its serial";
+    if (r.type != q.type) return at + "resolved apart from its replay: its type";
+    if (r.owner != q.owner || r.symbol != q.symbol ||
+        r.value != q.value || r.isConst != q.isConst || r.isThreadLocal != q.isThreadLocal || r.isVolatile != q.isVolatile ||
+        r.viaWrapper != q.viaWrapper || r.hasThis != q.hasThis || r.indirect != q.indirect || r.vslot != q.vslot || r.name != q.name)
+        return at + "resolved apart from its replay";
+    for (std::uint32_t i = 0; i < x.count; i++) {
+        const std::string apart = typedApart(tree_.child(a, i), tree_.child(b, i), serials, locals);
+        if (!apart.empty()) return apart;
+    }
+    return std::string();
 }
 
 TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const {

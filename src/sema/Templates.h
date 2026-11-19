@@ -225,6 +225,11 @@ public:
     std::string substShape(syntax::NodeId body) const;          // the first thing in a read body the slice does not cover, or empty
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
+    // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
+    struct Bound { syntax::NodeId read; Substituted s; };
+    std::map<std::string, Bound> bound_;
+    std::map<std::string, int> builtCensus_;
+    std::string builtReport() const;
 
 private:
     long census_[Doors] = {};

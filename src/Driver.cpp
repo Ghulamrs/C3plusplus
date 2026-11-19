@@ -1765,6 +1765,10 @@ bool Driver::compile(const Job &job) {
         int failures = 0;
         const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
+        if (checkTemplates_) {
+            const std::string built = parser.templatesBuiltReport();
+            std::fwrite(built.data(), 1, built.size(), stdout);
+        }
         // The typed tree's dump and check count the functions the driver's prune kept (M6d S1).
         if (dumpTyped_) {
             const std::string typed = sema::Typer::dump(parser, program);

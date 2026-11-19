@@ -316,6 +316,11 @@ private:
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);
     const Type *literal(syntax::NodeId id);
     const Type *named(syntax::NodeId id, syntax::NodeId *decl);
+    // Slice 2b: while a read body is typed, each template parameter's type is its argument's; else nothing is bound.
+    std::string binding_;                                   // the symbol whose Templates::Bound is in force, empty for none
+    const Type *bound(const Type *t) const;
+    // Where two typed bodies differ for the lowering, empty if nowhere; a local's serial, a frame fact, is the replay's (`serials`).
+    std::string typedApart(TypedId a, TypedId b, std::map<int, int> &serials, std::vector<std::pair<TypedId, TypedId> > &locals) const;
     const Type *resolvedType(syntax::NodeId id, syntax::Kind kind) const;
     const Type *recordedValue(syntax::NodeId id);
     void closureSources(syntax::NodeId id);

@@ -426,13 +426,24 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     for (std::size_t q = 0; q < sp.params.size(); q++)
         if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate)
             return *why = "replayed: a non-type, pack or template parameter, bound by name", false;
-    for (std::size_t q = 0; q < b.types.size(); q++)
+    for (std::size_t q = 0; q < b.types.size(); q++) {
         if (!b.types[q].valid()) return *why = "replayed: a type parameter bound to no type", false;
+        // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): slice 2b binds scalars.
+        if (!p_.types_.type(b.types[q])->unqualified()->isScalar()) return *why = "replayed: a type parameter bound to a class or an array", false;
+    }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
     if (read == readBody_.end()) return *why = "replayed: no body read at the declaration", false;
     const std::string shape = substShape(read->second);
     if (!shape.empty()) return *why = "replayed: " + shape, false;
-    return *why = "covered: replayed until the slice lays its own frame", false;
+    // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
+    Bound made;
+    made.read = read->second;
+    for (std::size_t q = 0; q < b.types.size(); q++) {
+        made.s.from.push_back(p_.types_.templateParam(static_cast<int>(q)));
+        made.s.to.push_back(p_.types_.type(b.types[q]));
+    }
+    bound_[sp.symbol] = made;
+    return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
 
 std::string Templates::substShape(syntax::NodeId body) const {
@@ -800,6 +811,13 @@ std::string Templates::bodiesReport() const {
     }
     for (std::map<std::string, int>::const_iterator i = substCensus_.begin(); i != substCensus_.end(); ++i)
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
+    return out;
+}
+
+std::string Templates::builtReport() const {
+    std::string out;
+    for (std::map<std::string, int>::const_iterator i = builtCensus_.begin(); i != builtCensus_.end(); ++i)
+        out += "-check=templates built (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
