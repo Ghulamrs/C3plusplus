@@ -3752,3 +3752,45 @@ build does; names.sh 949/0, overload.sh 46/0 (the code is m82v's; run again for 
 **Left**: from m82u's list, (2) the second const int local made from a parameter read as a Local, (3) `case N`, `sizeof(T) *
 N`, `enum { E = N }`, static and array locals over a parameter, non-int non-type parameters; the read's `E::a` over its own
 local enumeration (above); one function's two blocks each with `enum { A }`, a local enumeration shadowing a namespace's tag.
+
+## M8.2 slice 2f, third part (2): a read's `E::a` over its own local enumeration (lane m82x, 2026-11-20)
+
+Branch `m8-2x` from `82ad1782` (m82w). **The defect** (m82v and m82w found it): in a function template's read, `Colour::Red` or
+`Size::Large` over the function's own local enumeration gave "'' is not an enumerator of ''" and left the body unread. The
+read's enumeration is its own type, `$read$f::Colour`, but its `E::a` key (and a scoped one's every key) was made under the
+written tag, `Colour::Red`, where `enumeratorThroughEnum` asks the type's tag. **The mend**: a read's local enumeration keys its
+enumerators under the tag the type has (`renamed`, as a second function's `E$2` already did), so the read finds them as the
+replay does. The case `tests/cases/template-local-enum-read` (`pick` over an unscoped `Colour`, `level` over a scoped `Size`;
+clang 19 on Windows, `-nostdinc++ -isystem include`, prints its `.expected`, as g++ and cxx3-msvc's build do): REF reads none
+of its 3 bodies (2 unread by the defect); NEW reads all 3, and each replays by name ("a 'conditional' the read resolved to a
+type the binding does not carry" - the read's local enumeration is not a type the binding carries), so this part makes no
+body. **Found, not mended** (no side tasks): a scoped local enumeration's `?:` (`v > 1 ? Size::Large : Size::Small`) leaves a
+read unread, "'' does not convert to '' implicitly - a scoped enumeration converts only with a cast"; it left the case.
+
+**Item (2) diagnosed, not mended** (the hour): m82u's "second const local read as a Local" is not about the second. A read of
+any const int local made from a parameter (`const int c = N + 1; return x + c;`, one local) replays "a value-dependent name the
+binding does not fold": the read resolves `c` as a Local, as the replay does (`-dump=typed`: `name 'c' rec=local`), and
+`Templates::foldUnder` folds a Name only where it resolves as an Enumerator. The mend owed: a marked Name that resolves as a
+Local is the slot's value, not a fold - left as it is where only its initialiser's names need the binding, and a constant
+position over it (a template argument, a bound) still refused.
+
+**src/**: ParserType.cpp +2 -1: 95,403 -> 95,404 (+1). EXCLUSIONS re-pointed (ParserType.cpp, 12 lines, +1).
+
+**The census** (Linux, `-check=templates -templates=subst`, 1,299 cases): 350 nonzero exits as REF; covered 385 (REF 385);
+without the check 311 substituted with no replay (REF 311) and 74 replayed (REF 74); **without the lanes' probes 132 of the
+suite's own bodies made with no replay (REF 132, +0)**. The new case's 3 bodies are read and replay by name (above).
+
+**Gates** (REF `82ad1782` in `~/m82xb`, NEW in `~/m82xc`, one path length; every check on this commit's tree): **tests/subst.sh
+0 failed** (cases 17 unread under a ceiling of 17 in 12 reasons, 53 shapes; self 102 of 102, 26 under 26; the "4 counts below
+the record" note as on REF, not re-recorded). identical.sh without the flag 0 differ on four targets (x86_64-linux 1,900,
+x86_64-windows 3,800, arm64-darwin 1,900, tms6747 1,900; the new case compiles alike on REF, whose replay reads it) and with
+`-templates=subst` 0 differ on three (1,900, 3,800, 1,900). **-g** both ways: x86_64-linux 730 same, 350 refused alike, 219 differ
+by the tree path alone; x86_64-windows 712, 375, 212 by the path alone. `-check=fold` 16,789 compared, 0 differ, 0 units failing.
+run.sh 1292/0 without and with `-templates=subst`. syntax 7/0, typed 942/0. Self-compile of ParserType.cpp rc 0. Static, each
+tool's own status: exclusions rc 0 0/0 (after the re-point), comments rc 0, memory gate rc 0 (89), ast-residue rc 0
+(2012/298: not raised), ide up to date. g++ `-Werror` clean. Wine stand-in 14/14 with `-templates=subst` and at -O0.
+**Windows**: cl /W4 /WX clean (3 m 35 s with the ship, alone); clang 19 prints the case's `.expected`, as cxx3-msvc's build
+does; names.sh 950 passed 0 failed, overload.sh 46 agreed 0 differed, on the final tree.
+
+**Left**: item (2) as diagnosed above; item (3) (`case N`, `sizeof(T) * N`, `enum { E = N }`, static and array locals over a
+parameter); a scoped local enumeration's `?:` in a read; the read's local enumeration as a type the binding carries.

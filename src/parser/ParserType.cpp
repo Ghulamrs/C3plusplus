@@ -1767,7 +1767,7 @@ const Type *Parser::enumSpecifier() {
 
     // [basic.scope.block]: a function's own enumeration is its block's, and another function or specialization has its own.
     const bool localEnum = within == nullptr && !currentFunction_.empty();
-    std::string renamed;     // a second function's `E`: `E$2`, shown as `E`
+    std::string renamed;     // its enumerators' key where not the written tag: `E$2`, a read's `$read$f::E`
     // The tag names a type, as a class tag does: its integer underneath, but an integer
     // reaches it only by a cast (checkAssignable, rankArgument), and it promotes back.
     Type *self = nullptr;
@@ -1787,6 +1787,7 @@ const Type *Parser::enumSpecifier() {
         if (localEnum && defining) localEnumOwner_[named] = currentFunction_;
         self = types_.enumType(named, underlying != nullptr ? underlying->kind() : Kind::Int);
         if (named != written) { renamed = named; self->setDisplayTag(prefix + tag); localTypes_[tagKey("enum", prefix + tag)] = self; }
+        else if (readLocal) renamed = named;
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
         if (before != nullptr && before->unqualified() == self &&
             (self->isScopedEnumeration() != scoped ||
