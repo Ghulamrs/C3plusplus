@@ -1801,6 +1801,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     // ([temp.arg.explicit]/3, `duration_cast<To>(d)`) can deduce them from these.
     const std::size_t listAt = at_;
     skipTemplateArguments();
+    const std::string explicitArgs = spelledTokens(listAt, at_);
     if (!peek().is("("))
         src_.fail(peek().pos, "'" + name + "' is a function template, and "
                               "naming one without calling it is not supported "
@@ -1869,9 +1870,9 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = !patternUses_ || lookup_.functions_[i].used; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
-    // Its syntax is a call of the name as written, the arguments after it (M2.12l).
-    std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, scope.empty() ? name : scope + "::" + name, pos,
-                                                        std::vector<syntax::NodeId>()));
+    // Its syntax is a call of the name as written, its explicit arguments kept on it (M8rev M7), the arguments after it.
+    std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, (scope.empty() ? name : scope + "::" + name) + explicitArgs,
+                                                        pos, std::vector<syntax::NodeId>()));
     kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
     ExprPtr called = completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params, sig.variadic, pos, std::move(callArgs));
     noteCallee(kids[0], called.get());
@@ -2063,7 +2064,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
         // A read's `V<I>::f(x)`: a member of a dependent class is substitution's to find, [temp.dep.type].
-        if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());
+        if (patternBody_ && dependentType(cls)) { dependentScopeEnd_ = at_; return zeroOf(dependentResult()); }
         // **`CVector<I>::operator*(s)` in a member of CVector<4> or of a class derived from it** is
         // `Base::f(...)`: called on `this`, never dispatched, [expr.call]/1 - as for a plain base name.
         const Local *held = lookup_.findLocal("this");
@@ -2125,7 +2126,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         if (ExprPtr mine = qualifiedMemberThroughThis(cls, *m, member, mpos)) return mine;
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
-    if (patternBody_ && dependentType(cls)) return zeroOf(dependentResult());     // a pattern class's: instantiation's to find
+    if (patternBody_ && dependentType(cls)) { dependentScopeEnd_ = at_; return zeroOf(dependentResult()); }    // the instantiation's to find
     refuseHeldClass(cls);
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");

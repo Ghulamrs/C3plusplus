@@ -2878,3 +2878,115 @@ cases to it).
 
 **Left**: the 69 a made function cannot carry (a return type the binding does not carry, a `decltype` return) replay by name; the
 census step's door count still holds M8.2's no-replay bodies as the function door's; tms6747 replays every covered body.
+
+## M8.2 slice 2d, first part: M8rev M7 (1)-(3) - the dependent-name mark, the definition's candidates, a template-id's explicit arguments (lane m82j, 2026-11-19)
+
+Branch `m8-2j` from `58a4b2c2` (m6d-w4: main `8d5464a1`, M8.2 2a-2c's end `756c1454`, m6d-glob, m6d-runcr, m6d-winterm). Three
+commits, each M8rev M7's fix as the review states it; nothing is substituted yet, and nothing outside a read changes.
+
+**(1) The mark split in two** (`ffdf5741`). `syntax::Dependent` was "the expression's type waits for the arguments" and was read as a
+lookup switch; it is now `TypeDependent` (`type-dependent` in the dump, set where `Dependent` was) beside `DependentName`
+(`dependent-name`), [temp.dep]/1's: an unqualified callee with a type-dependent argument (`argsDependent_` of its own argument list),
+or a name in a dependent scope - `T::f`/`typename T::type` (the first component a bound type parameter) or a member that
+`templateIdMember` found in a dependent `B<T>` (`dependentScopeEnd_`, the token after it). Measured in the new
+`tests/syntax/template-dependent-names`: `g(x)`, `conv<int>(x)`, `undeclared(x)`, `g(st)` in a member, `B<T>::bs`, `T::type(k)`,
+`C<T>::get2(st)` dependent names; `g(k)`, `ns::g(x)`, `::g(x)`, `conv<int>(k)` not; `x`, `st` type-dependent only. `g(nb)` over an
+unfound `nb` is still a dependent name (its body is refused by `unfound`). **Records re-recorded by hand**, for exactly that: in
+`template-read` and `template-read-marks` every `dependent` became `type-dependent`, and `g` (3 calls) and `T::type` gained
+`dependent-name`; `template-read.cpp`'s comment says which mark. ParserExpr's citations +7.
+
+**(2) The definition context's candidates** (`9208301d`). [temp.dep.candidate]: an unqualified dependent-name callee keeps what
+unqualified lookup found at the definition - a member of the class (`findMemberOwner`), else the functions of the name
+(`qualifyForLookup`, no specialization made earlier) and its template - on the syntax tree (`Tree::noteFound`), each with a spelling
+for the dump (`found "g(int)" found "g(double)"`, `found "template conv"`) and its symbol for the instantiation (`foundSymbols`); ADL
+from both contexts stays the instantiation's. Records: the three template records gained `found` and nothing else (checked line by
+line, the found lists stripped). ParserExpr's citations +27 from `58a4b2c2`.
+
+**(3) A function template-id's explicit arguments kept** (this commit). The explicit-call door (`ParserTemplate.cpp`, M2.12l's node)
+named its callee `conv` and dropped `<int>`; the callee is now spelled with its list (`spelledTokens`, `conv<int>`), as the read's
+dependent form already was. Record: `template-dependent-names`' `(call (name "conv") (name "k"))` became `"conv<int>"`, the only
+change. `primary`'s own template-id spelling joins tokens with no space (`conv<unsignedint>`), where `spelledTokens` writes
+`unsigned int` - left as it was. ParserTemplate's citations +1 (1806, 1891, 1895, 1965).
+
+**src/**: `ParserExpr.cpp` +32 -5, `Parser.h` +4 -1, `ParserTemplate.cpp` +6 -5, `Syntax.cpp` +13 -1, `Syntax.h` +12 -2,
+`Templates.cpp` +1 -1: 94,867 -> 94,920 (+53; 94,880 after (1), 94,919 after (2)).
+
+**Two records (1) and (2) left stale**, found by the full gate on (3): `tests/cases/template-read-pack-name.templates` and
+`template-variadic.templates` print a read's declaration shape, marks included; (1)'s and (2)'s own gates ran subst.sh's typed and
+census steps, not its record compare, so at `ffdf5741` and `9208301d` `subst.sh` fails these two. Re-recorded here by hand, for
+exactly the marks: each record's one shape line differs from the new output only by `dependent` -> `type-dependent` and the added
+`dependent-name` and `found` lists (checked with those stripped). The found list of `total` in `template-variadic` holds the
+template's own pattern signature (`total(template parameter, parameter pack expansion)`) beside `template total` - left as found.
+
+**Gates** (REF `58a4b2c2` in `~/m82ja`; NEW in `~/m82jb` (1), `~/m82jc` (2), `~/m82jd` (3), one path length). Each commit:
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,862, x86_64-windows
+3,724, arm64-darwin 1,862, tms6747 1,862) and **on three with `-templates=subst`**; syntax.sh 6/0 (with that commit's records);
+typed.sh 923/0; subst.sh's typed and census steps rc 0; static (each tool's own exit status): memory gate rc 0 (raw-pointers 89),
+ast-residue rc 0 (node-refs 298, not raised), comments rc 0 (one group over at first on (1), the constant line, folded before the
+commit), exclusions re-pointed to 0/0. On (3), the full gate: run.sh 1273/0 without and with `-templates=subst`; **-g 0 differ**
+with and without the flag (x86_64-linux 712 the same, 350 refused alike, 218 differing by the tree's path alone; x86_64-windows
+694, 375, 211 - each pair re-read with both paths as `m82jd`, `boxkit/m82j-gre.sh`); `-check=templates -templates=subst` over the
+cases: 1,280 units, 350 nonzero exits as at m82i, none failing on a difference, the census unchanged (197 covered, frame and shell
+197 equal, made 128 equal; without the check 128 with no replay, 69 replayed by reason; 46 cases substituting); `-check=fold`
+compared 16,596, agreed 12,316, differ 0; subst.sh 0 failed but for the two records above (self 102 of 102, ceilings held, the "4
+below the record" note as at m82h); self-compile of `ParserExpr.cpp`, `ParserTemplate.cpp`, `Syntax.cpp`, `Templates.cpp`,
+`Typing.cpp`, `Driver.cpp` rc 0; tms6747 SIM=1 -O2 shards 1-3 rc 0; g++ `-Werror` clean. **Windows** (all three commits' tree):
+cl /W4 /WX clean, first and alone, the whole tree 13:44:50-13:50 (about 5 minutes); names.sh 931/0, overload.sh 46/0.
+
+**Left**: no `call` node is substituted yet (the brief's "if the hour allows" - not reached); the read's `primary` spells a
+template-id with no space between words; the found list's pattern signature above; M7's other over-marks (`g(sizeof(T))`) stand as
+type-dependent, which is what that mark means.
+
+## M8.2 slice 2d, second part: a call bound at the definition made from the read (lane m82k, 2026-11-19)
+
+Branch `m8-2k` from `8a9e4b6c` (m82j). **First, the base**: `tests/subst.sh` on `8a9e4b6c` itself (REF built in `~/m82ka`) -
+**0 failed**, rc 0 (self 102 of 102, ceilings held, the "4 below the record" note as at m82h): m82j's two hand re-recorded
+`.templates` records hold, nothing to mend.
+
+**One commit, the brief's (1)**: a `call` node in a covered read body under `-templates=subst`, where the call has no
+type-dependent part ([temp.nondep]: bound at the definition, so the read's Call record is the one the replay makes) -
+`Templates::nondependentCall`: neither the call nor any of its parts marked `type-dependent` or `dependent-name`, the callee a
+`name`, the read's record a direct Call (no value, vtable slot or object), a function of scalars (not variadic, no class or
+reference), and no specialization. `Templates::callsUsed` makes the use the replay's resolution makes (`noteUsed` on the callee,
+[basic.def.odr]/3), so an inline callee is still emitted where the replay would have. Everything else in a call replays by name,
+four reasons in place of "a 'call' in the body". **Overload resolution over the bound argument types is not reached here**: a
+call over a type-dependent argument is (2)'s - and every one of the suite's is a dependent-name call; `Overload::rankArgument`
+ranks an Ast `Expr`, so (2) wants a rank over the typed tree's `TypeId`s first (not begun; the residue gate would see the Ast).
+
+**The probe** `tests/cases/template-subst-call` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++ -std=c++11
+-pedantic-errors` on the Windows box): a call of a plain function, of an inline one (its use made, or it is not emitted), of
+`ns::half`, a call alone as a statement - 8 bodies with no replay; `viaIdent`'s `ident(a)` (a dependent name) replays by reason (2).
+**tests/subst.sh**, for exactly that: the probe added to the probes step (8 with no replay plain and `-g`, made 8 equal and the
+dependent call's reason under the check, the stand-in taking none), and template-subst-refused's call line re-pointed from "a
+'call' in the body" to the new reason - no record count changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over the 1,281 cases): **covered 205** (197 + the probe's 8), frame
+205 and shell 205 equal, made 136 equal; without the check **136 substituted with no replay** (128 + 8), 69 replayed by reason
+(as before). The 77 call bodies before: **71 a call with a type-dependent argument or a dependent-name callee** (69 + the probe's
+2), 4 through a value, a member or a class or unresolved, 2 of a specialization, 2 over a class, a reference or variadic
+arguments - so outside the probe no case's body is newly made by (1); the suite's calls in function templates wait on (2).
+
+**(2) and (3) not reached in the hour.** (3) was tried and set aside, uncommitted (`boxkit/m82k-c3.sh`, the specialization
+refusal dropped in a scratch tree): `conv<long>(k)` and `sq(3)` in a covered body made from the read link to undefined
+`conv<long, int>` and `sq<int>` - the read declares the specialization under `patternUses_` and `noteUsed` alone does not put
+its body in the fixed point, which the replay's call does; under the check the made check names it ("a declaration or
+specialization it made", 2). So (3) wants the instantiation to ask for the specialization as the replay's call does.
+
+**src/** `Templates.cpp` +38 (`nondependentCall`, `callsUsed`, the `call` case in `substShape`, the use made in
+`madeWithoutReplay`), `Templates.h` +2: 94,920 -> 94,960 (+40). EXCLUSIONS re-pointed (Templates.cpp 1296, 1348, 2045).
+
+**Gates** (REF `8a9e4b6c` in `~/m82ka`, NEW in `~/m82kb`, one path length): `identical.sh` REF against NEW at -O0 and -O2, **0
+differ on four targets without the flag** (x86_64-linux 1,864, x86_64-windows 3,728, arm64-darwin 1,864, tms6747 1,864) and **0
+on three with `-templates=subst`**; **-g 0 differ** with and without the flag (x86_64-linux 713 the same, 350 refused alike, 218
+differing by the tree's path alone; x86_64-windows 695, 375, 211 - re-read by `m82k-gre.sh`); run.sh 1274/0 without and with
+`-templates=subst`; `-check=templates -templates=subst` over the cases: 1,281 units, 350 nonzero exits as at m82j, none failing
+on a difference; `-check=fold` compared 16,598, agreed 12,318, differ 0; **subst.sh 0 failed** (run and typed at -O0/-O2 1274/0
+and 924/0, self 102 of 102, ceilings held); syntax.sh 6/0; typed.sh 924/0; self-compile of `Templates.cpp`, `Typing.cpp`,
+`Driver.cpp` rc 0; tms6747 SIM=1 -O2 shards 1-3 rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after the
+re-point; rc 1 3/3 before it), comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised),
+ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone, the whole tree 14:17:36-14:18:41
+(65 s); names.sh 932/0, overload.sh 46/0.
+
+**Left**: (2) - a dependent-name callee resolved at the instantiation from `found` plus ADL, which needs overload ranking over
+`TypeId`s; (3) - the specialization asked for at the instantiation; the 4 calls through a value, a member or a class, and the 2
+over a class, a reference or variadic arguments.

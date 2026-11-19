@@ -54,10 +54,13 @@ struct Node {
     bool dead;              // made by a trial that rewound: its tokens are read again, and these nodes are not the tree's
     bool pattern;           // a template's signature kept at its declaration (M8.1): dead to every reader of the tree, and held
     std::uint32_t member;   // 1 + the pack member a pattern's copy was read for, 0 outside an expansion
-    std::uint8_t marks;     // a read's name (M8.1 row 5): Dependent its meaning waits for the arguments, Typename written
+    std::uint8_t marks;     // a read's name (M8.1 row 5, M8rev M7): what waits for the arguments, and a written `typename`
 };
 
-const std::uint8_t Dependent = 1, Typename = 2, Unfound = 4;     // Unfound: no declaration, and no left-out base may give one (M8rev M1)
+// TypeDependent: the type waits for the arguments; DependentName: looked up again at the instantiation ([temp.dep]/1,
+// an unqualified callee with a type-dependent argument, or a name in a dependent scope); Unfound: no declaration (M8rev M1).
+const std::uint8_t TypeDependent = 1, Typename = 2, Unfound = 4,
+                   DependentName = 8;
 
 class Tree {
 public:
@@ -97,8 +100,15 @@ public:
     void forget(const std::pair<std::size_t, std::size_t> &n) { read_.erase(read_.begin() + static_cast<long>(n.first), read_.end()); unread_.erase(unread_.begin() + static_cast<long>(n.second), unread_.end()); }
     void mark(NodeId id, std::uint8_t marks) { nodes_[id.v].marks |= marks; }
     std::string spelled(NodeId id) const { std::string out; dumpNode(out, id); return out; }
+    // [temp.dep.candidate] (M8rev M7): a dependent-name callee's functions as unqualified lookup found them at the
+    // definition - each its spelling for the dump and its symbol, empty for a template, for the instantiation.
+    void noteFound(NodeId id, const std::string &spelling, const std::string &symbol) {
+        found_[id.v].push_back(std::make_pair(strings_.intern(spelling), strings_.intern(symbol)));
+    }
+    std::vector<std::string> foundSymbols(NodeId id) const;
 private:
     void dumpNode(std::string &out, NodeId id) const;
+    std::unordered_map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t> > > found_;
     std::vector<Node> nodes_;
     std::vector<std::pair<std::size_t, std::string> > unread_;
     std::vector<NodeId> read_;

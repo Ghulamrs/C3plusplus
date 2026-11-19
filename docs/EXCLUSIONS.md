@@ -102,7 +102,7 @@ goes in the same commit.
 | `1'000`, a digit separator | C++14 | `src/Lexer.cpp:358` |
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:527` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
-| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2352` |
+| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2379` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2986`, `src/parser/ParserTopLevel.cpp:838` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:766` |
@@ -157,7 +157,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:2007`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:2045`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1146`
@@ -181,20 +181,20 @@ is left:
   body** - give it the body there. `src/parser/ParserTemplate.cpp:728`
 - **naming a function template without calling it**, and **instantiating one
   that was only declared** - `src/parser/ParserTemplate.cpp:1737`,
-  `src/parser/ParserTemplate.cpp:1805`, `src/parser/ParserTemplate.cpp:1890`
+  `src/parser/ParserTemplate.cpp:1806`, `src/parser/ParserTemplate.cpp:1891`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1894`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1895`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1964`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1965`; **a member class template** -
   `src/parser/ParserType.cpp:585`; **an out-of-line member template
   definition of a class template's member, or of a constructor template** (a
   non-template class's other member templates are defined out of line) -
   `src/parser/ParserType.cpp:645`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3744`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3771`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -247,7 +247,7 @@ is left:
   object to be a field of. `src/parser/ParserType.cpp:2367`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2229`
 - **one name holding both a static and a non-static member**, where overload
-  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2077`
+  resolution picks the non-static one - `src/parser/ParserExpr.cpp:2104`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
@@ -314,10 +314,10 @@ many, or has no object of its own:
   `::S::T::k`, `::f<int>()`. A function, a variable and an enumerator are looked up absolutely
   since 2026-10-23 (M1 L11), a temporary `::S(x)` too, a static data member `::S::k`
   since 2026-11-19, and as a *type* `::Lexer *p;` works.
-  `src/parser/ParserExpr.cpp:1650`
+  `src/parser/ParserExpr.cpp:1677`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:1310`
+  deduced one does not - `src/sema/Templates.cpp:1348`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -327,7 +327,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:739`
 - **postfix `++` / `--` on a bit-field** - the prefix form works.
   `src/parser/ParserOperator.cpp:855`
-- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1406`
+- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1433`
 - **`?:` with a `throw` arm and an arm of class type** - the class arm would want a temporary the
   `throw` arm never builds; throw in a statement of its own, or give the class arm to a variable
   first. `src/parser/ParserOperator.cpp:973`
@@ -443,7 +443,7 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 Two, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
-`src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1330`,
+`src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1357`,
 `src/parser/ParserType.cpp:2322`; `tests/cases/refused.cpp` holds one.
 
     asm   export
@@ -527,7 +527,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:1258` - a template instantiating itself past
+- `src/sema/Templates.cpp:1296` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 
