@@ -4571,3 +4571,49 @@ gate pass, ide --check up to date. src/ 94,135 lines (+19).
 **What is left**: a class declared in a namespace and defined through it from outside (`struct n::S {`), and the
 outside definition of a member class template once member class templates are no longer a listed refusal.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
+
+### M6d: a class declared in a namespace and defined through it from outside, `struct n::S {` ([namespace.memdef]/2) - lane m6d-nest2, 2026-11-19
+
+Brief boxkit/brief-m6d-nest2.txt; from a488f489 on branch m6d-nest2; REF built from a488f489 on Linux (`~/m6d-nest2-ref.exe`).
+Left by lane m6d-nest: `namespace n { struct S; } struct n::S { int x; };`, legal C++03 and C++11 ([class]/11,
+[namespace.memdef]/2), was refused with "expected a name" - a refusal stricter than the standard. Not a listed exclusion.
+
+**The mend** (src/parser/ParserType.cpp, `structOrUnionSpecifier`, +27): a qualified class-head with a body whose
+qualifier names a namespace (`resolveNamespaceName`, so an alias or a relative name too) is read with that namespace as
+the namespace stack for the rest of the specifier, body and inline member bodies included - the tag, `inNamespace`, the
+mangled names and unqualified lookup ([basic.lookup.unqual]/7) are those of the definition written inside n. The stack
+is restored on every way out. The definition must be in a namespace enclosing n, else "cannot define or redeclare 'S'
+here because namespace 'b' does not enclose namespace 'a'"; the name must be a class n declared, else "no struct named
+'Missing' in namespace 'n'" - both clang's words. **`struct n::Outer::Held {`** (m6d-nest's class path, the class in a
+namespace) now reads its body in n as well, under the same enclosing check; at a class's or function's scope nothing changes.
+
+**Cases** (clang 19 on the Windows box, `-x c++ -std=c++11 -pedantic-errors`): `namespace-class-outside` (the plain
+shape from the global namespace; a typedef, an enumerator and a function of n used unqualified in the body; members and
+a static member defined through `n::S::`; `class n::K final : public Base`; `struct n::Outer::Held {` through both
+layers; `struct b::T {` and `union b::U {` defined in `a`, which encloses `a::b` and is not the global one),
+`namespace-class-outside-lifetime` (constructors and a destructor defined through `lib::Part::`, the class as a member,
+a local, an array, a by-value argument and a temporary under the ledger: built=7 gone=7, the rest 0),
+`namespace-class-outside-refused` (a definition from `b`, which does not enclose `a`) and
+`namespace-class-outside-missing` (a name n never declared), each refusal's .error clang's message. REF refuses all
+four with "expected a name". **Names**: names.sh (Windows clang, three ABIs) passes both running cases and m6d-nest's
+two; cl 19.44's defined external symbols match cxx3-msvc's, 8 of 8 and 7 of 7. overload.sh 46 agreed, 0 differed.
+A first draft used `const int seed` in n: cxx3 emits a local symbol for it that clang folds away (names.sh), a
+difference of its own and not this mend's, so the case uses an enumerator.
+**Shown** against REF (tools/identical.sh at -O0 and -O2; every case's `-g -S` text): identical tms6747 1,856 compared,
+x86_64-linux 1,856, x86_64-windows (both spellings) 3,712, arm64-darwin 1,856 - **4, 4, 8 and 4 differ,
+every one `namespace-class-outside` or `namespace-class-outside-lifetime`** (REF refuses them), 0 outside them; `-g -S`
+910/925/900/925 same, 2 differ on each target, the same two cases, 0 outside them. **For the wave's rows**: the two
+running cases differ from REF on all four targets, at -O0 and -O2, both Windows spellings, and under `-g`; the two
+refusals are refused by both (REF with "expected a name").
+**ast-residue** on Linux: ExprPtr 2,012, StmtPtr 0, node-casts 149, node-refs 302, visits 0, readers 9, ast-lines 513 -
+the baseline, unchanged, not re-recorded. 30 exclusion citations into ParserType.cpp re-pointed: 0 uncited, 0 stale.
+
+**Gates on the final tree**: g++ -Werror clean (Linux); cl /W4 /WX clean, a full build in 68 s and the final delta in
+about 2 min (work\m6d-nest2y); run.sh 1,270 passed, 0 failed; tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 146/0,
+148/0, 147/0; self-compile of ParserType.cpp by the new compiler: x86_64-linux -O2 compiles; tms6747 -O2 refuses
+`structOrUnionSpecifier` ("a branch past eight arguments"), the refusal REF gives the base text (lane m6d-nest). A first
+draft's `std::equal` was refused by the self-compile (not in cxx3's library) and became a prefix compare. Comment cap 0
+over, memory gate pass, ide --check up to date. src/ 94,162 lines (+27).
+**What is left**: `struct ::n::S {` (a leading `::`) and a class template's definition through its namespace are not
+taken and are refused as before; the outside definition of a member class template stays behind its listed refusal.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
