@@ -1,0 +1,3 @@
+x86_64-linux  cxx1's own <vector> and <utility> write vector(size_t), ~vector and std::move's specializations out of line where the host's library inlines them - a header difference; the program's own names (pal::Tile and its functions) agree.
+x86_64-windows  the same header difference, and cxx1's <vector> brings basic_string and out_of_range's members for at() where the host's library inlines them; the program's own names agree.
+arm64-darwin  libc++'s vector is std::__1::vector<T, allocator<T>> with its own members - a header difference.
