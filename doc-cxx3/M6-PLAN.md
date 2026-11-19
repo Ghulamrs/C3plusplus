@@ -5032,3 +5032,13 @@ header difference, its .nonames c7c65768. The coordinator's ruling recorded with
 member-templates floor 1515/1490 -> 1485/1460 (the deleted code held 30 of the compiler's own bodies; the new exe reads
 1515/1490 over the old sources). template-subst-classarg's .expected checked against clang 19 on the Windows box: the same.
 tests/wave-expected.txt emptied.
+
+**m6d-w9's wave landed, 2026-11-20 (gate m6dw9i at ce57e34a against main 8c75b11a: 40 passed, 0 failed; the fixed point
+checked not owed).** M8.2 slice 2f's first parts (M8-PLAN, m82t-m82x): the read's value-dependent mark; a non-type int
+argument in the Binding and the marked constants folded under it (130 of the suite's own bodies with no replay, from 111);
+a local enumeration is its own function's (a refusal stricter than [basic.scope.block] mended, in two plain functions as in
+a template instantiated twice); a read finds its local enumeration's enumerators. The first gate (m6dw9g, 82ad1782) and
+m6dw9h (6718660f) named template-local-enum-twice's 12 rows and then template-local-enum-read's 12 (6718660f, ce57e34a): the
+coordinator had taken 270e9b6e as no output change against its lane's base rather than the wave's. **The self-host fixed point
+on main 8c75b11a** (fp8c, run after m6d-w8 because its stand-in deletion was not covered: net -92): Linux and Windows (masm),
+-O0 and -O2, 102 of 102 the same from stages 0, 1, 2 and from 2, 3. tests/wave-expected.txt emptied.
