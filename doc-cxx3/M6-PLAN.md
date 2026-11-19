@@ -4530,3 +4530,52 @@ cleanups' pointer slot (`resumeUnwinding`, `cleanupPad`) and the noexcept wrap's
 src/sema, the nine readers, Ast.h's 513 lines). **Before S6**: nothing of M6d's design is owed but S6 (on-demand typing
 and `-check=fold`, a Fable design waiting on the user), S7's three expression-shape lanes (Opus, beside S6) and S8.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d S7, first family: the shape tests of ParserExprCall.cpp and ParserInit.cpp - one onto its `Resolved` record, twenty-five waiting on S6 or on another family's builders - lane m6d-s7a, 2026-11-19
+
+Brief boxkit/brief-m6d-s7a.txt; from 0a8d3784 on branch m6d-s7a; REF built from 0a8d3784 on Linux from clean
+(`~/m6d-s7a-ref.exe`); the compares are S5's (tools/identical.sh one target a job; every case's `-g -S` text, four targets).
+
+**(1) The atexit helper's destructor** (9a941192, src/ 94,116 -> 94,116): `registerDestruction`'s record for the SSA
+builder (`memberBuilt_`'s "~object") took the destructor's symbol from `dynamic_cast<const Call *>`; it reads the call's
+`Resolved` record now. By construction the same: `destructorCall` returns `completeCall`'s value, a `void` call that
+`useReference` leaves bare and `resolve` gives a `Resolved::Call` record carrying the symbol the `Call` was given.
+**Shown** against REF: identical tms6747 1,848 compared, x86_64-linux 1,848, x86_64-windows (both spellings) 3,696,
+arm64-darwin 1,848, 0 differ on each; `-g -S` of 1,269 cases 908/923/898/923 same (the rest refused alike), 0 differ.
+**ast-residue** on Linux: node-casts 149 -> 148, node-refs 302 -> 301 (the `const Call *c` declarator), the rest unchanged
+(ExprPtr 2,012, StmtPtr 0, visits 0, readers 9, ast-lines 513); recorded.
+
+**What is left of this family, and why each waits** (25 casts; none decides output by a record that exists today):
+- ParserExprCall.cpp `releaseTemporary` (4: Comma, Unary, Var, Call; asked by a `return`, ParserStmt.cpp, and a
+  new-expression's initialiser, ParserExprNew.cpp) and `pendingTemporaryOf` (9: Comma, Conditional, Cast, Assign, Unary,
+  Cast, MemberAccess, Var, Call; asked by `extendTemporary`). Both walk the shape the parser built around a temporary -
+  `*(ctor(&tmp), &tmp)`, a call's `resultSlot` (set by `completeCall`, moved by `claimCallResult`), a saved base pointer
+  `(p = base, c ? ... : ...)` - to its slot, during the parse. The comma, the guard and the dereference have no syntax node
+  and no record, and the typed node is not there when the parser asks (the Typer runs per body after the parse). They move
+  with S6's typed node, or earlier if the builders return the slot beside the node - `classTemporary`/`constructTemporary`
+  (ParserExprNew.cpp), `useReference`/`bindReference` (ParserExpr.cpp): another family's files, so not this lane.
+- ParserInit.cpp `stringInitialiser` (1: StrLit) - it hands back the literal node itself and its ten callers read its label,
+  type and bytes: it moves when a literal is a record (S8), not as a shape test.
+- `flattenScalar`'s cast strip (1: Cast) - the pointer's type before its conversions, for the base-subobject adjustment:
+  the typed tree's conversions (S6).
+- `foldAddress` (5: Cast, StrLit, Unary, Binary, Var) and `addressOfObject` (3: Var, MemberAccess, Unary) - the address half
+  of the constant evaluator, asked during the parse (a static initialiser, a `constexpr` pointer; ParserClass.cpp and
+  ParserTopLevel.cpp call it too): with `fold` at S6's C2 (`fold(TypedId)` under `-check=fold`). Their `Var` leaves could
+  read a `Resolved::Global` record, but a `Var` the parser names itself (a static temporary's object, a type_info) has none,
+  so the leaf moves with the walk, not before it.
+- `bindStaticReference` (2: Unary, Var) - the address `bindReference` built: the user's name (which has a record) or a
+  static temporary's object the parser named (none) - ParserExpr.cpp's builder returning the bound symbol, or S6.
+**What tools/ast-residue reads** (node-casts 148, by file): sema/Constexpr.cpp 44, ParserExpr.cpp 19, ParserExprNew.cpp 14,
+ParserExprCall.cpp 13, Parser.h 13, ParserInit.cpp 12, ParserOperator.cpp 11, ParserStmt.cpp 6, Parser.cpp 5,
+ParserExprLambda.cpp 4, ParserOverload.cpp 3, and one each in Templates.cpp, Overload.cpp, Classes.cpp and
+ParserDependent.cpp. S7's "about 46" after the three families holds only once S6 is in: of this family's 26, one moved
+without it.
+
+**Gates on the final tree** (9a941192's code; the plan entry changes no source): g++ -Werror clean (Linux); cl /W4 /WX
+clean, a full build of the final source in 1 min 14 s (work\m6d-s7ay); run.sh 1,263 passed, 0 failed; tests/tms6747.sh
+SIM=1 -O2 shards 1-3 on Linux 148/0, 146/0, 141/0 (4-6 not run: the m6dh gate's self-host held the Windows box);
+names.sh 924 passed, 0 failed and overload.sh 46 agreed with clang, 0 differed - on the Windows box by the cl build (work\m6d-s7ay, clang 19.1.5; the Linux box has no clang);
+self-compile of ParserInit.cpp by the new compiler: x86_64-linux -O2 compiles; tms6747 -O2 refuses `initConstruct` by the
+stack-arguments refusal, as REF does on 0a8d3784's text. Exclusions 129 sites, 0 uncited, 0 stale (no line moved);
+comment cap 0 over; memory gate pass; ide --check up to date.
+**Owed to the wave gate:** tms6747 SIM=1 -O2 shards 4-6, winpass in both spellings, ssa.sh 1/2, make test.
