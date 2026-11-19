@@ -4971,3 +4971,10 @@ and is not inlined) and M8.2 slice 2d's first parts (m82j: the mark split into t
 definition's candidates kept; m82k: a call with no type-dependent part made from the read) on main and m3-line. The first
 gate (m6dw5g, bb00b349) failed identwin alone, on the 23 x86_64-windows outputs m6d-winterm2 named: rows in 1a72d67c.
 tests/wave-expected.txt emptied.
+
+**m6d-w6's wave landed, 2026-11-19 (gate m6dw6g at 1ea9fccb against main fe0d51d0: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 slice 2d's middle (M8-PLAN, m82l-m82n): one overload ranking over RankedArgument for the Ast
+path and the typed one, a dependent-name callee resolved at the instantiation (Templates::dependentCall), the census of the
+calls by reason, and a function template among the candidates deduced at the instantiation with its specialization requested
+(Templates::requestCall, Parser::templateCallKey) - 166 bodies made with no replay under -templates=subst; nothing changes
+without the flag.
