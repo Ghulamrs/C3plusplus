@@ -1,0 +1,2 @@
+x86_64-linux  `_Unwind_Resume` in cxx1's listing and not in clang's: the landing pad cxx1 builds over `escapes`' body (the noexcept wrap) is its own shape, where clang calls its terminate guard, which this suite excludes by name - the difference noexcept-terminates-callee.nonames records for `abort`. x86_64-windows: all 14 names agree.
+arm64-darwin  the same, `__Unwind_Resume`.
