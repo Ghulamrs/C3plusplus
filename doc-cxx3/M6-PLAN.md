@@ -4672,3 +4672,10 @@ S4a-S4i and the merge with main (lane mw12) on main and m3-line. The first gate 
 identical, identlnx, identwin and identa64 on the wave's own 93 differences - eight cases new to M6d (constexpr-body-*,
 converting-constructor-*) that main refuses - named row by row in 6b97ad9a from the gate's lists. Cycles: 71 worse, every
 one owed or accepted; 192,025,550 -> 149,248,103 at -O2. tests/wave-expected.txt emptied.
+
+**m6d-w2's wave landed, 2026-11-19 (gate m6dw2h at fc26c04f against main b7a27aec: 40 passed, 0 failed; the fixed point
+checked not owed).** S4's close (StmtPtr 0), S5, S7's first family and the two class definitions from outside
+(nested-class-outside, namespace-class-outside) on main and m3-line. The first gate (m6dw2g, 8383c38f) failed identical
+x4 on the four new running cases (48 rows, named in fc26c04f) and subst and maketest on a race of the gate's own: both
+ran in tests/out-run at once (subst was not of the run family; it is now). tests/subst-self.ceiling's functions shape
+8 -> 34 by the coordinator's ruling (the three recorded places alone). tests/wave-expected.txt emptied.
