@@ -3071,3 +3071,51 @@ overload.sh 46/0 on n3's tree.
 function template (deduction at the instantiation), arguments that are not locals (a typed argument is read only from a
 local's record here), class, enumeration and pointer arguments (ADL), and (3), the explicit-argument call that needs the
 specialization requested - not started, as the brief said.
+
+## M8.2 slice 2d, fourth part: the 47 calls with a type-dependent part, measured apart before any is made (lane m82m, 2026-11-19)
+
+Branch `m8-2m` from `973d6d36` (m82l). **First, the base** - the checks m82l did not run on its own final commit, each on
+`973d6d36`'s tree built from clean (`~/m82mb`) against `bb00b349` (`~/m82ma`, one path length): `identical.sh` at -O0 and -O2,
+**0 differ on four targets without the flag** (x86_64-linux 1,868, x86_64-windows 3,736, arm64-darwin 1,868, tms6747 1,868) and
+**0 on three with `-templates=subst`**; **-g 0 differ** with and without the flag (x86_64-linux 715 the same, 350 refused alike,
+218 by the tree's path alone; x86_64-windows 697, 375, 211 - every DIFFER pair re-read with both paths as one,
+`boxkit/m82m-gre.sh`); `-check=fold` compared 16,600, agreed 12,320, differ 0, no unit failing; run.sh with `-templates=subst`
+1276/0; the census as m82l recorded it (215 covered, 145 with no replay, 70 replayed). **Windows**: cl /W4 /WX of the whole tree
+clean, first and alone (15:28:43-15:31:22, about 2m40s); names.sh 934/0, overload.sh 46/0. Nothing to mend.
+
+**One commit** (this one): `nondependentCall`'s reason for a call with a type-dependent part is split three ways, so the census
+says which of the brief's two items each body waits on - a callee that is a function template (its last component, before any
+`<`, names one: `std::move(a)`, `twice<T>(x)`), a callee that is not a name (through a value or a member), and the rest. Nothing
+is substituted that was not: the reason text is printed only under `-check=templates` or `CXX1_TEMPLATE_CENSUS`.
+
+**The census** (Linux, `-check=templates -templates=subst` over the 1,283 cases): unchanged but for the split - 350 nonzero exits
+as before, none failing on a difference; covered 215, frame and shell 215 equal, made 145 equal; without the check 145 with no
+replay, 70 replayed. **m82l's 47 are 32 + 10 + 5**: **32 a qualified or explicit-argument call a function template may answer**
+(the library's `std::move`, `std::forward`, `std::swap` and the like over a bound pointer or scalar: algorithm-sort-large 6,
+library-cppparse-pieces 10, range-for-vector 3, std-function 3, std-function-ledger 3, and one each in array-header,
+functional-less, std-move-and-forward, std-swap-two-ints, template-function (`twice<T>(twice<T>(x))`), thread-pool,
+thread-sleep-yield); **10 through a value or a member** (a comparator or a member call: algorithm-sort-large, include-map-set,
+include-string, library-self-compile-pieces-2, map-move-only-mapped, map-set-comparator, return-self-referential,
+static-local-braced-list 1 each, wstring 2); **5 the rest** (lambda-returning-lambda 2, map-set-node-stability 1,
+member-template-body-unchosen 2). So the brief's (a) - a non-dependent callee typed under the binding through the one ranking -
+has at most these 5 in the suite, and 32 + 17 = 49 bodies wait on (b): deduction at the instantiation and the specialization
+requested as the replay's call requests it (`Templates::instantiateViableTemplates`, reached from `ParserTemplate.cpp`'s call
+door at 1751 and the explicit-argument door) - which m82k's scratch showed is what makes `conv<long, int>` and `sq<int>` defined.
+
+**src/** `Templates.cpp` +9 -3: 95,125 -> 95,131 (+6). EXCLUSIONS re-pointed (Templates.cpp 1374, 1426, 2123).
+
+**Gates** (REF `973d6d36` in `~/m82mb`, NEW in `~/m82mc`, one path length; every check on this commit's own tree): `identical.sh`
+REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,868, x86_64-windows 3,736,
+arm64-darwin 1,868, tms6747 1,868) and **0 on three with `-templates=subst`**; **-g 0 differ** with and without the flag
+(x86_64-linux 715 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 697, 375, 211 - re-read by
+`boxkit/m82m-gre.sh`); `-check=templates -templates=subst` over the cases as above, none failing on a difference; `-check=fold`
+compared 16,600, agreed 12,320, differ 0; run.sh 1276/0 without and with `-templates=subst`; **subst.sh 0 failed** (self 102 of
+102, the ceiling 26 of 26, 3 shapes of 3); syntax.sh 6/0; typed.sh 926/0; self-compile of `Templates.cpp` rc 0; static, each
+tool's own exit status: exclusions rc 0 0/0 (after the re-point), comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue
+rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and
+alone, the delta 15:44:46-15:47:27 (2m41s); names.sh 934/0, overload.sh 46/0.
+
+**Left**: (a)'s 5 (a non-template callee over a bound argument, typed through the one ranking) and the 10 through a value or a
+member; (b) whole - the 32 + 17 calls a function template may answer, deduced at the instantiation from the bound argument
+types, the specialization requested where the replay's call requests it, partial ordering through the existing code. Not begun:
+the hour went to the base's checks and this measure.

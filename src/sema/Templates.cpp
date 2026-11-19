@@ -472,9 +472,15 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
 // a named function of scalars that is no specialization; the rest replays by name. The callee's use is made in callsUsed.
 std::string Templates::nondependentCall(syntax::NodeId call) const {
     const syntax::Tree &st = p_.syntaxTree_;
-    for (std::uint32_t c = 0; c < st.node(call).count; c++)
-        if ((st.node(st.child(call, c)).marks & (syntax::TypeDependent | syntax::DependentName)) != 0)
-            return "a call with a type-dependent argument or a dependent-name callee, resolved at the instantiation";
+    for (std::uint32_t c = 0; c < st.node(call).count; c++) {
+        if ((st.node(st.child(call, c)).marks & (syntax::TypeDependent | syntax::DependentName)) == 0) continue;
+        if (st.node(st.child(call, 0)).kind != syntax::Kind::Name) return "a call through a value or a member with a type-dependent part";
+        const std::string written = st.text(st.child(call, 0)), name = written.substr(0, written.find('<'));
+        const std::string::size_type cut = name.rfind("::");
+        if (fnTemplates_.count(cut == std::string::npos ? name : name.substr(cut + 2)) != 0)
+            return "a qualified or explicit-argument call a function template may answer, which the replay deduces or specializes";
+        return "a call with a type-dependent argument or a dependent-name callee, resolved at the instantiation";
+    }
     const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(call.v);
     if ((st.node(call).marks & (syntax::TypeDependent | syntax::DependentName)) != 0 || st.node(call).count == 0 ||
         st.node(st.child(call, 0)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call ||
