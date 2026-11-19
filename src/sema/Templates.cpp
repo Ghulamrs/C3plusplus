@@ -419,6 +419,16 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
     return *why = "no replayed specialization of the same layout to substitute into", false;
 }
 
+// A dependent decltype's operand the read holds as an expression and notes no syntax for, so its parts are not the replay's.
+static bool unnotedOperand(const DepExpr *e) {
+    if (e == nullptr) return false;
+    if (e->op == DepExpr::SizeofType || e->op == DepExpr::SizeofExpr || e->op == DepExpr::Cast || e->op == DepExpr::CastList ||
+        e->op == DepExpr::StaticCast || e->op == DepExpr::QualifiedParamName || e->op == DepExpr::TemplateParam)
+        return true;
+    for (std::size_t k = 0; k < e->kids.size(); k++) if (unnotedOperand(e->kids[k])) return true;
+    return false;
+}
+
 // Slice 1 covers a free function template over type parameters whose read body makes no call, member access or object:
 // nothing in it waits on [temp.dep.candidate]'s lookup (M8rev M7). Its build is owed; a covered body replays and is counted.
 bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
@@ -434,8 +444,6 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
     if (read == readBody_.end()) return *why = "replayed: no body read at the declaration", false;
-    const std::string shape = substShape(read->second);
-    if (!shape.empty()) return *why = "replayed: " + shape, false;
     // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
     Bound made;
     made.read = read->second;
@@ -443,28 +451,54 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         made.s.from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
+    const std::string shape = substShape(read->second, made.s);
+    if (!shape.empty()) return *why = "replayed: " + shape, false;
+    // A trailing decltype's operand the read keeps no syntax for leaves the function other parts than the replay's.
+    const std::unordered_map<std::uint32_t, const Type *>::const_iterator ret = p_.declaredReturns_.find(read->second.v);
+    int depth = 0;
+    bool trailing = false;
+    for (std::size_t t = sp.start; t < p_.tokens_.size() && !(depth == 0 && (p_.tokens_[t].is("{") || p_.tokens_[t].is(";"))); t++) {
+        depth += p_.tokens_[t].is("(") ? 1 : p_.tokens_[t].is(")") ? -1 : 0;
+        trailing = trailing || (depth == 0 && p_.tokens_[t].is("->"));
+    }
+    if (trailing && ret != p_.declaredReturns_.end() && ret->second != nullptr && unnotedOperand(ret->second->unqualified()->dependentExpr()))
+        return *why = "replayed: a trailing 'decltype' over a sizeof, cast or qualified name, which the read notes in other parts", false;
     bound_[sp.symbol] = made;
     return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
 
-std::string Templates::substShape(syntax::NodeId body) const {
+std::string Templates::substShape(syntax::NodeId body, const Substituted &s) const {
     typedef syntax::Kind Kind;
-    std::vector<syntax::NodeId> work(1, body);
-    while (!work.empty()) {
+    // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
+    for (int pass = 1; pass <= 2; pass++)
+    for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
         const syntax::NodeId id = work.back();
         work.pop_back();
         const syntax::Node n = p_.syntaxTree_.node(id);       // a copy: a reference to `Node` reads as Ast residue
-        if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
-        switch (n.kind) {
-        case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
-        case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
-        case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
-        case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
-            break;
-        default:
-            return std::string("a '") + syntax::kindName(n.kind) + "' in the body";
-        }
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
+        if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
+        if (pass == 1) {
+            switch (n.kind) {
+            case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
+            case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+            case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
+            case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
+                continue;
+            default:
+                return std::string("a '") + syntax::kindName(n.kind) + "' in the body";
+            }
+        }
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+        if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(substituted(s, r->second.type)))
+            return std::string("a '") + syntax::kindName(n.kind) + "' the read resolved to a type the binding does not carry";
+        if (n.kind == Kind::Unary && p_.syntaxTree_.text(id) == "+" && n.count == 1 &&
+            (p_.syntaxTree_.node(p_.syntaxTree_.child(id, 0)).marks & syntax::Dependent) != 0)
+            return "a unary '+' over a dependent name, which the replay records as its operand";     // unaryNode hands `v` on
+        const std::unordered_map<std::uint32_t, const Type *>::const_iterator v = p_.declaredTypes_.find(id.v);
+        const Type *declared = v != p_.declaredTypes_.end() ? substituted(s, v->second) : nullptr;
+        if (n.kind == Kind::Var && declared != nullptr && (p_.dependentType(declared) ||     // a member pointer `substituted` keeps as written
+            (declared->unqualified()->isMemberPointer() && p_.dependentType(declared->unqualified()->pointee()))))
+            return "a 'var' declared with a type the binding does not carry";
     }
     return std::string();
 }
@@ -826,7 +860,7 @@ static const char *frameStepName(char kind) {
     case 'z': return "the frame's start"; case 'p': return "a nested function's frame"; case 'q': return "the outer frame put back";
     case 'o': return "a synthesised frame"; case 'c': return "the frame it closed into"; case 'd': return "a local";
     case 'a': return "a slot no local names"; case 'f': return "a slot given back"; case 'S': return "the sret slot";
-    case 'V': return "the variadic save area"; case 'e': return "the frame's size";
+    case 'V': return "the variadic save area"; case 'e': return "the frame's size"; case 'b': return "a block";
     }
     return "a step the check does not know";
 }
@@ -892,6 +926,9 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
             at = now.size = alignTo(now.size, 16) + 176;
         } else if (r.kind == 'e') {
             at = alignTo(now.size, 16);
+        } else if (r.kind == 'b') {
+            if (r.block != y.block) return step + ": the block it opens in";     // its offset is where it opens
+            at = r.offset;
         } else return step;
         laid[k] = at;
         if (at != y.offset) return step + ": its offset";
@@ -907,12 +944,15 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
 std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const {
     std::vector<Param> params;
     std::vector< ::Local> locals;
+    std::vector<int> blocks(1, 0);      // the block table -g reads, from topLevel's outermost block as enterBlock adds to it
+    std::vector<std::size_t> opens;
     int depth = 0, size = 0, sret = 0, save = 0;
     for (std::size_t k = 0; k < read.size() && k < laid.size(); k++) {
         const FrameEvent &r = read[k];
         if (r.kind == 'p' || r.kind == 'o') depth++;
         else if (r.kind == 'q' || r.kind == 'c') depth--;
         if (depth != 0) continue;
+        if (r.kind == 'b') { blocks.push_back(r.block); opens.resize(blocks.size(), 0); opens.back() = static_cast<std::size_t>(laid[k]); }
         if (r.kind == 'S') sret = laid[k];
         else if (r.kind == 'V') save = laid[k];
         else if (r.kind == 'e') size = laid[k];
@@ -942,6 +982,7 @@ std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std
     }
     if (sret != f.sretSlot() || save != f.regSaveSlot()) return "the sret slot or the save area";
     if (size != f.frameSize()) return "the frame's size";
+    if (blocks != f.blocks() || opens != f.blockPositions()) return "the block table";
     return std::string();
 }
 

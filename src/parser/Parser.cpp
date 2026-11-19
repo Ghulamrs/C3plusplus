@@ -766,6 +766,7 @@ void Parser::enterScope() {
 }
 
 int Parser::enterBlock(std::size_t pos) {
+    logFrame('b', nullptr, 0, static_cast<int>(pos), 0, nullptr, false, currentBlock());
     blocks_.push_back(currentBlock());
     blockAt_.resize(blocks_.size(), 0);
     blockAt_.back() = pos;
