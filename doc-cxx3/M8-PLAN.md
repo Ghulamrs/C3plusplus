@@ -3682,7 +3682,7 @@ binding does not fold 3 (the probes'), a static local over a non-type parameter 
 replay and equal under the check, `add` 2 replayed by name; template-subst-value's 5 replay with their reasons (2 a static
 local, 1 a value-dependent name, 2 a `switch`); tests/subst.sh's lines say so.
 
-**src/**: Templates.cpp +97 -3, Templates.h +7 -3, Typing.cpp +4 -1: 95,282 -> 95,383 (+101; 100 or more lines, so the
+**src/**: Templates.cpp +98 -3, Templates.h +7 -3, Typing.cpp +4 -1: 95,282 -> 95,384 (+102; 100 or more lines, so the
 wave gate owes the fixed point). EXCLUSIONS re-pointed (Templates.cpp 1560, 1612, 2309).
 
 **The self corpus held it too**: the first gate's subst.sh failed on the self-host's class-members door, shape 59 against
@@ -3708,3 +3708,5 @@ build does; names.sh 948 passed 0 failed, overload.sh 46 agreed 0 differed.
 and `enum { E = N }` once `switch`, `sizeof` and a local enumeration are in substShape's list; a static local and an array
 local over a parameter (their value and bound from the binding, not the read's stand-in); non-type parameters of an
 enumeration or another integral type (the fold in that type); the local enum defect m82t found.
+
+**Code** `e7189622` (its message says 95,383 and +101: the line count measured on its own tree is 95,384, +102, as above).
