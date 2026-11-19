@@ -1,0 +1,1 @@
+arm64-darwin  cxx1 names __Unwind_Resume and clang does not - the one cleanup in the case is new ::X(5)'s, which frees the storage if the constructor throws; x86_64-linux (17 names) and x86_64-windows (12) agree on every name, and cl's defined external symbols match cxx3-msvc's, 10 of 10.

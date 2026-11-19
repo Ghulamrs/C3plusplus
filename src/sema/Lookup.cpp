@@ -56,6 +56,10 @@ std::string Lookup::qualifyForLookup(const std::string &name,
     if (p_.absoluteLookup_) return name;
     // Written qualified: the first component is searched for, then a using-declaration followed.
     if (name.find("::") != std::string::npos) {
+        // A constructor's key is its class's tag, which is absolute: global `X::X` inside `n` is never `n::X::X`.
+        const std::string cls = name.substr(0, name.rfind("::"));
+        const Type *named = Parser::constructorKey(cls) == name ? findGlobalTypedef(cls) : nullptr;
+        if (named != nullptr && named->isStructOrUnion() && named->tag() == cls && (this->*exists)(name)) return name;
         // [basic.lookup.qual]/1: the first component is looked up unqualified, so
         // `inner::S` inside `outer` is `outer::inner::S` - the enclosing namespaces
         // innermost first, then the ones a using-directive opened.
