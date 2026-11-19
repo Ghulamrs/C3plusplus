@@ -831,7 +831,8 @@ private:
     syntax::Kind statementKindAhead(std::string *text) const;
     bool definesType(std::size_t from) const;
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
-    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten);
+    // M8rev M7: `dependentName` is [temp.dep]/1's - an unqualified callee with a type-dependent argument, or a dependent scope's.
+    void markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName);
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e && kind == syntax::Kind::Call && !defaultGroups_.empty()) {
@@ -1693,6 +1694,7 @@ private:
     bool leftOutBase(const Type *cls) const;
     void refuseUntypedMember(const std::string &name, std::size_t from);
     bool argsDependent_ = false;
+    std::size_t dependentScopeEnd_ = 0;     // the token after a name a read found in a dependent scope (templateIdMember)
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;
     // `$this` - the member a `[this]` capture holds.

@@ -1130,10 +1130,16 @@ ExprPtr Parser::primary(Program *program) {
         for (; k < past; k++) name += tokens_[k].text;
     }
     if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
+    // [temp.dep]/1 in a read: a name in a dependent scope - `T::f`, or one templateIdMember found in `B<T>` - and below, an
+    // unqualified callee with a type-dependent argument (M8rev M7).
+    const std::size_t head = tokens_[start].is("typename") ? start + 1 : start;
+    const bool scoped = dependentScopeEnd_ == at_ ||
+                        (head + 1 < k && tokens_[head + 1].is("::") && boundTypeParams_.count(tokens_[head].text) != 0);
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
         noteCallee(call[0], r.get());
-        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"));
+        markReadName(call[0], r ? r->type() : nullptr, tokens_[start].is("typename"),
+                     scoped || (argGen_ != gen && argsDependent_ && name.find("::") == std::string::npos));
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -1156,20 +1162,21 @@ ExprPtr Parser::primary(Program *program) {
     }
     const bool written = tokens_[start].is("typename");
     r = note(std::move(r), syntax::Kind::Name, name, pos);
-    markReadName(syn(r), r ? r->type() : nullptr, written);
+    markReadName(syn(r), r ? r->type() : nullptr, written, scoped);
     return r;
 }
 
 // M8.1 row 5: a name in a template body read at its declaration whose meaning waits for the arguments is marked so.
-void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten) {
+void Parser::markReadName(syntax::NodeId id, const Type *t, bool typenameWritten, bool dependentName) {
     if (!patternBody_ || !id.valid()) return;
     const DepExpr *e = t != nullptr ? t->dependentExpr() : nullptr;
     if (e != nullptr && e->text == "a name not found, which a left-out base may not declare") {
         syntaxTree_.mark(id, syntax::Unfound);
         return;
     }
-    syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::Dependent : 0) |
-                                                   (typenameWritten ? syntax::Typename : 0)));
+    syntaxTree_.mark(id, static_cast<std::uint8_t>((t != nullptr && dependentOperand(t) ? syntax::TypeDependent : 0) |
+                                                   (typenameWritten ? syntax::Typename : 0) |
+                                                   (dependentName ? syntax::DependentName : 0)));
 }
 
 // The operator a name spells after `operator`, from token k - `+`, `()`, `[]` - added to `name`; the token after it.

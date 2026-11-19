@@ -54,10 +54,13 @@ struct Node {
     bool dead;              // made by a trial that rewound: its tokens are read again, and these nodes are not the tree's
     bool pattern;           // a template's signature kept at its declaration (M8.1): dead to every reader of the tree, and held
     std::uint32_t member;   // 1 + the pack member a pattern's copy was read for, 0 outside an expansion
-    std::uint8_t marks;     // a read's name (M8.1 row 5): Dependent its meaning waits for the arguments, Typename written
+    std::uint8_t marks;     // a read's name (M8.1 row 5, M8rev M7): what waits for the arguments, and a written `typename`
 };
 
-const std::uint8_t Dependent = 1, Typename = 2, Unfound = 4;     // Unfound: no declaration, and no left-out base may give one (M8rev M1)
+// TypeDependent: the type waits for the arguments; DependentName: looked up again at the instantiation ([temp.dep]/1,
+// an unqualified callee with a type-dependent argument, or a name in a dependent scope); Unfound: no declaration (M8rev M1).
+const std::uint8_t TypeDependent = 1, Typename = 2, Unfound = 4,
+                   DependentName = 8;
 
 class Tree {
 public:

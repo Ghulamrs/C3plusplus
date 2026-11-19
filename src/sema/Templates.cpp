@@ -493,7 +493,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s) con
         if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(substituted(s, r->second.type)))
             return std::string("a '") + syntax::kindName(n.kind) + "' the read resolved to a type the binding does not carry";
         if (n.kind == Kind::Unary && p_.syntaxTree_.text(id) == "+" && n.count == 1 &&
-            (p_.syntaxTree_.node(p_.syntaxTree_.child(id, 0)).marks & syntax::Dependent) != 0)
+            (p_.syntaxTree_.node(p_.syntaxTree_.child(id, 0)).marks & syntax::TypeDependent) != 0)
             return "a unary '+' over a dependent name, which the replay records as its operand";     // unaryNode hands `v` on
         const std::unordered_map<std::uint32_t, const Type *>::const_iterator v = p_.declaredTypes_.find(id.v);
         const Type *declared = v != p_.declaredTypes_.end() ? substituted(s, v->second) : nullptr;
