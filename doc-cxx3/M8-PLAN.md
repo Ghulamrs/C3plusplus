@@ -3648,3 +3648,63 @@ the probe's `.expected`; names.sh 947 passed 0 failed and overload.sh 46 agreed 
 folds a `value-dependent` node under it (`N`, `sizeof(T) * N`, `T a[N]`, `static const int K = N`), pointer and reference
 parameters replaying by name; then the census and the bodies newly made under -check=templates (third part). The local enum
 defect above.
+
+## M8.2 slice 2f, second part: a non-type parameter's value in the Binding, and the reads folded under it (lane m82u, 2026-11-19)
+
+Branch `m8-2u` from `8afc757c` (m82t). **What it does, under `-templates=subst` only**: `Templates::Binding` carries the
+specialization's non-type arguments (`values`, by parameter index), and `instantiate` no longer refuses a non-type parameter
+outright: a pack or template parameter still replays by name, and a non-type parameter of a type other than `int` (an
+enumeration, `unsigned`, a pointer, a reference, `T v`) replays by name ("a non-type parameter of a type other than int").
+`Templates::valueShape` then holds every `value-dependent` node of the read (m82t's mark) to the value the replay folds:
+a non-type parameter is its argument, and a const `int` local made from one is its initialiser folded under the binding
+(`foldUnder`: names, int literals, parentheses, unary `+ - ~ !`, the binary arithmetic, bitwise, comparison and logical
+operators, refused past int, on a zero divisor and on `INT_MIN / -1`). Each fold is kept by node (`Bound::values`), and the
+Typer puts it on the read's record (`Typer::record`, `recordDiffers` holding it alike), so the lowering reads the replay's
+constant and never the read's stand-in. A marked node the binding cannot fold makes its body replay by name ("a
+value-dependent name the binding does not fold"); a static local over a parameter and any array local beside one replay
+by name too (their value and bound are the read's stand-in, which no record carries). `switch`, `sizeof` and an enumerator
+over a parameter are still refused before this (substShape), so `case N:`, `sizeof(T) * N` and `enum { E = N }` replay.
+
+**The body proof** (decision i): under `-check=templates` the first measurement made the 6 bodies of the probe and held 2 of
+them apart ("a 'name' resolved apart from its replay": `c` read as 0 against the replay's 3) - a read of a const local the
+read left unmarked. Mended: an unmarked read of a const local from a parameter is folded too. Then a second const local
+from a parameter (`d` after `c`) was found to read as a Local in the read, where the replay reads an enumerator-like
+constant: that is m82t's marking, not this fold, and such a body replays by name. **Found, not mended** (no side tasks):
+the second const int local made from a non-type parameter in a read resolves as a Local, not as a constant (the probe's
+`add`); owed to slice 2f's third part.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,297 cases): 350 nonzero exits as REF; covered 383
+(REF 356, +27); without the check **309 substituted with no replay** (REF 286, +23) and 74 replayed at the lowering
+(REF 70); **without the lanes' probes 130 of the suite's own bodies made with no replay (REF 111, +19)**. Replayed by
+reason, new: a pack or template parameter 116, a non-type parameter of a type other than int 15, a value-dependent name the
+binding does not fold 3 (the probes'), a static local over a non-type parameter 2. The new probe
+`tests/cases/template-subst-nontype` (`.flags` `-templates=subst`; `.expected` g++'s): `scale` and `pick` 4 made with no
+replay and equal under the check, `add` 2 replayed by name; template-subst-value's 5 replay with their reasons (2 a static
+local, 1 a value-dependent name, 2 a `switch`); tests/subst.sh's lines say so.
+
+**src/**: Templates.cpp +97 -3, Templates.h +7 -3, Typing.cpp +4 -1: 95,282 -> 95,383 (+101; 100 or more lines, so the
+wave gate owes the fixed point). EXCLUSIONS re-pointed (Templates.cpp 1560, 1612, 2309).
+
+**The self corpus held it too**: the first gate's subst.sh failed on the self-host's class-members door, shape 59 against
+the record's 58 - the fold's maps (`std::map<std::string, long long>` and kin) were specializations the compiler's own source
+had not made before, and one of them the read does not take. The record is not raised: the fold keeps only map types the
+corpus already makes (`std::map<std::string, int>`; `Bound::values` a `std::map<std::uint32_t, std::size_t>` like `calls`,
+each value kept plus 2^31).
+
+**Gates** (REF `8afc757c` in `~/m82ub`, NEW in `~/m82uc` - REF's tree with this commit shipped, one path length; every check on
+this commit's own tree, the second gate): `identical.sh` without the flag 0 differ on four targets (x86_64-linux 1,896,
+x86_64-windows 3,792, arm64-darwin 1,896, tms6747 1,896) and with `-templates=subst` 0 differ on three (1,896, 3,792, 1,896);
+**-g** 0 differ with and without the flag (x86_64-linux 728 the same, 350 refused alike, 219 by the tree's path alone;
+x86_64-windows 710, 375, 212). `-check=fold` 0 units failing. run.sh 1290/0 without and with `-templates=subst`.
+`-check=templates -templates=subst` over the cases: 350 nonzero exits as REF, none on a difference. **subst.sh 0 failed**
+(self 102 of 102, ceiling 26 of 26, 3 shapes of 3). syntax.sh 7/0; typed.sh 940/0. Self-compile of `Templates.cpp` and
+`Typing.cpp` rc 0. Static, each tool's own exit status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers
+89), ast-residue rc 0 (ExprPtr 2012, node-refs 298: not raised), ide/generate.py up to date. g++ `-Werror` clean. The Wine
+stand-in: the 14 template-subst probes 14 passed with `-templates=subst` and at -O0. **Windows** (this commit's tree):
+cl /W4 /WX clean (76 s, alone); clang 19 (`-nostdinc++ -isystem include`) prints the probe's `.expected`, as cxx3-msvc's
+build does; names.sh 948 passed 0 failed, overload.sh 46 agreed 0 differed.
+
+**Left** (slice 2f's third part): the second const local from a parameter read as a Local (above); `case N:`, `sizeof(T) * N`
+and `enum { E = N }` once `switch`, `sizeof` and a local enumeration are in substShape's list; a static local and an array
+local over a parameter (their value and bound from the binding, not the read's stand-in); non-type parameters of an
+enumeration or another integral type (the fold in that type); the local enum defect m82t found.

@@ -215,13 +215,17 @@ public:
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`.
     struct Substituted { std::vector<const Type *> from, to; };
     const Type *substituted(const Substituted &s, const Type *t) const;
-    // **M8.2, slice 1's scaffolding**: a specialization's types by parameter index; a non-type parameter or a pack replays by name.
-    struct Binding { std::vector<TypeId> types; };
+    // **M8.2**: a specialization's types and its non-type arguments' values by parameter index; a pack replays by name.
+    struct Binding { std::vector<TypeId> types; std::vector<long long> values; };
     // Specialization `i` built from its template's body read at the declaration, under `b`; false with `why` the reason it replays.
     bool instantiate(std::size_t i, const Binding &b, std::string *why);
     // The first thing a read body holds apart, or empty; `calls` takes each dependent-name call's function, by its node.
     std::string substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
                            std::vector<syntax::NodeId> *requests);     // requests: calls a function template answers
+    // Slice 2f: each value-dependent name of a read worth its value under `values`, by node; why it is not, or empty.
+    std::string valueShape(syntax::NodeId body, const Specialization &sp, std::map<std::uint32_t, std::size_t> *values) const;
+    bool foldUnder(syntax::NodeId id, const std::map<std::string, int> &params, const std::map<std::string, int> &consts,
+                   int depth, long long *out) const;
     std::string dependentCall(syntax::NodeId call, const Substituted &s, std::size_t *chosen);   // why it waits, or empty
     std::string templateCandidates(syntax::NodeId call, const Substituted &s);    // a function template deduced at the instantiation
     std::string requestCall(const Specialization sp, syntax::NodeId call, const Substituted &s,
@@ -234,7 +238,7 @@ public:
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
-    struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls; };    // calls: callee and call nodes
+    struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; };    // calls: callee and call nodes; values: 2f's folds, each + 2^31
     std::map<std::string, Bound> bound_;
     std::map<std::string, int> builtCensus_;
     // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.

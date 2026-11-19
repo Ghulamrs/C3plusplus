@@ -151,6 +151,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     } else if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
         if (!binding_.empty() && out.type.valid()) out.type = bound(out.type);
+        if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).values.count(id.v) != 0)
+            out.value = static_cast<long long>(p_.tmpl_.bound_.at(binding_).values.at(id.v)) - 2147483648LL;     // slice 2f: the replay's value
         tree_.setResolution(t, out);
     }
     const auto cast = p_.castTypes_.find(id.v);
@@ -488,9 +490,10 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         const Resolution &r = tree.resolution(t);
         // Under a binding (M8.2's read, no replay) the parser's record names the pattern's parameters, the typed tree its types.
         const TypeId want = TypeTable::id(binding.empty() ? pr->second.type : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
+        const bool folded = !binding.empty() && p.tmpl_.bound_.at(binding).values.count(id) != 0;
         if (r.what != pr->second.what || p.types_.type(r.type) != p.types_.type(want) ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
-            r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
+            r.value != (folded ? static_cast<long long>(p.tmpl_.bound_.at(binding).values.at(id)) - 2147483648LL : pr->second.value) || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
             r.viaWrapper != pr->second.viaWrapper || r.isVolatile != pr->second.isVolatile ||
             r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)
             return "the record's fields";

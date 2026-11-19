@@ -6,6 +6,7 @@
 #include "../parser/ParserInternal.h"
 #include "../Source.h"
 
+#include <climits>
 #include <cstdlib>
 #include <algorithm>
 
@@ -341,10 +342,14 @@ static bool unnotedOperand(const DepExpr *e) {
 bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     const Specialization &sp = specializations_[i];
     if (sp.explicitly) return *why = "replayed: an explicit specialization", false;
-    for (std::size_t q = 0; q < sp.params.size(); q++)
-        if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate)
-            return *why = "replayed: a non-type, pack or template parameter, bound by name", false;
+    for (std::size_t q = 0; q < sp.params.size(); q++) {
+        if (sp.params[q].isPack || sp.params[q].isTemplate) return *why = "replayed: a pack or template parameter, bound by name", false;
+        const Type *pt = sp.params[q].type != nullptr ? Parser::paramTypeIn(sp.params[q], sp.binding) : nullptr;
+        if (pt != nullptr && (pt->unqualified() != p_.types_.get(Kind::Int) || q >= b.values.size()))
+            return *why = "replayed: a non-type parameter of a type other than int, bound by name", false;
+    }
     for (std::size_t q = 0; q < b.types.size(); q++) {
+        if (q < sp.params.size() && sp.params[q].type != nullptr) continue;     // a non-type parameter: its value, in valueShape
         if (!b.types[q].valid()) return *why = "replayed: a type parameter bound to no type", false;
         // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): slice 2b binds scalars.
         if (!p_.types_.type(b.types[q])->unqualified()->isScalar()) return *why = "replayed: a type parameter bound to a class or an array", false;
@@ -355,12 +360,15 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     Bound made;
     made.read = read->second;
     for (std::size_t q = 0; q < b.types.size(); q++) {
+        if (q < sp.params.size() && sp.params[q].type != nullptr) continue;
         made.s.from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
     std::vector<syntax::NodeId> requests;
     const std::string shape = substShape(read->second, made.s, &made.calls, &requests);
     if (!shape.empty()) return *why = "replayed: " + shape, false;
+    const std::string value = valueShape(read->second, sp, &made.values);
+    if (!value.empty()) return *why = "replayed: " + value, false;
     // A trailing decltype's operand the read keeps no syntax for leaves the function other parts than the replay's.
     const std::unordered_map<std::uint32_t, const Type *>::const_iterator ret = p_.declaredReturns_.find(read->second.v);
     int depth = 0;
@@ -386,6 +394,92 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     }
     bound_[outer.symbol] = made;
     return *why = "covered: typed under the binding, the replay's frame kept", false;
+}
+
+// Slice 2f (M8rev L2): a value-dependent name in the read is worth what the replay folds it to - a non-type parameter of type
+// int its argument, a const int local made from one its initialiser under them; any other mark replays by name.
+std::string Templates::valueShape(syntax::NodeId body, const Specialization &sp, std::map<std::uint32_t, std::size_t> *values) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    std::map<std::string, int> params;
+    for (std::size_t q = 0; q < sp.params.size() && q < sp.values.size(); q++)
+        if (sp.params[q].type != nullptr) params[sp.params[q].name] = static_cast<int>(sp.values[q]);
+    if (params.empty()) return std::string();
+    std::map<std::string, int> consts;        // a const local's initialiser, by its node
+    std::map<std::string, int> declared;
+    std::vector<syntax::NodeId> marked;
+    for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
+        const syntax::NodeId id = work.back();
+        work.pop_back();
+        const syntax::Node n = st.node(id);
+        for (std::uint32_t c = 0; c < n.count; c++) work.push_back(st.child(id, c));
+        if ((n.marks & syntax::ValueDependent) != 0 || n.kind == syntax::Kind::Name) marked.push_back(id);
+        const std::unordered_map<std::uint32_t, Local>::const_iterator l =
+            n.kind == syntax::Kind::Var ? p_.declaredLocals_.find(id.v) : p_.declaredLocals_.end();
+        if (l == p_.declaredLocals_.end()) continue;
+        const Type *t = l->second.type;
+        if (t != nullptr && t->unqualified()->isArray()) return "an array local beside a non-type parameter, its bound the read's stand-in";
+        if (!l->second.staticName.empty() && st.holds(id, syntax::ValueDependent))
+            return "a static local over a non-type parameter, its value the read's stand-in";
+        declared[l->second.name]++;
+        if (l->second.valueDependent && n.count == 1 && t != nullptr && t->unqualified() == p_.types_.get(Kind::Int))
+            consts[l->second.name] = static_cast<int>(st.child(id, 0).v);
+    }
+    for (std::size_t k = 0; k < marked.size(); k++) {
+        const std::string name = st.text(marked[k]);
+        long long v = 0;
+        // A read of a const local made from a parameter the read left unmarked is the replay's constant as well.
+        if ((st.node(marked[k]).marks & syntax::ValueDependent) == 0 && (st.node(marked[k]).kind != syntax::Kind::Name || consts.count(name) == 0)) continue;
+        if (st.node(marked[k]).kind != syntax::Kind::Name || declared[name] > 1 || (declared[name] != 0 && params.count(name) != 0) ||
+            !foldUnder(marked[k], params, consts, 0, &v))
+            return "a value-dependent name the binding does not fold, bound by name";
+        (*values)[marked[k].v] = static_cast<std::size_t>(v + 2147483648LL);     // in int, so 0 to 2^32 - 1
+    }
+    return std::string();
+}
+
+// A constant of type int as [expr.const] folds it from `params` and the const locals `consts`; false past int or a shape not here.
+bool Templates::foldUnder(syntax::NodeId id, const std::map<std::string, int> &params,
+                          const std::map<std::string, int> &consts, int depth, long long *out) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const syntax::Node n = st.node(id);
+    const std::string op = st.text(id);
+    long long a = 0, b = 0;
+    if (depth > 64) return false;
+    if (n.kind == syntax::Kind::Name) {
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+        if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Enumerator) return false;
+        const std::map<std::string, int>::const_iterator p = params.find(op);
+        if (p != params.end()) { *out = p->second; return true; }
+        const std::map<std::string, int>::const_iterator c = consts.find(op);
+        return c != consts.end() && foldUnder(syntax::NodeId(static_cast<std::uint32_t>(c->second)),
+ params, consts, depth + 1, out);
+    } else if (n.kind == syntax::Kind::IntLit) {
+        const std::unordered_map<std::uint32_t, std::size_t>::const_iterator lit = p_.literalTokens_.find(id.v);
+        if (lit == p_.literalTokens_.end()) return false;
+        const Token &t = p_.tokens_[lit->second];
+        if (t.kind != TokenKind::Num || t.isFloat || t.isChar || t.suffixU || t.suffixL || t.suffixLL || t.value < 0) return false;
+        *out = t.value;
+    } else if ((n.kind == syntax::Kind::Paren || n.kind == syntax::Kind::Unary) && n.count == 1) {
+        if (!foldUnder(st.child(id, 0), params, consts, depth + 1, &a)) return false;
+        if (n.kind == syntax::Kind::Paren || op == "+") *out = a;
+        else if (op == "-") *out = -a;
+        else if (op == "~") *out = ~a;
+        else if (op == "!") *out = !a;
+        else return false;
+    } else if (n.kind == syntax::Kind::Binary && n.count == 2) {
+        if (!foldUnder(st.child(id, 0), params, consts, depth + 1, &a) || !foldUnder(st.child(id, 1), params, consts, depth + 1, &b)) return false;
+        if ((op == "/" || op == "%") && (b == 0 || (a == INT_MIN && b == -1))) return false;
+        if (op == "+") *out = a + b; else if (op == "-") *out = a - b; else if (op == "*") *out = a * b;
+        else if (op == "/") *out = a / b; else if (op == "%") *out = a % b;
+        else if (op == "&") *out = a & b; else if (op == "|") *out = a | b; else if (op == "^") *out = a ^ b;
+        else if (op == "<") *out = a < b; else if (op == ">") *out = a > b; else if (op == "<=") *out = a <= b;
+        else if (op == ">=") *out = a >= b; else if (op == "==") *out = a == b; else if (op == "!=") *out = a != b;
+        else if (op == "&&") *out = a && b; else if (op == "||") *out = a || b;
+        else return false;
+    } else {
+        return false;
+    }
+    return *out >= INT_MIN && *out <= INT_MAX;
 }
 
 static const char TemplateCallee[] =
@@ -1346,6 +1440,7 @@ void Templates::instantiatePending() {
                 std::string why;
                 Binding b;
                 for (std::size_t q = 0; q < specializations_[i].binding.size(); q++) b.types.push_back(TypeTable::id(specializations_[i].binding[q]));
+                b.values = specializations_[i].values;
                 if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
                 substCensus_[why]++;
             }
