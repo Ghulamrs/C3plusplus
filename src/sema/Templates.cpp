@@ -1,6 +1,7 @@
 // sema::Templates - see Templates.h.
 
 #include "Templates.h"
+#include "Typing.h"
 #include "../parser/Parser.h"
 #include "../parser/ParserInternal.h"
 #include "../Source.h"
@@ -580,20 +581,56 @@ std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, 
 
 static const char DeducedCall[] = "a call a function template answers, deduced at the instantiation";
 
-// A call's arguments as deductionArgType gives them - each a local, typed under the binding, a named local an lvalue; else why not.
-std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes) const {
+// An argument's value category by its form ([expr.unary.op]/1, [expr.prim.paren]): 1 an lvalue, 0 a prvalue, -1 not decided here.
+static int argumentCategory(const syntax::Tree &st, syntax::NodeId a) {
+    static const char *const prvalues[] = { "+", "-", "*", "/", "%", "<<", ">>", "<", ">", "<=", ">=", "==", "!=", "&", "|", "^",
+                                            "&&", "||" };
+    const syntax::Kind k = st.node(a).kind;
+    const std::string &op = st.text(a);
+    if (k == syntax::Kind::Paren && st.node(a).count == 1) return argumentCategory(st, st.child(a, 0));
+    if (k == syntax::Kind::IntLit || k == syntax::Kind::FloatLit || k == syntax::Kind::CharLit) return 0;
+    if (k == syntax::Kind::Unary && st.node(a).count == 1) return op == "*" ? 1 : op == "&" || op == "-" || op == "+" || op == "!" || op == "~" ? 0 : -1;
+    if (k == syntax::Kind::Member && st.node(a).count == 1)      // `p->m` names an object; `o.m` one where `o` is a name
+        return op.compare(0, 2, "->") == 0 || (op.compare(0, 1, ".") == 0 && st.node(st.child(a, 0)).kind == syntax::Kind::Name) ? 1 : -1;
+    for (std::size_t q = 0; k == syntax::Kind::Binary && st.node(a).count == 2 && q < sizeof prvalues / sizeof *prvalues; q++)
+        if (op == prvalues[q]) return 0;
+    return -1;
+}
+
+// A call's arguments as deductionArgType gives them, typed under the binding: an lvalue as a reference to its type, a prvalue
+// as its type - a local by its record, any other form the typed tree's (Typer::typeUnder); else why not.
+std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, std::vector<const Type *> *argTypes) {
     const syntax::Tree &st = p_.syntaxTree_;
     const bool qualified = st.text(st.child(call, 0)).find("::") != std::string::npos;
     for (std::uint32_t c = 1; c < st.node(call).count; c++) {
-        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(st.child(call, c).v);
-        if (st.node(st.child(call, c)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Local ||
-            r->second.type == nullptr)
-            return "a call a function template may answer over an argument other than a local, which the instantiation does not type here";
-        const Type *t = substituted(s, r->second.type);
+        const syntax::NodeId a = st.child(call, c);
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(a.v);
+        const Type *t = nullptr;
+        if (st.node(a).kind == syntax::Kind::Name && r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Local && r->second.type != nullptr) {
+            t = substituted(s, r->second.type);
+            t = t->isReference() ? t : p_.types_.referenceTo(t);
+        } else {
+            // No request's argument holds another (each is ordered by its node, Templates::instantiate), nor any call.
+            for (std::vector<syntax::NodeId> work(1, a); !work.empty(); ) {
+                const syntax::NodeId id = work.back();
+                work.pop_back();
+                if (st.node(id).kind == syntax::Kind::Call) return "a call a function template may answer over an argument that holds a call";
+                for (std::uint32_t k = 0; k < st.node(id).count; k++) work.push_back(st.child(id, k));
+            }
+            const int lvalue = argumentCategory(st, a);
+            if (lvalue < 0) return "a call a function template may answer over an argument whose value category the read does not decide here";
+            Bound under;
+            under.s = s;
+            bound_[" argument"] = under;
+            t = p_.types_.type(Typer(p_).typeUnder(a, " argument"));
+            bound_.erase(" argument");
+            if (t == nullptr || t->isReference()) return "a call a function template may answer over an argument the typed tree does not type";
+            t = lvalue == 1 ? p_.types_.referenceTo(t) : t->unqualified();
+        }
         const Type *v = (t->isReference() ? t->referent() : t)->unqualified();
         if (!v->isScalar() || (!qualified && (!v->isArithmetic() || v->isEnumeration())))
             return "a call a function template may answer over an argument whose type ADL would search";
-        argTypes->push_back(t->isReference() ? t : p_.types_.referenceTo(t));
+        argTypes->push_back(t);
     }
     return std::string();
 }
@@ -654,18 +691,21 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     std::vector<std::size_t> viable;
     std::vector<std::vector<Rank> > ranks;
     std::vector<const Type *> given;
-    for (std::size_t q = 0; q < argTypes.size(); q++) given.push_back(argTypes[q]->referent());
+    for (std::size_t q = 0; q < argTypes.size(); q++) given.push_back(argTypes[q]->isReference() ? argTypes[q]->referent() : argTypes[q]);
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != given.size() || f.variadic) continue;
+        // A class candidate is ranked with the rest: a non-const `C &` binds no temporary ([dcl.init.ref]/5), so a scalar
+        // reaches it by no converting constructor and rankArgument answers None as the replay's does; any other asks one.
         for (std::size_t q = 0; q < f.params.size(); q++)
-            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion())
-                return "a deduced call beside a candidate over a class, whose converting constructors the read does not ask";
+            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion() &&
+                (!f.params[q]->isReference() || f.params[q]->isRValueReference() || f.params[q]->referent()->isConst()))
+                return "a deduced call beside a candidate over a class that takes a temporary, whose converting constructors the read does not ask";
         std::vector<Rank> rank;
         for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
             RankedArgument a;
             a.type = given[q]->id();
-            a.lvalue = true;
+            a.lvalue = argTypes[q]->isReference();
             rank.push_back(p_.overload_.rankArgument(a, f.params[q]));
         }
         if (rank.empty() || rank.back() != Rank::None) viable.push_back((*set)[k]), ranks.push_back(rank);
@@ -679,7 +719,7 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     bool scalars = f.owner.empty() && !f.deleted && p_.overload_.leastArguments(f) == f.params.size() &&
                    (f.returns->isVoid() || ret->isScalar());
     for (std::size_t k = 0; scalars && k < f.params.size(); k++)
-        scalars = f.params[k]->isReference() ? f.params[k]->referent()->unqualified() == given[k]->unqualified() && given[k]->isScalar()
+        scalars = f.params[k]->isReference() ? argTypes[k]->isReference() && f.params[k]->referent()->unqualified() == given[k]->unqualified() && given[k]->isScalar()
                                              : f.params[k]->isScalar();
     if (!scalars) return "a deduced call of a function over a class, a default, or a reference that binds no local as it is";
     *chosen = viable[static_cast<std::size_t>(best)];

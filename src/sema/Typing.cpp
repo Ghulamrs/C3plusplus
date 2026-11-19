@@ -995,6 +995,13 @@ TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
     return t;
 }
 
+TypeId Typer::typeUnder(syntax::NodeId e, const std::string &binding) {
+    binding_ = binding;
+    const TypedId t = typeExpression(e);
+    binding_.clear();
+    return TypeTable::id(tree_.node(t).type);
+}
+
 TypeId Typer::bound(TypeId t) const {
     return binding_.empty() ? t : TypeTable::id(p_.tmpl_.substituted(p_.tmpl_.bound_.at(binding_).s, p_.types_.type(t)));
 }

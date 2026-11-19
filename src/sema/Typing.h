@@ -198,6 +198,8 @@ public:
     TypedId typeFunction(syntax::NodeId fn);
     // One full-expression typed on demand during the parse (M6d S6): no scopes, so a name is the record the parser made.
     TypedId typeExpression(syntax::NodeId e) { scopes_.clear(); return node(e); }
+    // M8.2: an argument of a read body typed under Templates::bound_'s `binding` before the body is (Templates::callArgTypes).
+    TypeId typeUnder(syntax::NodeId e, const std::string &binding);
     // M8.1: the body of `symbol` - its own, or a sibling's with the types substituted where Templates made it so.
     TypedId typeBody(syntax::NodeId fn, const std::string &symbol);
     TypeId declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const;
