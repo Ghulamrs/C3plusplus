@@ -4488,3 +4488,45 @@ help) and the setters only nodes had, each shown identical by itself; `Kept` its
 ConstexprCtor read the typed tree instead of pointing into the parser's expressions. **Owed to the wave gate:** winpass
 in both spellings, ssa.sh 1/2, names.sh, make test; and a register entry for cxx3's refusal of a nested class defined
 outside its class.
+
+### M6d S5: the frame without the nodes - the unwind-help word and the pad slots nothing names leave the parser's frame - lane m6d-s5, 2026-11-19
+
+Brief boxkit/brief-m6d-s5.txt; from 2ccd4a51 on branch m6d-s5; REF built from 2ccd4a51 on Linux (`~/m6d-s5-ref.exe`);
+the compares are S4j's (tools/identical.sh one target a job beside the m6dh gate; every case's `-g -S` text, four targets).
+
+**Why a dead slot moves nothing.** The parser's frame allocator still numbers every slot, but since M6d's fourth round
+the generators read only the head of its frame - the parameters' offsets, the result slot and a variadic function's
+register save area (`ir::Laid`), all handed out before the body is parsed. A body's slot reaches output only as a `-g`
+local's offset, and a local with a live alloca takes the selector's slot (Regions::ssaFrameLocals, Tms6747::emitScope);
+one without is dropped. So a slot taken in a body moves no offset any generator reads - the design's "same offsets in the
+same order" holds for every offset that is read - and each removal is shown identical by itself all the same.
+
+**(1) The unwind-help word** (e2b40fb2, src/ 94,139 -> 94,126): `Parser::msUnwindHelp` and its three calls (a Microsoft
+`try`, `wrapMsCleanups`, `cleanupRegion`) - the runtime's word is the selector's own (`ssaUnwindHelpSlot_`, SsaSelect.cpp's
+layoutSsa). 6 exclusion citations re-pointed. **(2) The pad slots nothing names** (c5b21da4, src/ 94,126 -> 94,116): the
+Microsoft cleanups' pointer and selector slots (`wrapMsCleanups`, `cleanupRegion`'s Microsoft arm) and the Itanium
+cleanups' and noexcept wrapper's selector slots (`wrapCleanups`, `cleanupRegion`, topLevel's [except.spec]/9 wrap), whose
+numbers no caller took. 8 exclusion citations re-pointed. Each: 0 uncited, 0 stale.
+**Shown** against REF: commit 1 - identical tms6747 1,848 compared, x86_64-linux 1,848, x86_64-windows (both spellings)
+3,696, arm64-darwin 1,848, 0 differ on each; `-g -S` of 1,269 cases 908/923/898/923 same (the rest refused alike), 0
+differ on the four. Commit 2 - the same: identical 1,848, 1,848, 3,696, 1,848 compared, 0 differ; `-g -S` 908/923/898/923
+same, 0 differ on the four.
+**ast-residue** on Linux, both commits: ExprPtr 2,012, StmtPtr 0, node-casts 149, node-refs 302, visits 0, readers 9,
+ast-lines 513 - unchanged (no Ast.h line and no node spelling moved), not re-recorded.
+
+**Gates on the final tree**: g++ -Werror clean (both Linux builds); cl /W4 /WX clean, started first and alone - a full
+build of the final source in 1 min 11 s (work\m6d-s5y); run.sh 1,263 passed, 0 failed;
+tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 148/0, 146/0, 141/0 and 4-6 on Windows 142/0, 149/0, 144/0;
+self-compile by the new compiler of the three changed .cpp files: x86_64-linux -O2 all compile; tms6747 -O2 refuses each
+by the stack-arguments refusal (`classRangeEnds`'s lambda), as at S4j. Comment cap 0 over, memory gate pass, ide --check
+up to date. winpass is not owed: the Microsoft frame did not change (x86_64-windows identical in both spellings).
+
+**What is left of S5**: the pad slots whose numbers still go into an expression node - a `try`'s `.ex.ptr`/`.ex.sel`
+(ParserStmt.cpp's statement and its handler resume slots, `handlerResumePtr_`/`Sel_`, `tryChain*Slot_`), the Itanium
+cleanups' pointer slot (`resumeUnwinding`, `cleanupPad`) and the noexcept wrap's `.ex.ptr`. Those `Var::local` nodes sit in
+`Kept` records; a slot goes with the node that names it - at S8, or earlier once a lane shows the `Kept` holding it unread
+(the lowering reads the syntax tree), each shown identical by itself as these two were. No Ast.h setter is left that only deleted nodes called (each `set*` in Ast.h has a caller outside it).
+**What tools/ast-residue reads**: the expression nodes only (ExprPtr, node-casts, node-refs under src/parser and
+src/sema, the nine readers, Ast.h's 513 lines). **Before S6**: nothing of M6d's design is owed but S6 (on-demand typing
+and `-check=fold`, a Fable design waiting on the user), S7's three expression-shape lanes (Opus, beside S6) and S8.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
