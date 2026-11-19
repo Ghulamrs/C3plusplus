@@ -21,12 +21,14 @@ CXX1="${CXX1:-./cxx3.exe}"
 # the limit does not outlive it. A parser that loops on bad input is a real
 # failure mode - one was inherited from Compiler-C and shipped there unnoticed
 # through 425 cases - and without this the suite hangs instead of reporting it.
-cxx1() { ( ulimit -t 10; $CXX1 "$@" < /dev/null ); }
+# Git's bash on the Windows box sets no CPU limit and says so on stderr - into a .err, and into the pattern check's stdout.
+cxx1() { ( ulimit -t 10 2>/dev/null; $CXX1 "$@" < /dev/null ); }
 OUT=tests/out-run
 # The host target, for a case whose .notarget names it - the same rule
 # emit.sh applies to every target, said out loud on every run.
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) HOST=arm64-darwin ;;
+    MINGW*|MSYS*|CYGWIN*) HOST=x86_64-windows ;;  # Git's bash on the Windows box, as subst.sh names it
     *) HOST=x86_64-linux ;;
 esac
 
@@ -43,6 +45,8 @@ one() {
   fi
 
   flags=""; [ -f "tests/cases/$base.flags" ] && flags=$(cat "tests/cases/$base.flags")
+  # x86_64-windows's default is -masm=masm; a case no MASM can write (<case>.nomasm) keeps the GNU spelling, as emit.sh does.
+  [ "$HOST" = x86_64-windows ] && [ -f "tests/cases/$base.nomasm" ] && flags="$flags -masm=gnu"
   if [ -f "tests/cases/$base.error" ]; then
     want=$(cat "tests/cases/$base.error")
     if cxx1 $flags -S "$src" -o "$OUT/$base.s" 2>"$OUT/$base.err"; then
@@ -73,11 +77,13 @@ one() {
   # only the shell's commentary is dropped. A subshell does not do it: the
   # report comes from the shell that waited, not the one that ran.
   { "$OUT/$base" > "$OUT/$base.out" 2>&1 < /dev/null; } 2>/dev/null || true
-  if diff -q "tests/cases/$base.expected" "$OUT/$base.out" >/dev/null; then
+  # Lines compared with carriage returns stripped on both sides, as syntax.sh does: a Windows program writes CRLF.
+  tr -d '\r' < "$OUT/$base.out" > "$OUT/$base.lf"; tr -d '\r' < "tests/cases/$base.expected" > "$OUT/$base.want"
+  if diff -q "$OUT/$base.want" "$OUT/$base.lf" >/dev/null; then
     echo pass > "$OUT/$base.verdict"
   else
     echo "FAIL $base:"
-    diff "tests/cases/$base.expected" "$OUT/$base.out" | sed 's/^/      /'
+    diff "$OUT/$base.want" "$OUT/$base.lf" | sed 's/^/      /'
     echo fail > "$OUT/$base.verdict"
   fi
 }
@@ -138,7 +144,7 @@ fi
 
 # The host's -g too: a closure holding a reference to a 300-byte object wrote its size in one byte (M1).
 dbg=tests/cases/debug-reference-member.cpp
-if cxx1 -nologo -g "$dbg" -o "$OUT/dbg-host" 2>/dev/null && "$OUT/dbg-host" | cmp -s - tests/cases/debug-reference-member.expected; then
+if cxx1 -nologo -g "$dbg" -o "$OUT/dbg-host" 2>/dev/null && "$OUT/dbg-host" | tr -d '\r' | cmp -s - tests/cases/debug-reference-member.expected; then
     pass=$((pass + 1))
 else
     echo "FAIL -g: wanted $dbg built with -g and printing its recorded output"; fail=$((fail + 1))
