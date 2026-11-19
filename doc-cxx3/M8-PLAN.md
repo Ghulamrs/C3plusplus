@@ -3018,3 +3018,56 @@ syntax.sh 6/0; typed.sh 925/0; self-compile of `Overload.cpp`, `Templates.cpp`, 
 comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date;
 g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone (the delta 14:39:57-14:42:13, after a first try that cl
 refused for a slip in the lambda, mended before any gate); names.sh 933/0, overload.sh 46/0.
+
+**(b) A dependent-name call resolved at the instantiation** (the next commit). [temp.dep.candidate]: an unqualified callee
+marked `dependent-name` takes the functions the definition's lookup found (`found`, m82j's (2)) and ADL's, which an arithmetic
+argument has none of ([basic.lookup.argdep]/2), ranked as any call is. `Templates::dependentCall`, asked by `substShape` for a
+call `nondependentCall` sends on: the candidates are the found list's (a function template among them replays by name: the
+replay deduces), free functions of scalars with no default or ellipsis; the arguments are locals, typed under the binding
+(`substituted`), arithmetic and no enumeration; the replay's own lookup must see the same set - a function of the name declared
+since the definition, in another scope or specialized replays by name; each candidate is ranked through (a)'s typed form, and
+the best is `Overload::bestViable`, the selection `resolveOverload` now calls too (one [over.match.best] loop). The choice is
+kept on the bound body by node (`Bound::calls`, the call and its callee), the Typer records it as the parser records a direct
+call (`Typer::boundCall`: `Call` on the call, `Callee` on the name), and `callsUsed` marks the function used, as the replay's
+resolution does. Under `-check=templates` the replay runs beside it and `typedApart` holds the two node for node.
+`-check=typed` holds the two records against that choice (`recordDiffers`: "the record the instantiation chose").
+
+**The probe** `tests/cases/template-subst-depcall` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++ -std=c++11
+-pedantic-errors` on the Windows box): `pick(a)` over `pick(int)`/`pick(double)` for an int, a double and a char (a promotion),
+`wide(a)` over an int and a short, `two(a, k)` over two two-parameter candidates, a call alone as a statement for an int and a
+float (a promotion to double), and `ident(a)`, a function template, replayed by reason - 9 bodies with no replay (plain and
+`-g`), made 9 equal under the check; its output is clang's with and without the flag. **tests/subst.sh**, for exactly that: the
+probe added to the probes step, and the two existing probes' dependent call line re-pointed from "a call with a type-dependent
+argument or a dependent-name callee" to "a dependent-name call a function template may answer" (their callee is `ident`, a
+template) - no record count changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over the 1,283 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 215** (205 + the probe's 9 + 1 whose return replays it anyway), frame and shell 215 equal, made 145 equal;
+without the check **145 substituted with no replay** (136 + the probe's 9), 70 replayed by reason. Of m82k's 71 bodies over a
+dependent call: 47 still a call with a type-dependent part whose callee is no unqualified dependent name (`nondependentCall`'s
+reason), 17 a function template among the candidates, 3 a member or a function over a class, reference, default or ellipsis, 2
+an argument other than a local, 1 a name another scope declares, 1 an argument ADL would search - and outside the probe one
+body resolved (its return type replays it).
+
+**src/** (b): `Overload.cpp` +26 -19, `Overload.h` +3, `Templates.cpp` +78 -6, `Templates.h` +5 -3, `Typing.cpp` +32 -5,
+`Typing.h` +3: 95,011 -> 95,125 (+114). EXCLUSIONS re-pointed (Templates.cpp 1368, 1420, 2117).
+
+**Gates of (b)** (REF `bb00b349` in `~/m82la`, NEW in `~/m82lc`, one path length; n3 is (b) but the typed check's hold, n4 the
+commit): on n3, `identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,868,
+x86_64-windows 3,736, arm64-darwin 1,868, tms6747 1,868) and **0 on three with `-templates=subst`**; **-g 0 differ** with and
+without the flag (x86_64-linux 715 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 697, 375, 211 -
+re-read by `boxkit/m82l-gre.sh`); syntax.sh 6/0; typed.sh 926/0; the census above. n3's subst.sh failed twice, its typed step
+under the stand-in's switch on the probe: `recordDiffers` held the chosen call's record against the read's placeholder - mended
+in this commit (the hold above). On n4: **subst.sh 0 failed** (run 1276/0 at -O0 and -O2, typed 926/0, same 970/0, self 102 of
+102, ceilings held), typed.sh 926/0, the probe's `-check=typed` clean; static, each tool's own exit status: exclusions rc 0 0/0
+(after the re-point; rc 1 3/3 before it), comments rc 0, memory gate rc 0 (raw-pointers 89; 90 on a first n2, a `const Type *`
+in `resolvedType`, mended before the commit), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++
+`-Werror` clean. Not run on n4 itself: identical and -g (n4 changes only the typed check's comparison, which emits nothing),
+run.sh with `-templates=subst` as its own run (identical with the flag stands for it; subst.sh's run step ran), `-check=fold`,
+tms6747 SIM=1. **Windows**: cl /W4 /WX clean, first and alone, the final tree's delta 15:21:36-15:23:10 (94 s); names.sh 934/0,
+overload.sh 46/0 on n3's tree.
+
+**Left**: the 47 calls with a type-dependent part and no unqualified dependent-name callee, the 17 whose candidates include a
+function template (deduction at the instantiation), arguments that are not locals (a typed argument is read only from a
+local's record here), class, enumeration and pointer arguments (ADL), and (3), the explicit-argument call that needs the
+specialization requested - not started, as the brief said.

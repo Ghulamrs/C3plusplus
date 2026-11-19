@@ -44,6 +44,9 @@ public:
                          bool ranksObjectA, bool ranksObjectB) const;
     // [temp.func.order]: a's template beats b's when b's patterns match a's, not the reverse.
     bool moreSpecializedFunction(const Signature &a, const Signature &b) const;
+    // [over.match.best]: the viable candidate better than every other, by its position, or -1; `given` the arguments' types.
+    int bestViable(const std::vector<std::size_t> &viable, const std::vector<std::vector<Rank> > &ranks,
+                   const std::vector<const Type *> &given, bool ranksObject);
     // The parameter a rank position came from, or null for an implicit object
     // parameter and for anything the ellipsis swallowed.
     static const Type *rankedParameter(const Signature &f, std::size_t i,

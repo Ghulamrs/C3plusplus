@@ -324,6 +324,9 @@ private:
     // Where two typed bodies differ for the lowering, empty if nowhere; a local's serial, a frame fact, is the replay's (`serials`).
     std::string typedApart(TypedId a, TypedId b, std::map<int, int> &serials, std::vector<std::pair<TypedId, TypedId> > &locals) const;
     const Type *resolvedType(syntax::NodeId id, syntax::Kind kind) const;
+    // Under a binding, a dependent-name call's record or its callee's as the instantiation chose (Templates::dependentCall),
+    // the parser's record of a direct call (Parser::call); `what` None for any other node.
+    Resolution boundCall(syntax::NodeId id) const;
     const Type *recordedValue(syntax::NodeId id);
     void closureSources(syntax::NodeId id);
     int recorded_ = 0;      // nodes typed from a Value record, the parser's own answer: not independent agreement

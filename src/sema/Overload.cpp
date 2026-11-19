@@ -709,26 +709,17 @@ Signature Overload::resolveOverload(const std::string &written,
         return p_.lookup_.functions_[viable[0]];
     }
 
-    rankingGiven_.clear();
-    if (object != nullptr) rankingGiven_.push_back(object);
-    for (std::size_t i = 0; i < args.size(); i++) rankingGiven_.push_back(args[i]->type());
-    std::size_t best = 0;
-    for (std::size_t k = 1; k < viable.size(); k++)
-        if (betterCandidate(ranks[k], ranks[best],
-                            p_.lookup_.functions_[viable[k]], p_.lookup_.functions_[viable[best]],
-                            object != nullptr, object != nullptr))
-            best = k;
-    for (std::size_t k = 0; k < viable.size(); k++) {
-        if (k == best) continue;
-        if (!betterCandidate(ranks[best], ranks[k],
-                             p_.lookup_.functions_[viable[best]], p_.lookup_.functions_[viable[k]],
-                             object != nullptr, object != nullptr)) {
-            std::string why = "this call to '" + name + "' is ambiguous";
-            for (std::size_t j = 0; j < viable.size(); j++)
-                why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[viable[j]]);
-            p_.src_.fail(pos, why);
-        }
+    std::vector<const Type *> given;
+    if (object != nullptr) given.push_back(object);
+    for (std::size_t i = 0; i < args.size(); i++) given.push_back(args[i]->type());
+    const int chosen = bestViable(viable, ranks, given, object != nullptr);
+    if (chosen < 0) {
+        std::string why = "this call to '" + name + "' is ambiguous";
+        for (std::size_t j = 0; j < viable.size(); j++)
+            why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[viable[j]]);
+        p_.src_.fail(pos, why);
     }
+    const std::size_t best = static_cast<std::size_t>(chosen);
     // [dcl.fct.def.delete]: a deleted candidate is ranked like any other and refused only where it wins.
     p_.refuseDeleted(p_.lookup_.functions_[viable[best]], pos);
     p_.noteUsed(viable[best]);
@@ -737,6 +728,22 @@ Signature Overload::resolveOverload(const std::string &written,
     // reached. `noexcept(e)` reads the count this leaves behind.
     if (!p_.lookup_.functions_[viable[best]].isNoexcept) p_.mayThrow_++;
     return p_.lookup_.functions_[viable[best]];
+}
+
+
+// [over.match.best] over a ranked viable set: the one better than every other, its position in `viable`, or -1 for none.
+int Overload::bestViable(const std::vector<std::size_t> &viable, const std::vector<std::vector<Rank> > &ranks,
+                         const std::vector<const Type *> &given, bool ranksObject) {
+    rankingGiven_ = given;
+    std::size_t best = 0;
+    for (std::size_t k = 1; k < viable.size(); k++)
+        if (betterCandidate(ranks[k], ranks[best], p_.lookup_.functions_[viable[k]], p_.lookup_.functions_[viable[best]], ranksObject, ranksObject))
+            best = k;
+    for (std::size_t k = 0; k < viable.size(); k++)
+        if (k != best && !betterCandidate(ranks[best], ranks[k], p_.lookup_.functions_[viable[best]], p_.lookup_.functions_[viable[k]],
+                                          ranksObject, ranksObject))
+            return -1;
+    return static_cast<int>(best);
 }
 
 }   // namespace sema
