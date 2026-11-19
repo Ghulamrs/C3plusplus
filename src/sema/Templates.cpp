@@ -642,6 +642,14 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
                 if (substitute_ && outermost) { readFrames_[decl.afterParams].clear(); p_.frameLog_ = &readFrames_[decl.afterParams]; }
                 p_.topLevel(pattern);
+                if (substitute_ && outermost && !pattern.functions.empty()) {
+                    const Function &f = pattern.functions.back();      // the definition: what else the read writes is data
+                    readFnAt_[decl.afterParams] = readFns_.size();
+                    readFns_.push_back(Function(f.name(), f.returns(), f.params(), p_.oneStatement({}), f.frameSize(), f.isStatic(), f.sretSlot(),
+                                                f.isVariadic(), f.regSaveSlot(), f.pos()));
+                    Function &g = readFns_.back();
+                    g.setHasThis(f.hasThis()); g.setHasLandingPads(f.hasLandingPads()); g.setNoexcept(f.isNoexcept()); g.setExceptionSpec(f.exceptionSpec());
+                }
             } else if (door == ReadMember) {
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, Packs(params.size()));
                 const std::string display = specializationKey(decl.isConstructor ? decl.ownerLocal : decl.name, args);
@@ -852,6 +860,8 @@ std::string Templates::bodiesReport() const {
         out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = shellCensus_.begin(); i != shellCensus_.end(); ++i)
         out += "-check=templates shell (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = madeCensus_.begin(); i != madeCensus_.end(); ++i)
+        out += "-check=templates made (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -940,8 +950,8 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
 
 // **Step 2's shell**: the records substituteFunction gives a Function, made from the read's steps as laid - a parameter's and a
 // local's from its `d` (name, stored type, offset, scope, alignment, serial), the sret slot, the save area and the frame's size -
-// and held against the function the replay made. Steps inside a nested or synthesised frame are not this function's.
-std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std::vector<int> &laid, const Substituted &s, const Function &f) const {
+// and the rest from the function the read made at its declaration, as the replay's definition path sets it for a free function.
+std::string Templates::madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const {
     std::vector<Param> params;
     std::vector< ::Local> locals;
     std::vector<int> blocks(1, 0);      // the block table -g reads, from topLevel's outermost block as enterBlock adds to it
@@ -964,6 +974,30 @@ std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std
         locals.back().serial = r.serial;
         if (t->isReference()) locals.back().declared = t;
     }
+    const std::map<std::size_t, std::size_t>::const_iterator at = readFnAt_.find(sp.start);
+    const Function *f = at != readFnAt_.end() ? &readFns_[at->second] : nullptr;
+    const Type *returns = f != nullptr ? substituted(s, f->returns()) : nullptr;
+    out->push_back(Function(f != nullptr ? f->name() : std::string(), returns, params, p_.oneStatement({}), size, f != nullptr && f->isStatic(), sret,
+                            f != nullptr && f->isVariadic(), save, f != nullptr ? f->pos() : 0, locals));
+    Function &g = out->back();
+    g.setBlocks(blocks, opens);
+    g.setSymbol(sp.symbol);
+    if (f == nullptr) return "no function read";
+    const Type *r = f->returns();
+    while (r != nullptr && (r->unqualified() != r || r->isPointer() || r->isReference())) r = r->unqualified() != r ? r->unqualified() : r->isPointer() ? r->pointee() : r->referent();
+    if (r != nullptr && r->dependentExpr() != nullptr) return "a decltype return, which the replay works out";
+    if (returns == nullptr || p_.dependentType(returns)) return "a return type the binding does not carry";
+    if (f->isNoexcept() || !f->exceptionSpec().empty() || f->hasLandingPads()) return "an exception specification or landing pads";
+    if (!sp.display.empty() && f->name() == sp.name) g.setDisplayName(Type::displaySpelling(sp.display));
+    g.setHasThis(f->hasThis());
+    g.setInline(!f->isStatic());       // an instantiation replays inline: vague linkage unless internal
+    return std::string();
+}
+
+// The shell made from the read held against the replay's function, record for record; serials one for one.
+std::string Templates::shellApart(const Function &g, const Function &f) const {
+    const std::vector<Param> &params = g.params();
+    const std::vector< ::Local> &locals = g.locals();
     if (params.size() != f.params().size()) return "its parameters' count";
     for (std::size_t q = 0; q < params.size(); q++)
         if (params[q].type != f.params()[q].type || params[q].offset != f.params()[q].offset) return "a parameter";
@@ -978,9 +1012,22 @@ std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std
         if (!serials.insert(std::make_pair(b[q].serial, a[q].serial)).second || !back.insert(std::make_pair(a[q].serial, b[q].serial)).second)
             return "a local's serial, not one for one with the replay's";
     }
-    if (sret != f.sretSlot() || save != f.regSaveSlot()) return "the sret slot or the save area";
-    if (size != f.frameSize()) return "the frame's size";
-    if (blocks != f.blocks() || opens != f.blockPositions()) return "the block table";
+    if (g.sretSlot() != f.sretSlot() || g.regSaveSlot() != f.regSaveSlot()) return "the sret slot or the save area";
+    if (g.frameSize() != f.frameSize()) return "the frame's size";
+    if (g.blocks() != f.blocks() || g.blockPositions() != f.blockPositions()) return "the block table";
+    return std::string();
+}
+
+// Step 2's end: the rest of what the replay's definition path sets on the function, held against the one made from the read.
+std::string Templates::madeApart(const Function &g, const Function &f) const {
+    if (g.name() != f.name() || g.symbol() != f.symbol() || g.alias() != f.alias()) return "its name, symbol or alias";
+    if (g.returns() != f.returns()) return "its return type";
+    if (g.isStatic() != f.isStatic() || g.isInline() != f.isInline()) return "its linkage";
+    if (g.isVariadic() != f.isVariadic() || g.pos() != f.pos() || g.hasThis() != f.hasThis()) return "its signature's marks";
+    if (g.hasDisplayName() != f.hasDisplayName() || g.displayName() != f.displayName()) return "its display name";
+    if (g.hasLandingPads() != f.hasLandingPads()) return "its landing pads";
+    if (g.isNoexcept() != f.isNoexcept() || g.exceptionSpec() != f.exceptionSpec()) return "its exception specification";
+    if (!f.synthesised().empty()) return "a synthesised function";
     return std::string();
 }
 
@@ -1120,6 +1167,9 @@ void Templates::instantiatePending() {
                 const int startAlign = p_.frameAlign_;
                 const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
                 const int alignHad = had != p_.frameAligns_.end() ? had->second : 0;
+                // What the replay does to the unit beyond its function, which a body made from the read must do alike.
+                const std::size_t fnsHad = p_.current_->functions.size(), declsHad = p_.lookup_.functions_.size();
+                const std::size_t specsHad = specializations_.size(), rootsHad = p_.definedBodies_.size();
                 p_.topLevel(*p_.current_);
                 p_.frameLog_ = logBack.was;
                 if (bound != bound_.end()) {
@@ -1134,9 +1184,21 @@ void Templates::instantiatePending() {
                     const std::vector<Function> &made = p_.current_->functions;
                     std::size_t at = made.size();
                     while (apart.empty() && at-- > 0 && made[at].symbol() != sp.symbol) {}
+                    std::vector<Function> own;
+                    const std::string fromRead = apart.empty() && at < made.size() ? madeFromRead(sp, bound->second.s, readFrames_[sp.start], laid, &own) : std::string();
                     if (apart.empty() && at < made.size()) {
-                        std::string shell = shellApart(readFrames_[sp.start], laid, bound->second.s, made[at]);
+                        const std::string shell = shellApart(own.back(), made[at]);
                         shellCensus_[shell.empty() ? "equal" : "differ: " + shell]++;
+                        std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
+                        if (side.empty() && (at != fnsHad || made.size() != fnsHad + 1)) side = "the functions it pushed";
+                        if (side.empty() && (specializations_.size() != specsHad || p_.lookup_.functions_.size() != declsHad)) side = "a declaration or specialization it made";
+                        for (std::size_t q = 0; side.empty() && q < p_.lookup_.functions_.size(); q++)
+                            if (p_.lookup_.functions_[q].symbol == sp.symbol && !p_.lookup_.functions_[q].defined) side = "a declaration left undefined";
+                        if (side.empty() && !p_.discardableInline_.count(sp.symbol)) side = "its inline definition kept";
+                        if (side.empty() && p_.constant_.constexprFns_.count(sp.symbol)) side = "a constexpr function";
+                        if (side.empty() && (p_.definedBodies_.size() != rootsHad + 1 || p_.syntaxFunctions_.find(p_.definedBodies_.back().v) == p_.syntaxFunctions_.end() ||
+                                           p_.syntaxFunctions_.find(p_.definedBodies_.back().v)->second != sp.symbol)) side = "its body's root";
+                        madeCensus_[side.empty() ? "equal" : "differ: " + side]++;
                     }
                 }
             }
