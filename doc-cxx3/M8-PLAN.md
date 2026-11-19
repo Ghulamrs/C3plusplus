@@ -2432,3 +2432,102 @@ over a dependent range - 25 of the self-host's 26); M1's refusal (M8.5); M7's (1
   gate are winpass, not run.sh); `T{};` under -check=templates refuses the unit, a static call as a statement refused
   (both in REF too); `T::f(k);` and range-for in the statement builders (M6d's); M2's `conv<int>(k)`; M1's name refused
   outright (M8.5); M7's mark and the functions found at the definition (M8.2).
+
+## M8.2 split into slices, and slice 1's scaffolding (lane m82a, 2026-11-19)
+
+Branch `m8-2a` from `6b97ad9a` (m6d-w: M8.1 whole and the review's M items in). **What `-templates=subst` does today**: it is not
+refused - it switches on M8.1-early's stand-in (`substituteFunction`: a specialization of the stand-in's subset made from a
+replayed sibling's body, retyped), falling back to replay under `-g` and on the C6000; `CXX1_TEMPLATE_SUBST=1` the same.
+**Each slice is one commit of identical output**: `identical.sh` REF `6b97ad9a` against NEW without the flag 0 differ on four
+targets; with `-templates=subst` on NEW, 0 differ on the shapes the slice covers; everything else replays by name and is
+counted by `-check=templates` (with the flag: `-check=templates subst (N): covered|replayed: <reason>`).
+
+| slice | what | covers | still replays |
+| --- | --- | --- | --- |
+| 2a (this) | `Templates::Binding` (a type parameter to its `TypeId`), the read body kept by `afterParams` (`readBody_`), `Templates::instantiate` asked first under the flag, `substShape` - the census of what slice 1 covers; `instantiate` builds nothing yet and always declines | nothing built; counted as `covered` | everything (the stand-in still runs after it, unchanged) |
+| 2b | the Typer under a binding: `Typer::typeFunction` over the read root with `Kind::TemplateParam` i bound to `types[i]` *while* typing (arithmetic conversions, implicit conversions made under the bound types - not a retype after); the specialization's `Function` shell (params, locals, frame) still from its own replay, its lowered body the substituted one | a free function template, type parameters only, whose read body holds names, literals, unary/binary/assign/conditional/comma/subscript operators and the plain statements (`substShape`'s list) - no call, member, `this`, cast, `sizeof`, `new`/`delete`, `throw`, lambda, `try`, `switch`, `goto` | the frame (the replay runs, its body is dropped); every other shape |
+| 2c | the frame from the binding: params and locals laid from the read's `var` nodes by the parser's own layout (one function, shared, not copied); the replay no longer runs for a covered shape; the Itanium pattern signature from the syntax signature | 2b's shapes, built with no replay | the rest |
+| 2d | calls: M8rev M7 (1)-(3) first - a `dependent-name` mark, the functions unqualified lookup found at the definition, a function template-id's explicit arguments - then `call` nodes; `sizeof`, casts; members over a bound class | 2c's and calls | non-type parameters, packs, member templates, class doors |
+| 2e | the stand-in deleted whole, as the M8.2 row says (`substituteFunction`, `substituted_`, `Typer::typeBody`'s retype, `TypedTree::retype`, the sibling root in `Typer::census`, subst.sh's on-against-off steps) - once 2c covers the stand-in's subset | the same | the same |
+| 2f | a non-type parameter bound to a value (M8rev L2: a dependent value refuses to fold, by name, before any is substituted) | 2d's with non-type parameters | packs (M8.4) |
+
+**Slice 2a, src/** `Templates.h` +7, `Templates.cpp` +47 (`instantiate`, `substShape`, the census line, the read kept in
+`tallyRead`, the binding made in `instantiatePending`): src/ 94,181 -> 94,235 lines. Nothing without the flag reads what it adds;
+with the flag it adds lines only to `-check=templates`'s report.
+
+**The census of slice 1** (Linux, `-check=templates -templates=subst -S` over the 1,269 cases, each function specialization the
+fixed point makes, summed): **covered 258**; replayed by reason - a `cast` in the body 198, a `call` 181, a non-type, pack or
+template parameter 177, a `member` 20, a `literal` (`true`, `false`, `nullptr`) 14, a `sizeof` 10, no body read at the declaration
+7. So slice 1's shapes are 30% of the function door over the cases (258 of 865), and `call` and `cast` are 2d's first weight.
+`instantiate` builds nothing yet: the 258 replay (17 of them still taken by the stand-in after it, as before).
+
+**Gates** (REF `6b97ad9a` and NEW built in one Linux tree, `~/m82a-ref.exe` and `~/m82a-new.exe`; Compiler++ not in the tree,
+so the cases alone): `identical.sh` REF against NEW at -O0 and -O2 - x86_64-linux 1,848, tms6747 1,848, x86_64-windows 3,696
+(both spellings), arm64-darwin 1,848 compared, **0 differ**; with `-templates=subst` on NEW against REF without it - x86_64-linux
+1,848, x86_64-windows 3,696, arm64-darwin 1,848, **0 differ** (the C6000 is refused the flag whole, so not run); run.sh 1263/0, and
+with `-templates=subst` 1263/0 (every case passes, none fails; the slice's 258 covered bodies fall back); subst.sh 0 failed (on =
+off 952 of 952, ceilings cases 17 under 17, self 26 under 26); self-compile of `Templates.cpp` by NEW rc 0; static: exclusions
+0/0, comments 0 over, memory gate held, ast-residue not raised (a `const syntax::Node &` read as a node-ref, 325 -> 326, mended
+to a copy before the commit); g++ `-Werror` clean; **Windows** cl /W4 /WX clean (83 s alone, 76 s for the mend), names.sh 924
+passed 0 failed, overload.sh 46/0.
+
+**Where it stopped**: 2b is the next commit - the Typer typing the read root under the binding. Not done in the hour because the
+read's records type each operand as `Kind::TemplateParam`, so a retype after typing (the stand-in's way) misses the conversions
+a bound type asks for (`T a = x * 2` with `T = double`): the binding must be in the Typer while it types.
+
+## M8.2 slice 2b: the read body typed under the binding, lowered where it types as the replay does (lane m82b, 2026-11-19)
+
+Branch `m8-2b` from `2e824d8b` (slice 2a). **What it does, under `-templates=subst` only**: `Templates::instantiate`, for a
+specialization 2a counted `covered` whose type parameters are bound to scalars (a class's locals are built by records keyed on the
+replay's own nodes, `Typer::localBuilt`), keeps `Bound` - the read root and a `Substituted` from `$T<i>` to the argument - by
+symbol, and lets the replay run as before (it still lays the frame: 2c's). `Typer::typeBody` types the replay's root, then the read
+root with `bind_` set, so `Typer::bound` maps each type the Typer takes from the parser - a `var`'s declared type, a name's, a
+record's, a local's - *while* it types, and the arithmetic conversions are the bound types' own. `Typer::typedApart` holds the two
+typed bodies against each other field by field, every fact the lowering reads but the node ids (kind, text, place, type, cast,
+folded value, literal, forms, the record whole); the lowering takes the read where nothing is apart, else the replay's, by name.
+`-check=templates built (N): substituted | replayed: <where>` is printed after the lowering. The stand-in, where it takes a
+specialization first, is left as it was.
+Two facts the read keeps apart from the replay and the hold had to know: a `var`'s text is its type's spelling and its name
+(`$T0 a` against `int a`; an unnamed parameter is its type alone), so what follows the type is held; and the read numbers its
+locals as a function of its own, so a local's serial - a frame fact, the replay's in 2b - is taken from the replay's `var` in its
+place, mapped one to one and refused where the map does not hold.
+
+**src/** `Templates.h` +5, `Templates.cpp` +18, `Typing.h` +5, `Typing.cpp` +66, `Parser.h` +1, `Driver.cpp` +4: src/ 94,235 ->
+94,334 lines. Without the flag `bound_` is empty and `bound` returns its argument: nothing reads what 2b adds.
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,269 cases): at the fixed point - covered 238; replayed
+by reason, a type parameter bound to a class or an array 288, a non-type, pack or template parameter 177, a `call` 77, a `cast` 49,
+a `member` 13, a `literal` 9, a `sizeof` 8, no body read 6. At the lowering, of the 238 (each a specialization's body typed once per
+unit): **substituted 180**; replayed by name - a `var` typed apart from its replay 34 (a type `substituted` does not carry: an
+array of `T`, `volatile`), a `function` read apart in its parts 3, a `conditional` resolved apart in its type 3, a `unary` in its
+kind 1. **The shapes that substitute** are slice 1's (names, literals, unary/binary/assign/conditional/comma/subscript, the plain
+statements) over scalar arguments, in 46 cases: adl-block-declaration-outlives-nested, algorithm-upper-bound, alias-template,
+char16-char32, const-return-name, default-arg-base-init, default-arg-declares, direct-init-scalar, enum-template-argument,
+extern-template(.part), function-template-default-argument, function-template-explicit-specialization,
+function-template-partial-ordering, inline-namespace-template, lambda-capture-hides-template, library-self-compile-pieces(-2),
+member-template-bare-name, namespace-function-hides-template, namespace-function-template-name,
+namespace-template-replay-from-outside, read-dependent-local, static-function-template-linkage, template-deduction,
+template-function, template-in-namespace, template-name-shadowed, template-nondependent-argument, template-overload,
+template-param-hides-enclosing, template-read-pack-name, template-sfinae-expression, template-sfinae-fallback,
+template-sfinae-leading-decltype, template-sfinae-misc, template-sfinae-substitution-table, template-subst-refused, template-subst,
+template-two-of-a-name, template-unnamed-parameter, trailing-return-template-decltype, trailing-return-type, ucn-identifier,
+wchar-targets, wstring.
+
+**Gates** (REF `2e824d8b` and NEW built in one Linux tree, `~/m82b-ref.exe` and `~/m82b-new.exe`; the cases alone, as 2a): `identical.sh`
+REF against NEW without the flag at -O0 and -O2 - x86_64-linux 1,848, tms6747 1,848, x86_64-windows 3,696, arm64-darwin 1,848, **0
+differ**; with `-templates=subst` on NEW (the 180 bodies built from the read) - x86_64-linux 1,848, x86_64-windows 3,696, arm64-darwin
+1,848, **0 differ**; `-g` at -O0, without and with the flag, x86_64-linux 924 and x86_64-windows 1,848, 0 differ each; run.sh
+1263/0, and with `-templates=subst` 1263/0 (none falls back as a failure: 41 of the 238 replay by name, counted above); subst.sh 0
+failed (952 the same, ceilings 17 under 17 and 26 under 26); self-compile of `Templates.cpp`, `Typing.cpp`, `Driver.cpp` by NEW rc 0;
+static: exclusions 0/0, comments 0 over, memory gate held, ast-residue node-refs 325 (not raised); g++ `-Werror` clean; **Windows** cl
+/W4 /WX clean (first and alone, about 2 minutes, 07:06-07:08), names.sh 924 passed 0 failed, overload.sh 46/0.
+
+**The `syntax::Node` copy in `substShape`** (2a's): the count was a false positive of `tools/ast-residue`'s pattern. Its node-refs
+regex takes the identifier just before a `&` or `*`, so `const syntax::Node &n` reads as `Node`, which `node_kinds` seeds as `Ast.h`'s
+base class; the `syntax::` qualifier is never seen (`Typing.cpp`'s own `const syntax::Node &n` in `Typer::node` is in the baseline
+the same way). `syntax::Node` (`Syntax.h:47`) is a 32-byte trivially copyable record, so the copy is one small copy per node walked,
+no allocation. The tool and its count are left as they are.
+
+**Where it stopped, and what is next**: 2b is done for its shapes. Left: the 34 `var`s typed apart (an array of `T`, `volatile` - 
+`Templates::substituted` carries pointers, references, `const` and functions only), the three `conditional`s, a `unary`, three
+functions in their parts; then 2c (the frame from the binding, no replay for a covered shape), 2d (calls), as 2a's table says.
