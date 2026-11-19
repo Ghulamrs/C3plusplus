@@ -1,0 +1,1 @@
+cannot define or redeclare 'S' here because namespace 'b' does not enclose namespace 'a'

@@ -71,6 +71,11 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
 
     // **`struct lib::P *` and `struct lib::Box<char> *`**, [dcl.type.elab]: a qualified name, or a
     // template-id, names a class already declared - read as the type name it is, unless a body follows.
+    const Type *outside = nullptr;
+    struct ReadIn {
+        std::vector<std::string> &stack; std::vector<std::string> saved; bool set;
+        ~ReadIn() { if (set) stack = saved; }
+    } readIn{ namespaceStack_, namespaceStack_, false };
     if (classInstantiationTag_.empty() && peek().kind == TokenKind::Ident &&
         (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))) {
         std::size_t i = at_ + 1;
@@ -83,7 +88,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             else if (depth == 0 && !t.is("::") && t.kind != TokenKind::Ident) break;
             else if (depth == 0 && t.kind == TokenKind::Ident && !tokens_[i - 1].is("::")) break;
         }
-        if (!tokens_[i].is("{") && !tokens_[i].is(":")) {
+        const std::size_t head = tokens_[i].is("final") ? i + 1 : i;
+        if (!tokens_[head].is("{") && !tokens_[head].is(":")) {
             StorageClass sc = StorageNone;
             Qualifiers q;
             const Type *named = unqualifiedSpecifiers(&sc, &q);
@@ -91,6 +97,46 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(pos, std::string("'") + what + "' names a class, and this is '" +
                                named->describe() + "'");
             return named;
+        }
+        // **[class.nest]/3: `struct Outer::Held {` defines the class `Outer` declared**, read as if written there.
+        bool plain = true;
+        std::string owner;
+        for (std::size_t k = at_; k + 2 < i; k++) {
+            plain = plain && (tokens_[k].is("::") || tokens_[k].kind == TokenKind::Ident);
+            owner += tokens_[k].text;
+        }
+        const Type *cls = plain ? lookup_.findTypedef(owner) : nullptr;
+        if (cls != nullptr) cls = cls->unqualified();
+        if (cls != nullptr && cls->isStructOrUnion() && tokens_[i - 2].is("::") && tokens_[i - 1].kind == TokenKind::Ident) {
+            const Type *declared = lookup_.lookupInClass(cls, tokens_[i - 1].text);
+            if (declared == nullptr || declared->unqualified()->enclosing() != cls)
+                src_.fail(pos, std::string("no ") + what + " named '" + tokens_[i - 1].text +
+                               "' in '" + cls->tag() + "'");
+            outside = cls;
+            at_ = i - 1;
+        }
+        // **[namespace.memdef]/2: `struct n::S {` defines the `S` n declared**, from a namespace enclosing n, read in n.
+        const std::string ns = outside != nullptr ? std::string()
+                             : plain && classStack_.empty() && currentFunction_.empty() && tokens_[i - 2].is("::") &&
+                               tokens_[i - 1].kind == TokenKind::Ident ? resolveNamespaceName(owner) : std::string();
+        const std::vector<std::string> into = outside != nullptr ? lookup_.classNamespacePath(outside) : namespacePathStack(ns);
+        std::string to;
+        for (std::size_t k = 0; k < into.size(); k++) to += into[k] + "::";
+        const std::string here = namespacePrefix();
+        if (classStack_.empty() && currentFunction_.empty() && (outside != nullptr || !ns.empty()) && to != here) {
+            const std::string name = tokens_[i - 1].text;
+            if (to.compare(0, here.size(), here) != 0)
+                src_.fail(pos, "cannot define or redeclare '" + name + "' here because namespace '" + namespaceStack_.back() +
+                               "' does not enclose " + (into.empty() ? std::string("the global namespace") : "namespace '" + into.back() + "'"));
+            readIn.set = true;
+            namespaceStack_ = into;
+        }
+        if (!ns.empty()) {
+            const std::string name = tokens_[i - 1].text, full = ns + "::" + name;
+            const Type *declared = lookup_.findTypedef(tagKey(kind == Kind::Union ? "union" : "struct", full));
+            if (declared == nullptr || !declared->unqualified()->isStructOrUnion() || declared->unqualified()->tag() != full)
+                src_.fail(pos, std::string("no ") + what + " named '" + name + "' in namespace '" + ns + "'");
+            at_ = i - 1;
         }
     }
     std::string tag;
@@ -106,7 +152,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // **A class written inside another is named through it**: the tag becomes
     // "Outer::Inner", so it cannot collide with a global, with the single component
     // kept beside it. A *mention* names what is in scope; only a body qualifies.
-    const Type *within = classStack_.empty() ? nullptr : classStack_.back();
+    const Type *within = outside != nullptr ? outside : classStack_.empty() ? nullptr : classStack_.back();
     std::string local = tag;
     const bool defining = peek().is("{") || peek().is(":");
 
