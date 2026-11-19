@@ -1630,7 +1630,6 @@ void Parser::topLevel(Program &program) {
             noexceptWrapped = bodyWrapped = true;
             const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
             const int pointerSlot = allocateFrameSlot(voidPtr);
-            allocateFrameSlot(types_.intType());
             functionHasPads_ = true;
 
             typeIndexFor(std::string());     // `catch (...)`, the empty type string, takes its selector index here

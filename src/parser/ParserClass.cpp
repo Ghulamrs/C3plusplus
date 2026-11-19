@@ -520,9 +520,6 @@ std::vector<Kept> Parser::wrapMsCleanups(
     const std::vector<std::pair<std::size_t, std::size_t> > &built,
     std::size_t aliveAtEntry, std::size_t pos,
     const std::vector<Temporary> &temps) {
-    const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
-    allocateFrameSlot(voidPtr);     // the exception's pointer and selector slots, unread on Microsoft
-    allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
 
     std::vector<Kept> out;
@@ -562,7 +559,6 @@ std::vector<Kept> Parser::wrapCleanups(
     const std::string handOver = unwindTarget(&targetPtr, &targetSel);
     const bool intoTry = !handOver.empty();
     const int pointerSlot = intoTry ? targetPtr : allocateFrameSlot(voidPtr);
-    if (!intoTry) allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
 
     std::vector<Kept> out;
@@ -606,16 +602,11 @@ Kept Parser::cleanupRegion(std::vector<Kept> body, Kept onUnwind) {
     functionHasPads_ = true;
     std::vector<Kept> steps;
     steps.push_back(std::move(onUnwind));
-    if (target_.microsoftNames()) {
-        allocateFrameSlot(voidPtr);
-        allocateFrameSlot(types_.intType());
-        return tryRegion(std::move(body), Kept(std::move(steps)));
-    }
+    if (target_.microsoftNames()) return tryRegion(std::move(body), Kept(std::move(steps)));
     int targetPtr = 0, targetSel = 0;
     const std::string handOver = unwindTarget(&targetPtr, &targetSel);
     const bool intoTry = !handOver.empty();
     const int pointerSlot = intoTry ? targetPtr : allocateFrameSlot(voidPtr);
-    if (!intoTry) allocateFrameSlot(types_.intType());
     if (intoTry) steps.push_back(jumpStatement(handOver));
     else         steps.push_back(resumeUnwinding(pointerSlot));
     return tryRegion(std::move(body), unwindPad(std::move(steps)));
