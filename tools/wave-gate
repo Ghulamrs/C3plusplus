@@ -74,7 +74,7 @@ while :; do
 done'
 # steps that write one folder of the tree (tests/out-run, out-tms6747, out-asm6x, winout) never overlap; winpass*,
 # cdb and wfixed* share winout-tools (each winpass job and wfixed rebuild its masm and LINK, cdb links with it)
-fam() { case $1 in run1|run2|maketest) echo run;; ssa1|ssa2) echo ssa;; tms*|sim*) echo tms;; asm*) echo asm;;
+fam() { case $1 in run1|run2|maketest|subst) echo run;; ssa1|ssa2) echo ssa;; tms*|sim*) echo tms;; asm*) echo asm;;
     winpass*|cdb|wfixed*) echo wintools;; *) echo "$1";; esac; }
 # a step that relinks its tree's compiler runs alone on its box: wselfc and wfixed* call msvc\build.cmd, which writes
 # cxx3-msvc.exe under every step running it (w21g: "Device or resource busy"); Linux's checks make -q instead
@@ -461,7 +461,7 @@ mac_leg() {
 if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
     has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 1500)"
     has windows && echo "wave-gate: windows: wbuild alone, then steps at once within WINLANES=${WINLANES:-10} at /affinity 3FF - wide $(( ${WINLANES:-10} / 2 )) lanes (the last one all that is free), names/overload/winstruct/cdb/cycles/declines/release 2; cdb and wfixed after a winpass"
-    echo "wave-gate: never together, one tree folder each: run1+run2+maketest, ssa1+ssa2, tms*/sim, asm*, winpass*+cdb+wfixed* (winout-tools)"
+    echo "wave-gate: never together, one tree folder each: run1+run2+maketest+subst (subst runs run.sh), ssa1+ssa2, tms*/sim, asm*, winpass*+cdb+wfixed* (winout-tools)"
     echo "wave-gate: alone on its box (relinks cxx3-msvc.exe): wselfc, wfixed0, wfixed2; linux selfc, fixed*, maketest FAIL unless make -q cxx3.exe holds"
     echo "wave-gate: idle steps, to the first box free: $(group idle)"; exit 0; fi
 if [ -z "$REPORT" ]; then
