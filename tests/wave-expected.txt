@@ -3,3 +3,51 @@
 # x86_64-linux, x86_64-windows (both spellings), arm64-darwin; <level> 0, 1 or 2. identical, identlnx, identwin,
 # identa64 and emit pass only when the outputs that differ from the wave's base (-w) are exactly these rows; cycles
 # lets a WORSE row through only for a case named here at tms6747 2. A wave empties this file when it lands.
+namespace-class-outside arm64-darwin 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside arm64-darwin 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside arm64-darwin 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside tms6747 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside tms6747 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside tms6747 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-linux 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-linux 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-linux 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-windows 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-windows 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside x86_64-windows 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime arm64-darwin 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime arm64-darwin 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime arm64-darwin 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime tms6747 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime tms6747 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime tms6747 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-linux 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-linux 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-linux 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-windows 0 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-windows 1 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+namespace-class-outside-lifetime x86_64-windows 2 new case: lane m6d-nest2, a class defined through its namespace from outside; main refuses it
+nested-class-outside arm64-darwin 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside arm64-darwin 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside arm64-darwin 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside tms6747 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside tms6747 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside tms6747 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-linux 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-linux 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-linux 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-windows 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-windows 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside x86_64-windows 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime arm64-darwin 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime arm64-darwin 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime arm64-darwin 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime tms6747 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime tms6747 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime tms6747 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-linux 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-linux 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-linux 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-windows 0 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-windows 1 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
+nested-class-outside-lifetime x86_64-windows 2 new case: lane m6d-nest, a nested class defined outside its class; main refuses it
