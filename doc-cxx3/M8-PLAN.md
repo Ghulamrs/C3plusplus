@@ -3150,7 +3150,7 @@ rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after the re-poi
 gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
 **Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:11:05-16:12:09 (about a minute); names.sh 934/0, overload.sh 46/0.
 
-**(2) The specialization requested, ranked and recorded** (the next commit). A body whose calls (1) deduced is made from the read
+**(2) The specialization requested, ranked and recorded** (this commit, `73f1ff02`). A body whose calls (1) deduced is made from the read
 when it holds one such call: `substShape` collects it (`requests`) instead of refusing, and once the body's whole shape is known
 - so a body that replays for another reason has asked for nothing the replay would not ask for first -
 `Templates::requestCall` makes the request where and as the replay's call door makes it, without the replay's tokens: in the
@@ -3207,3 +3207,49 @@ ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, 
 first); arguments that are not locals (a typed argument is read only from a local's record); class, enumeration and pointer
 arguments of an unqualified call (ADL); a chosen specialization over a reference (`std::move`, `std::forward`, `std::swap` -
 the read's call lowered for reference parameters); explicit-argument calls (`twice<T>`); the 10 through a value or a member.
+
+## M8.2 slice 2d, sixth part: more than one template call in a body, and specializations over a reference (lane m82o, 2026-11-19)
+
+Branch `m8-2o` from `73f1ff02` (m82n; its own final commit checked clean, so no base re-check here). m82n's nit mended: its
+(2) paragraph said "(the next commit)" where it meant that commit, `73f1ff02`.
+
+**(a) More than one call a function template answers, in the replay's order** (this commit). A body m82n refused by name
+because it held two or more deduced calls is made from the read: `Templates::instantiate` makes the requests in the order the
+replay's doors make them. **What fixes that order is the read's node order**: a call's `syntax` node is noted when its parse
+completes, after its arguments (`note` in ParserExpr/ParserTemplate), which is where the replay's call door fires
+(`instantiateViableTemplates` deduces from the arguments' types, so it runs after them), and no request's argument holds
+another request (each argument is a local, `callArgTypes`), so ordering the requests by `NodeId` is ordering them as the
+replay's tokens are read - not the walk's order (`substShape` pops a stack, children last first), and not the fixed point's
+worklist, which only sees the specializations once they are declared. A body that a later request refuses replays; the
+requests made before the refusal are a prefix of the replay's, in its order. **Shown equal**: the specializations' order in
+the object and each symbol's definition are `identical.sh`'s compare (REF replaying every body, NEW making them from the
+read): 0 differ with `-templates=subst`; under `-check=templates` each body made 14 equal in the probe.
+
+**The probe** `tests/cases/template-subst-order` (`.flags` `-templates=subst`; `.expected` clang 19's, `clang++ -x c++
+-std=c++11 -pedantic-errors` on the Windows box): `chain` (four calls of three templates, one twice), `pair2` (two calls in
+one expression), `calls` (two calls as statements, for `int` and `float`) - 14 bodies with no replay, plain and `-g`, made 14
+equal under the check; its output is clang's with and without the flag. tests/subst.sh: the probe added to the probes step,
+for exactly that; no other probe line changed.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,285 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 252** (236 + the probe's 14 + 2 in library-cppparse-pieces); without the check **182 substituted with no
+replay** (166 + 16), 70 replayed by reason (as before). Of m82n's 12 bodies with more than one such call: 2 made
+(library-cppparse-pieces), 4 now refused after the request for a chosen function over a reference (`std::move`, `std::swap`:
+array-header, std-swap-two-ints, thread-pool, thread-sleep-yield), 6 for a candidate over a class beside the deduced one
+(std-function 3, std-function-ledger 3: `std::swap`'s overloads over `std::function`).
+
+**src/** (a): `Templates.cpp` +6 -2: 95,260 -> 95,264 (+4). EXCLUSIONS re-pointed (Templates.cpp 1500, 1552, 2249).
+
+**Gates of (a)** (REF `73f1ff02` in `~/m82ob`, NEW in `~/m82oc`, one path length; every check on this commit's own tree):
+`identical.sh` REF against NEW at -O0 and -O2, **0 differ on four targets without the flag** (x86_64-linux 1,872,
+x86_64-windows 3,744, arm64-darwin 1,872, tms6747 1,872) and **0 on three with `-templates=subst`** (the same counts) - the
+specializations in the replay's order in the object, each defined as the replay defines it; **-g 0 differ** with and without
+the flag (x86_64-linux 717 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 699, 375, 211 - re-read
+by `boxkit/m82o-gre.sh`); `-check=templates -templates=subst` over the cases: 1,285 units, 350 nonzero exits as before, none
+failing on a difference (frame 252 equal, shell 252 equal, made 182 equal, the 70 replayed apart by reason); `-check=fold`
+compared 16,604, agreed 12,324, differ 0; run.sh 1278/0 without and with `-templates=subst`; **subst.sh 0 failed** (self 102
+of 102, the ceiling 26 of 26, 3 shapes of 3); syntax.sh 6/0; typed.sh 928/0; self-compile of `Templates.cpp` and
+`ParserTemplate.cpp` rc 0; static, each tool's own exit status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0
+(raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
+**Windows**: cl /W4 /WX clean, first and alone, the whole tree 16:51:06-16:53:26 (about two minutes); names.sh 936/0,
+overload.sh 46/0.
