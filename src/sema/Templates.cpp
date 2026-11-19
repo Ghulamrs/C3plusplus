@@ -313,6 +313,7 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
     if (t->unqualified() != t) return p_.types_.withConst(substituted(s, t->unqualified()));
     for (std::size_t k = 0; k < s.from.size(); k++) if (t == s.from[k]) return s.to[k];
     if (t->isPointer()) return p_.types_.pointerTo(substituted(s, t->pointee()));
+    if (t->isArray() && t->boundParam() < 0) return p_.types_.arrayOf(substituted(s, t->pointee()), t->length());
     if (t->isReference()) {
         const Type *r = substituted(s, t->referent());
         return t->isRValueReference() ? p_.types_.rvalueReferenceTo(r) : p_.types_.referenceTo(r);

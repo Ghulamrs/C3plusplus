@@ -2531,3 +2531,53 @@ no allocation. The tool and its count are left as they are.
 **Where it stopped, and what is next**: 2b is done for its shapes. Left: the 34 `var`s typed apart (an array of `T`, `volatile` - 
 `Templates::substituted` carries pointers, references, `const` and functions only), the three `conditional`s, a `unary`, three
 functions in their parts; then 2c (the frame from the binding, no replay for a covered shape), 2d (calls), as 2a's table says.
+
+## M8.2 slice 2c: where the frame from the binding stops, and the array of `T` carried (lane m82c, 2026-11-19)
+
+Branch `m8-2c` from `2ae0bb1f` (m6d-w3: main `b7a27aec`, m6d-w2's wave, M8.2 2a-2b, M6d S6). **2c is not reached in this commit**;
+what it needs is measured below. What the commit does, under `-templates=subst` only: `Templates::substituted` carries an array
+whose bound is a number (`T a[3]` with `T = int`), as it carried pointers, references, `const` and functions; and `Typer::typedApart`
+names the read's type when a `var` is typed apart, so the census says what the binding did not carry. Without the flag `bound_` is
+empty and neither line is reached.
+
+**Why 2c did not fit the hour.** The replay's frame is not a product of one function the read could call. The parser lays it while it
+parses a definition: the parameters and every declared local through `Parser::allocateFrameSlot` (`Parser.cpp:813`), a slot freed at
+a scope's close reused by stored type and alignment (`freeSlots_`, `Parser.cpp:786`, `:853`), the sret slot (`ParserTopLevel.cpp:1573`),
+the variadic save area (`:1581`), `frameAligns_` by symbol - and 66 calls of `allocateFrameSlot` in `src/parser/` hand out slots for
+temporaries no `var` node names. A read at the declaration declares its locals slotless (`slotless`, `Parser.cpp:818`) and makes no
+`Function`. So the specialization's `Function` shell (params and their offsets, locals with offset, scope, align, serial and `declared`
+for `-g`, `frameSize`, `sretSlot`, `regSaveSlot`, `frameAlign`, symbol, display name, `inline`, `noexcept`, `lookup_.functions_[].defined`,
+and what `topLevel` records beside it) has one maker today, the replay. 2c is then two steps: (1) the parser's slot sequence made a
+function of what it reads - the declared and hidden slots recorded on the read's syntax as it is parsed at the declaration (each
+`allocateFrameSlot` call keyed by the node it serves, with the scope closes that free) - so a frame pass over the read under the
+binding hands out the same offsets in the same order; held against the replay's `Function` field by field under `-check=templates`
+before anything uses it; (2) the replay skipped for a covered body whose frame holds, its shell made from the pass (the stand-in's
+`substituteFunction` already builds a `Function` with no replay from a sibling's: the same constructor, its facts from the pass).
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,276 cases): at the fixed point unchanged from 2b - covered
+238; replayed by reason, a type parameter bound to a class or an array 288, a non-type, pack or template parameter 177, a `call` 77,
+a `cast` 49, a `member` 13, a `literal` 9, a `sizeof` 8, no body read 6. At the lowering: **substituted 180** in 46 cases, as 2b;
+replayed by name - a `var` typed apart 34, now by the read's type: a class template-id over a parameter 29 (`const basic_string<$T0> &` 19,
+`const unique_ptr<$T0> &` 3, `const pair<$T0,$T1> &` 2, `Box<...>` 2, `const vector<$T0> &`, `const shared_ptr<$T0> &`, `X<Y<$T0>> *`), a dependent
+member type 4 (one under a pointer), a pointer to member of a parameter 1; a `function` read apart in its parts 3, a
+`conditional` resolved apart in its type 3, a `unary` in its kind 1. **The array of `T` moved none of 2b's 34**: none is an array.
+The 29 are the class door's (M8.3: `substituted` cannot name `basic_string<int>` without instantiating it), so the cheapest of the
+58 left is not among the `var`s; the next to read are the three `conditional`s and the `unary` (single shapes, causes not yet named).
+
+**src/** `Templates.cpp` +1 (the array in `substituted`), `Typing.cpp` +2 (the read's type in `typedApart`'s `var` line): src/ 94,482 ->
+94,485 lines.
+
+**Gates** (REF `2ae0bb1f` and NEW built in one Linux tree, `~/m82c-ref.exe` and `~/m82c-n2.exe`; the cases alone): `identical.sh` REF against NEW
+without the flag at -O0 and -O2 - x86_64-linux 1,856, tms6747 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with
+`-templates=subst` on NEW - x86_64-linux 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ** (the 180 bodies built from the
+read); `-g` at -O0, without and with the flag, x86_64-linux 927 the same (349 refused alike) and x86_64-windows 902 (374), 0 differ
+each; run.sh 1270/0, and with `-templates=subst` 1270/0; subst.sh 0 failed; `-check=fold` over tests/cases compared 16,475, agreed
+12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0 failed; self-compile of `Templates.cpp` by NEW rc 0; static:
+exclusions 0/0, comments 0 over, memory gate held, ast-residue node-refs 301 (not raised); g++ `-Werror` clean; **Windows** cl /W4
+/WX clean (first and alone: the whole tree 08:15-08:16, 86 s; the final delta 08:35-08:36, 36 s), names.sh 928 passed 0 failed,
+overload.sh 46/0.
+
+**Where it stopped, and what is next**: 2c's step (1), the parser's slot sequence recorded on the read so a frame pass hands out
+the replay's offsets; then step (2), the replay skipped where the pass's frame holds. Beside it the three `conditional`s
+(`template-function`'s `a > b ? a : b`, `template-deduction`'s two) and the `unary` (`template-sfinae-unresolved`'s `+t`): the
+read resolves them apart from the replay in type and kind; naming both types in `typedApart`'s message is the first probe.
