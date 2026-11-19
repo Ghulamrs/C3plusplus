@@ -4732,3 +4732,10 @@ the counts above: a constexpr call (the frame of parameters over a typed operand
 root), the leaf half (`foldLeaf`: members of constant objects, `*p`, subscripts) and the address half (`foldAddress`,
 `addressOfObject`, `bindStaticReference` - s7a's list), floating operands (`foldFloating`, `foldDouble`), the comma's effect;
 then S8 can replace `fold(const Expr &)` by `fold(TypedId)` where the check has said "agreed" for every ask.
+
+**m6d-w2's wave landed, 2026-11-19 (gate m6dw2h at fc26c04f against main b7a27aec: 40 passed, 0 failed; the fixed point
+checked not owed).** S4's close (StmtPtr 0), S5, S7's first family and the two class definitions from outside
+(nested-class-outside, namespace-class-outside) on main and m3-line. The first gate (m6dw2g, 8383c38f) failed identical
+x4 on the four new running cases (48 rows, named in fc26c04f) and subst and maketest on a race of the gate's own: both
+ran in tests/out-run at once (subst was not of the run family; it is now). tests/subst-self.ceiling's functions shape
+8 -> 34 by the coordinator's ruling (the three recorded places alone). tests/wave-expected.txt emptied.
