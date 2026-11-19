@@ -5021,3 +5021,14 @@ call) is still not searched - lookupKeys skips it, since the bare index also hol
 function templates of an associated namespace are not instantiated by the door (only templatesNamed's are); a class's
 bases' namespaces and a template template argument's are not asked; under -templates=subst a class argument still
 replays by name (callArgTypes: "ADL and a constructor would answer" - the constructor half).
+
+**m6d-w8's wave landed, 2026-11-19 (gate m6dw8i at 2ee62d2e against main 5d98c251: 40 passed, 0 failed; the fixed point
+checked not owed - src/ 145 added, 237 deleted, net -92).** M8.2 slice 2d's ADL and nested calls (m82q), the replay's
+function-template call door doing argument-dependent lookup (m8-adl: a wrong answer mended, four template-adl cases), a
+class lvalue by C & / const C & (m82r) and slice 2e - M8.1's stand-in deleted whole (m82s: 0 made in 669 asks; src/ -145)
+on main and m3-line. Its Linux half (m6dw8g, 17cf24ea, the Windows box down) found the 48 template-adl rows (64b62382);
+m6dw8h (64b62382) failed names and winstruct on template-adl-template-argument, cxx1's own <vector> against the host's - a
+header difference, its .nonames c7c65768. The coordinator's ruling recorded with it: tests/subst-self.ceiling's
+member-templates floor 1515/1490 -> 1485/1460 (the deleted code held 30 of the compiler's own bodies; the new exe reads
+1515/1490 over the old sources). template-subst-classarg's .expected checked against clang 19 on the Windows box: the same.
+tests/wave-expected.txt emptied.
