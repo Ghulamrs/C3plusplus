@@ -959,9 +959,7 @@ std::string Templates::shellApart(const std::vector<FrameEvent> &read, const std
         if (r.kind != 'd') continue;
         const Type *t = substituted(s, r.type), *stored = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         if (r.param) params.push_back(Param{ stored, laid[k] });
-        locals.resize(locals.size() + 1);      // not `::Local(...)`: cxx3 reads that as sema::Local (the plan entry)
-        locals.back().name = r.name; locals.back().type = stored; locals.back().offset = laid[k];
-        locals.back().isParam = r.param; locals.back().scope = r.block;
+        locals.push_back(::Local(r.name, stored, laid[k], r.param, std::string(), r.block));
         locals.back().align = std::max(r.align, objectAlign(stored, p_.target_));
         locals.back().serial = r.serial;
         if (t->isReference()) locals.back().declared = t;
