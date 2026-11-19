@@ -3,3 +3,51 @@
 # x86_64-linux, x86_64-windows (both spellings), arm64-darwin; <level> 0, 1 or 2. identical, identlnx, identwin,
 # identa64 and emit pass only when the outputs that differ from the wave's base (-w) are exactly these rows; cycles
 # lets a WORSE row through only for a case named here at tms6747 2. A wave empties this file when it lands.
+global-qualified-class-in-namespace arm64-darwin 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace arm64-darwin 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace arm64-darwin 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace tms6747 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace tms6747 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace tms6747 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-linux 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-linux 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-linux 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-windows 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-windows 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-class-in-namespace x86_64-windows 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity arm64-darwin 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity arm64-darwin 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity arm64-darwin 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity tms6747 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity tms6747 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity tms6747 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-linux 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-linux 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-linux 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-windows 0 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-windows 1 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+global-qualified-constructor-same-arity x86_64-windows 2 lane m6d-glob: ::X inside a namespace looked up in the global namespace alone (b4fc3fa8); REF crashes or names the wrong class
+noexcept-local-terminates x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-local-terminates x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-local-terminates x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-search-terminates x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-search-terminates x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-search-terminates x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates-callee x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates-callee x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+noexcept-terminates-callee x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-eh-tail x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-eh-tail x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-eh-tail x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-noexcept-throw x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-noexcept-throw x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+ssa-noexcept-throw x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function-ledger x86_64-windows 0 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function-ledger x86_64-windows 1 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
+std-function-ledger x86_64-windows 2 lane m6d-winterm: a noexcept FuncInfo carries EHFlags 5 as cl writes it (63bcd194)
