@@ -418,6 +418,45 @@ bool Templates::substituteFunction(std::size_t i, std::string *why) {
     return *why = "no replayed specialization of the same layout to substitute into", false;
 }
 
+// Slice 1 covers a free function template over type parameters whose read body makes no call, member access or object:
+// nothing in it waits on [temp.dep.candidate]'s lookup (M8rev M7). Its build is owed; a covered body replays and is counted.
+bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
+    const Specialization &sp = specializations_[i];
+    if (sp.explicitly) return *why = "replayed: an explicit specialization", false;
+    for (std::size_t q = 0; q < sp.params.size(); q++)
+        if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate)
+            return *why = "replayed: a non-type, pack or template parameter, bound by name", false;
+    for (std::size_t q = 0; q < b.types.size(); q++)
+        if (!b.types[q].valid()) return *why = "replayed: a type parameter bound to no type", false;
+    const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
+    if (read == readBody_.end()) return *why = "replayed: no body read at the declaration", false;
+    const std::string shape = substShape(read->second);
+    if (!shape.empty()) return *why = "replayed: " + shape, false;
+    return *why = "covered: replayed until the slice lays its own frame", false;
+}
+
+std::string Templates::substShape(syntax::NodeId body) const {
+    typedef syntax::Kind Kind;
+    std::vector<syntax::NodeId> work(1, body);
+    while (!work.empty()) {
+        const syntax::NodeId id = work.back();
+        work.pop_back();
+        const syntax::Node n = p_.syntaxTree_.node(id);       // a copy: a reference to `Node` reads as Ast residue
+        if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
+        switch (n.kind) {
+        case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
+        case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+        case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
+        case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
+            break;
+        default:
+            return std::string("a '") + syntax::kindName(n.kind) + "' in the body";
+        }
+        for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
+    }
+    return std::string();
+}
+
 std::string Templates::censusLine() const {
     static const char *const names[Doors] = { "function", "class", "member", "member-template", "dependent-base", "sfinae-trial",
                                               "sfinae-failed", "alias", "constexpr-ahead", "by-substitution" };
@@ -482,6 +521,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
+    if (wantsBody && door == ReadFunction) readBody_[at] = read;
     if (wantsBody) p_.syntaxTree_.noteRead(read);
     else declTally_[door][0]++;
 }
@@ -758,6 +798,8 @@ std::string Templates::bodiesReport() const {
         for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i)
             out += "-check=templates unread" + head + " (" + std::to_string(i->second) + "): " + i->first + "\n";
     }
+    for (std::map<std::string, int>::const_iterator i = substCensus_.begin(); i != substCensus_.end(); ++i)
+        out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -830,6 +872,11 @@ void Templates::instantiatePending() {
             // M8.1: a function specialization inside the subset shares a replayed sibling's body, its types substituted.
             if (!specializations_[i].isClass && substitute_) {
                 std::string why;
+                Binding b;
+                for (std::size_t q = 0; q < specializations_[i].binding.size(); q++) b.types.push_back(TypeTable::id(specializations_[i].binding[q]));
+                if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
+                substCensus_[why]++;
+                why.clear();
                 if (substituteFunction(i, &why)) { count(BySubstitution); continue; }
                 refusedSubst_[why]++;
             }

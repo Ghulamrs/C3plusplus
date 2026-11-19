@@ -218,6 +218,13 @@ public:
     struct Substituted { std::string pattern; std::vector<const Type *> from, to; };
     std::map<std::string, Substituted> substituted_;
     const Type *substituted(const Substituted &s, const Type *t) const;
+    // **M8.2, slice 1's scaffolding**: a specialization's types by parameter index; a non-type parameter or a pack replays by name.
+    struct Binding { std::vector<TypeId> types; };
+    // Specialization `i` built from its template's body read at the declaration, under `b`; false with `why` the reason it replays.
+    bool instantiate(std::size_t i, const Binding &b, std::string *why);
+    std::string substShape(syntax::NodeId body) const;          // the first thing in a read body the slice does not cover, or empty
+    std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
+    std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
 
 private:
     long census_[Doors] = {};
