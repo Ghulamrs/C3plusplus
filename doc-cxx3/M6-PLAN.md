@@ -4978,3 +4978,9 @@ path and the typed one, a dependent-name callee resolved at the instantiation (T
 calls by reason, and a function template among the candidates deduced at the instantiation with its specialization requested
 (Templates::requestCall, Parser::templateCallKey) - 166 bodies made with no replay under -templates=subst; nothing changes
 without the flag.
+
+**m6d-w7's wave landed, 2026-11-19 (gate m6dw7g at ec39bb14 against main 936c38f7: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 slice 2d (M8-PLAN, m82o-m82p): several deduced calls in one body, requested in the read's
+node order; a specialization over a reference; arguments that are not named locals typed through Typer::typeUnder; a class
+candidate by non-const reference ranked beside a deduced call - 234 bodies with no replay under -templates=subst, 96 of them
+the suite's own (the rest the lanes' probes); nothing changes without the flag.
