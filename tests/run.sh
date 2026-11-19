@@ -21,7 +21,8 @@ CXX1="${CXX1:-./cxx3.exe}"
 # the limit does not outlive it. A parser that loops on bad input is a real
 # failure mode - one was inherited from Compiler-C and shipped there unnoticed
 # through 425 cases - and without this the suite hangs instead of reporting it.
-cxx1() { ( ulimit -t 10; $CXX1 "$@" < /dev/null ); }
+# Git's bash on the Windows box sets no CPU limit and says so on stderr - into a .err, and into the pattern check's stdout.
+cxx1() { ( ulimit -t 10 2>/dev/null; $CXX1 "$@" < /dev/null ); }
 OUT=tests/out-run
 # The host target, for a case whose .notarget names it - the same rule
 # emit.sh applies to every target, said out loud on every run.
@@ -44,6 +45,8 @@ one() {
   fi
 
   flags=""; [ -f "tests/cases/$base.flags" ] && flags=$(cat "tests/cases/$base.flags")
+  # x86_64-windows's default is -masm=masm; a case no MASM can write (<case>.nomasm) keeps the GNU spelling, as emit.sh does.
+  [ "$HOST" = x86_64-windows ] && [ -f "tests/cases/$base.nomasm" ] && flags="$flags -masm=gnu"
   if [ -f "tests/cases/$base.error" ]; then
     want=$(cat "tests/cases/$base.error")
     if cxx1 $flags -S "$src" -o "$OUT/$base.s" 2>"$OUT/$base.err"; then
