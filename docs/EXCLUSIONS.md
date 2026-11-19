@@ -365,14 +365,14 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
-- **a terminate scope on x86_64-windows** - not a refusal but an acceptance
-  the standard forbids, recorded here because a reader of this list will meet
-  it: the FH3 tables cxx1 writes mark no funclet as terminating, so a destructor
-  that throws while an exception unwinds, a `catch` parameter whose copy throws,
-  and a `noexcept` function whose callee throws are all caught by the next
-  handler where [except.terminate] says `std::terminate`. The Itanium targets
-  terminate. `tests/cases/dtor-throws-unwinding.notarget`,
-  `tests/cases/catch-copy-throws.notarget`,
+- **a `noexcept` function with no state of its own, on x86_64-windows** - not a
+  refusal but an acceptance the standard forbids, recorded here because a reader
+  of this list will meet it: a function with no cleanup and no `try` gets no
+  FuncInfo, so the EHFlags 4 that makes __CxxFrameHandler3 terminate (cl's, and
+  cxx3's wherever a FuncInfo is written) is never read, and an exception from
+  its callee is caught by the next handler where [except.terminate] says
+  `std::terminate`. A destructor that throws while unwinding and a `catch`
+  parameter whose copy throws terminate in the runtime itself, as cl's do.
   `tests/cases/noexcept-terminates-callee.notarget`
 - **a thrown pointer caught by a pointer to a base at an offset, on tms6747** -
   TI's `rts6740` hands it over unadjusted and cxx1's type_info is cl6x's word

@@ -983,9 +983,10 @@ bool Driver::link() {
         for (const std::string &o : objects) command += " " + shellQuote(o);
         for (const std::string &o : alreadyObjects_) command += " " + shellQuote(o);
 
-        // libcpmt holds std::set_new_handler and get_new_handler, and no other static library does.
+        // libcpmt holds std::set_new_handler and get_new_handler, and no other static library does; oldnames the POSIX
+        // names (close, dup), which cl's objects ask for by /DEFAULTLIB:OLDNAMES.
         command += " libcmt.lib libcpmt.lib libucrt.lib libvcruntime.lib kernel32.lib"
-                   " legacy_stdio_definitions.lib";
+                   " legacy_stdio_definitions.lib oldnames.lib";
 #ifdef _WIN32
         command += installationLibPaths();
 #endif
