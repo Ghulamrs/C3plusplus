@@ -605,6 +605,8 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
             p_.current_ = &pattern;
             if (door == ReadFunction) {
                 p_.at_ = decl.afterParams;
+                struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
+                if (substitute_ && outermost) { readFrames_[decl.afterParams].clear(); p_.frameLog_ = &readFrames_[decl.afterParams]; }
                 p_.topLevel(pattern);
             } else if (door == ReadMember) {
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, Packs(params.size()));
@@ -812,7 +814,76 @@ std::string Templates::bodiesReport() const {
     }
     for (std::map<std::string, int>::const_iterator i = substCensus_.begin(); i != substCensus_.end(); ++i)
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = frameCensus_.begin(); i != frameCensus_.end(); ++i)
+        out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
+}
+
+static const char *frameStepName(char kind) {
+    switch (kind) {
+    case 'z': return "the frame's start"; case 'p': return "a nested function's frame"; case 'q': return "the outer frame put back";
+    case 'o': return "a synthesised frame"; case 'c': return "the frame it closed into"; case 'd': return "a local";
+    case 'a': return "a slot no local names"; case 'f': return "a slot given back"; case 'S': return "the sret slot";
+    case 'V': return "the variadic save area"; case 'e': return "the frame's size";
+    }
+    return "a step the check does not know";
+}
+
+// **Slice 2c, step 1**: the frame the read's steps lay under `s`, held against the replay's step by step - kind, type, offset.
+std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s) const {
+    struct Frame { int size; std::vector<Parser::FreeSlot> free; };
+    Frame now = { 0, std::vector<Parser::FreeSlot>() };
+    std::vector<Frame> saved;
+    std::vector<int> laid(read.size(), 0);
+    for (std::size_t k = 0; k < read.size() && k < replay.size(); k++) {
+        const FrameEvent &r = read[k], &y = replay[k];
+        const std::string step = frameStepName(r.kind);
+        if (r.kind != y.kind) return "the read's " + step + " where the replay has " + frameStepName(y.kind);
+        const Type *t = substituted(s, r.type);
+        if (t != y.type) return step + ": typed apart";
+        if (t != nullptr && p_.dependentType(t)) return step + ": a type the binding does not carry";
+        const Type *stored = t != nullptr && t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
+        int at = 0;
+        if (r.kind == 'd')
+            for (std::size_t i = now.free.size(); i-- > 0 && at == 0;)
+                if (now.free[i].stored == stored && now.free[i].align >= r.align) { at = now.free[i].offset; now.free.erase(now.free.begin() + static_cast<long>(i)); }
+        if ((r.kind == 'd' && at == 0) || r.kind == 'a') {
+            const int align = std::max(objectAlign(stored, p_.target_), r.align);
+            now.size = alignTo(now.size + stored->size(p_.target_), align);
+            at = now.size;
+        } else if (r.kind == 'f') {
+            // The local this scope gives back: its declaration in this frame, a nested function's steps passed over.
+            std::size_t d = k;
+            for (int depth = 0; d-- > 0;) {
+                if (read[d].kind == 'q') depth++;
+                else if (read[d].kind == 'p' && depth-- == 0) d = 0;
+                else if (read[d].kind == 'd' && depth == 0 && read[d].serial == r.serial) break;
+            }
+            if (d >= k || read[d].kind != 'd' || read[d].serial != r.serial) return step + ": a local the read never declared";
+            at = laid[d];
+            if (at > 0) now.free.push_back(Parser::FreeSlot{ stored, at, objectAlign(stored, p_.target_) });
+        } else if (r.kind == 'z' || r.kind == 'p' || r.kind == 'o') {
+            at = r.kind == 'o' ? now.size : 0;
+            if (r.kind != 'z') saved.push_back(now);
+            now.size = 0;
+            now.free.clear();
+        } else if (r.kind == 'q' || r.kind == 'c') {
+            if (saved.empty()) return step + ": a frame put back that was never saved";
+            now = saved.back();
+            saved.pop_back();
+            at = now.size;
+        } else if (r.kind == 'S') {
+            at = now.size = alignTo(now.size + 8, 8);
+        } else if (r.kind == 'V') {
+            at = now.size = alignTo(now.size, 16) + 176;
+        } else if (r.kind == 'e') {
+            at = alignTo(now.size, 16);
+        } else return step;
+        laid[k] = at;
+        if (at != y.offset) return step + ": its offset";
+    }
+    if (read.size() != replay.size()) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
+    return std::string();
 }
 
 std::string Templates::builtReport() const {
@@ -943,7 +1014,17 @@ void Templates::instantiatePending() {
             } else {
                 count(FunctionBody);
                 p_.at_ = sp.start;
+                // Slice 2c, step 1: a covered body's frame laid from its read's steps, held against the one this replay lays.
+                const std::map<std::string, Bound>::const_iterator bound = substitute_ ? bound_.find(sp.symbol) : bound_.end();
+                std::vector<FrameEvent> replayed;
+                struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
+                if (bound != bound_.end()) p_.frameLog_ = &replayed;
                 p_.topLevel(*p_.current_);
+                p_.frameLog_ = logBack.was;
+                if (bound != bound_.end()) {
+                    const std::string apart = layFrame(readFrames_[sp.start], replayed, bound->second.s);
+                    frameCensus_[apart.empty() ? "equal" : "differ: " + apart]++;
+                }
             }
             holdBodies(bodiesFrom);
             p_.namespaceStack_ = wasStack;

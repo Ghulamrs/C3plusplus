@@ -1837,6 +1837,10 @@ private:
     struct FrameSave { int size; std::vector<FreeSlot> free; };
     FrameSave openFrame();
     void closeFrame(const FrameSave &saved);
+    // M8.2 2c: each step of the frame's layout while `frameLog_` is set - Templates::layFrame names the kinds.
+    typedef sema::FrameEvent FrameEvent;
+    std::vector<FrameEvent> *frameLog_ = nullptr;
+    void logFrame(char kind, const Type *t, int align, int offset, int serial = 0) { if (frameLog_ != nullptr) frameLog_->push_back(FrameEvent{ kind, t, align, offset, serial }); }
     int alignasSpecifier();
     void refuseWeakAlignas(int asked, const Type *t, std::size_t pos);
     void declareStaticLocal(const std::string &name, const Type *type,

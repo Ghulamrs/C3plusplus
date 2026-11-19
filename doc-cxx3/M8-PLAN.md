@@ -2581,3 +2581,43 @@ overload.sh 46/0.
 the replay's offsets; then step (2), the replay skipped where the pass's frame holds. Beside it the three `conditional`s
 (`template-function`'s `a > b ? a : b`, `template-deduction`'s two) and the `unary` (`template-sfinae-unresolved`'s `+t`): the
 read resolves them apart from the replay in type and kind; naming both types in `typedApart`'s message is the first probe.
+
+## M8.2 slice 2c, step 1: the parser's frame steps recorded on the read, and the frame they lay held against the replay's (lane m82d, 2026-11-19)
+
+Branch `m8-2d` from `a559360a` (m6d-w3: main `0155813c`, S6, 2a-2c's `de4f21d0`, m6d-s7b). **What it does, under `-templates=subst`
+only**: the parser logs each step of a frame's layout while `Parser::frameLog_` is set (`logFrame`: `z` the frame's start at
+`topLevel`, `d` a declared local - its type, `alignas`, offset and serial, the reuse of a freed slot inside it - `a` a slot no
+local names, `f` a slot a closing scope gives back, `S` the sret slot, `V` the variadic save area, `e` the frame's size, `p`/`q` a
+nested function's state cleared and put back, `o`/`c` a synthesised frame opened and closed). `readDeclaration` sets it for a
+function template's read (`readFrames_`, by `afterParams`), and `instantiatePending` for the replay of every specialization
+2b bound (`bound_`). `Templates::layFrame` walks the read's steps with each type passed through the binding (`substituted`) and
+lays the frame as the parser does - `freeSlots_`' reuse by stored type and alignment, `objectAlign`, a reference stored as a
+pointer, a freed slot found by its local's serial in its own frame - and holds every step against the replay's: kind, type,
+offset (the frame's alignment, `frameAligns_`, is not held yet: step (2) owes it). `-check=templates frame (N): equal | differ: <step>: <what>`. Nothing uses the frame for code yet; without the flag the
+log is never set and `logFrame` returns at once.
+
+**The census** (Linux, `-check=templates -templates=subst -S` over the 1,276 cases): of 2b's 238 covered, 221 are replayed and
+checked (17 are taken by the stand-in first, as before). **Frame equal 187, differ 34**, and each of the 34 is `a local: typed
+apart` - the read's local whose type the binding does not carry, unit for unit the 34 `var`s 2b's lowering keeps apart (a class
+template-id over a parameter 29, a dependent member type 4, a pointer to member 1: `substituted` cannot name `basic_string<int>`
+without the class door, M8.3). No frame differs in an offset, a reuse, a hidden slot, the sret slot or the frame's size. **All 180
+substituted bodies (46 cases) have their frame equal**, so step (2) - the replay skipped where this check holds - has its
+denominator: 187, of which the 7 not substituted are 2b's `function`/`conditional`/`unary` read apart.
+
+**src/** `Parser.h` +4, `Parser.cpp` +16 -3, `ParserTopLevel.cpp` +4, `Entities.h` +3 (`FrameEvent`, so `Templates.h` names it),
+`Templates.h` +4, `Templates.cpp` +81 (`layFrame`, the two logs, the census line): src/ 94,493 -> 94,602 lines.
+
+**Gates** (REF `a559360a` and NEW built in one Linux tree, `~/m82d-ref.exe` and `~/m82d-n1.exe`; the cases alone): `identical.sh` REF against NEW
+without the flag at -O0 and -O2 - x86_64-linux 1,856, tms6747 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ**; with
+`-templates=subst` on NEW - x86_64-linux 1,856, x86_64-windows 3,712, arm64-darwin 1,856, **0 differ** (the 180 bodies built from the
+read); `-g` at -O0, without and with the flag, x86_64-linux 927 the same (349 refused alike) and x86_64-windows 902 (374), 0 differ
+each; run.sh 1270/0, and with `-templates=subst` 1270/0; subst.sh 0 failed (ceilings 17 under 17, self 102 of 102 reached, 26 under
+26); `-check=fold` over tests/cases compared 16,475, agreed 12,243, differ 0; tms6747 SIM=1 -O2 shards 1-3 146/148/147 passed, 0
+failed; self-compile of `Templates.cpp` by NEW rc 0; static: exclusions 0/0, comments 0 over, memory gate held, ast-residue node-refs
+298 (rc 0, not raised); g++ `-Werror` clean; **Windows** cl /W4 /WX clean (first and alone, the whole tree 08:52-08:54, about 2
+minutes), names.sh 928 passed 0 failed, overload.sh 46/0.
+
+**Where it stopped, and what is next**: step (1) is done. Step (2): for a body whose frame is `equal`, make its `Function` shell from
+the laid frame (params' and locals' offsets from the `d` steps, `frameSize` from `e`, `sretSlot`, `regSaveSlot`; `frameAlign`,
+`declared`, scope and serial for `-g` from the same steps) and skip the replay - `substituteFunction`'s constructor is the model.
+The 34 wait on the class door (M8.3).

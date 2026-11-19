@@ -257,6 +257,7 @@ void Parser::topLevel(Program &program) {
     enterScope();
     frameSize_ = 0;
     freeSlots_.clear();
+    logFrame('z', nullptr, 0, 0);
     // The guards this frame makes start here, a constructor's mem-initialisers' among them (M1).
     const std::size_t frameGuards = guardSlots_.size();
     const std::size_t declMark = syntaxTree_.size(), declLo = peek().pos;
@@ -1574,6 +1575,7 @@ void Parser::topLevel(Program &program) {
         frameSize_ += 8;
         frameSize_ = alignTo(frameSize_, 8);
         sretSlot = frameSize_;
+        logFrame('S', nullptr, 0, sretSlot);
     }
     sretSlot_ = sretSlot;
 
@@ -1582,6 +1584,7 @@ void Parser::topLevel(Program &program) {
         frameSize_ = alignTo(frameSize_, 16);
         frameSize_ += 176;
         regSaveSlot = frameSize_;
+        logFrame('V', nullptr, 0, regSaveSlot);
     }
     variadicBody_ = variadic;
 
@@ -1990,6 +1993,7 @@ void Parser::topLevel(Program &program) {
     }
 
     int frame = alignTo(frameSize_, 16);
+    logFrame('e', nullptr, 0, frame);
     const Type *emittedReturn = d.type->isReference()
                               ? types_.pointerTo(d.type->referent()) : d.type;
     if (definedSymbol.empty())

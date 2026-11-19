@@ -229,6 +229,10 @@ public:
     struct Bound { syntax::NodeId read; Substituted s; };
     std::map<std::string, Bound> bound_;
     std::map<std::string, int> builtCensus_;
+    // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.
+    std::map<std::size_t, std::vector<FrameEvent> > readFrames_;
+    std::map<std::string, int> frameCensus_;
+    std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s) const;
     std::string builtReport() const;
 
 private:

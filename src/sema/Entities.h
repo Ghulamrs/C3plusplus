@@ -150,6 +150,9 @@ struct Signature {
           isVirtual(isVirtual) {}
 };
 
+// One step of a frame's layout as the parser takes it (Parser::logFrame), for M8.2 2c's check of a frame laid from a read.
+struct FrameEvent { char kind; const Type *type; int align, offset, serial; };
+
 struct TypedefName {
     std::string name;
     const Type *type;

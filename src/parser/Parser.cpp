@@ -523,6 +523,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
 }
 
 void Parser::restoreFunctionState(const FunctionState &s) {
+    logFrame('q', nullptr, 0, s.frameSize);
     at_ = s.at;
     currentFunction_ = s.currentFunction;
     currentFunctionName_ = s.currentFunctionName;
@@ -611,6 +612,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
 // starts with none of the enclosing one's state rather than a copy of it.
 // `at_` is left alone: the caller has just pointed it at what to read.
 void Parser::clearFunctionState() {
+    logFrame('p', nullptr, 0, 0);
     currentFunction_.clear();
     currentFunctionName_.clear();
     functionName_.clear();
@@ -780,7 +782,9 @@ void Parser::leaveBlock() { blockStack_.pop_back(); }
 void Parser::leaveScope() {
     for (std::size_t i = scopeStarts_.back(); i < locals_.size(); i++) {
         const Local &l = locals_[i];
-        if (l.offset <= 0 || !l.staticName.empty() || l.isParameter || inParams_ || l.sharesSlot) continue;
+        if (!l.staticName.empty() || l.isParameter || inParams_ || l.sharesSlot) continue;
+        logFrame('f', l.type, 0, l.offset, l.serial);
+        if (l.offset <= 0) continue;
         if (slotless(l.type)) continue;     // a pattern's local has no slot to give back
         const Type *stored = l.type->isReference() ? types_.pointerTo(l.type->referent()) : l.type;
         freeSlots_.push_back(FreeSlot{ stored, l.offset, objectAlign(stored, target_) });
@@ -799,6 +803,7 @@ void Parser::leaveScope() {
 
 // A freed slot belongs to the frame that freed it: a function opened mid-parse starts with none, or it reuses an offset its own frame never reached.
 Parser::FrameSave Parser::openFrame() {
+    logFrame('o', nullptr, 0, frameSize_);
     FrameSave saved{ frameSize_, std::move(freeSlots_) };
     frameSize_ = 0;
     freeSlots_.clear();
@@ -806,6 +811,7 @@ Parser::FrameSave Parser::openFrame() {
 }
 
 void Parser::closeFrame(const FrameSave &saved) {
+    logFrame('c', nullptr, 0, saved.size);
     frameSize_ = saved.size;
     freeSlots_ = saved.free;
 }
@@ -815,11 +821,12 @@ int Parser::allocateFrameSlot(const Type *type, int alignAtLeast) {
     // what it refers to. This is the one place the difference shows.
     const Type *stored = type->isReference()
                        ? types_.pointerTo(type->referent()) : type;
-    if (slotless(stored)) return frameSize_;     // a pattern's local: a `var`, and no slot
+    if (slotless(stored)) { logFrame('a', type, alignAtLeast, frameSize_); return frameSize_; }     // a pattern's local: a `var`, and no slot
     int align = objectAlign(stored, target_);
     if (alignAtLeast > align) align = alignAtLeast;
     frameSize_ += stored->size(target_);
     frameSize_ = alignTo(frameSize_, align);
+    logFrame('a', type, alignAtLeast, frameSize_);
     // Past the stack's alignment the whole frame is realigned to the widest slot, by its symbol.
     if (align > frameAlign_) {
         frameAlign_ = align;
@@ -852,10 +859,16 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
     const Type *storedType = type->isReference() ? types_.pointerTo(type->referent()) : type;
     for (std::size_t i = freeSlots_.size(); i-- > 0 && offset == 0;)
         if (freeSlots_[i].stored == storedType && freeSlots_[i].align >= alignAtLeast) { offset = freeSlots_[i].offset; freeSlots_.erase(freeSlots_.begin() + static_cast<long>(i)); }
-    if (offset == 0) offset = allocateFrameSlot(type, alignAtLeast);
+    if (offset == 0) {
+        std::vector<FrameEvent> *const log = frameLog_;     // one step: the declaration, its slot made or reused
+        frameLog_ = nullptr;
+        offset = allocateFrameSlot(type, alignAtLeast);
+        frameLog_ = log;
+    }
     locals_.push_back(Local{ name, offset, type, false, std::string() });
     locals_.back().isParameter = inParams_;
     locals_.back().serial = ++localSerial_;
+    logFrame('d', type, alignAtLeast, offset, localSerial_);
     // The debug record describes the storage, which for a reference is the pointer it really is; DWARF names the reference.
     const Type *stored = type->isReference()
                        ? types_.pointerTo(type->referent()) : type;
