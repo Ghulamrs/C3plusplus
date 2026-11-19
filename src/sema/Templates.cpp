@@ -358,8 +358,8 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): a class is bound where no
         // object of it is built, copied or destroyed - reached by reference or pointer alone (boundObject, in substShape).
         const Type &bt = *p_.types_.type(b.types[q])->unqualified();
-        const bool scalarRef = bt.isReference() && !bt.isRValueReference() && bt.referent()->isScalar();  // `T &&` from an lvalue
-        const std::string plain = bt.isScalar() || scalarRef ? std::string() : boundClass(bt);
+        const Type *to = bt.isReference() && !bt.isRValueReference() ? bt.referent()->unqualified() : nullptr;   // `T &&` from an lvalue
+        const std::string plain = bt.isScalar() || (to != nullptr && to->isScalar()) ? std::string() : boundClass(to != nullptr && to->kind() == Kind::Struct ? *to : bt);
         if (!plain.empty()) return *why = "replayed: a type parameter bound to " + plain, false;
     }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
@@ -779,6 +779,9 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
     }
 }
 
+// What a type parameter bound to `t` reaches: the class or scalar itself, or what an lvalue reference to one refers to.
+static const Type *boundTo(const Type *t) { return (t->isReference() ? t->referent() : t)->unqualified(); }
+
 // A plain struct of the unit: no template's specialization, base or virtual function, its members public scalars at their place.
 std::string Templates::boundClass(const Type &t) const {
     if (t.isArray()) return "an array";
@@ -820,7 +823,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                                   std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
     bool classBound = false;
-    for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || s.to[q]->unqualified()->isStructOrUnion();
+    for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || boundTo(s.to[q])->isStructOrUnion();
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
     for (int pass = 1; pass <= 2; pass++)
     for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
@@ -861,7 +864,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 if (c != nullptr && c->isReference()) c = c->referent();
                 if (c != nullptr && (arrow || named.v != o.v)) c = c->isPointer() ? c->pointee() : nullptr;
                 bool bound = false;
-                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == s.to[q]->unqualified();
+                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == boundTo(s.to[q]);
                 if (!bound || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
                     return "a member that is no data member of a bound class reached by name";
                 continue;

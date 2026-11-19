@@ -3973,3 +3973,34 @@ self-host (102 sources, 0 nonzero): covered 356 as REF (+0); its 616 references 
 
 **Gates** (REF `1ca3569f` in `~/m82abb`, NEW in `~/m82abc`, one path length; every check on this commit's tree):
 identical.sh without the flag 0 differ on four targets (x86_64-linux 1,904, x86_64-windows 3,808, arm64-darwin 1,904, tms6747 1,904) and with `-templates=subst` 0 differ on three (1,904, 3,808, 1,904); **-g** with and without the flag: x86_64-linux 731 same, 350 refused alike, 220 differ by the tree path alone; x86_64-windows 713, 375, 213 by the path alone. `-check=templates -templates=subst` over tests/cases: 350 nonzero exits as REF, none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1294/0 without and with `-templates=subst`. typed 944/0, syntax 7/0. `-check=fold` 16,866 compared, 0 differ, 0 units failing. Self-compile of Templates.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\\m82abw, this source): cl /W4 /WX clean (3 m 54 s with the ship, alone); names.sh 952 passed 0 failed; overload.sh 46 agreed 0 differed.
+
+## M8.2 slice 2f: a type parameter bound to an lvalue reference to a plain struct (lane m82ab, 2026-11-20)
+
+(lane m82ab, step (2), on `160563c5`.) **What lands**: T may bind an lvalue reference to a class (`T &&` deduced from an
+lvalue of P is T = `P &`, from a const lvalue `const P &`) where m82z takes the class itself - a plain struct of the unit
+(`boundClass` asked of the referent; a class it refuses replays by that class's reason, by name). One helper,
+`boundTo`, names what a binding reaches (the class itself, or what a reference to one refers to), and `substShape` asks it
+for the two questions m82z asked of the class: whether a class is bound at all (so no object of it is built, copied or
+operated on) and whether a member access's object is a bound class (the Typer's `boundMember` already types `p.x` through
+a reference). Member access through the reference, `T q = p;` (a reference local), passing it on (`sum(p)`), are made
+from the read and held under `-check=templates`; `return p;` over the class's object, a deduced call over the class (one
+of `std::forward<T>` / `std::move`'s specializations) and their `static_cast` bodies replay by name.
+
+**The probe** `tests/cases/template-subst-fwdclass` (`.flags` `-templates=subst`; g++ on Linux, cxx3 on Linux and
+clang 19 and cxx3-msvc on Windows print its `.expected`; `.nonames` as template-subst-fwd's: clang folds std::forward and std::move): 6 made, 6 equal
+under `-check=templates` (REF 0); replayed by name: 2 by "a 'cast' in the body", 1 a deduced call of a function over a
+class, 1 an explicit-argument call, 1 a return over a class's object (`same`). tests/subst.sh: the probe's lines.
+
+**The census** (Linux, 1,302 units, 350 nonzero as REF): covered 412 (`160563c5` 406), 338 with no replay (332), 74
+replayed; **without the probes 136 of the suite's own bodies (+0)**: the suite's 83 references to a class all pass the
+binding now and stop at their bodies' own reasons - "a 'cast' in the body" 148 over all (119 before), std::forward and
+std::move's own bodies. The self-host (102 sources, 0 nonzero): covered 356 (+0); its 2,808 references to a class now name the class's own reason - 1,402 a class template's specialization (1,609 in all), 972 a member other than a public scalar (1,022), 63 a base or a virtual function (86) - and 371 pass the binding and stop at "a 'cast' in the body" (1,022 in all), the library's std::forward and std::move.
+
+**src/**: Templates.cpp +3: 95,517 -> 95,520. EXCLUSIONS re-pointed (Templates.cpp 1659, 1711, 2408).
+
+**Gates** (REF `1ca3569f` in `~/m82abb`, NEW in `~/m82abd`, one path length; every check on this commit's tree):
+identical.sh without the flag 0 differ on four targets (x86_64-linux 1,906, x86_64-windows 3,812, arm64-darwin 1,906, tms6747 1,906) and with `-templates=subst` 0 differ on three (1,906, 3,812, 1,906), the new case among them; **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path alone (the new case one of each). `-check=templates -templates=subst` over tests/cases: 350 nonzero exits as REF, none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1295/0 without and with `-templates=subst`. typed 945/0, syntax 7/0. `-check=fold` 0 differ, 0 units failing. Self-compile of Templates.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\\m82abv, this source): cl /W4 /WX clean (8 m 55 s with the ship, beside the coordinator's gate); names.sh 953 passed 0 failed; overload.sh 46 agreed 0 differed.
+
+**Left**: the bodies that hold the forwarding reference now - `std::forward` and `std::move`'s `static_cast<T &&>` ("a 'cast'
+in the body", 148 in the suite), the explicit-argument call `std::forward<T>(p)`, a return of a class's object by reference;
+a reference to an array (7), an rvalue reference (2); class template specializations (64 / 207); the constructor half of m82z's.
