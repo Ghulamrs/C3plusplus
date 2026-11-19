@@ -4530,3 +4530,44 @@ cleanups' pointer slot (`resumeUnwinding`, `cleanupPad`) and the noexcept wrap's
 src/sema, the nine readers, Ast.h's 513 lines). **Before S6**: nothing of M6d's design is owed but S6 (on-demand typing
 and `-check=fold`, a Fable design waiting on the user), S7's three expression-shape lanes (Opus, beside S6) and S8.
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, names.sh, make test.
+
+### M6d: a nested class defined outside its class, `struct Outer::Held {` ([class.nest]/3) - lane m6d-nest, 2026-11-19
+
+Brief boxkit/brief-m6d-nest.txt; from 0a8d3784 on branch m6d-nest; REF built from 0a8d3784 on Linux (`~/m6d-nest-ref.exe`).
+Found by lane m6d-s4j: `struct Outer { struct Held; }; struct Outer::Held { int x; };`, legal C++03 and C++11, was
+refused with "expected a name" - a refusal stricter than the standard. Not a listed exclusion (docs/EXCLUSIONS.md names
+none for it); **a member class template** declared in its class (`template <class T> struct Box;` there) stays the
+listed refusal (EXCLUSIONS.md, ParserTemplate.cpp), so its outside definition is not reached and has no case.
+
+**The mend** (src/parser/ParserType.cpp, `structOrUnionSpecifier`, +21 -2): a qualified class-head followed by a body
+(`{`, `:`, or `final` and one) whose qualifier names a class is read as the nested class that class declared - the
+class becomes `within`, the scope a body written inside it has, so the tag, enclosing class, mangled names, lookup of
+the class's own names and access to its private members are those of the inline definition. The name must be one the
+class declared ([class]/11); otherwise it is refused as clang refuses it, "no struct named 'Missing' in 'Outer'". A
+qualifier through a namespace alone (`struct n::S {`) or a template-id is not taken and is refused as before.
+
+**Cases** (clang 19 on the Windows box, `-x c++ -std=c++11 -pedantic-errors`): `nested-class-outside` (the plain shape;
+members, a static member and an inline body defined through both qualifiers; a private nested class defined outside;
+`class Outer::Kept final : public Base`; a nested class of a class in a namespace defined in that namespace),
+`nested-class-outside-lifetime` (constructors and a destructor defined out of line, the class as a member, a local, an
+array, a by-value argument and a temporary under the ledger: built=8 gone=8, the rest 0) and
+`nested-class-outside-refused` (the name the class never declared). REF refuses all three ("expected a name").
+**Names**: names.sh (Windows clang, three ABIs) passes both new running cases; cl 19.44's external symbols for the two
+match cxx3's on x86_64-windows, 7 of 7 and 8 of 8. overload.sh 46 agreed, 0 differed.
+**Shown** against REF, one target a job (tools/identical.sh at -O0 and -O2; every case's `-g -S` text): identical tms6747
+1,852 compared, x86_64-linux 1,852, x86_64-windows (both spellings) 3,704, arm64-darwin 1,852 - **4, 4, 8 and 4 differ,
+every one `nested-class-outside` or `nested-class-outside-lifetime`** (REF refuses them), 0 outside them; `-g -S`
+908/923/898/923 same, 2 differ on each target, the same two cases, 0 outside them. `nested-class-outside-refused` is
+refused by both (REF with "expected a name"). **For the wave's rows**: the two running cases differ from REF on all four
+targets, at -O0 and -O2, both Windows spellings, and under `-g`.
+**ast-residue** on Linux: ExprPtr 2,012, StmtPtr 0, node-casts 149, node-refs 302, visits 0, readers 9, ast-lines 513 -
+the baseline, unchanged, not re-recorded. 28 exclusion citations into ParserType.cpp re-pointed: 0 uncited, 0 stale.
+
+**Gates on the final tree**: g++ -Werror clean (Linux); cl /W4 /WX clean, a full build of the final source in about 2
+min (work\m6d-nesty); run.sh 1,266 passed, 0 failed; tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 151/0, 145/0,
+144/0; self-compile of ParserType.cpp by the new compiler: x86_64-linux -O2 compiles; tms6747 -O2 refuses
+`structOrUnionSpecifier` ("a branch past eight arguments"), as REF refuses the base text. Comment cap 0 over, memory
+gate pass, ide --check up to date. src/ 94,135 lines (+19).
+**What is left**: a class declared in a namespace and defined through it from outside (`struct n::S {`), and the
+outside definition of a member class template once member class templates are no longer a listed refusal.
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
