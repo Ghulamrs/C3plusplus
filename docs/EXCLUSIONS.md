@@ -157,7 +157,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:2312`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:2387`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1146`
@@ -194,7 +194,7 @@ is left:
   `src/parser/ParserType.cpp:645`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3780`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3770`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -317,7 +317,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1686`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:1615`
+  deduced one does not - `src/sema/Templates.cpp:1690`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -527,7 +527,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:1563` - a template instantiating itself past
+- `src/sema/Templates.cpp:1638` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 

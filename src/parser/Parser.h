@@ -601,6 +601,12 @@ private:
         r.what = what; r.type = type; r.symbol = symbol; r.serial = serial; r.value = value; r.owner = owner;
         return r;
     }
+    // [expr.ref]/4: a data member reached through `obj` is const with it - [dcl.ref] stops at a reference's referent, a
+    // `mutable` one stays writable. The record both member paths and a read under a binding (Typer::boundMember) make.
+    Resolved memberRecord(const Type *obj, const Member &m, const std::string &name, int adjust) {
+        return resolvedAs(Resolved::Member, obj->isConst() && !m.type->isReference() && !m.isMutable ? types_.withConst(m.type) : m.type,
+                          name, m.offset + adjust, 0, m.declaredIn);
+    }
     void noteResolved(syntax::NodeId id, const Expr *e) {
         if (e != nullptr && e->resolved() != 0 && id.valid()) resolutions_[id.v] = resolvedTable_[e->resolved()];
     }

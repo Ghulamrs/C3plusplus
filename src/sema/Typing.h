@@ -317,6 +317,8 @@ private:
     // Under a binding, a dependent-name call's record or its callee's as the instantiation chose (Templates::dependentCall),
     // the parser's record of a direct call (Parser::call); `what` None for any other node.
     Resolution boundCall(syntax::NodeId id) const;
+    TypeId boundMember(syntax::NodeId id, TypeId object);     // `o.m` or `p->m` of a bound class, recorded as Parser::memberRecord
+    std::unordered_map<std::uint32_t, Resolution> boundMembers_;
     const Type *recordedValue(syntax::NodeId id);
     void closureSources(syntax::NodeId id);
     int recorded_ = 0;      // nodes typed from a Value record, the parser's own answer: not independent agreement

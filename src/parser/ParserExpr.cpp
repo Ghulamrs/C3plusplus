@@ -3258,17 +3258,12 @@ ExprPtr Parser::postfix() {
             }
             ExprPtr acc(new MemberAccess(std::move(n), name, m->offset + adjust,
                                          m->width, m->bitOffset));
-            // A member reached through a const object is itself const - [expr.ref]
-            // gives it the object's qualification. **But not a reference member's
-            // referent**: [dcl.ref] stops the const at the reference itself.
-            acc->setType(obj->isConst() && !m->type->isReference() &&
-                         !m->isMutable
-                             ? types_.withConst(m->type) : m->type);
-            const Type *accessType = acc->type();
+            const Resolved record = memberRecord(obj, *m, name, adjust);
+            acc->setType(record.type);
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
             // reference local already goes through; the record goes on what is read.
-            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset + adjust, 0, m->declaredIn));
+            acc = resolve(useReference(std::move(acc)), record);
             n = std::move(acc);
             continue;
         }
@@ -3353,18 +3348,13 @@ ExprPtr Parser::postfix() {
             const bool objectIsRvalue = n->isXvalue() || !isLvalue(*n);
             ExprPtr acc(new MemberAccess(std::move(n), name, m->offset + adjust,
                                          m->width, m->bitOffset));
-            // A member reached through a const object is itself const - [expr.ref]
-            // gives it the object's qualification. **But not a reference member's
-            // referent**: [dcl.ref] stops the const at the reference itself.
-            acc->setType(obj->isConst() && !m->type->isReference() &&
-                         !m->isMutable
-                             ? types_.withConst(m->type) : m->type);
-            const Type *accessType = acc->type();
+            const Resolved record = memberRecord(obj, *m, name, adjust);
+            acc->setType(record.type);
             if (objectIsRvalue && !m->type->isReference()) acc->setXvalue();
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
             // reference local already goes through; the record goes on what is read.
-            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset + adjust, 0, m->declaredIn));
+            acc = resolve(useReference(std::move(acc)), record);
             n = std::move(acc);
             continue;
         }

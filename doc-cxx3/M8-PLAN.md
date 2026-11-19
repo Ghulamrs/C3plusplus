@@ -3827,3 +3827,68 @@ clean (1 m 44 s with the ship, alone); names.sh 950 passed 0 failed, overload.sh
 **Left**: item (2) - `case N` (a 'switch' in the body), `sizeof(T) * N`, `enum { E = N }` (its enumerator resolves as an
 Enumerator that is neither a parameter nor a const local: its initialiser is not in the read's walk), a static local and an
 array local `T a[N]` over a parameter; item (3), a scoped local enumeration's `?:` that leaves a read unread. Not started.
+
+## M8.2 slice 2f's bucket: a type parameter bound to a plain struct, reached by reference or pointer (lane m82z, 2026-11-20)
+
+(lane m82z, branch `m8-2z` from `659c6646`; one lane-hour.) **Step (0), the uncovered census by reason, measured first** (REF
+`659c6646`, Linux, `-check=templates -templates=subst`): over tests/cases (1,299 units) the largest replay reason is "a type
+parameter bound to a class or an array", 316 (without the lanes' probes 312; then a pack or template parameter 116, a `cast`
+54); over the self-host's 102 sources it is 3,742 of 4,948 replayed (then a `name` typed apart 376, 356 covered). The
+coordinator's bucket stands.
+
+**What lands**: a type parameter bound to a plain struct of the unit - `Templates::boundClass`: no template's specialization,
+base or virtual function, every member a public scalar of its own - where the body builds, copies and destroys no object of
+it: no local or parameter of a class by value, no return of the bound class by value, no operator, assignment or return over
+a class's object (`Templates::boundObject`: a name of it, `*p`, `p[i]`). A member access the read has no record of (`t.x`,
+`p->x`, `(*p).y`, `p[1].x`) is covered where its object is a name of a bound class (or `*p`, `p[i]` of a pointer to one) and
+the member a data member of it; a member the read did record (a non-dependent object) is the replay's record and covered too.
+The Typer makes the record (`Typer::boundMember`) with `Parser::memberRecord` - one writer: both of the parser's member paths
+(`.` and `->`) now make their record through it, the const of [expr.ref]/4 written once. `recordDiffers` lets a bound
+member's record stand without a parser record; `typedApart` holds it against the replay's under `-check=templates`. The step
+the brief calls (1)'s constructor half - a local `T v;`, a copy or a return of T by value - is not made: each replays by name
+("a local or a parameter of a class by value, which its constructor builds", "a bound class returned by value, which its copy
+would build"), and lifetime.h's ledger is not reached by anything this commit makes. (2), an array bound to T, not started.
+
+**The probe** `tests/cases/template-subst-bound` (`.flags` `-templates=subst`): `sumOf`, `bump`, `second`, `add` made with no
+replay (4 made, 4 equal under `-check=templates`; REF 0 - all 7 replayed "bound to a class or an array"); `mean` replays for
+its `?:` ("a 'conditional' the read resolved to a type the binding does not carry"), `copyOf` and `viaLocal` by name as above.
+Its `.expected` is g++'s and clang 19's on Windows (below). tests/subst.sh: the probe's lines added; template-subst-adl 9 -> 11
+made (its `weigh(T *)` and `size(T *)` over `geo::Pt`; its refused line gone) and template-subst-arg 18 -> 20 (two bodies over
+a non-dependent member).
+
+**The census** (Linux, 1,300 units, 350 nonzero exits as REF): covered 398 (REF 387); without the check 324 with no replay (REF
+313), 74 replayed; **without the lanes' probes 135 of the suite's own bodies with no replay (REF 132, +3**: template-adl-class
+3 -> 4, template-adl-hidden-friend 1 -> 3). The old reason splits (all cases): 159 "a union or a type that is no class" -
+a probe shows a reference bound by a forwarding reference lands here (`T` = `int &`, `P &`, `const char (&)[2]`) - not split further;
+64 a class template's specialization; 25 a class with a member other than a public scalar of its own; 19 a member that is no
+data member of a bound class reached by name; 14 a local or a parameter of a class by value; 3 a bound class returned by value;
+2 a class with a base or a virtual function; 1 an operator, assignment or return over a class's object. So the bucket was not
+one: the next sizeable pieces are the 159 (a reference binding needs no constructor) and class template
+specializations (64), before the constructor half.
+
+The self-host's 102 sources under NEW: covered 356 as REF (+0); the old 3,742 split as 3,425 "a union or a type that is no
+class", 207 a class template's specialization, 50 a class with a member other than a public scalar, 23 a class with a base or
+a virtual function, 13 a member that is no data member of a bound class reached by name, 2 an operator over a class's object,
+1 an array. The self-host's class-bound bodies are its library's (`std::vector<Entry>` and the like) and replay as before.
+
+**src/**: Templates.cpp +75, Templates.h +2, Typing.cpp +18, Typing.h +2, Parser.h +6, ParserExpr.cpp -10: 95,406 ->
+95,499 (+93). EXCLUSIONS re-pointed (Templates.cpp 1638, 1690, 2387; ParserExpr.cpp 3770).
+
+**Gates** (REF `659c6646` in `~/m82zb`, NEW in `~/m82zc`, one path length; every check on this commit's tree): identical.sh
+without the flag 0 differ on four targets (x86_64-linux 1,902, x86_64-windows 3,804, arm64-darwin 1,902, tms6747 1,902) and
+with `-templates=subst` 0 differ on three (1,902, 3,804, 1,902) - the new case included, its bodies made emitting what REF's
+replay does; **-g** both ways: x86_64-linux 731 same, 350 refused alike, 219 differ by the tree path alone; x86_64-windows 713,
+375, 212 by the path alone. `-check=templates -templates=subst` over tests/cases: the 350 nonzero exits are REF's own set,
+none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26; cases 17 under 17, 53 shapes of 53).
+run.sh 1293/0 without and with `-templates=subst`. typed 943/0, syntax 7/0. `-check=fold` 16,797 compared, 0 differ, 0 units
+failing. Self-compile of Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0
+0/0 (after the re-point), comments rc 0, memory gate rc 0 (89: the Typer's member made with TypeId handles, not pointers),
+ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\m82zv, the final tree): cl
+/W4 /WX clean (about 5 min, beside this lane's superseded names run; the first build, of the edit before the static fixes,
+about 3.5 min alone); clang 19 and cxx3-msvc print the probe's `.expected`; names.sh 951 passed 0 failed, overload.sh 46
+agreed 0 differed. The Wine stand-in was not run (the box answered). lifetime.h is not used: no object is built by what lands.
+
+**Left**: the constructor half of (1) - a local `T v;`, a copy or a return of T by value, with the construction records the
+read needs written by the replay's parse writer; a reference bound to T (the 159 / 3,425 above, to be named apart first);
+class template specializations (64 / 207); classes with bases, private or class-typed members; (2) an array bound to T;
+slice 2f's items owed by m82y.

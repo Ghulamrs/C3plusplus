@@ -222,6 +222,8 @@ public:
     // The first thing a read body holds apart, or empty; `calls` takes each dependent-name call's function, by its node.
     std::string substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
                            std::vector<syntax::NodeId> *requests);     // requests: calls a function template answers
+    std::string boundClass(const Type &t) const;       // why a class bound to a type parameter replays, or empty: a plain struct
+    bool boundObject(syntax::NodeId id, const Substituted &s) const;       // an lvalue of a bound class, by its name or a pointer's
     // Slice 2f: each value-dependent name of a read worth its value under `values`, by node; why it is not, or empty.
     std::string valueShape(syntax::NodeId body, const Specialization &sp, std::map<std::uint32_t, std::size_t> *values) const;
     bool foldUnder(syntax::NodeId id, const std::map<std::string, int> &params, const std::map<std::string, int> &consts,

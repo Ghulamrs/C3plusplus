@@ -351,11 +351,19 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     for (std::size_t q = 0; q < b.types.size(); q++) {
         if (q < sp.params.size() && sp.params[q].type != nullptr) continue;     // a non-type parameter: its value, in valueShape
         if (!b.types[q].valid()) return *why = "replayed: a type parameter bound to no type", false;
-        // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): slice 2b binds scalars.
-        if (!p_.types_.type(b.types[q])->unqualified()->isScalar()) return *why = "replayed: a type parameter bound to a class or an array", false;
+        // A class's locals are built by records keyed on the replay's own nodes (Typer::localBuilt): a class is bound where no
+        // object of it is built, copied or destroyed - reached by reference or pointer alone (boundObject, in substShape).
+        const Type &bt = *p_.types_.type(b.types[q])->unqualified();
+        const std::string plain = bt.isScalar() ? std::string() : boundClass(bt);
+        if (!plain.empty()) return *why = "replayed: a type parameter bound to " + plain, false;
     }
     const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(sp.start);
     if (read == readBody_.end()) return *why = "replayed: no body read at the declaration", false;
+    const std::map<std::size_t, std::size_t>::const_iterator fn = readFnAt_.find(sp.start);
+    for (std::size_t q = 0; q < b.types.size() && fn != readFnAt_.end(); q++)
+        if (readFns_[fn->second].returns() != nullptr && b.types[q].valid() && !p_.types_.type(b.types[q])->isScalar() &&
+            readFns_[fn->second].returns()->unqualified() == p_.types_.templateParam(static_cast<int>(q)))
+            return *why = "replayed: a bound class returned by value, which its copy would build", false;
     // Slice 2b: the replay still lays the frame; the Typer types this read under `b` and the lowering takes it (Typer::typeBody).
     Bound made;
     made.read = read->second;
@@ -765,9 +773,41 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
     }
 }
 
+// A plain struct of the unit: no template's specialization, base or virtual function, its members public scalars at their place.
+std::string Templates::boundClass(const Type &t) const {
+    if (t.isArray()) return "an array";
+    if (t.kind() != Kind::Struct) return "a union or a type that is no class";
+    if (!t.templateName().empty()) return "a class template's specialization";
+    if (!t.bases().empty() || t.polymorphic()) return "a class with a base or a virtual function";
+    for (std::size_t m = 0; m < t.members().size(); m++) {
+        const Member &x = t.members()[m];
+        if (x.access != Access::Public || x.type == nullptr || !x.type->isScalar() || x.width != 0 || x.anonUnion != nullptr ||
+            x.inVirtualBase != nullptr || x.declaredIn != nullptr || x.ambiguous)
+            return "a class with a member other than a public scalar of its own";
+    }
+    return std::string();
+}
+
+// `t`, `*p`, `p[i]` or `(t)` where `t` names a bound class (a reference to one) and `p` a pointer to one: no copy is made of it.
+bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const syntax::Node n = st.node(id);
+    if (n.kind == syntax::Kind::Paren && n.count == 1) return boundObject(st.child(id, 0), s);
+    const bool deref = (n.kind == syntax::Kind::Unary && st.text(id) == "*" && n.count == 1) || (n.kind == syntax::Kind::Subscript && n.count == 2);
+    const syntax::NodeId named = deref ? st.child(id, 0) : id;
+    const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
+    if (st.node(named).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.type == nullptr) return deref;
+    const Type *t = substituted(s, r->second.type);
+    if (t->isReference()) t = t->referent();
+    if (deref) t = t->isPointer() ? t->pointee() : nullptr;
+    return t != nullptr && t->unqualified()->isStructOrUnion();
+}
+
 std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
                                   std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
+    bool classBound = false;
+    for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || s.to[q]->unqualified()->isStructOrUnion();
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
     for (int pass = 1; pass <= 2; pass++)
     for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
@@ -776,8 +816,43 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
         const syntax::Node n = p_.syntaxTree_.node(id);       // a copy: a reference to `Node` reads as Ast residue
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
+        if (pass == 1 && classBound) {
+            // A bound class is reached, never copied: no operator, assignment or return over its object, no local of a class by value.
+            const bool op = n.kind == Kind::Binary || n.kind == Kind::Assign || n.kind == Kind::Postfix || n.kind == Kind::Return ||
+                            (n.kind == Kind::Unary && p_.syntaxTree_.text(id) != "&");
+            for (std::uint32_t c = 0; op && c < n.count; c++)
+                if (boundObject(p_.syntaxTree_.child(id, c), s)) return "an operator, an assignment or a return over a class's object";
+            const std::unordered_map<std::uint32_t, const Type *>::const_iterator v =
+                n.kind == Kind::Var ? p_.declaredTypes_.find(id.v) : p_.declaredTypes_.end();
+            const Type *by = v != p_.declaredTypes_.end() ? substituted(s, v->second) : nullptr;
+            while (by != nullptr && by->isArray()) by = by->pointee();
+            if (by != nullptr && by->unqualified()->isStructOrUnion()) return "a local or a parameter of a class by value, which its constructor builds";
+        }
         if (pass == 1) {
             switch (n.kind) {
+            case Kind::Member: {
+                // The read records no member of a bound class: the Typer makes it from the class (Typer::boundMember), as the replay's.
+                const std::string &t = p_.syntaxTree_.text(id);
+                const bool arrow = t.compare(0, 2, "->") == 0;
+                const std::string name = t.substr(arrow ? 2 : 1);
+                if (p_.resolutions_.count(id.v) != 0) continue;
+                // Its object a name of the class (`.`) or of a pointer to it (`->`), or `*p` or `p[i]` of such a pointer.
+                syntax::NodeId o = p_.syntaxTree_.child(id, 0);
+                while (p_.syntaxTree_.node(o).kind == Kind::Paren && p_.syntaxTree_.node(o).count == 1) o = p_.syntaxTree_.child(o, 0);
+                const syntax::Node on = p_.syntaxTree_.node(o);
+                const syntax::NodeId named = !arrow && on.count >= 1 && (on.kind == Kind::Subscript || (on.kind == Kind::Unary && p_.syntaxTree_.text(o) == "*"))
+                                             ? p_.syntaxTree_.child(o, 0) : o;
+                const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
+                const Type *c = n.count == 1 && p_.syntaxTree_.node(named).kind == Kind::Name && r != p_.resolutions_.end() &&
+                                r->second.type != nullptr ? substituted(s, r->second.type) : nullptr;
+                if (c != nullptr && c->isReference()) c = c->referent();
+                if (c != nullptr && (arrow || named.v != o.v)) c = c->isPointer() ? c->pointee() : nullptr;
+                bool bound = false;
+                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == s.to[q]->unqualified();
+                if (!bound || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
+                    return "a member that is no data member of a bound class reached by name";
+                continue;
+            }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
             case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:

@@ -148,6 +148,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (chosen.what != Resolution::None) {
         tree_.setResolution(t, chosen);
+    } else if (r == p_.resolutions_.end() && boundMembers_.count(id.v) != 0) {
+        tree_.setResolution(t, boundMembers_.at(id.v));
     } else if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
         if (!binding_.empty() && out.type.valid()) out.type = bound(out.type);
@@ -281,6 +283,20 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
     return t;
 }
 
+// M8.2: `o.m` or `p->m` of a class bound to a type parameter, made as the replay's member access makes it (Templates::substShape).
+TypeId Typer::boundMember(syntax::NodeId id, TypeId object) {
+    const std::string &op = p_.syntaxTree_.text(id);
+    const bool arrow = op.compare(0, 2, "->") == 0;
+    if (binding_.empty() || !object.valid() || p_.resolutions_.count(id.v) != 0) return TypeId();
+    if (arrow && !p_.types_.type(object)->isPointer()) return TypeId();
+    const TypeId obj = arrow ? TypeTable::id(p_.types_.type(object)->pointee()) : object;
+    const Type &o = *p_.types_.type(obj)->unqualified();
+    if (!o.isStructOrUnion() || o.findMember(op.substr(arrow ? 2 : 1)) == nullptr) return TypeId();
+    const Resolution r = copied(p_.memberRecord(p_.types_.type(obj), *o.findMember(op.substr(arrow ? 2 : 1)), op.substr(arrow ? 2 : 1), 0));
+    boundMembers_[id.v] = r;
+    return r.type;
+}
+
 // The type the parser gave a form that names no entity - new, delete, throw, a lambda, a cast to a reference, a
 // conditional of class arms, a string with a prefix - where the typer's own rule has no answer.
 const Type *Typer::recordedValue(syntax::NodeId id) {
@@ -403,7 +419,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             return types.get(Kind::Void);        // [expr.throw]/1, [expr.delete]/1
         case syntax::Kind::Member:
             // An explicit destructor call or a pseudo-destructor, `p->~T()`, is void; any other member has a record.
-            return op.find("~") != std::string::npos ? types.get(Kind::Void) : nullptr;
+            return op.find("~") != std::string::npos ? types.get(Kind::Void) : types.type(boundMember(id, TypeTable::id(a)));
 
         case syntax::Kind::Cast: {
             std::unordered_map<std::uint32_t, const Type *>::const_iterator to = p_.castTypes_.find(id.v);
@@ -476,6 +492,8 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator pr = p.resolutions_.find(id);
     // A static local's `var` carries a record the parser's maps keep as declaredLocals_ (M3b.1), not as a resolution.
     if (pr == p.resolutions_.end() && n.resolved != 0 && p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Var) return std::string();
+    // A bound class's member the read has no record of: the Typer's (boundMember), held against the replay's by typedApart.
+    if (pr == p.resolutions_.end() && n.resolved != 0 && !binding.empty() && p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Member) return std::string();
     // Under a binding, a dependent-name call's record and its callee's are the ones the instantiation chose (dependentCall).
     const bool chosen = !binding.empty() && p.tmpl_.bound_.at(binding).calls.count(id) != 0;
     if (chosen) {
