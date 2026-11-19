@@ -43,7 +43,20 @@ std::string Overload::refQualifierMixRefusal(RefQual written, RefQual other) {
 
 
 Rank Overload::rankArgument(const Expr &arg, const Type *param) {
-    const Type *given = arg.type();
+    RankedArgument a;
+    a.type = TypeTable::id(arg.type());
+    if (arg.type() != nullptr) {
+        a.function = TypeTable::id(p_.functionDesignated(arg));
+        a.lvalue = markedLvalue(arg);
+        a.nullConstant = isNullConstant(arg);
+    }
+    a.stringLiteral = dynamic_cast<const StrLit *>(&arg) != nullptr;
+    a.constructs = [this, &arg](const Type *to) { return p_.convertingConstructor(to, arg) != nullptr; };
+    return rankArgument(a, param);
+}
+
+Rank Overload::rankArgument(const RankedArgument &arg, const Type *param) {
+    const Type *given = p_.types_.type(arg.type);
     // A read's `resize(n, 0)` against `resize(size_type, C)`: a parameter over the pattern's own takes any argument.
     if (p_.patternBody_ && p_.dependentType(param)) return Rank::Conversion;
 
@@ -55,7 +68,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         // **A reference to a function binds a function lvalue of its type** - [dcl.init.ref]/5,
         // an exact match; a name arrives as its address, `&f`, and that is the same function.
         if (want->isFunction()) {
-            const Type *fn = p_.functionDesignated(arg);
+            const Type *fn = p_.types_.type(arg.function);
             return fn != nullptr && fn->unqualified() == want->unqualified() ? Rank::Identity
                                                                              : Rank::None;
         }
@@ -68,7 +81,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
             if (we->unqualified() == ge->unqualified()) {
                 if (!we->isConst() && ge->isConst()) return Rank::None;
                 // The category as any reference asks it: `&&` takes no lvalue, a string literal being one (M1).
-                const bool lvalue = markedLvalue(arg) || dynamic_cast<const StrLit *>(&arg) != nullptr;
+                const bool lvalue = arg.lvalue || arg.stringLiteral;
                 if (param->isRValueReference() ? lvalue : (!lvalue && !we->isConst())) return Rank::None;
                 return we->isConst() && !ge->isConst() ? Rank::Qualification
                                                        : Rank::Identity;
@@ -81,8 +94,8 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         if (want->unqualified() != given->unqualified() &&
             p_.accessibleBaseOffset(given, want) > -1 &&
             (param->isRValueReference()
-                 ? !markedLvalue(arg)
-                 : (markedLvalue(arg) || (want->isConst() && given->unqualified()->isStructOrUnion())))) {
+                 ? !arg.lvalue
+                 : (arg.lvalue || (want->isConst() && given->unqualified()->isStructOrUnion())))) {
             if (!want->isConst() && given->isConst()) return Rank::None;
             return Rank::Conversion;
         }
@@ -101,7 +114,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
                 // was missing, and `take(const B &)` refused an A with `operator B`.
                 const bool usable =
                     want->unqualified()->isStructOrUnion()
-                        ? (p_.convertingConstructor(want, arg) != nullptr ||
+                        ? ((arg.constructs && arg.constructs(want)) ||
                            (given->unqualified()->isStructOrUnion() &&
                             p_.conversionFunction(given, want->unqualified()) != nullptr))
                         : (given->unqualified()->isStructOrUnion() &&
@@ -119,14 +132,14 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         if (!want->isConst() && given->isConst()) return Rank::None;
 
         // **No rvalue reference for an lvalue** - `++x`, `x = 5` and `x += 2` among them (M1 L12).
-        if (param->isRValueReference() && markedLvalue(arg)) return Rank::None;
+        if (param->isRValueReference() && arg.lvalue) return Rank::None;
         // `const T &&` for a `T` rvalue adds a qualifier, as `const T &` does below - [over.ics.rank]/3.2.6,
         // so that `fwd(std::move(x))` picks fwd<int> over the fwd<const int> an earlier call made (1.27).
         if (param->isRValueReference())
             return want->isConst() && !given->isConst() ? Rank::Qualification : Rank::Identity;
 
         // **A value has no lvalue to bind, so `T &` is not viable for one**.
-        if (!markedLvalue(arg)) return want->isConst() ? Rank::Qualification : Rank::None;
+        if (!arg.lvalue) return want->isConst() ? Rank::Qualification : Rank::None;
 
         return want->isConst() && !given->isConst() ? Rank::Qualification
                                                     : Rank::Identity;
@@ -170,7 +183,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
 
     // [conv.mem]/1: the literal 0 is a null pointer to member as well, a pointer conversion.
     if ((to->isPointer() || to->isMemberPointer()) && from->isInteger())
-        return isNullConstant(arg) ? Rank::Conversion : Rank::None;
+        return arg.nullConstant ? Rank::Conversion : Rank::None;
 
     // **`nullptr` converts to any pointer and to any pointer to member**, both
     // pointer conversions - so `f(void *)` and `f(char *)` are ambiguous for it, as
@@ -183,7 +196,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
     // is why `f(0)` against `f(decltype(nullptr))` and `f(char *)` is
     // ambiguous, measured.
     if (to->isNullPtr() && from->isInteger())
-        return isNullConstant(arg) ? Rank::Conversion : Rank::None;
+        return arg.nullConstant ? Rank::Conversion : Rank::None;
 
     // [over.best.ics]/6: a derived object passed by value to a base is a derived-to-base Conversion.
     if (to->unqualified()->isStructOrUnion() && from->unqualified()->isStructOrUnion() &&
@@ -197,7 +210,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         rankingConversion_++;
         const bool usable =
             to->unqualified()->isStructOrUnion()
-                ? (p_.convertingConstructor(to, arg) != nullptr ||
+                ? ((arg.constructs && arg.constructs(to)) ||
                    (from->unqualified()->isStructOrUnion() &&
                     p_.conversionFunction(from, to->unqualified()) != nullptr))
                 : (from->unqualified()->isStructOrUnion() &&
@@ -696,26 +709,17 @@ Signature Overload::resolveOverload(const std::string &written,
         return p_.lookup_.functions_[viable[0]];
     }
 
-    rankingGiven_.clear();
-    if (object != nullptr) rankingGiven_.push_back(object);
-    for (std::size_t i = 0; i < args.size(); i++) rankingGiven_.push_back(args[i]->type());
-    std::size_t best = 0;
-    for (std::size_t k = 1; k < viable.size(); k++)
-        if (betterCandidate(ranks[k], ranks[best],
-                            p_.lookup_.functions_[viable[k]], p_.lookup_.functions_[viable[best]],
-                            object != nullptr, object != nullptr))
-            best = k;
-    for (std::size_t k = 0; k < viable.size(); k++) {
-        if (k == best) continue;
-        if (!betterCandidate(ranks[best], ranks[k],
-                             p_.lookup_.functions_[viable[best]], p_.lookup_.functions_[viable[k]],
-                             object != nullptr, object != nullptr)) {
-            std::string why = "this call to '" + name + "' is ambiguous";
-            for (std::size_t j = 0; j < viable.size(); j++)
-                why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[viable[j]]);
-            p_.src_.fail(pos, why);
-        }
+    std::vector<const Type *> given;
+    if (object != nullptr) given.push_back(object);
+    for (std::size_t i = 0; i < args.size(); i++) given.push_back(args[i]->type());
+    const int chosen = bestViable(viable, ranks, given, object != nullptr);
+    if (chosen < 0) {
+        std::string why = "this call to '" + name + "' is ambiguous";
+        for (std::size_t j = 0; j < viable.size(); j++)
+            why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[viable[j]]);
+        p_.src_.fail(pos, why);
     }
+    const std::size_t best = static_cast<std::size_t>(chosen);
     // [dcl.fct.def.delete]: a deleted candidate is ranked like any other and refused only where it wins.
     p_.refuseDeleted(p_.lookup_.functions_[viable[best]], pos);
     p_.noteUsed(viable[best]);
@@ -724,6 +728,22 @@ Signature Overload::resolveOverload(const std::string &written,
     // reached. `noexcept(e)` reads the count this leaves behind.
     if (!p_.lookup_.functions_[viable[best]].isNoexcept) p_.mayThrow_++;
     return p_.lookup_.functions_[viable[best]];
+}
+
+
+// [over.match.best] over a ranked viable set: the one better than every other, its position in `viable`, or -1 for none.
+int Overload::bestViable(const std::vector<std::size_t> &viable, const std::vector<std::vector<Rank> > &ranks,
+                         const std::vector<const Type *> &given, bool ranksObject) {
+    rankingGiven_ = given;
+    std::size_t best = 0;
+    for (std::size_t k = 1; k < viable.size(); k++)
+        if (betterCandidate(ranks[k], ranks[best], p_.lookup_.functions_[viable[k]], p_.lookup_.functions_[viable[best]], ranksObject, ranksObject))
+            best = k;
+    for (std::size_t k = 0; k < viable.size(); k++)
+        if (k != best && !betterCandidate(ranks[best], ranks[k], p_.lookup_.functions_[viable[best]], p_.lookup_.functions_[viable[k]],
+                                          ranksObject, ranksObject))
+            return -1;
+    return static_cast<int>(best);
 }
 
 }   // namespace sema

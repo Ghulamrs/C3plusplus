@@ -119,6 +119,19 @@ TypedId Typer::node(syntax::NodeId id) {
 // (a reference cast's with its category), a sizeof's or a literal's folded value, and a literal's token - so the
 // lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
 
+Resolution Typer::boundCall(syntax::NodeId id) const {
+    Resolution out;
+    if (binding_.empty()) return out;
+    const std::map<std::uint32_t, std::size_t> &calls = p_.tmpl_.bound_.at(binding_).calls;
+    const std::map<std::uint32_t, std::size_t>::const_iterator c = calls.find(id.v);
+    if (c == calls.end()) return out;
+    const Signature &f = p_.lookup_.functions_[c->second];
+    out.what = p_.syntaxTree_.node(id).kind == syntax::Kind::Call ? Resolution::Call : Resolution::Callee;
+    out.type = TypeTable::id(p_.types_.functionType(f.returns, f.params, f.variadic));
+    out.symbol = f.symbol;
+    return out;
+}
+
 void Typer::record(syntax::NodeId id, TypedId t) {
     if (p_.syntaxTree_.node(id).kind == syntax::Kind::Var && p_.declaredLocals_.count(id.v) != 0) {
         // A local's `var` carries the record its names carry - kind Local, the parser's serial, a static one's name - so
@@ -131,8 +144,11 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
+    const Resolution chosen = boundCall(id);
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-    if (r != p_.resolutions_.end()) {
+    if (chosen.what != Resolution::None) {
+        tree_.setResolution(t, chosen);
+    } else if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
         if (!binding_.empty() && out.type.valid()) out.type = bound(out.type);
         tree_.setResolution(t, out);
@@ -220,9 +236,11 @@ const Type *Typer::literal(syntax::NodeId id) {
 // **What the parser resolved this node to, recorded where it resolved it** (M2.16): a name's entity, a member's, the
 // function a call or an overloaded operator reached, a class temporary's class. Nothing is looked up after the file.
 const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
+    const Resolution chosen = boundCall(id);
+    const Parser::Resolved made = Parser::resolvedAs(chosen.what, p_.types_.type(chosen.type), chosen.symbol);
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-    if (r == p_.resolutions_.end() || r->second.type == nullptr) return nullptr;
-    const Parser::Resolved &res = r->second;
+    if (chosen.what == Resolution::None && (r == p_.resolutions_.end() || r->second.type == nullptr)) return nullptr;
+    const Parser::Resolved &res = chosen.what != Resolution::None ? made : r->second;
     const Type *t = res.type;
     switch (res.what) {
         case Parser::Resolved::Call:
@@ -456,8 +474,17 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator pr = p.resolutions_.find(id);
     // A static local's `var` carries a record the parser's maps keep as declaredLocals_ (M3b.1), not as a resolution.
     if (pr == p.resolutions_.end() && n.resolved != 0 && p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Var) return std::string();
-    if ((pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
-    if (n.resolved != 0) {
+    // Under a binding, a dependent-name call's record and its callee's are the ones the instantiation chose (dependentCall).
+    const bool chosen = !binding.empty() && p.tmpl_.bound_.at(binding).calls.count(id) != 0;
+    if (chosen) {
+        const Signature &f = p.lookup_.functions_[p.tmpl_.bound_.at(binding).calls.at(id)];
+        const bool call = p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Call;
+        if (n.resolved == 0 || tree.resolution(t).what != (call ? Resolution::Call : Resolution::Callee) || tree.resolution(t).symbol != f.symbol ||
+            p.types_.type(tree.resolution(t).type) != p.types_.functionType(f.returns, f.params, f.variadic))
+            return "the record the instantiation chose";
+    }
+    if (!chosen && (pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
+    if (!chosen && n.resolved != 0) {
         const Resolution &r = tree.resolution(t);
         // Under a binding (M8.2's read, no replay) the parser's record names the pattern's parameters, the typed tree its types.
         const TypeId want = TypeTable::id(binding.empty() ? pr->second.type : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
