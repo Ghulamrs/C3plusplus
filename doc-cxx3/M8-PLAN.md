@@ -3346,3 +3346,44 @@ shapes of 3; the cases ceiling 17 of 17, 53 shapes of 53, 4 counts below the rec
 90, so it returns a `TypeId`), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean.
 **Windows**: cl /W4 /WX clean, first and alone, the whole tree 17:37:07-17:38:11 and the delta 17:48:22-17:49:26 (about a
 minute each); names.sh 938/0, overload.sh 46/0.
+
+**(b) A deduced call beside a candidate over a class** (this commit). m82n refused a deduced call whose door's index held a
+candidate over a class, because the read asks no converting constructor. A candidate whose class parameter is a non-const
+lvalue reference (`C &`) is now ranked with the rest through the one ranking, `rankArgument`: such a reference binds no
+temporary ([dcl.init.ref]/5), so a scalar argument reaches it by no converting constructor and `rankArgument` answers None
+without consulting `RankedArgument::constructs` - the same path, and so the same answer, as the replay's door takes with its
+own `constructs` set. A class parameter by value, by `const C &` or by `C &&` would ask a converting constructor, and still
+replays by name ("a deduced call beside a candidate over a class that takes a temporary").
+
+**The probe** `tests/cases/template-subst-class` (`.flags` `-templates=subst`; `.expected` clang 19's on the Windows box):
+`sw(T &, T &)` beside `sw(Box<T> &, Box<T> &)`, whose `Box<int>` specialization stands in the set when `useSw` calls `sw(a, b)`
+for an `int` and a `double` - 4 bodies with no replay, plain and `-g`, made 4 equal under the check; its output is clang's with
+and without the flag. tests/subst.sh: the probe added to the probes step, for exactly that.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,288 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 304** (292 + the probe's 4 + 8), made 304 equal under the check; without the check **234 substituted with
+no replay** (222 + 12), 70 replayed by reason (as before). **Without the lanes' probes: 96 with no replay** (88 + 8): the suite's
+own 8 are m82o's 6 (`std::swap`'s callers beside `swap(function<R(Args...)> &, function<R(Args...)> &)` in std-function 3 and
+std-function-ledger 3) and the 2 (a) reached the same refusal with (algorithm-sort-large 1, std-move-and-forward 1). The
+reason "a deduced call beside a candidate over a class" is gone from the census.
+
+**src/** (b): `Templates.cpp` +5 -2: 95,315 -> 95,318 (+3). EXCLUSIONS re-pointed (Templates.cpp 1545, 1597, 2294).
+
+**Gates of (b)** (REF `50f39adb` in `~/m82pb`, NEW in `~/m82pf` - REF with (a) and (b) shipped, one path length; every check on
+this commit's own tree): `identical.sh` **0 differ on four targets without the flag** (x86_64-linux 1,878, x86_64-windows
+3,756, arm64-darwin 1,878, tms6747 1,878) and **0 on three with `-templates=subst`**; **-g 0 differ** with and without the flag
+(x86_64-linux 720 the same, 350 refused alike, 218 by the tree's path alone; x86_64-windows 702, 375, 211);
+`-check=templates -templates=subst`: 1,288 units, 350 nonzero exits as before, none failing on a difference (made 304 equal);
+`-check=fold` 0 units failing; run.sh 1281/0 without and with `-templates=subst`; **subst.sh 0 failed** (typed 931/0 at -O0
+and -O2, same 1,000 of 1,000, self 102 of 102, the ceiling 26 of 26; the cases ceiling 17 of 17, 53 shapes of 53, 4 counts
+below the record - not re-recorded); syntax.sh 6/0; typed.sh 931/0; self-compile of `Templates.cpp` and `ParserTemplate.cpp`
+rc 0; static, each tool's own exit status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers 89),
+ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean,
+first and alone, the delta 17:56:56-17:58:05 (about a minute); names.sh 939/0, overload.sh 46/0.
+
+**Left**: (c) ADL arguments (14: class, enumeration and pointer arguments of an unqualified call - the associated namespaces of
+the bound argument types searched at the instantiation), not started; an argument that holds a call (8: `a.data()`,
+`std::__sort_less<T>()`, `std::forward<T>(x)` - its request ordered inside the outer one's); a member in the body walk
+(`substShape` takes no `member` node yet, so `viaMember` replays); a reference parameter over a prvalue (the temporary it
+materialises); a class candidate that takes a temporary (its converting constructors asked through `constructs`);
+explicit-argument calls; the 10 through a value or a member.

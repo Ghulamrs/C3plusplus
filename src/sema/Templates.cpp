@@ -695,9 +695,12 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != given.size() || f.variadic) continue;
+        // A class candidate is ranked with the rest: a non-const `C &` binds no temporary ([dcl.init.ref]/5), so a scalar
+        // reaches it by no converting constructor and rankArgument answers None as the replay's does; any other asks one.
         for (std::size_t q = 0; q < f.params.size(); q++)
-            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion())
-                return "a deduced call beside a candidate over a class, whose converting constructors the read does not ask";
+            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion() &&
+                (!f.params[q]->isReference() || f.params[q]->isRValueReference() || f.params[q]->referent()->isConst()))
+                return "a deduced call beside a candidate over a class that takes a temporary, whose converting constructors the read does not ask";
         std::vector<Rank> rank;
         for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
             RankedArgument a;
