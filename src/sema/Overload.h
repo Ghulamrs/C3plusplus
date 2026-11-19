@@ -9,6 +9,7 @@
 #include "../Type.h"
 
 #include <cstddef>
+#include <functional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -17,6 +18,15 @@
 class Parser;
 
 namespace sema {
+
+// **An argument as overload ranking reads it** (M8.2 2d): its type, value category and null-constant fact, from an Ast node or
+// the typed tree; `constructs` says whether a converting constructor makes that class of it, null where none may be asked.
+struct RankedArgument {
+    TypeId type, function;          // `function`: the function it designates as an lvalue, a name arriving as `&f`
+    bool lvalue, stringLiteral, nullConstant;
+    std::function<bool(const Type *)> constructs;
+    RankedArgument() : lvalue(false), stringLiteral(false), nullConstant(false) {}
+};
 
 class Overload {
 public:
@@ -41,7 +51,8 @@ public:
     // Whether two parameters are the same match either way round.
     static bool sameMatchEitherWay(const Type *pa, const Type *pb);
     static std::string describeSignature(const Signature &f);
-    Rank rankArgument(const Expr &arg, const Type *param);
+    Rank rankArgument(const Expr &arg, const Type *param);      // the node read into a RankedArgument
+    Rank rankArgument(const RankedArgument &arg, const Type *param);
     // `object` is the type the call is made on for a member function and null for a free
     // one: **the implicit object parameter is ranked like any other**, which is what
     // tells `get()` from `get() const`. **By value** - `functions_` can move under you.

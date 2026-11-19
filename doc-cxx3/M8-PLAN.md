@@ -2990,3 +2990,31 @@ ide/generate.py up to date; g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, 
 **Left**: (2) - a dependent-name callee resolved at the instantiation from `found` plus ADL, which needs overload ranking over
 `TypeId`s; (3) - the specialization asked for at the instantiation; the 4 calls through a value, a member or a class, and the 2
 over a class, a reference or variadic arguments.
+
+## M8.2 slice 2d, third part: one overload ranking over typed arguments, and a dependent-name call resolved at the instantiation (lane m82l, 2026-11-19)
+
+Branch `m8-2l` from `bb00b349` (m6d-w5: main `09b2e441`, m6d-winterm2, m8-2j and m8-2k).
+
+**(a) The ranking over a typed argument** (this commit). `Overload::rankArgument` ranked an Ast `Expr`; it now ranks a
+`sema::RankedArgument` - the argument's `TypeId`, its value category, whether it is a string literal or a null pointer constant
+(the literal 0 or `nullptr`), the function it designates, and `constructs`, the question a class target asks of a converting
+constructor ([over.ics.user]), which only a caller holding the node can answer. The `Expr` form reads the node into one and
+calls the typed form, so one ranking serves both: every fact it read off the node is read in one place, and the converting
+constructor is still asked lazily, only where the ranking reaches a class (it instantiates constructor templates, so asking it
+eagerly would change what is emitted). `resolveOverload` still returns a `Signature` by value. No output changes.
+
+**src/** (a): `Overload.cpp` +24 -11, `Overload.h` +12 -1: 94,987 -> 95,011 (+24). EXCLUSIONS re-pointed (Overload.cpp 630 -> 643).
+No `Ast.h` residue added: node-refs stays 298 (the lambda that asks the converting constructor names no node type).
+
+**Gates of (a)** (REF `bb00b349` in `~/m82la`, NEW in `~/m82lb`, one path length): `identical.sh` REF against NEW at -O0 and -O2,
+**0 differ on four targets without the flag** (x86_64-linux 1,866, x86_64-windows 3,732, arm64-darwin 1,866, tms6747 1,866) and
+**0 on three with `-templates=subst`**; **-g 0 differ** with and without the flag (x86_64-linux 714 the same, 350 refused alike,
+218 differing by the tree's path alone; x86_64-windows 696, 375, 211 - re-read by `boxkit/m82l-gre.sh`); run.sh 1275/0 without
+and with `-templates=subst`; `-check=templates -templates=subst` over the cases: 1,282 units, 350 nonzero exits as before, none
+failing on a difference, the census as m82k's (205 covered, frame and shell 205 equal, made 136 equal; without the check 136
+with no replay, 69 replayed by reason); `-check=fold` 0 failing; **subst.sh 0 failed** (self 102 of 102, ceilings held);
+syntax.sh 6/0; typed.sh 925/0; self-compile of `Overload.cpp`, `Templates.cpp`, `Typing.cpp`, `Driver.cpp` rc 0; tms6747 SIM=1
+-O2 shards 1-3 rc 0; static, each tool's own exit status: exclusions rc 0 0/0 (after the re-point; rc 1 1/1 before it),
+comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (node-refs 298, not raised), ide/generate.py up to date;
+g++ `-Werror` clean. **Windows**: cl /W4 /WX clean, first and alone (the delta 14:39:57-14:42:13, after a first try that cl
+refused for a slip in the lambda, mended before any gate); names.sh 933/0, overload.sh 46/0.
