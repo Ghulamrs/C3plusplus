@@ -1,5 +1,5 @@
-// M8.1-early: function templates over type parameters whose bodies need no lookup - made by substitution under
-// -templates=subst from a replayed sibling of the same layout: every arithmetic size, `*`, `&`, declarations, `=`, return.
+// M8.1-early's shapes: function templates over type parameters whose bodies need no lookup - made under -templates=subst
+// from the body read at the declaration (M8.2): every arithmetic size, `*`, `&`, declarations, `=`, return.
 extern "C" int printf(const char *, ...);
 
 template <class T> void exchange(T &a, T &b) { T t = a; a = b; b = t; }

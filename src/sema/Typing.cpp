@@ -965,16 +965,15 @@ bool Typer::fromTemplate(const std::string &symbol) const {
 }
 
 TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
-    const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
     const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
-    if (s == p_.tmpl_.substituted_.end() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v) {
+    if (b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v) {
         binding_ = symbol;     // step 2's end: no replay, the read typed under the binding is the body
         const TypedId read = typeFunction(fn);
         binding_.clear();
         p_.tmpl_.builtCensus_["substituted with no replay"]++;
         return read;
     }
-    if (s == p_.tmpl_.substituted_.end() && b != p_.tmpl_.bound_.end()) {
+    if (b != p_.tmpl_.bound_.end()) {
         // Slice 2b: the read typed under the binding; lowered only where it types as the replay does, else the replay, by name.
         const TypedId own = typeFunction(fn);
         binding_ = symbol;
@@ -987,12 +986,7 @@ TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
         p_.tmpl_.builtCensus_[apart.empty() ? "substituted" : "replayed: " + apart]++;
         return apart.empty() ? read : own;
     }
-    if (s == p_.tmpl_.substituted_.end()) return typeFunction(fn);
-    const std::size_t node = tree_.size(), record = tree_.resolutionCount();
-    const TypedId t = typeFunction(fn);
-    const SubstitutedTypes retype = { &p_.tmpl_, &s->second };
-    tree_.retype(node, record, p_.types_, retype);
-    return t;
+    return typeFunction(fn);
 }
 
 TypeId Typer::typeUnder(syntax::NodeId e, const std::string &binding) {
@@ -1053,13 +1047,11 @@ std::string Typer::typedApart(TypedId a, TypedId b, std::map<int, int> &serials,
 }
 
 TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const {
-    const std::map<std::string, Templates::Substituted>::const_iterator s = p_.tmpl_.substituted_.find(symbol);
     const TypeId declared = declaredReturn(fn);
     const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
-    if (s == p_.tmpl_.substituted_.end() && declared.valid() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v)
+    if (declared.valid() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v)
         return TypeTable::id(p_.tmpl_.substituted(b->second.s, p_.types_.type(declared)));
-    if (s == p_.tmpl_.substituted_.end() || !declared.valid()) return declared;
-    return TypeTable::id(p_.tmpl_.substituted(s->second, p_.types_.type(declared)));
+    return declared;
 }
 
 Census Typer::census(const Parser &p, const Program &program) {
@@ -1082,18 +1074,6 @@ Census Typer::census(const Parser &p, const Program &program) {
         if (at == bySymbol.end()) continue;                 // read and then pruned: an unused inline
         if (std::getenv("CXX1_CENSUS") != nullptr) std::fprintf(stderr, "body %s\n", sym->second.c_str());
         c.bodies.push_back(std::make_pair(id, at->second));
-    }
-    // M8.1: a specialization made by substitution has its sibling's root, placed where its own function stands.
-    for (std::map<std::string, Templates::Substituted>::const_iterator k = p.tmpl_.substituted_.begin(); k != p.tmpl_.substituted_.end(); ++k) {
-        const std::map<std::string, std::size_t>::const_iterator at = bySymbol.find(k->first);
-        for (std::size_t b = 0; at != bySymbol.end() && b < c.bodies.size(); b++) {
-            const std::unordered_map<std::uint32_t, std::string>::const_iterator sym = p.syntaxFunctions_.find(c.bodies[b].first.v);
-            if (sym == p.syntaxFunctions_.end() || sym->second != k->second.pattern || c.bodies[b].second == at->second) continue;
-            std::size_t to = 0;
-            while (to < c.bodies.size() && c.bodies[to].second < at->second) to++;
-            c.bodies.insert(c.bodies.begin() + static_cast<long>(to), std::make_pair(c.bodies[b].first, at->second));
-            break;
-        }
     }
     // M8.2: a specialization made with no replay has its read for its root, placed where its own function stands.
     for (std::set<std::string>::const_iterator k = p.tmpl_.unreplayed_.begin(); k != p.tmpl_.unreplayed_.end(); ++k) {

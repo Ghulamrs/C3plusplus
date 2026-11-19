@@ -308,7 +308,7 @@ bool Templates::memberIsUsed(const std::string &key) const {
     return false;
 }
 
-// The types of a replayed sibling's body as this specialization has them: each of `from` is `to`, under any declarator.
+// A type as a specialization's binding has it: each of `from` is `to`, under any declarator.
 const Type *Templates::substituted(const Substituted &s, const Type *t) const {
     if (t == nullptr) return t;
     if (t->unqualified() != t) return p_.types_.withConst(substituted(s, t->unqualified()));
@@ -323,102 +323,6 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
     std::vector<const Type *> params;
     for (std::size_t k = 0; k < t->params().size(); k++) params.push_back(substituted(s, t->params()[k]));
     return p_.types_.functionType(substituted(s, t->returns()), params, t->isVariadicFn());
-}
-
-// **The subset of M8.1**, read off the template's own tokens: declarations over the parameters, names declared in it,
-// `=`, unary `*` and `&`, `return` - no literal, call, cast or other name, so every type in the body is a parameter's.
-static bool substitutableTokens(const std::vector<Token> &tokens, std::size_t at, const std::vector<TemplateParam> &params,
-                                const std::string &self, std::string *why) {
-    std::set<std::string> declared;
-    int depth = 0, selfSeen = 0;
-    for (std::size_t t = at; t < tokens.size(); t++) {
-        const std::string &x = tokens[t].text;
-        const std::string before = t > at ? tokens[t - 1].text : std::string();
-        bool param = false, beforeParam = false;
-        for (std::size_t q = 0; q < params.size(); q++) { param = param || x == params[q].name; beforeParam = beforeParam || before == params[q].name; }
-        const bool opens = before.empty() || before == "(" || before == "," || before == "{" || before == ";" || before == "}" || before == "const";
-        if (x == "{") depth++;
-        if (x == "}" && --depth == 0) return true;
-        if (x == "(" || x == ")" || x == "{" || x == "}" || x == ";" || x == "," || x == "=" || x == "const" || x == "void" || x == "return") {
-            if ((x == "(" || x == ")") && beforeParam) return *why = "a cast or an unnamed parameter", false;
-            if (x == ";" && depth == 0) return *why = "a declaration with no body", false;
-            continue;
-        }
-        if (x == "*" || x == "&") {
-            if (opens || beforeParam || before == "=" || before == "return" || before == "*" || before == "&") continue;
-            return *why = "a binary operator", false;
-        }
-        if (param) { if (opens) continue; return *why = "a parameter named where no declaration starts", false; }
-        if (tokens[t].kind != TokenKind::Ident) return *why = "a token outside the subset: " + (x.empty() ? std::string("a literal") : "'" + x + "'"), false;
-        if (x == self && depth == 0 && selfSeen++ == 0) continue;
-        // A declarator's name: back over `*`, `&` and `const` to the parameter the declaration starts with.
-        std::size_t b = t;
-        while (b > at && (tokens[b - 1].text == "*" || tokens[b - 1].text == "&" || tokens[b - 1].text == "const")) b--;
-        bool starts = false;
-        for (std::size_t q = 0; b > at && q < params.size(); q++) starts = starts || tokens[b - 1].text == params[q].name;
-        if (starts) { declared.insert(x); continue; }
-        if (!declared.count(x)) return *why = "a name the template does not declare: a lookup", false;
-    }
-    return *why = "a body that does not close", false;
-}
-
-bool Templates::substituteFunction(std::size_t i, std::string *why) {
-    const Specialization sp = specializations_[i];
-    if (sp.explicitly) return *why = "an explicit specialization", false;
-    // The C6000's walker still reads a function's Ast body, and a substituted function has none to give it.
-    if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
-    if (substituteDebug_) return *why = "-g, which wants a block table the sibling's body does not give", false;
-    for (std::size_t q = 0; q < sp.params.size(); q++) {
-        if (sp.params[q].type != nullptr || sp.params[q].isPack || sp.params[q].isTemplate) return *why = "a parameter that is not a type", false;
-        const Type *b = q < sp.binding.size() ? sp.binding[q] : nullptr;
-        if (b == nullptr || !b->isArithmetic() || b->isEnumeration() || b->unqualified() != b) return *why = "an argument that is not an arithmetic type", false;
-        if (b->isBool()) return *why = "a bool argument: a conversion to bool is a compare", false;
-    }
-    if (!substitutableTokens(p_.tokens_, sp.start, sp.params, sp.name, why)) return false;
-    // A sibling replay made, whose arguments are distinct and laid out as these are: its body is the pattern.
-    std::vector<Function> &functions = p_.current_->functions;
-    bool converts = false;
-    for (std::size_t k = 0; k < specializations_.size(); k++) {
-        const Specialization &o = specializations_[k];
-        if (k == i || o.isClass || !o.emitted || o.explicitly || o.start != sp.start || o.name != sp.name || substituted_.count(o.symbol) ||
-            unreplayed_.count(o.symbol)) continue;      // a body made from the read has no root of its own to share
-        bool fits = o.binding.size() == sp.binding.size();
-        for (std::size_t q = 0; fits && q < o.binding.size(); q++) {
-            const Type *b = o.binding[q];
-            fits = b != nullptr && b->isArithmetic() && !b->isEnumeration() && b->unqualified() == b && b->isFloating() == sp.binding[q]->isFloating() &&
-                   b->size(p_.target_) == sp.binding[q]->size(p_.target_) && b->align(p_.target_) == sp.binding[q]->align(p_.target_);
-            for (std::size_t r = 0; fits && r < q; r++) fits = o.binding[r] != b;
-        }
-        // Two parameters' types may meet in a conversion, whose kind (sign or zero extension, x87) the sibling's tree keeps.
-        for (std::size_t q = 0; fits && sp.binding.size() > 1 && q < o.binding.size(); q++) {
-            const Type *a = o.binding[q], *b = sp.binding[q];
-            if (a->isSigned(p_.target_) != b->isSigned(p_.target_) || (a->isFloating() && a->kind() != b->kind())) converts = true, fits = false;
-        }
-        std::size_t at = functions.size();
-        for (std::size_t f = 0; fits && f < functions.size(); f++) if (functions[f].symbol() == o.symbol) at = f;
-        if (!fits || at == functions.size()) continue;
-        Substituted s;
-        s.pattern = o.symbol; s.from = o.binding; s.to = sp.binding;
-        const Function &f = functions[at];
-        std::vector<Param> params = f.params();
-        for (std::size_t q = 0; q < params.size(); q++) params[q].type = substituted(s, params[q].type);
-        std::vector< ::Local> locals = f.locals();
-        for (std::size_t q = 0; q < locals.size(); q++) { locals[q].type = substituted(s, locals[q].type); locals[q].declared = substituted(s, locals[q].declared); }
-        Function g(f.name(), substituted(s, f.returns()), params, p_.oneStatement({}), f.frameSize(), f.isStatic(),
-                   f.sretSlot(), f.isVariadic(), f.regSaveSlot(), f.pos(), locals);
-        g.setSymbol(sp.symbol);
-        if (f.hasDisplayName()) g.setDisplayName(Type::displaySpelling(sp.display));
-        g.setInline(f.isInline());
-        g.setFrameAlign(f.frameAlign());
-        g.setNoexcept(f.isNoexcept());
-        functions.push_back(std::move(g));
-        for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
-            if (p_.lookup_.functions_[q].symbol == sp.symbol) p_.lookup_.functions_[q].defined = true;
-        substituted_[sp.symbol] = s;
-        return true;
-    }
-    if (converts) return *why = "a conversion between two parameters' types, whose kind would be the sibling's", false;
-    return *why = "no replayed specialization of the same layout to substitute into", false;
 }
 
 // A dependent decltype's operand the read holds as an expression and notes no syntax for, so its parts are not the replay's.
@@ -635,9 +539,11 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, c
             if (t == nullptr || t->isReference()) return "a call a function template may answer over an argument the typed tree does not type";
             t = lvalue == 1 ? p_.types_.referenceTo(t) : t->unqualified();
         }
-        // A pointer's or an enumeration's namespaces are searched as the replay's (requestCall: Overload::candidateSet).
-        if (!(t->isReference() ? t->referent() : t)->unqualified()->isScalar())
-            return "a call a function template may answer over an argument of a class or an array, which ADL and a constructor would answer";
+        // Every argument's namespaces are searched as the replay's (requestCall: Overload::candidateSet); a class lvalue is ranked
+        // there with its converting constructors unasked, and a class prvalue - the temporary it materialises - replays.
+        const Type *u = (t->isReference() ? t->referent() : t)->unqualified();
+        if (!u->isScalar() && !(u->isStructOrUnion() && t->isReference()))
+            return "a call a function template may answer over an array or a class prvalue, which a temporary or a decay would answer";
         argTypes->push_back(t);
     }
     return std::string();
@@ -711,30 +617,36 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
         const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != given.size() || f.variadic) continue;
         // A class candidate is ranked with the rest: a non-const `C &` binds no temporary ([dcl.init.ref]/5), so a scalar
-        // reaches it by no converting constructor and rankArgument answers None as the replay's does; any other asks one.
-        for (std::size_t q = 0; q < f.params.size(); q++)
-            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion() &&
+        // reaches it by no converting constructor, nor does a `C` its own class; any other asks one, which the read does not.
+        for (std::size_t q = 0; q < f.params.size(); q++) {
+            const Type *c = (f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified();
+            if (c->isStructOrUnion() && c != given[q]->unqualified() &&
                 (!f.params[q]->isReference() || f.params[q]->isRValueReference() || f.params[q]->referent()->isConst()))
                 return "a deduced call beside a candidate over a class that takes a temporary, whose converting constructors the read does not ask";
+        }
         std::vector<Rank> rank;
+        bool constructs = false;
         for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
             RankedArgument a;
             a.type = given[q]->id();
             a.lvalue = argTypes[q]->isReference();
+            a.constructs = [&constructs](const Type *) { return !(constructs = true); };
             rank.push_back(p_.overload_.rankArgument(a, f.params[q]));
         }
+        if (constructs) return "a deduced call whose ranking asks a converting constructor, which the read does not ask";
         if (rank.empty() || rank.back() != Rank::None) viable.push_back((*set)[k]), ranks.push_back(rank);
     }
     const int best = viable.empty() ? -1 : p_.overload_.bestViable(viable, ranks, given, false);
     if (best < 0) return "a deduced call with no best candidate, which the replay refuses";
     const Signature &f = p_.lookup_.functions_[viable[static_cast<std::size_t>(best)]];
-    // A reference returned is to a scalar (the call an lvalue or an xvalue); a reference parameter binds the named local
-    // directly ([dcl.init.ref]/5: the same type, so no temporary), the local's address passed as the replay's call passes it.
+    // A reference returned is to a scalar (the call an lvalue or an xvalue); a reference parameter binds the lvalue - a class's
+    // by `&` alone - directly ([dcl.init.ref]/5: the same type, so no temporary), its address passed as the replay's call does.
     const Type *ret = f.returns->isReference() ? f.returns->referent() : f.returns;
     bool scalars = f.owner.empty() && !f.deleted && p_.overload_.leastArguments(f) == f.params.size() &&
                    (f.returns->isVoid() || ret->isScalar());
     for (std::size_t k = 0; scalars && k < f.params.size(); k++)
-        scalars = f.params[k]->isReference() ? argTypes[k]->isReference() && f.params[k]->referent()->unqualified() == given[k]->unqualified() && given[k]->isScalar()
+        scalars = f.params[k]->isReference() ? argTypes[k]->isReference() && f.params[k]->referent()->unqualified() == given[k]->unqualified() &&
+                                                   (given[k]->isScalar() || !f.params[k]->isRValueReference())
                                              : f.params[k]->isScalar();
     if (!scalars) return "a deduced call of a function over a class, a default, or a reference that binds no local as it is";
     *chosen = viable[static_cast<std::size_t>(best)];
@@ -810,8 +722,6 @@ std::string Templates::censusLine() const {
                                               "sfinae-failed", "alias", "constexpr-ahead", "by-substitution" };
     std::string out = "template-census:";
     for (int d = 0; d < Doors; d++) out += std::string(" ") + names[d] + "=" + std::to_string(census_[d]);
-    for (std::map<std::string, int>::const_iterator i = refusedSubst_.begin(); i != refusedSubst_.end(); ++i)
-        out += "\ntemplate-replayed (" + std::to_string(i->second) + "): " + i->first;
     return out;
 }
 
@@ -1251,7 +1161,7 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
     return std::string();
 }
 
-// **Step 2's shell**: the records substituteFunction gives a Function, made from the read's steps as laid - a parameter's and a
+// **Step 2's shell**: a Function's records, made from the read's steps as laid - a parameter's and a
 // local's from its `d` (name, stored type, offset, scope, alignment, serial), the sret slot, the save area and the frame's size -
 // and the rest from the function the read made at its declaration, as the replay's definition path sets it for a free function.
 std::string Templates::madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const {
@@ -1430,18 +1340,13 @@ void Templates::instantiatePending() {
                 specializations_[i].emitted = true;
             }
             again = true;
-            // M8.1: a function specialization inside the subset shares a replayed sibling's body, its types substituted.
+            // M8.2: a function specialization built from its template's body read at the declaration, under its binding.
             if (!specializations_[i].isClass && substitute_) {
                 std::string why;
                 Binding b;
                 for (std::size_t q = 0; q < specializations_[i].binding.size(); q++) b.types.push_back(TypeTable::id(specializations_[i].binding[q]));
                 if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
                 substCensus_[why]++;
-                why.clear();
-                // M8.2 asked first: a body it covers is its own, and M8.1's stand-in is not run (2026-11-19, decision ii).
-                const bool covered = bound_.count(specializations_[i].symbol) != 0;
-                if (!covered && substituteFunction(i, &why)) { count(BySubstitution); continue; }
-                if (!covered) refusedSubst_[why]++;
             }
 
             // Copied, not held by reference: replaying may append to the

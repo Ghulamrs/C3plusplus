@@ -1,25 +1,23 @@
 #!/bin/sh
-# M8.1-early's switch held by a gate (R109): the stand-in M8.2 deletes (Q6) is off by default, so nothing else runs it.
+# M8.2's switch held by a gate (R109): -templates=subst is off by default, so nothing else runs it.
 #   1. run.sh and typed.sh with CXX1_TEMPLATE_SUBST=1, at -O0 and -O2 (this host's target);
-#   2. the census over every case with the switch on: by-substitution against the function door, each replay counted by reason;
+#   2. the census over every case with the switch on: the function door, each body made with no replay or replayed by reason;
 #   3. the probes, on M8.2's census: template-subst's shapes made with no replay, template-subst-call's calls bound at the
 #      definition ([temp.nondep]), template-subst-depcall's dependent-name calls resolved at the instantiation, the rest by reason;
-#   4. on = off: -S text and diagnostics of every case that reaches the function door, for x86_64-linux, x86_64-windows
-#      (masm, or gnu for a .nomasm case) and arm64-darwin at -O0 and -O2 - the C6000 is refused whole, so not compared.
-#   5. bodies (M8.1, kept past M8.2): -check=templates over every case - each template body a replay reads, held against
+#   4. bodies (M8.1, kept past M8.2): -check=templates over every case - each template body a replay reads, held against
 #      the first read of the same body, summed; a case with a .templates beside it prints that record.
-#   6. self (M8.1): -check=templates over the compiler's own sources, as tools/self-host lists them.
+#   5. self (M8.1): -check=templates over the compiler's own sources, as tools/self-host lists them.
 # **The ceiling** (M8.1 commit 5's first condition): a body a read declines is a refusal by name, and bodies and self
 # hold each door's count by reason under tests/subst-cases.ceiling and tests/subst-self.ceiling - a reason not recorded
 # or a count above its record fails; a count below asks for the record again (SUBST_RECORD=1 writes both).
-# It fails on any failed case, a probe that does not count as recorded, or one file that differs.
-#   tests/subst.sh [run|typed|census|same|bodies|self]...   (all six by default)
+# It fails on any failed case or a probe that does not count as recorded.
+#   tests/subst.sh [run|typed|census|bodies|self]...   (all five by default)
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 OUT=tests/out-subst
 export CXX1 OUT
-steps="${*:-run typed census same bodies self}"
+steps="${*:-run typed census bodies self}"
 bad=0
 mkdir -p "$OUT"
 # ceiling <corpus> <suffix>: from $OUT/*.<suffix>, the unread bodies ("count door | reason"), each door's sums ("door <name>
@@ -76,14 +74,12 @@ census)
         xargs -P "$JOBS" -n 1 sh -c 'CXX1_TEMPLATE_SUBST=1 CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo -S "$0" -o /dev/null > "$OUT/$(basename "$0" .cpp).census" 2>&1'
     cat "$OUT"/*.census | grep '^template-census:' | tr ' ' '\n' | grep = | tr '=' ' ' |
         awk -v units="$(cat "$OUT"/*.census | grep -c '^template-census:')" '{s[$1]+=$2} END {printf "subst.sh census: %d by substitution, %d through the function door of %d function bodies over %d units\n", s["by-substitution"], s["function"], s["function"] + s["by-substitution"], units}'
-    cat "$OUT"/*.census | sed -n 's/^template-replayed (\([0-9]*\)): /\1 /p' |
-        awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d%s\n", s[k], k}' | sort -rn
     # M8.2's own, of the bodies through the door: made with no replay, or replayed by reason.
     cat "$OUT"/*.census | tr -d '\r' | sed -n 's/^-check=templates replay (\([0-9]*\)): /\1 /p' |
         awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d M8.2:%s\n", s[k], k}' | sort -rn
     # The probes, on M8.2's census (2026-11-19, decision ii): what substitutes with no replay, and beside one under the check;
-    # each refused shape replayed with its reason. M8.1's stand-in is not run where M8.2 makes the body: it takes none here.
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest; do for how in plain check g; do
+    # each refused shape replayed with its reason.
+    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest template-subst-classarg; do for how in plain check g; do
         case $how in plain) f= ;; check) f=-check=templates ;; g) f=-g ;; esac
         CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo $f -templates=subst -S tests/cases/$p.cpp -o /dev/null 2>&1 | tr -d '\r' > "$OUT/$p.$how"
     done; done
@@ -100,6 +96,7 @@ census)
         probe template-subst-class $how "-check=templates replay (4): substituted with no replay"
         probe template-subst-adl $how "-check=templates replay (9): substituted with no replay"
         probe template-subst-nest $how "-check=templates replay (9): substituted with no replay"
+        probe template-subst-classarg $how "-check=templates replay (18): substituted with no replay"
     done
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
@@ -113,26 +110,10 @@ census)
     probe template-subst-class check "-check=templates made (4): equal"
     probe template-subst-adl check "-check=templates made (9): equal"
     probe template-subst-nest check "-check=templates made (9): equal"
+    probe template-subst-classarg check "-check=templates made (18): equal"
     probe template-subst-adl check "-check=templates subst (2): replayed: a type parameter bound to a class or an array"
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest; do
-        grep -q ' by-substitution=0$' "$OUT/$p.plain" || { echo "FAIL $p: the stand-in substituted where M8.2 makes the body"; bad=$((bad + 1)); }
-    done ;;
-same)
-    [ -n "$(ls "$OUT"/*.census 2>/dev/null)" ] || { echo "subst.sh same: run the census step first"; exit 2; }
-    grep -l '^template-census: function=[1-9]' "$OUT"/*.census | sed 's,.*/,,; s,\.census$,,' > "$OUT/reached"
-    for t in x86_64-linux x86_64-windows arm64-darwin; do for level in -O0 -O2; do sed "s/\$/ $t $level/" "$OUT/reached"; done; done |
-        xargs -P "$JOBS" -n 3 sh -c '
-            base=$0; t=$1; level=$2; src=tests/cases/$base.cpp; o=$OUT/$base.$t$level; spell=
-            [ "$t" = x86_64-windows ] && [ -f "tests/cases/$base.nomasm" ] && spell=-masm=gnu
-            if [ -f "tests/cases/$base.notarget" ] && grep -q "^$t\b" "tests/cases/$base.notarget"; then exit 0; fi
-            ( ulimit -t 10; $CXX1 -nologo -S -arch $t $spell $level "$src" -o $o.off.s > $o.off.err 2>&1 )
-            ( ulimit -t 10; CXX1_TEMPLATE_SUBST=1 $CXX1 -nologo -S -arch $t $spell $level "$src" -o $o.on.s > $o.on.err 2>&1 )
-            if cmp -s $o.off.s $o.on.s && cmp -s $o.off.err $o.on.err; then echo same > $o.verdict; else echo differ > $o.verdict; fi
-            rm -f $o.off.s $o.on.s'
-    n=$(ls "$OUT"/*.verdict 2>/dev/null | wc -l); d=$(grep -l differ "$OUT"/*.verdict 2>/dev/null | wc -l)
-    echo "subst.sh same: $(wc -l < "$OUT/reached") cases reach the function door; $n compared on against off, $((n - d)) the same, $d differ"
-    grep -l differ "$OUT"/*.verdict 2>/dev/null | sed 's,.*/,    differ ,; s,\.verdict$,,' | head -20
-    [ "$d" -eq 0 ] || bad=$((bad + 1)) ;;
+    probe template-subst-classarg check "-check=templates subst (2): replayed: a deduced call of a function over a class, a default, or a reference that binds no local as it is"
+    ;;
 bodies)
     ls tests/cases/*.cpp | grep -v '\.part\.cpp$' | while read src; do [ -f "${src%.cpp}.error" ] || echo "$src"; done |
         xargs -P "$JOBS" -n 1 sh -c '( ulimit -t 20; $CXX1 -nologo -check=templates -S "$0" -o /dev/null > "$OUT/$(basename "$0" .cpp).bodies" 2> /dev/null )'
@@ -160,7 +141,7 @@ self)
     echo "subst.sh self: $got of $n sources reached the count"
     [ "$got" -eq "$n" ] || bad=$((bad + 1))
     ceiling self selfbodies ;;
-*) echo "subst.sh: no step '$step' (run, typed, census, same, bodies, self)"; exit 2 ;;
+*) echo "subst.sh: no step '$step' (run, typed, census, bodies, self)"; exit 2 ;;
 esac; done
 echo "subst.sh: $bad failed"
 [ "$bad" -eq 0 ]

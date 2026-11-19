@@ -210,13 +210,10 @@ public:
     void holdDeclarations();
     std::vector<syntax::NodeId> declRead_[ReadDoors];
     std::string bodiesReport() const;
-    // M8.1-early (Q6's stand-in, off by default; deleted when M8.2 lands): -templates=subst or CXX1_TEMPLATE_SUBST, and -g.
-    bool substitute_ = false, substituteDebug_ = false;
-    // Function specialization `i` made from a replayed sibling's body; else `why` says what refused it.
-    bool substituteFunction(std::size_t i, std::string *why);
-    // A specialization made by substitution: its symbol to the sibling whose body it shares, and the types that change.
-    struct Substituted { std::string pattern; std::vector<const Type *> from, to; };
-    std::map<std::string, Substituted> substituted_;
+    // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
+    bool substitute_ = false;
+    // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`.
+    struct Substituted { std::vector<const Type *> from, to; };
     const Type *substituted(const Substituted &s, const Type *t) const;
     // **M8.2, slice 1's scaffolding**: a specialization's types by parameter index; a non-type parameter or a pack replays by name.
     struct Binding { std::vector<TypeId> types; };
@@ -244,7 +241,7 @@ public:
     std::map<std::size_t, std::vector<FrameEvent> > readFrames_;
     std::map<std::string, int> frameCensus_;
     std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laid) const;
-    // Step 2: the shell substituteFunction makes, from the laid `d`, `S`, `V` and `e` steps - held against the replay's function.
+    // Step 2: a Function's shell, from the laid `d`, `S`, `V` and `e` steps - held against the replay's function.
     std::map<std::string, int> shellCensus_;
     std::string shellApart(const Function &g, const Function &f) const;
     // Step 2's end: the function the read made at its declaration, by `afterParams`; the replay's made from it and the shell.
@@ -271,18 +268,11 @@ private:
     std::set<std::uint32_t> declShapes_;
     std::vector<std::string> declShapeTrees_;     // each shape's two trees: the read's, then the first replay's
     std::map<std::string, int> declUnread_[ReadDoors];
-    std::map<std::string, int> refusedSubst_;     // each reason substitution fell back to replay, counted
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.
     std::map<std::string, std::size_t> memberTemplateMade_;
     struct Owed { std::vector<const Type *> binding; std::vector<long long> values; std::vector<TemplateArg> args; std::size_t pos; };
     std::map<std::string, std::vector<Owed> > owedBodies_;   // by the declaration's "<owner>::<name>@<declaredAt>"
-};
-
-// A substitution as a function of a type, which TypedTree::retype is handed.
-struct SubstitutedTypes {
-    const Templates *tmpl; const Templates::Substituted *s;
-    const Type *operator()(const Type *t) const { return tmpl->substituted(*s, t); }
 };
 
 }   // namespace sema
