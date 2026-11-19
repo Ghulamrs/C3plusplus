@@ -57,6 +57,9 @@ public:
     void checkTemplates() { tmpl_.checkBodies_ = true; }
     std::string templatesReport() const { return tmpl_.bodiesReport(); }
     std::string templatesBuiltReport() const { return tmpl_.builtReport(); }    // after the lowering: slice 2b's bodies
+    // -check=fold (M6d S6): every integer constant asked folded twice, from the Ast and from the typed tree; differences fail.
+    void checkFold() { constant_.checkFold_ = true; }
+    std::string foldReport(int *differ) const { return constant_.foldReport(differ); }
     Program parse();
 
 private:

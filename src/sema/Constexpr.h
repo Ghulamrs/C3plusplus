@@ -18,6 +18,9 @@ class Parser;
 
 namespace sema {
 
+class TypedTree;
+struct TypedId;
+
 class Constexpr {
 public:
     explicit Constexpr(Parser &p) : p_(p) {}
@@ -54,7 +57,12 @@ public:
     void refuseConstexprClassObject(const std::string &name, std::size_t pos) const;
     bool foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const;
     bool fold(const Expr &e, long long *out, std::size_t pos) const;
+    // fold's cases over a typed expression (M6d S6, C2); false with `*why` set where this lane does not reach the case.
+    bool fold(const TypedTree &t, TypedId id, long long *out, const char **why) const;
+    std::string foldReport(int *differ) const;
     long long narrowTo(long long v, const Type *t) const;
+
+    bool checkFold_ = false;     // -check=fold
 
     std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
 
@@ -64,8 +72,12 @@ public:
     std::map<std::string, ConstObject> constObjects_;
 
 private:
+    void checkFold(syntax::NodeId s, bool ok, long long value, const Type *asked) const;
     Parser &p_;
     mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
+    mutable int foldDepth_ = 0, foldAgreed_ = 0, foldDiffer_ = 0;
+    mutable std::map<std::string, int> foldNotReached_;
+    mutable std::string foldDiffers_;
 };
 
 }   // namespace sema

@@ -2,6 +2,7 @@
 
 #include "Constexpr.h"
 #include "ConstArith.h"
+#include "Typing.h"
 #include "../parser/Parser.h"
 #include "../parser/ParserInternal.h"
 #include "../Mangle.h"
@@ -119,6 +120,14 @@ bool Constexpr::foldPointerConstant(const Expr &e, long long *out, std::size_t p
 }
 
 bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
+    // -check=fold: an ask from outside the fold is folded again from its expression typed on demand, and the two held.
+    if (checkFold_ && foldDepth_ == 0) {
+        foldDepth_++;
+        const bool ok = fold(e, out, pos);
+        foldDepth_--;
+        checkFold(e.syntax(), ok, ok ? *out : 0, e.type());
+        return ok;
+    }
     // **A name, when it names a constant.**
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         // **Inside a constexpr call, a local name is a parameter.** The body being
@@ -253,6 +262,135 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
     }
 
     return false;
+}
+
+static bool integral(const Type *t) { return t != nullptr && t->isInteger(); }
+
+// **fold(TypedId)** (M6d S6, C2): fold(const Expr &)'s cases over the typed tree. Where the Ast has a conversion the typed
+// tree has none, so an operand is narrowed to the type the parser converted it to - its type unless the operator's differs.
+bool Constexpr::fold(const TypedTree &t, TypedId id, long long *out, const char **why) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const TypedNode &n = t.node(id);
+    const syntax::Kind kind = st.node(n.syntax).kind;
+    const std::string &op = st.text(n.syntax);
+    const Type *type = n.type;
+    if (type == nullptr) { *why = "untyped"; return false; }
+    if (!constexprFrames_.empty()) { *why = "inside a constexpr call"; return false; }
+    const Type *a = n.count > 0 ? t.node(t.child(id, 0)).type : nullptr;
+    const Type *b = n.count > 1 ? t.node(t.child(id, 1)).type : nullptr;
+    long long l = 0, r = 0;
+    switch (kind) {
+    case syntax::Kind::Paren:
+        return n.count == 1 && fold(t, t.child(id, 0), out, why);
+    case syntax::Kind::IntLit: case syntax::Kind::CharLit: case syntax::Kind::WordLit: case syntax::Kind::Sizeof:
+        if (!n.folded.has) { *why = "a value not recorded"; return false; }
+        *out = n.folded.value;
+        return true;
+    case syntax::Kind::FloatLit:
+        return false;
+    case syntax::Kind::Name: case syntax::Kind::Member: {
+        const Resolution &res = t.resolution(id);
+        if (res.what == Resolution::Enumerator) { *out = res.value; return true; }
+        if (res.what == Resolution::Local) {
+            const Local *loc = p_.lookup_.findLocal(op);
+            if (loc == nullptr || !loc->isConstantValue) return false;
+            *out = loc->constantValue;
+            return true;
+        }
+        if (res.what == Resolution::Global) {
+            const GlobalSym *g = p_.lookup_.findGlobal(res.name.empty() ? op : res.name);
+            if (g == nullptr || !g->isConstantValue) return false;
+            *out = g->constantValue;
+            return true;
+        }
+        if (res.what == Resolution::StaticMember && res.serial == 1) { *out = res.value; return true; }   // the parser's Num
+        if (res.what == Resolution::StaticMember) {
+            const Parser::StaticConst *sc = p_.findStaticConst(res.symbol);
+            if (sc == nullptr || !sc->known) return false;
+            *out = sc->value;
+            return true;
+        }
+        *why = kind == syntax::Kind::Member ? "member" : "a name with no constant record";
+        return false;
+    }
+    case syntax::Kind::Comma:
+        if (!fold(t, t.child(id, 0), &l, why)) { if (*why == nullptr) *why = "a comma's effect"; return false; }
+        return fold(t, t.child(id, 1), out, why);
+    case syntax::Kind::Conditional: {
+        if (!fold(t, t.child(id, 0), &l, why)) return false;
+        const TypedId arm = t.child(id, l ? 1 : 2);
+        if (!fold(t, arm, out, why)) return false;
+        if (t.node(arm).type != type && integral(type)) *out = narrowTo(*out, type);
+        return true;
+    }
+    case syntax::Kind::Cast:
+        if (!type->isInteger()) return false;
+        a = n.count == 0 ? nullptr : t.node(t.child(id, n.count - 1)).type;
+        if (a == nullptr || a->isFloating() || a->isPointer()) { *why = "a cast of a floating or pointer value"; return false; }
+        if (!fold(t, t.child(id, n.count - 1), &l, why)) return false;
+        *out = narrowTo(l, type);
+        return true;
+    case syntax::Kind::Unary:
+        if (op == "*" || op == "&") { *why = "an object or an address"; return false; }
+        if (a == nullptr || a->isFloating()) { *why = "a floating operand"; return false; }
+        if (!fold(t, t.child(id, 0), &l, why)) return false;
+        if (op == "-") return integerArith(Arith::Neg, l, 0, false, out) == ArithFault::None;
+        if (op == "+") { *out = l; return true; }
+        if (op == "!") { *out = !l; return true; }
+        if (op == "~") return integerArith(Arith::Not, l, 0, false, out) == ArithFault::None;
+        return false;
+    case syntax::Kind::Binary: {
+        if (!integral(a) || !integral(b)) { *why = "an operand not of integer type"; return false; }
+        if (!fold(t, t.child(id, 0), &l, why) || !fold(t, t.child(id, 1), &r, why)) return false;
+        if (op == "&&") { *out = (l && r); return true; }
+        if (op == "||") { *out = (l || r); return true; }
+        static const char *const ops[] = { "+", "-", "*", "/", "%", "<<", ">>", "&", "|", "^", "==", "!=", "<", "<=", ">", ">=" };
+        static const Arith ariths[] = { Arith::Add, Arith::Sub, Arith::Mul, Arith::Div, Arith::Mod, Arith::Shl, Arith::Shr,
+                                        Arith::And, Arith::Or, Arith::Xor, Arith::Eq, Arith::Ne, Arith::Lt, Arith::Le, Arith::Gt, Arith::Ge };
+        std::size_t k = 0;
+        while (k < sizeof ops / sizeof ops[0] && op != ops[k]) k++;
+        if (k == sizeof ops / sizeof ops[0]) { *why = "an operator outside the fold"; return false; }
+        const bool shift = ariths[k] == Arith::Shl || ariths[k] == Arith::Shr;
+        const Type *lc = shift ? p_.promote(a) : p_.usualArithmetic(a, b), *rc = shift ? p_.promote(b) : lc;
+        if (lc != a) l = narrowTo(l, lc);
+        if (rc != b) r = narrowTo(r, rc);
+        if (integerArith(ariths[k], l, r, !lc->isSigned(p_.target_), out) == ArithFault::None) return true;
+        *why = "a fault the Ast fold reports";
+        return false;
+    }
+    default:
+        *why = syntax::kindName(kind);
+        return false;
+    }
+}
+
+void Constexpr::checkFold(syntax::NodeId s, bool ok, long long value, const Type *asked) const {
+    if (!s.valid()) { foldNotReached_["no syntax node"]++; return; }
+    // A template's read at its declaration: what depends on a parameter is the parser's stand-in there (M8rev L2).
+    if (p_.patternBody_ || p_.readLayout_) { foldNotReached_["a template's read"]++; return; }
+    Typer typer(p_);
+    const TypedId id = typer.typeExpression(s);
+    long long typed = 0;
+    const char *why = nullptr;
+    bool tok = fold(typer.tree(), id, &typed, &why);
+    if (why != nullptr) { foldNotReached_[why]++; return; }
+    if (tok && integral(asked) && typer.tree().node(id).type != asked) typed = narrowTo(typed, asked);
+    if (tok == ok && (!ok || typed == value)) { foldAgreed_++; return; }
+    foldDiffer_++;
+    foldDiffers_ += "-check=fold differ: " + p_.src_.where(p_.syntaxTree_.node(s).loc) + ": '" + p_.syntaxTree_.text(s) + "' Ast " +
+                    (ok ? std::to_string(value) : std::string("none")) + ", typed " + (tok ? std::to_string(typed) : std::string("none")) + "\n";
+}
+
+std::string Constexpr::foldReport(int *differ) const {
+    int skipped = 0;
+    std::string why;
+    for (std::map<std::string, int>::const_iterator i = foldNotReached_.begin(); i != foldNotReached_.end(); ++i) {
+        skipped += i->second;
+        why += " " + i->first + " " + std::to_string(i->second) + ";";
+    }
+    *differ = foldDiffer_;
+    return foldDiffers_ + "-check=fold compared " + std::to_string(foldAgreed_ + foldDiffer_ + skipped) + ", agreed " + std::to_string(foldAgreed_) +
+           ", differ " + std::to_string(foldDiffer_) + ", not reached " + std::to_string(skipped) + (why.empty() ? std::string() : ":" + why) + "\n";
 }
 
 // [dcl.constexpr]/3 asked of the body's syntax: one `return`, beside it only null statements, typedefs and aliases

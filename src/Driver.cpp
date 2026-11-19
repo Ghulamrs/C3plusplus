@@ -222,6 +222,8 @@ void Driver::usage(char *file) {
         "       -check=typed types the syntax tree in Sema and reports the census and\n"
         "         the nodes typed null, on stdout; it fails where the census or a\n"
         "         copied record differs\n"
+        "       -check=fold folds each integer constant asked from the Ast and again from\n"
+        "         its expression typed on demand, and fails where the two differ\n"
         "       -check=templates holds the syntax of each template body a replay reads\n"
         "         against the first read of the same body, and reports the count on stdout\n"
         "       -templates=subst makes a function template's specialization from a\n"
@@ -1145,6 +1147,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             checkTyped_ = true;
         } else if (std::strcmp(argv[i], "-check=templates") == 0 || std::strcmp(argv[i], "--check=templates") == 0) {
             checkTemplates_ = true;
+        } else if (std::strcmp(argv[i], "-check=fold") == 0) {
+            checkFold_ = true;
         } else if (std::strcmp(argv[i], "-templates=subst") == 0) {
             templateSubst_ = true;
         } else if (std::strncmp(argv[i], "-front=", 7) == 0 || std::strncmp(argv[i], "--front=", 8) == 0) {
@@ -1731,8 +1735,15 @@ bool Driver::compile(const Job &job) {
     Parser parser(src, std::move(tokens), types, target, backend_->abi(), job.dialect);
     parser.substituteTemplates(templateSubst_ || std::getenv("CXX1_TEMPLATE_SUBST") != nullptr, debug_);
     if (checkTemplates_) parser.checkTemplates();
+    if (checkFold_) parser.checkFold();
     Program program = parser.parse();
     auto t3 = Clock::now();
+    if (checkFold_) {
+        int differ = 0;
+        const std::string report = parser.foldReport(&differ);
+        std::fwrite(report.data(), 1, report.size(), stdout);
+        if (differ != 0) return false;
+    }
     if (checkTemplates_) {
         const std::string report = parser.templatesReport();
         std::fwrite(report.data(), 1, report.size(), stdout);
