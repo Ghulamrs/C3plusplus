@@ -635,9 +635,11 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, c
             if (t == nullptr || t->isReference()) return "a call a function template may answer over an argument the typed tree does not type";
             t = lvalue == 1 ? p_.types_.referenceTo(t) : t->unqualified();
         }
-        // A pointer's or an enumeration's namespaces are searched as the replay's (requestCall: Overload::candidateSet).
-        if (!(t->isReference() ? t->referent() : t)->unqualified()->isScalar())
-            return "a call a function template may answer over an argument of a class or an array, which ADL and a constructor would answer";
+        // Every argument's namespaces are searched as the replay's (requestCall: Overload::candidateSet); a class lvalue is ranked
+        // there with its converting constructors unasked, and a class prvalue - the temporary it materialises - replays.
+        const Type *u = (t->isReference() ? t->referent() : t)->unqualified();
+        if (!u->isScalar() && !(u->isStructOrUnion() && t->isReference()))
+            return "a call a function template may answer over an array or a class prvalue, which a temporary or a decay would answer";
         argTypes->push_back(t);
     }
     return std::string();
@@ -711,30 +713,36 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
         const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != given.size() || f.variadic) continue;
         // A class candidate is ranked with the rest: a non-const `C &` binds no temporary ([dcl.init.ref]/5), so a scalar
-        // reaches it by no converting constructor and rankArgument answers None as the replay's does; any other asks one.
-        for (std::size_t q = 0; q < f.params.size(); q++)
-            if ((f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified()->isStructOrUnion() &&
+        // reaches it by no converting constructor, nor does a `C` its own class; any other asks one, which the read does not.
+        for (std::size_t q = 0; q < f.params.size(); q++) {
+            const Type *c = (f.params[q]->isReference() ? f.params[q]->referent() : f.params[q])->unqualified();
+            if (c->isStructOrUnion() && c != given[q]->unqualified() &&
                 (!f.params[q]->isReference() || f.params[q]->isRValueReference() || f.params[q]->referent()->isConst()))
                 return "a deduced call beside a candidate over a class that takes a temporary, whose converting constructors the read does not ask";
+        }
         std::vector<Rank> rank;
+        bool constructs = false;
         for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
             RankedArgument a;
             a.type = given[q]->id();
             a.lvalue = argTypes[q]->isReference();
+            a.constructs = [&constructs](const Type *) { return !(constructs = true); };
             rank.push_back(p_.overload_.rankArgument(a, f.params[q]));
         }
+        if (constructs) return "a deduced call whose ranking asks a converting constructor, which the read does not ask";
         if (rank.empty() || rank.back() != Rank::None) viable.push_back((*set)[k]), ranks.push_back(rank);
     }
     const int best = viable.empty() ? -1 : p_.overload_.bestViable(viable, ranks, given, false);
     if (best < 0) return "a deduced call with no best candidate, which the replay refuses";
     const Signature &f = p_.lookup_.functions_[viable[static_cast<std::size_t>(best)]];
-    // A reference returned is to a scalar (the call an lvalue or an xvalue); a reference parameter binds the named local
-    // directly ([dcl.init.ref]/5: the same type, so no temporary), the local's address passed as the replay's call passes it.
+    // A reference returned is to a scalar (the call an lvalue or an xvalue); a reference parameter binds the lvalue - a class's
+    // by `&` alone - directly ([dcl.init.ref]/5: the same type, so no temporary), its address passed as the replay's call does.
     const Type *ret = f.returns->isReference() ? f.returns->referent() : f.returns;
     bool scalars = f.owner.empty() && !f.deleted && p_.overload_.leastArguments(f) == f.params.size() &&
                    (f.returns->isVoid() || ret->isScalar());
     for (std::size_t k = 0; scalars && k < f.params.size(); k++)
-        scalars = f.params[k]->isReference() ? argTypes[k]->isReference() && f.params[k]->referent()->unqualified() == given[k]->unqualified() && given[k]->isScalar()
+        scalars = f.params[k]->isReference() ? argTypes[k]->isReference() && f.params[k]->referent()->unqualified() == given[k]->unqualified() &&
+                                                   (given[k]->isScalar() || !f.params[k]->isRValueReference())
                                              : f.params[k]->isScalar();
     if (!scalars) return "a deduced call of a function over a class, a default, or a reference that binds no local as it is";
     *chosen = viable[static_cast<std::size_t>(best)];

@@ -3481,3 +3481,61 @@ argument (its converting constructors and associated classes); an argument holdi
 call as one; the replay's own missing ADL at a function template's call door (tests/open/template-adl-ordinary - output
 changes without the flag, so a decision of its own); a member in the body walk; a class candidate that takes a temporary;
 explicit-argument calls; the 10 through a value or a member.
+
+## M8.2 slice 2d, ninth part: a class lvalue as a deduced call's argument, bound by reference (lane m82r, 2026-11-19)
+
+Branch `m8-2r` from `17cf24ea` (m6d-w8: main `5d98c251` + m8-2q + m8-adl). REF for identity is `50f39adb`, as m82p's and
+m82q's. **The Windows box was down** (the user, 2026-11-19): Linux only; cl /W4 /WX, names.sh, overload.sh, winpass, cdb and
+MASM are owed, and the probe's `.expected` is g++'s (`g++ -std=c++11 -pedantic-errors` on the Linux box), clang 19's owed.
+
+**(a) A class lvalue argument, ranked as the replay ranks it and bound by `C &` or `const C &`** (this commit). m82q refused
+every deduced call over an argument of a class ("which ADL and a constructor would answer"). Its namespaces are searched by
+the one lookup already (`Overload::candidateSet`, m82q (a) and m8-adl). What the read cannot ask is a converting
+constructor: `RankedArgument::constructs` is the replay's `convertingConstructor` over an `Expr`, which also instantiates
+constructor templates. So `callArgTypes` takes a class **lvalue** (a local or a parameter by its record, a dereference or a
+member by the typed tree), and an array or a class prvalue - the temporary it materialises - replays by name ("over an array
+or a class prvalue"). `requestCall` lets a candidate whose class parameter is the argument's own class stand in the set
+(`C`, `const C &`, `C &&` of the same class ask no constructor: [over.best.ics]/6, [dcl.init.ref]/5). Any other class
+parameter still refuses before ranking. Ranking passes a `constructs` that records being asked: a ranking that asks it
+replays by name ("whose ranking asks a converting constructor"), so the read never answers where the replay would have
+consulted one - the invariant held, not remembered. The chosen function may take the class by `C &` or `const C &` of
+its own class: the reference binds the lvalue directly, no temporary, its address passed as the replay's call passes it. A
+by-value class parameter (its copy constructor, the temporary's destructor) replays by name, as before.
+
+**The probe** `tests/cases/template-subst-classarg` (`.flags` `-templates=subst`; `.expected` g++'s, clang owed): `pick(b, t)`
+over a `const Box &` parameter, `bump(b, t)` over `Box &`, `scale(p, t)` found in `geo` by ADL and `geo::scale(p, t)`, and
+`poke(n, t)` over a `Noisy &` with a user copy constructor (its copy count printed, 0), each for an `int` and a `double` - 18
+bodies with no replay, plain and `-g`, made 18 equal under the check. `useByVal`'s 2 (`byVal(Box, T)`) replay ("a deduced call
+of a function over a class ..."). tests/subst.sh: the probe added to the probes step, its made count and its reason line.
+
+**The census** (Linux, `-check=templates -templates=subst` over 1,295 cases): 350 nonzero exits as before, none failing on a
+difference; **covered 356** (338 + the probe's 18); without the check **286 substituted with no replay** (268 + 18), 70
+replayed by reason (as before). **Without the lanes' probes: 111 with no replay** (+0): the suite's 11 over a class argument
+still replay, by a nearer reason. 6 pass a class prvalue (algorithm-sort-large 2, functional-less 1,
+library-cppparse-pieces 2, range-for-vector 1: "over an array or a class prvalue"). 5 reach deduction now and find no template
+that deduces (include-string 2, ssa-conversion-string-local 1, wstring 2: "a call no function template it reaches deduces
+for"). The reason "which ADL and a constructor would answer" is gone from the census.
+
+**src/** (a): `Templates.cpp` +17 -9: 95,363 -> 95,371 (+8). EXCLUSIONS re-pointed (Templates.cpp 1568, 1620, 2317).
+
+**Gates of (a)** (REF `50f39adb` in `~/m82rb`, NEW in `~/m82rc` - REF's tree with this commit shipped, one path length; every
+check on this commit's own tree): `identical.sh` without the flag on four targets differs **only in m8-adl's four cases**
+(template-adl-class, -hidden-friend, -ordinary, -template-argument, which REF answers wrongly: x86_64-linux 8 of 1,892,
+x86_64-windows 16 of 3,784, arm64-darwin 8, tms6747 8). It is the same with `-templates=subst` on three targets; no other
+case differs. **-g** the same four with and without the flag (x86_64-linux 723 the same, 350 refused alike, 218 by the
+tree's path alone; x86_64-windows 705, 375, 211). `-check=templates -templates=subst`: 1,295 units, none failing on a
+difference (286 made equal, 70 replayed by reason). `-check=fold` 0 units failing. run.sh 1288/0 without and with
+`-templates=subst`. **subst.sh 0 failed** (same 1,042 of 1,042, self 102 of 102, the ceiling 26 of 26; the cases ceiling 17
+of 17, 53 shapes of 53). syntax.sh 6/0; typed.sh 938/0. Self-compile of `Templates.cpp` and `ParserTemplate.cpp` rc 0.
+Static, each tool's own exit status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (raw-pointers 89), ast-residue
+rc 0 (node-refs 298, not raised), ide/generate.py up to date. g++ `-Werror` clean. **The Wine stand-in** (Linux,
+`c3wine`, the project's LINK; not the box): the 12 template-subst probes built with `-c` for x86_64-windows, linked and run,
+12 passed 0 failed with `-templates=subst` and at -O0. **Owed on Windows**: cl /W4 /WX, names.sh, overload.sh, winpass,
+cdb, MASM, and clang 19's answer for the probe's `.expected`.
+
+**Left**: (a)'s constructor half - a class parameter by value (the copy constructor, the copy's destructor) and a class
+prvalue (the temporary materialised, its destructor scheduled) - with `constructs` asked from the read. Each needs the records
+only the replay's parse writes today (`temporaryBuilt_`, `convertedBuilt_`, keyed by the replay's own nodes), made for the
+read's nodes. Also left: a candidate over another class (a base, or one reached by a converting constructor); deducing a
+class template-id parameter from a class argument (the 5 above); (b) function templates found only in an associated
+namespace (m8-adl's left); the rest of m82q's left list.
