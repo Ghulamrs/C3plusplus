@@ -3642,8 +3642,7 @@ without and with `-templates=subst`. **subst.sh 0 failed** (cases ceiling 17 of 
 memory gate rc 0 (raw-pointers 89), ast-residue rc 0 (ExprPtr 2012, node-refs 298: not raised), ide/generate.py up to date;
 exclusions rc 0 0/0 after the last re-point. g++ `-Werror` clean. The Wine stand-in: the 13 template-subst probes 13 passed with
 `-templates=subst` and at -O0. **Windows**: cl /W4 /WX clean (85 s, alone); clang 19 (`-nostdinc++ -isystem include`) prints
-the probe's `.expected`. names.sh 947/0 and overload.sh 46/0 were run on this part's first version (the refusal); see the
-handover for the final tree's run.
+the probe's `.expected`; names.sh 947 passed 0 failed and overload.sh 46 agreed 0 differed, on this commit's tree.
 
 **Left**: slice 2f's second part - the Binding carries a non-type parameter's value (integral and enumeration) and the Typer
 folds a `value-dependent` node under it (`N`, `sizeof(T) * N`, `T a[N]`, `static const int K = N`), pointer and reference
