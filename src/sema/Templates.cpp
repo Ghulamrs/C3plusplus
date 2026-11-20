@@ -421,7 +421,7 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
     std::vector<syntax::NodeId> requests;
-    const std::string shape = substShape(read->second, made.s, &made.calls, &made.members, &requests);
+    const std::string shape = substShape(read->second, made.s, &made.calls, &made.members, &made.assigns, &requests);
     if (!shape.empty()) return *why = "replayed: " + shape, false;
     const std::string value = valueShape(read->second, sp, &made.values);
     if (!value.empty()) return *why = "replayed: " + value, false;
@@ -972,8 +972,10 @@ std::string Templates::boundMemberCall(syntax::NodeId call, const Substituted &s
 }
 
 std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
-                                  std::map<std::uint32_t, const Type *> *members, std::vector<syntax::NodeId> *requests) {
+                                  std::map<std::uint32_t, const Type *> *members, std::map<std::uint32_t, std::pair<std::string, const Type *> > *assigns,
+                                  std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
+    std::vector<std::uint32_t> assigned;      // the class-typed members an assignment below calls operator= over
     bool classBound = false;
     for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || boundTo(s.to[q])->isStructOrUnion();
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
@@ -1011,13 +1013,37 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 const Type *e = m.type;
                 while (e != nullptr && e->isArray()) e = e->pointee();
                 if (m.access != Access::Public) return "a bound class's member other than public, whose access the replay checks";
-                if (e == nullptr || !e->isScalar()) return "a bound class's member other than a scalar or an array of one, which an operator over it would copy";
+                if (e == nullptr || (!e->isScalar() && std::find(assigned.begin(), assigned.end(), id.v) == assigned.end()))
+                    return "a bound class's member other than a scalar or an array of one, which an operator over it would copy";
                 if (m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.ambiguous)
                     return "a bound class's member in a virtual base, an anonymous union or two bases, which the replay reaches apart";
                 continue;
             }
+            case Kind::Assign: {
+                // `a.m = b.m` of a class-typed member: the operator= the replay's assignValue calls (copyAssignFor), or its bytes.
+                const Type *to[2] = { nullptr, nullptr };
+                for (std::uint32_t c = 0; c < 2 && n.count == 2; c++) {
+                    const syntax::NodeId o = p_.syntaxTree_.child(id, c);
+                    const std::string &t = p_.syntaxTree_.text(o);
+                    const Type *k = p_.syntaxTree_.node(o).kind == Kind::Member ? boundObjectClass(o, s) : nullptr;
+                    const std::string name = k != nullptr && t.size() > 1 ? t.substr(t.compare(0, 2, "->") == 0 ? 2 : 1) : std::string();
+                    const Member *m = k != nullptr && !name.empty() ? k->unqualified()->findMember(name) : nullptr;
+                    if (m != nullptr && m->type->unqualified()->isStructOrUnion()) to[c] = k->isConst() ? p_.types_.withConst(m->type) : m->type;
+                }
+                if (to[0] == nullptr && to[1] == nullptr) continue;
+                if (p_.syntaxTree_.text(id) != "=" || to[0] == nullptr || to[1] == nullptr || to[0]->unqualified() != to[1]->unqualified() ||
+                    to[0]->isConst())
+                    return "an assignment over a bound class's class-typed member other than `a.m = b.m` of one class, which the replay converts";
+                const Type *cls = to[0]->unqualified();
+                const Signature *op = p_.copyAssignFor(cls, false);     // an lvalue member is copied
+                if (op != nullptr && (op->access != Access::Public || op->deleted || op->params.empty()))
+                    return "a class-typed member's operator= other than public, which the replay checks";
+                if (op != nullptr) (*assigns)[p_.syntaxTree_.child(id, 1).v] = std::make_pair(op->symbol, p_.assignCallType(cls, *op));
+                assigned.push_back(p_.syntaxTree_.child(id, 0).v), assigned.push_back(p_.syntaxTree_.child(id, 1).v);
+                continue;
+            }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
-            case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
             case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
                 continue;
@@ -1629,6 +1655,10 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
     p_.frameAlign_ = std::max(startAlign, raised);
     unreplayed_.insert(sp.symbol);
     callsUsed(bound_.at(sp.symbol).read, bound_.at(sp.symbol).calls);
+    for (std::map<std::uint32_t, std::pair<std::string, const Type *> >::const_iterator a = bound_.at(sp.symbol).assigns.begin();
+         a != bound_.at(sp.symbol).assigns.end(); ++a)      // the operator= assignValue marks used
+        for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
+            if (p_.lookup_.functions_[q].symbol == a->second.first) { p_.noteUsed(q); break; }
     return true;
 }
 

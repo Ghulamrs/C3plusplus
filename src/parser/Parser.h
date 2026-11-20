@@ -1826,6 +1826,8 @@ private:
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     // `*bytes` set where the built-in `=` moved the bytes, an Assign: not a call of `operator=`.
     ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *bytes = nullptr);
+    const Signature *copyAssignFor(const Type *cls, bool wantMove) const;      // the operator= `a = v` calls, or null
+    const Type *assignCallType(const Type *cls, const Signature &op);         // its call's function type, `this` first
     Kept oneStatement(std::vector<Kept> all);
     ExprPtr zeroOf(const Type *to);
     ExprPtr enumeratorValue(const EnumConst &e);

@@ -4297,3 +4297,32 @@ Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own statu
 memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows**
 (work\\m82ahw, this source): cl /W4 /WX clean (about 3 minutes with the ship, alone); clang 19 and cxx3-msvc print
 template-subst-mcall's `.expected` and refuse the private call (clang: "'hidden' is a private member of 'Sec'").
+
+## M8.2 slice 2f: a class-typed member of a bound class assigned, `a.m = b.m`, by the operator= the replay calls (lane m82ah, 2026-11-20)
+
+**Why**: m82ag's item (3): the replay resolves `a.n = b.n` over a member class with its own operator= to a call of it -
+`Parser::assignValue` records the call on the value's node (`assignCalls_`) - while the read records nothing (its operands are
+dependent), so a made body reached `Lowering.cpp:5544` and substShape refused every class-typed member by "a bound class's
+member other than a scalar or an array of one, which an operator over it would copy".
+
+**What changed**: one writer of the choice: `Parser::copyAssignFor` (the copy or move assignment by the value's category) and
+`Parser::assignCallType` (the call's function type, `C *` returned and taken first), factored out of `assignValue`, which
+calls them. substShape's assignment case takes `a.m = b.m` where both are members of a bound class's object of one class type
+(the left not const): the operator= `copyAssignFor` answers for an lvalue is put in `Bound::assigns` by the value's node, or
+none for a class assigned by its bytes; the two members are then allowed past the scalar rule. The Typer gives a made body's
+value node that fact by its typed node (`Typer::boundAssigns_`, a read node being shared by every binding of one body), and
+the lowering's `assignCall` callback is handed the typed node beside the syntax one; `madeWithoutReplay` marks the operator=
+used as `assignValue` does. Refused by name: any other assignment over a class-typed member, an operator= other than public.
+
+**Probe**: tests/cases/template-subst-assign (g++ and cxx3 on Linux print its `.expected`): 3 made, 3 equal - an operator=
+through `.` and `->`, a member assigned by its bytes. template-subst-member (`copyIn`) and template-subst-plain (`copyIn`)
+are made now: 5 and 6 substituted with no replay (REF 4, 5), 4 and 6 equal under the check; tests/subst.sh: their lines.
+
+**Gates** (lane m82ai finished m82ah's item 2 and gated it on the commit's own tree, REF 80fe8c62): census 1311 units 353
+nonzero (REF 1310 / 353, the new case 0), covered 614 (REF 609), 536 made with no replay (REF 531), without the probes 296
+(REF 296, +0) all equal; identical against REF 0 differ on four targets plain (1918/3836/1918/1918) and three with
+-templates=subst (1918/3836/1918); -g 0 differ beyond the tree path both ways, with and without the flag (linux 221, windows
+214); subst.sh 0 failed (self 102/102, 26/26, 3/3), run.sh 1304/0 both, typed 951/0, syntax 7/0, fold 16962 compared 0
+differ; static rc 0 all (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date), g++ -Werror
+clean; Windows: cl /W4 /WX clean (213 s with ship), clang 19 and cxx3-msvc print template-subst-assign's `.expected`, names
+959/0 (probes 3/0), overload 46/0; self-host census 102 sources 0 nonzero, covered 3,843 (REF 3,824, +19) all equal; self Templates.cpp Typing.cpp ParserExpr.cpp rc 0; src 95,717 -> 95,762 (+45).

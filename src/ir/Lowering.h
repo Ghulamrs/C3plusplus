@@ -102,7 +102,7 @@ public:
     // Whether the parser built a call's class result straight into a local (`var`, the call) - Sema's record.
     void setElidedInto(std::function<bool(syntax::NodeId, syntax::NodeId)> f) { elidedInto_ = f; }
     // The copy or move assignment the parser called for `a = b`, by b's node - Sema's record.
-    void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
+    void setAssignCall(std::function<bool(syntax::NodeId, sema::TypedId, std::string &, TypeId &)> f) { assignCall_ = f; }
     // The operator-> calls `->` on a class value made, by the value's node - Sema's record ([over.ref]).
     void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
     // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
@@ -535,7 +535,7 @@ private:
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
     std::function<bool(syntax::NodeId)> namedReturn_;
     std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
-    std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
+    std::function<bool(syntax::NodeId, sema::TypedId, std::string &, TypeId &)> assignCall_;
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     std::function<bool(std::vector<sema::DynamicInit> &, bool)> dynamicInits_;    // the init function's or __tls_init's objects, for the Builder

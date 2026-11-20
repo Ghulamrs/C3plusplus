@@ -145,6 +145,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
+    if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).assigns.count(id.v) != 0) boundAssigns_[t.v] = std::make_pair(p_.tmpl_.bound_.at(binding_).assigns.at(id.v).first, TypeTable::id(p_.tmpl_.bound_.at(binding_).assigns.at(id.v).second));
     const Resolution chosen = boundCall(id);
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (chosen.what != Resolution::None) {
@@ -824,7 +825,9 @@ bool Typer::namedReturnLocal(syntax::NodeId var) const {
     return i != p_.declaredLocals_.end() && i->second.byValueByAddress && !i->second.isParameter;
 }
 
-bool Typer::assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const {
+bool Typer::assignCall(syntax::NodeId value, TypedId typed, std::string &symbol, TypeId &signature) const {
+    const auto b = boundAssigns_.find(typed.v);
+    if (b != boundAssigns_.end()) return symbol = b->second.first, signature = b->second.second, true;
     const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.assignCalls_.find(value.v);
     if (i == p_.assignCalls_.end() || i->second.symbol.empty()) return false;
     symbol = i->second.symbol;

@@ -79,7 +79,7 @@ census)
         awk '{n=$1; $1=""; s[$0]+=n} END {for (k in s) printf "    %6d M8.2:%s\n", s[k], k}' | sort -rn
     # The probes, on M8.2's census (2026-11-19, decision ii): what substitutes with no replay, and beside one under the check;
     # each refused shape replayed with its reason.
-    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest template-subst-classarg template-subst-value template-subst-nontype template-subst-bound template-subst-fwd template-subst-fwdclass template-subst-cast template-subst-spec template-subst-member template-subst-plain template-subst-mcall; do for how in plain check g; do
+    for p in template-subst template-subst-refused template-subst-call template-subst-depcall template-subst-deduce template-subst-order template-subst-ref template-subst-arg template-subst-class template-subst-adl template-subst-nest template-subst-classarg template-subst-value template-subst-nontype template-subst-bound template-subst-fwd template-subst-fwdclass template-subst-cast template-subst-spec template-subst-member template-subst-plain template-subst-mcall template-subst-assign; do for how in plain check g; do
         case $how in plain) f= ;; check) f=-check=templates ;; g) f=-g ;; esac
         CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo $f -templates=subst -S tests/cases/$p.cpp -o /dev/null 2>&1 | tr -d '\r' > "$OUT/$p.$how"
     done; done
@@ -103,9 +103,10 @@ census)
         probe template-subst-fwdclass $how "-check=templates replay (8): substituted with no replay"
         probe template-subst-cast $how "-check=templates replay (5): substituted with no replay"
         probe template-subst-spec $how "-check=templates replay (5): substituted with no replay"
-        probe template-subst-member $how "-check=templates replay (4): substituted with no replay"
-        probe template-subst-plain $how "-check=templates replay (5): substituted with no replay"
+        probe template-subst-member $how "-check=templates replay (5): substituted with no replay"
+        probe template-subst-plain $how "-check=templates replay (6): substituted with no replay"
         probe template-subst-mcall $how "-check=templates replay (5): substituted with no replay"
+        probe template-subst-assign $how "-check=templates replay (3): substituted with no replay"
     done
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
@@ -135,10 +136,9 @@ census)
     probe template-subst-spec check "-check=templates subst (1): replayed: a local or a parameter of a class by value, which its constructor builds"
     probe template-subst-spec check "-check=templates subst (1): replayed: a member that is no data member of a bound class reached by name"
     probe template-subst-spec check "-check=templates subst (1): replayed: an operator, an assignment or a return over a class's object"
-    probe template-subst-member check "-check=templates made (3): equal"
-    probe template-subst-member check "-check=templates subst (1): replayed: a bound class's member other than a scalar or an array of one, which an operator over it would copy"
-    probe template-subst-plain check "-check=templates made (5): equal"
-    probe template-subst-plain check "-check=templates subst (1): replayed: a bound class's member other than a scalar or an array of one, which an operator over it would copy"
+    probe template-subst-member check "-check=templates made (4): equal"
+    probe template-subst-plain check "-check=templates made (6): equal"
+    probe template-subst-assign check "-check=templates made (3): equal"
     probe template-subst-mcall check "-check=templates made (4): equal"
     probe template-subst-mcall check "-check=templates frame (1): differ: the read's the frame's size where the replay has a slot no local names"
     probe template-subst-mcall check "-check=templates subst (1): replayed: a bound class's static member function called through its object, which the replay evaluates apart"

@@ -272,7 +272,7 @@ public:
     // The operator-> calls `->` on the class value at node `operand` made, in order ([over.ref]); false where it made none.
     bool arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) const;
     bool conversionCall(syntax::NodeId operand, Resolution &out) const;   // the conversion function the class value at `operand` was converted by
-    bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
+    bool assignCall(syntax::NodeId value, TypedId typed, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
@@ -320,6 +320,7 @@ private:
     Resolution boundCall(syntax::NodeId id) const;
     TypeId boundMember(syntax::NodeId id, TypeId object);     // `o.m` or `p->m` of a bound class, recorded as Parser::memberRecord
     std::unordered_map<std::uint32_t, Resolution> boundMembers_;
+    std::unordered_map<std::uint32_t, std::pair<std::string, TypeId> > boundAssigns_;     // a made body's, by typed node
     const Type *recordedValue(syntax::NodeId id);
     void closureSources(syntax::NodeId id);
     int recorded_ = 0;      // nodes typed from a Value record, the parser's own answer: not independent agreement
