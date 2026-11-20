@@ -127,7 +127,8 @@ Resolution Typer::boundCall(syntax::NodeId id) const {
     if (c == calls.end()) return out;
     const Signature &f = p_.lookup_.functions_[c->second];
     out.what = p_.syntaxTree_.node(id).kind == syntax::Kind::Call ? Resolution::Call : Resolution::Callee;
-    out.type = TypeTable::id(p_.types_.functionType(f.returns, f.params, f.variadic));
+    out.type = TypeTable::id(p_.tmpl_.chosenType(binding_, id.v));
+    out.hasThis = p_.tmpl_.bound_.at(binding_).members.count(id.v) != 0;     // a member call's (Templates::boundMemberCall)
     out.symbol = f.symbol;
     return out;
 }
@@ -501,7 +502,8 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         const Signature &f = p.lookup_.functions_[p.tmpl_.bound_.at(binding).calls.at(id)];
         const bool call = p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Call;
         if (n.resolved == 0 || tree.resolution(t).what != (call ? Resolution::Call : Resolution::Callee) || tree.resolution(t).symbol != f.symbol ||
-            p.types_.type(tree.resolution(t).type) != p.types_.functionType(f.returns, f.params, f.variadic))
+            p.types_.type(tree.resolution(t).type) != p.tmpl_.chosenType(binding, id) ||
+            tree.resolution(t).hasThis != (p.tmpl_.bound_.at(binding).members.count(id) != 0))
             return "the record the instantiation chose";
     }
     if (!chosen && (pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";

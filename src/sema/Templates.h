@@ -225,7 +225,10 @@ public:
     bool instantiate(std::size_t i, const Binding &b, std::string *why);
     // The first thing a read body holds apart, or empty; `calls` takes each dependent-name call's function, by its node.
     std::string substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
-                           std::vector<syntax::NodeId> *requests);     // requests: calls a function template answers
+                           std::map<std::uint32_t, const Type *> *members, std::vector<syntax::NodeId> *requests);     // requests: calls a function template answers
+    const Type *boundObjectClass(syntax::NodeId member, const Substituted &s) const;     // `o.m`'s class where `o` is of one bound
+    std::string boundMemberCall(syntax::NodeId call, const Substituted &s, const std::map<std::uint32_t, std::size_t> &calls,
+                                std::size_t *chosen, const Type **full);     // why `o.f(x)` replays, or empty
     std::string valueCast(syntax::NodeId id, const Substituted &s);     // why a cast to no reference replays, or empty
     std::string boundClass(const Type &t) const;       // why a class bound to a type parameter replays, or empty: a class
     bool boundObject(syntax::NodeId id, const Substituted &s) const;       // an lvalue of a bound class, by its name or a pointer's
@@ -245,8 +248,10 @@ public:
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
-    struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; };    // calls: callee and call nodes; values: 2f's folds, each + 2^31
+    struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members; };
+    // calls: callee and call nodes; values: 2f's folds, each + 2^31; members: a member call's function type, `this` first
     std::map<std::string, Bound> bound_;
+    const Type *chosenType(const std::string &binding, std::uint32_t id) const;     // the function a bound call's node records
     std::map<std::string, int> builtCensus_;
     // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.
     std::map<std::size_t, std::vector<FrameEvent> > readFrames_;

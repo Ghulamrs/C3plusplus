@@ -4252,3 +4252,48 @@ object"; the fix is the member-call record of item (2) applied to an operator, a
 name, the record `completeCall` makes put on the call node by the Typer as `boundMembers_` puts a member's, and its own branch
 in `recordDiffers` since a member's `Signature::params` lack the `this` pointer); a class-typed member reached through T;
 `VD<int>`'s vbtable name under the MASM spelling; m82ad's explicit-argument call.
+
+## M8.2 slice 2f: a member function called on a class bound to T, ranked over the class's members (lane m82ah, 2026-11-20)
+
+**Why**: m82ag left a member function call on a bound class (`t.f()`, `p->g(x)`) replayed by "a call through a value or a
+member with a type-dependent part": the read records no call for it (its object is dependent), so a body holding one was
+never made from the read.
+
+**What changed**: substShape's call case asks a call whose callee is a member of a bound class's object
+(`Templates::boundObjectClass`, factored out of the member case, which now asks it too) of `Templates::boundMemberCall`: the
+owner as `memberCallWith` finds it (`Lookup::findMemberOwner`), the set `overloadsOf(owner::name)` ranked over the arguments
+`callArgTypes` types (`Overload::rankArgument`, `bestViable`), the record's function type built as `memberCallWith` builds it,
+`this` first - a const member's `const C *`, a base's function on the base, which the lowering converts as it does any member
+call's (`toBase`). The chosen function is the call's and its callee's in `Bound::calls` (marked used by `callsUsed`), its type
+in `Bound::members`; `Templates::chosenType` is the one answer `Typer::boundCall` records (`hasThis` set) and `recordDiffers`
+holds. Refused by name, each replayed: a member function other than public (the replay checks access, and refuses it as clang
+does), a static one called through the object, a virtual one (its slot), a non-const one on a const object, a base's other
+than through one public non-virtual direct base, a qualified, operator, destructor or template name, a set with a candidate
+over a class, a reference, a default, variadic arguments or another object qualifier, a class argument.
+
+**Probes**: tests/cases/template-subst-mcall (g++ and cxx3 on Linux, clang 19 and cxx3-msvc on Windows print its
+`.expected`): 5 made with no replay; under `-check=templates` 4 equal and `onBase` apart by its frame - the replay's `this`
+conversion to a base at offset 4 lays a slot no local names - so it replays there; `virt` and `stat` replay by name.
+tests/cases/template-subst-mcall-private-refused (`.error`): refused with and without the flag, as clang refuses it.
+template-subst-spec's `asked(h)`, `h.get()` on `Hid<int>`, is made now (5 made, 5 equal; REF 4). tests/subst.sh: the
+probes' lines.
+
+**src/**: Templates.cpp, Templates.h, Typing.cpp: 95,620 -> 95,717 (+97). EXCLUSIONS re-pointed (Templates.cpp 1833, 1885, 2582).
+
+**The census** (Linux, 1,310 units, 353 nonzero - REF's 352 and the new `.error` case; none fails on a difference): covered
+609 (REF 601), 531 with no replay (REF 525) - the probes' 6; **without the probes 296 of the suite's own bodies (REF 296,
++0)**, all made equal. **Self-host** (102 sources, 0 nonzero): covered 3,824 (REF 3,824, +0), all made equal. No body of the
+suite's own or the self-host's is made by this commit alone: their member calls stand behind other reasons first (without the
+probes: 47 a dependent-name call, 21 a member that is no data member, 13 a call through a value the read did not resolve,
+10 a call through a member with a type-dependent part, 2 a member call by a qualified, operator or template name).
+
+**Gates** (REF `93668f05` in `~/m82ahb`, NEW in `~/m82ahc`, one path length; every check on this commit's tree but the
+probe's out-of-line `D2::D2`, re-probed alone): identical.sh without the flag 0 differ on four targets (x86_64-linux 1,916,
+x86_64-windows 3,832, arm64-darwin 1,916, tms6747 1,916) and with `-templates=subst` 0 differ on three (1,916, 3,832,
+1,916); **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path
+alone, 0 otherwise. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1303/0 without and
+with `-templates=subst`. typed 950/0, syntax 7/0. `-check=fold` 16,962 compared, 0 differ, 0 units failing. Self-compile of
+Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0,
+memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows**
+(work\\m82ahw, this source): cl /W4 /WX clean (about 3 minutes with the ship, alone); clang 19 and cxx3-msvc print
+template-subst-mcall's `.expected` and refuse the private call (clang: "'hidden' is a private member of 'Sec'").
