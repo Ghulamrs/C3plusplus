@@ -5048,3 +5048,10 @@ point checked not owed; then origin/main merged, which brought only this file's 
 M8.2 (M8-PLAN, m82y-m82aa): a const local over a parameter folded under the binding; T bound to a plain struct by reference or
 pointer (Parser::memberRecord the one writer of the member record); T bound to an lvalue reference to a scalar with reference
 collapsing - 136 of the suite's own bodies with no replay under -templates=subst; nothing changes without the flag.
+
+**m6d-w11's wave landed, 2026-11-20 (gate m6dw11g at e9033fd5 against main 44d4c2b1: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 (M8-PLAN, m82ab-m82ac): a reference return substituted as written (declaredReturns_; the
+dependent-return refusal deleted); T bound to an lvalue reference to a plain struct; static_cast to a reference typed under
+the binding (memberUnder, castUnder, castRecord) - std::move's and std::forward's own bodies made from the read: under
+-templates=subst 227 of the suite's own bodies with no replay (from 136) and 1,374 of the self-host's (from 356), every one
+equal to its replay; nothing changes without the flag.
