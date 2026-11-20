@@ -76,8 +76,13 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         std::vector<std::string> &stack; std::vector<std::string> saved; bool set;
         ~ReadIn() { if (set) stack = saved; }
     } readIn{ namespaceStack_, namespaceStack_, false };
-    if (classInstantiationTag_.empty() && peek().kind == TokenKind::Ident &&
-        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))) {
+    // [class]/11: `struct ::n::S {` is the same definition from the global scope, its qualifier absolute.
+    std::size_t g = at_ + 1;
+    while (peek().is("::") && tokens_[g].kind == TokenKind::Ident && tokens_[g + 1].is("::")) g += 2;
+    const bool global = g > at_ + 1 && tokens_[g].kind == TokenKind::Ident &&
+                        (tokens_[g + 1].is("{") || tokens_[g + 1].is(":") || tokens_[g + 1].is("final"));
+    if (classInstantiationTag_.empty() && (global || (peek().kind == TokenKind::Ident &&
+        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))))) {
         std::size_t i = at_ + 1;
         int depth = 0;
         for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
@@ -105,7 +110,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             plain = plain && (tokens_[k].is("::") || tokens_[k].kind == TokenKind::Ident);
             owner += tokens_[k].text;
         }
-        const Type *cls = plain ? lookup_.findTypedef(owner) : nullptr;
+        const Type *cls = !plain ? nullptr : global ? lookup_.findGlobalTypedef(owner.substr(2)) : lookup_.findTypedef(owner);
         if (cls != nullptr) cls = cls->unqualified();
         if (cls != nullptr && cls->isStructOrUnion() && tokens_[i - 2].is("::") && tokens_[i - 1].kind == TokenKind::Ident) {
             const Type *declared = lookup_.lookupInClass(cls, tokens_[i - 1].text);
