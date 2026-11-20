@@ -444,6 +444,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.localTypes = localTypes_;
     s.localTypeUndo = localTypeUndo_;
     s.localTypeUndoStarts = localTypeUndoStarts_;
+    s.enumUndo = enumUndo_;
     s.locals = locals_;
     s.fnVars = fnVars_;
     s.scopeStarts = scopeStarts_;
@@ -531,6 +532,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     localTypes_ = s.localTypes;
     localTypeUndo_ = s.localTypeUndo;
     localTypeUndoStarts_ = s.localTypeUndoStarts;
+    enumUndo_ = s.enumUndo;
     locals_ = s.locals;
     fnVars_ = s.fnVars;
     scopeStarts_ = s.scopeStarts;
@@ -619,6 +621,7 @@ void Parser::clearFunctionState() {
     localTypes_.clear();
     localTypeUndo_.clear();
     localTypeUndoStarts_.clear();
+    enumUndo_.clear();
     locals_.clear();
     fnVars_.clear();
     scopeStarts_.clear();
@@ -763,6 +766,7 @@ void Parser::closeBlockFunctions() {
 void Parser::enterScope() {
     scopeStarts_.push_back(locals_.size());
     localTypeUndoStarts_.push_back(localTypeUndo_.size());
+    scopeIds_.push_back(++scopeSerial_);
 }
 
 int Parser::enterBlock(std::size_t pos) {
@@ -791,6 +795,11 @@ void Parser::leaveScope() {
         freeSlots_.push_back(FreeSlot{ stored, l.offset, objectAlign(stored, target_) });
     }
     locals_.resize(scopeStarts_.back());
+    for (; !enumUndo_.empty() && !scopeIds_.empty() && enumUndo_.back().scope == scopeIds_.back(); enumUndo_.pop_back()) {
+        if (enumUndo_.back().had == std::string::npos) lookup_.enumIndex_.erase(enumUndo_.back().key);
+        else lookup_.enumIndex_[enumUndo_.back().key] = enumUndo_.back().had;
+    }
+    if (!scopeIds_.empty()) scopeIds_.pop_back();
     scopeStarts_.pop_back();
     closeBlockFunctions();
     if (localTypeUndoStarts_.empty()) return;

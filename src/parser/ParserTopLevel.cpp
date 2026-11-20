@@ -2478,6 +2478,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
     if (paramsOpen != 0) {
         locals_.resize(scopeStarts_.back());
         scopeStarts_.pop_back();
+        scopeIds_.pop_back();
         closeBlockFunctions();
     }
     if (tmpl_.mentionsDeduced(returns))
