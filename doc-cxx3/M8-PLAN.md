@@ -4326,3 +4326,22 @@ nonzero (REF 1310 / 353, the new case 0), covered 614 (REF 609), 536 made with n
 differ; static rc 0 all (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date), g++ -Werror
 clean; Windows: cl /W4 /WX clean (213 s with ship), clang 19 and cxx3-msvc print template-subst-assign's `.expected`, names
 959/0 (probes 3/0), overload 46/0; self-host census 102 sources 0 nonzero, covered 3,843 (REF 3,824, +19) all equal; self Templates.cpp Typing.cpp ParserExpr.cpp rc 0; src 95,717 -> 95,762 (+45).
+
+## M8.2: the Itanium pattern signature kept from the declaration's read, and the self-host under -templates=subst (lane m82ai, 2026-11-20)
+
+**The pattern signature, before**: re-read from tokens at every new specialization. `Parser::instantiate`
+(ParserTemplate.cpp, after the key's dedupe) called `readTemplateDeclaration` a second time with every parameter bound
+to `Kind::TemplateParam`, and `itaniumTemplateFunctionName` spelled that; the declaration's own read - `templatedName`'s,
+the one that writes `TemplateDecl::signature` (the syntax signature, M8.1) - made the same pattern type and dropped it
+(`fnPattern`, used only by `requireDeducibleAfterPack` and the literal operator's check). **Now**: `TemplateDecl::pattern`
+keeps that read's function type beside `signature` (and an out-of-line member template's merge keeps its definition's),
+and `Parser::instantiate` spells the Itanium name from it; a decl without one fails by name. The syntax node itself carries
+spellings, not types, so "derived from the syntax signature" is met as "made by the one read that made it". Left: the
+member-template door (`Templates::instantiateMemberTemplate`) still re-reads its pattern under the class's binding layer.
+
+**Gates** (on the commit's own tree, REF 5f5f2698): identical against REF 5f5f2698 0 differ on four targets plain (1918/3836/1918/1918) and three with -templates=subst (1918/3836/1918); -g 0 differ beyond the tree path both ways, with and without the flag (linux 221, windows 214); names 959/0 and overload 46/0 on Windows; subst.sh 0 failed (self 102/102, 26/26, 3/3), run.sh 1304/0 both, typed 951/0, syntax 7/0, fold 16954 compared 0 differ (8 fewer than REF's 16962: the folds the second read made); census 1311 units 353 nonzero, covered 614, 536 no replay, without probes 296 - unchanged (no body changes; the self census not re-run); static rc 0 all (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date), g++ -Werror clean; Windows cl /W4 /WX clean (101 s with ship); src 95,762 -> 95,760 (-2).
+
+**The self-host under -templates=subst** (tools/self-host on Linux, -O0, the flag on every stage, ~/m82ai-selfh): stage 0
+102 of 102 sources (196 s), stage 1 built; stage 1 102 of 102 (1213 s, slots shared with the wave gate), stage 2 built;
+stage 2 compiling at the hour (98 of 102), so stage 1 = stage 2 was not yet compared and stage 3 not started - M8.2's
+close criterion is measured up to a stage 2 that builds and runs, not yet as a fixed point.
