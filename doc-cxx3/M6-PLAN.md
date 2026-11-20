@@ -5055,3 +5055,8 @@ dependent-return refusal deleted); T bound to an lvalue reference to a plain str
 the binding (memberUnder, castUnder, castRecord) - std::move's and std::forward's own bodies made from the read: under
 -templates=subst 227 of the suite's own bodies with no replay (from 136) and 1,374 of the self-host's (from 356), every one
 equal to its replay; nothing changes without the flag.
+
+**m6d-w12's wave landed, 2026-11-20 (gate m6dw12g at c3fce842 against main 951a233d: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 (M8-PLAN, m82ad): `(T)e`, `T(e)` and `static_cast<T>(e)` to an arithmetic type or void made
+from the read when the operand types as arithmetic (Templates::castRecord, Templates::valueCast) - 236 of the suite's own
+bodies with no replay under -templates=subst (from 227), the self-host's 1,374; nothing changes without the flag.
