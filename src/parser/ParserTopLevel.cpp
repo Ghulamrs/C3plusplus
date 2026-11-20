@@ -1208,6 +1208,20 @@ void Parser::topLevel(Program &program) {
                                                     : peekAt(k).text;
                 }
             }
+            if (templateBase == nullptr && peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+                // [class.base.init]/2: `: ::X(a)` names the global scope's class, whatever nearer X there is.
+                at_++;
+                std::string full = expectIdent("a name after '::'");
+                while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+                    at_++;
+                    full += "::" + expectIdent("a name after '::'");
+                }
+                templateBase = lookup_.findGlobalTypedef(full);
+                if (templateBase == nullptr || !templateBase->unqualified()->isStructOrUnion())
+                    src_.fail(epos, "no class named '" + full + "' in the global namespace");
+                templateBase = templateBase->unqualified();
+                entry = templateBase->tag();
+            }
             if (templateBase == nullptr) {
                 entry = expectIdent("a member or base to initialise");
                 // **A base may be named with its namespace** - `:
@@ -2464,6 +2478,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
     if (paramsOpen != 0) {
         locals_.resize(scopeStarts_.back());
         scopeStarts_.pop_back();
+        scopeIds_.pop_back();
         closeBlockFunctions();
     }
     if (tmpl_.mentionsDeduced(returns))

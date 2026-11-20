@@ -5060,3 +5060,55 @@ equal to its replay; nothing changes without the flag.
 point checked not owed).** M8.2 (M8-PLAN, m82ad): `(T)e`, `T(e)` and `static_cast<T>(e)` to an arithmetic type or void made
 from the read when the operand types as arithmetic (Templates::castRecord, Templates::valueCast) - 236 of the suite's own
 bodies with no replay under -templates=subst (from 227), the self-host's 1,374; nothing changes without the flag.
+
+### M6d: four refusals stricter than the standard in the declaration paths - `: ::X(a)`, `struct ::n::S {`, and a block's own local enumeration - lane m6d-def1, 2026-11-20
+
+Brief boxkit/brief-m6d-def1.txt; from 951a233d on branch m6d-def1; REF built from 951a233d on Linux (`~/m6d-def1-ref.exe`).
+Each item was legal C++11 refused by REF - a refusal stricter than the standard; **none is a listed exclusion**. Found by
+m6d-glob (tests/open/global-qualified-base-initialiser), m6d-nest2 (the leading `::`) and m82v/m82w (the two enum items).
+
+**(1) `: ::X(a)`** (1feaa9a7; src/parser/ParserTopLevel.cpp, the mem-initializer read, +14): a leading `::` names the global
+scope's class through any `::m::Y` after it (findGlobalTypedef), read as the entry's type the way a template-id base is; REF
+said "expected a member or base to initialise". A name with no class there is "no class named 'Q' in the global namespace".
+**(2) `struct ::n::S {`** (51f419d4; ParserType.cpp, structOrUnionSpecifier, +5): a qualified class head with a body may start
+at `::`; resolveNamespaceName reads `::n` absolutely and the class path's `::n::Outer` is found by findGlobalTypedef - then it
+is m6d-nest2's definition from outside. REF said "struct needs a tag or a body". Without a body it is refused as before.
+**(3) and (4), one mechanism** (4d1bd62e; ParserType.cpp enumSpecifier, Parser.cpp enter/leaveScope, Parser.h, Entities.h,
+ParserTopLevel.cpp's readTrailingReturn, +34): a local
+enumeration's owner is its function and block (`f#3`, Parser::currentBlock), where m82v kept the function alone; a block's
+own `E` is a new type (`E$2`, shown as `E`) wherever another block's or a namespace's `E` is already declared
+([basic.scope.hiding]/1), found through localTypes_ with an undo entry, so the outer one is seen again after the block; and
+each enumIndex_ key a local enumeration writes is recorded with what it held (Parser::enumUndo_) and put back as its scope
+closes - a namespace's `Red` or an enclosing block's `C` hidden in the block and visible after it. "Declared twice" is now
+asked of this block's own enumerators only. REF said "'A' is declared twice" and "'Colour' is defined twice". The two items
+share every line, so they are one commit. **An undo entry names its scope by a serial** each enterScope takes (`scopeIds_`),
+not by the depth: a first draft keyed by depth lost read-dependent-local's `e1` after its lambda, whose body starts
+scopeStarts_ again from nothing (-g on two targets found it; the draft never committed). readTrailingReturn closes its
+parameters' scope by hand and now pops the serial too. Commit (2)'s message says src +6: it is +5.
+
+**Cases** (clang 19 on the Windows box, `clang++ -x c++ -std=c++11 -pedantic-errors -nostdinc++ -isystem include`, each
+prints its `.expected`, as cxx3-msvc's build does): `global-qualified-base-initialiser` (moved from tests/open, under the
+ledger: two bases `::X` and `::m::Y` beside an `n::X`, built=3 gone=3), `global-qualified-class-outside` (`::n::S` with an
+enumerator of n read unqualified in its body, `::n::Outer::Held`, `::a::b::T` from inside `a`), `local-enum-two-blocks` (an
+unnamed, a named and a scoped enumeration in two blocks each, a nested block's enumerator hiding its enclosing block's),
+`local-enum-shadows-namespace` (a block's `Colour` hiding n's, n's seen after the block; a function's `Shade` hiding the
+global one, the global `Dark` read in the next function). REF refuses all four. Names: names.sh (Windows clang, three
+ABIs) passes all four; overload.sh 46 agreed, 0 differed.
+**Shown** against REF (tools/identical.sh at -O0 and -O2): tms6747 1,914 compared, x86_64-linux 1,914, x86_64-windows (both
+spellings) 3,828, arm64-darwin 1,914 - **8, 8, 16 and 8 differ, every one of the four new cases** (REF refuses them), 0
+outside them; `-g -S` 937/952/927/952 same, 4 differ on each target, the same four. **For the wave's rows**: the four new
+cases differ from REF on all four targets, at -O0 and -O2, both Windows spellings, and under `-g`.
+
+**Gates on the final tree** (4d1bd62e): g++ -Werror clean (Linux); cl /W4 /WX clean (work\m6d-def1y: a full build in 65 s,
+the final delta in 82 s); run.sh 1,299 passed, 0 failed; tests/tms6747.sh SIM=1 -O2 shards 1-3 on Linux 151/0, 150/0,
+145/0; tests/subst.sh run, typed, census and bodies as recorded (cases 17 unread under a ceiling of 17 in 12 reasons, 53
+shapes; its "4 counts below the record" note as on REF, not re-recorded), self 102 of 102 under a ceiling of 26 of 26 (run again alone: the full run's self step took a SIGTERM from outside at 01:22:36 box time), 0 failed; typed.sh 949/0, syntax.sh 7/0; names.sh
+957/0 and overload.sh 46/0 on Windows. Self-compile at -O2 by the new compiler: ParserTopLevel.cpp, ParserType.cpp and
+Parser.cpp compile for x86_64-linux; for tms6747 Parser.cpp compiles and the other two are refused as REF refuses their base
+text (`Parser::topLevel`'s lambda "stack arguments", structOrUnionSpecifier "a branch past eight arguments"). Static, each
+tool's own status: exclusions rc 0 (0 uncited, 0 stale - 29 citation lines re-pointed), comments rc 0, memory gate rc 0,
+ast-residue rc 0 (2,012/298: the baseline, not raised), ide up to date. src/ 95,585 -> 95,638 lines (+53).
+**What is left**: `struct ::S {` (a leading `::` with no namespace) and `struct ::n::S` without a body; `: ::P<int>(x)`, a
+global template-id base; an elaborated `enum E` in a nested block naming its enclosing block's renamed `E$2` finds the
+first; a function's local `E` is still declared under its tag for the rest of the unit (REF's over-acceptance, unchanged).
+**Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.

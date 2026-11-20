@@ -76,8 +76,13 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         std::vector<std::string> &stack; std::vector<std::string> saved; bool set;
         ~ReadIn() { if (set) stack = saved; }
     } readIn{ namespaceStack_, namespaceStack_, false };
-    if (classInstantiationTag_.empty() && peek().kind == TokenKind::Ident &&
-        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))) {
+    // [class]/11: `struct ::n::S {` is the same definition from the global scope, its qualifier absolute.
+    std::size_t g = at_ + 1;
+    while (peek().is("::") && tokens_[g].kind == TokenKind::Ident && tokens_[g + 1].is("::")) g += 2;
+    const bool global = g > at_ + 1 && tokens_[g].kind == TokenKind::Ident &&
+                        (tokens_[g + 1].is("{") || tokens_[g + 1].is(":") || tokens_[g + 1].is("final"));
+    if (classInstantiationTag_.empty() && (global || (peek().kind == TokenKind::Ident &&
+        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))))) {
         std::size_t i = at_ + 1;
         int depth = 0;
         for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
@@ -105,7 +110,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             plain = plain && (tokens_[k].is("::") || tokens_[k].kind == TokenKind::Ident);
             owner += tokens_[k].text;
         }
-        const Type *cls = plain ? lookup_.findTypedef(owner) : nullptr;
+        const Type *cls = !plain ? nullptr : global ? lookup_.findGlobalTypedef(owner.substr(2)) : lookup_.findTypedef(owner);
         if (cls != nullptr) cls = cls->unqualified();
         if (cls != nullptr && cls->isStructOrUnion() && tokens_[i - 2].is("::") && tokens_[i - 1].kind == TokenKind::Ident) {
             const Type *declared = lookup_.lookupInClass(cls, tokens_[i - 1].text);
@@ -1767,6 +1772,7 @@ const Type *Parser::enumSpecifier() {
 
     // [basic.scope.block]: a function's own enumeration is its block's, and another function or specialization has its own.
     const bool localEnum = within == nullptr && !currentFunction_.empty();
+    const std::string blockKey = currentFunction_ + "#" + std::to_string(currentBlock());   // the block a local one is its own
     std::string renamed;     // its enumerators' key where not the written tag: `E$2`, a read's `$read$f::E`
     // The tag names a type, as a class tag does: its integer underneath, but an integer
     // reaches it only by a cast (checkAssignable, rankArgument), and it promotes back.
@@ -1778,15 +1784,24 @@ const Type *Parser::enumSpecifier() {
         const std::string written = (readLocal ? "$read$" + currentFunctionName_ + "::" : std::string()) + prefix + tag;
         const bool defining = peek().is("{");
         std::string named = written;
+        // A block's own `E` hides an outer block's and a namespace's alike ([basic.scope.hiding]/1).
+        const bool hides = defining && lookup_.findGlobalTypedef(tagKey("enum", written)) != nullptr;
         for (int n = 2; localEnum; n++) {
             const std::map<std::string, std::string>::const_iterator had = localEnumOwner_.find(named);
-            if (had == localEnumOwner_.end()) { if (!defining) named = written; break; }
-            if (had->second == currentFunction_) break;
+            if (had == localEnumOwner_.end() && !(hides && named == written)) { if (!defining) named = written; break; }
+            if (had != localEnumOwner_.end() &&
+                (defining ? had->second == blockKey : had->second.compare(0, currentFunction_.size() + 1, currentFunction_ + "#") == 0)) break;
             named = written + "$" + std::to_string(n);
         }
-        if (localEnum && defining) localEnumOwner_[named] = currentFunction_;
+        if (localEnum && defining) localEnumOwner_[named] = blockKey;
         self = types_.enumType(named, underlying != nullptr ? underlying->kind() : Kind::Int);
-        if (named != written) { renamed = named; self->setDisplayTag(prefix + tag); localTypes_[tagKey("enum", prefix + tag)] = self; }
+        if (named != written) {
+            renamed = named;
+            self->setDisplayTag(prefix + tag);
+            const std::map<std::string, const Type *>::const_iterator was = localTypes_.find(tagKey("enum", tag));
+            localTypeUndo_.push_back(LocalTypeUndo{ tagKey("enum", tag), was == localTypes_.end() ? nullptr : was->second });
+            localTypes_[tagKey("enum", tag)] = self;
+        }
         else if (readLocal) renamed = named;
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
         if (before != nullptr && before->unqualified() == self &&
@@ -1835,9 +1850,11 @@ const Type *Parser::enumSpecifier() {
         // Declared twice under this very key - not one an inline namespace's enumerator put here.
         const std::unordered_map<std::string, std::size_t>::const_iterator twice =
             lookup_.enumIndex_.find(within_ + name);
+        // A local one's: declared in this very block - an outer block's or a namespace's it hides ([basic.scope.block]).
         if ((twice != lookup_.enumIndex_.end() && lookup_.enums_[twice->second].name == within_ + name &&
-             (lookup_.enums_[twice->second].owner.empty() || lookup_.enums_[twice->second].owner == currentFunction_)) ||
-            (!scoped && twice == lookup_.enumIndex_.end() && lookup_.findEnum(prefix + name)))
+             (localEnum ? lookup_.enums_[twice->second].owner == blockKey
+                        : lookup_.enums_[twice->second].owner.empty() || lookup_.enums_[twice->second].owner == currentFunction_)) ||
+            (!localEnum && !scoped && twice == lookup_.enumIndex_.end() && lookup_.findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
             dependent = false;
@@ -1849,24 +1866,29 @@ const Type *Parser::enumSpecifier() {
                                 "' does not fit the enum-base '" +
                                 underlying->describe() + "'");
         }
-        lookup_.enumIndex_[within_ + name] = lookup_.enums_.size();
+        // Each key written, and for a local one what it held, put back as its block closes (Parser::leaveScope).
+        const auto put = [&](const std::string &key, bool over) {
+            const std::unordered_map<std::string, std::size_t>::const_iterator was = lookup_.enumIndex_.find(key);
+            if (!over && was != lookup_.enumIndex_.end()) return;
+            if (localEnum) enumUndo_.push_back(EnumUndo{ key, was == lookup_.enumIndex_.end() ? std::string::npos : was->second, scopeIds_.empty() ? 0 : scopeIds_.back() });
+            lookup_.enumIndex_[key] = lookup_.enums_.size() - 1;
+        };
         lookup_.enums_.push_back(EnumConst{ within_ + name, next,
                                     scoped ? underlying : valueType });
+        put(within_ + name, true);
         lookup_.enums_.back().valueDependent = dependent;
-        if (localEnum) lookup_.enums_.back().owner = currentFunction_;
+        if (localEnum) lookup_.enums_.back().owner = blockKey;
         made.push_back(lookup_.enums_.size() - 1);
         // C++11's `E::a` for an unscoped E too, [dcl.enum]/11.
-        if (!scoped && !tag.empty())
-            lookup_.enumIndex_[(renamed.empty() ? prefix + tag : renamed) + "::" + name] = lookup_.enums_.size() - 1;
+        if (!scoped && !tag.empty()) put((renamed.empty() ? prefix + tag : renamed) + "::" + name, true);
         // And under the enclosing namespace's name where this one is inline.
         {
             const std::vector<std::string> alts = within == nullptr ? lookup_.inlineAliasPrefixes(prefix)
                                                                     : std::vector<std::string>();
             const std::string tail = scoped ? tag + "::" + name : name;
             for (std::size_t a = 0; a < alts.size(); a++) {
-                lookup_.enumIndex_.insert(std::make_pair(alts[a] + tail, lookup_.enums_.size() - 1));
-                if (!scoped && !tag.empty())
-                    lookup_.enumIndex_.insert(std::make_pair(alts[a] + tag + "::" + name, lookup_.enums_.size() - 1));
+                put(alts[a] + tail, false);
+                if (!scoped && !tag.empty()) put(alts[a] + tag + "::" + name, false);
             }
         }
         if (scoped) {

@@ -1259,6 +1259,7 @@ private:
     // cannot jump into its parent, so each early exit names a label the parent
     // lays down after the `try` and hands it back as the address to carry on at.
     struct LocalTypeUndo { std::string name; const Type *had; };   // see localTypeUndo_
+    struct EnumUndo { std::string key; std::size_t had, scope; };   // see enumUndo_
     struct MsExit {
         std::string ret, brk, cont;   // the labels, empty until an exit asks
         std::vector<std::pair<std::string, std::string> > gotos;   // an exit label, and the goto's
@@ -1273,6 +1274,7 @@ private:
         std::map<std::string, const Type *> localTypes;
         std::vector<LocalTypeUndo> localTypeUndo;
         std::vector<std::size_t> localTypeUndoStarts;
+        std::vector<EnumUndo> enumUndo;
         std::vector<Local> locals;
         std::vector<::Local> fnVars;
         std::vector<std::size_t> scopeStarts;
@@ -1795,12 +1797,17 @@ private:
     // A block's typedefs are its own ([basic.scope.block]): what each replaced, put back as the scope closes.
     std::vector<LocalTypeUndo> localTypeUndo_;
     std::vector<std::size_t> localTypeUndoStarts_;
+    // So are its enumerators: each enumIndex_ key a local enumeration wrote, what it held (npos: nothing) and its scope, by
+    // the serial each enterScope takes - not the depth, which a lambda's body starts again from nothing.
+    std::vector<EnumUndo> enumUndo_;
+    std::vector<std::size_t> scopeIds_;
+    std::size_t scopeSerial_ = 0;
     // [class.local]. A class defined in a function body belongs to that function: two
     // functions may each define `struct L` and they are different types. Both facts come
     // from these tables - a qualified tag, and a scope emptied when the function ends.
     std::map<std::string, const Type *> localTypes_;   // written name -> type
     std::map<std::string, std::string> localClassOwner_;  // tag -> enclosing symbol
-    std::map<std::string, std::string> localEnumOwner_;   // a local enumeration's type tag -> its function's symbol
+    std::map<std::string, std::string> localEnumOwner_;   // a local enumeration's type tag -> its function and block, `f#3`
     // An operator this compiler can *name* but cannot yet reach from an expression is
     // refused where it is declared. The arity decides which - `operator-` is two
     // functions and only one is missing - so it is asked once the parameters are known.
