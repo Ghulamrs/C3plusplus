@@ -4092,3 +4092,58 @@ and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, co
 rc 0 (2012/298, not raised), ide up to date. **Windows** (work\\m82adw, this source): cl /W4 /WX clean (442 s with the ship, a fresh tree, beside the coordinator's gate); names.sh 954 passed 0 failed; overload.sh 46 agreed 0 differed.
 
 **Left**: the explicit-argument call (above, its WIP patch and the two faults it showed); the 13 casts other than a static_cast to a reference that remain (const_cast and reinterpret_cast to no reference, `T()`, `T(a, b)`), and a no-op cast, which wants the replay's record of its operand made for the read; then the census's largest: 116 a pack or template parameter, 102 a class template's specialization.
+
+## M8.2 slice 2f: a type parameter bound to a class template's specialization, used as a plain struct (lane m82ae, 2026-11-20)
+
+**Step (0), the split.** At REF `3ac9d01f` (m82ad's NEW census: covered 528, 452 with no replay; without the probes 236) "a
+class template's specialization" was 102 of the suite's own bodies and 1,609 of the self-host's. Split by building the census
+twice - this commit, whose `boundClass` names a specialization's reasons apart, and a diagnostic build (not committed) that
+takes every completed specialization - and reading where the bodies go. Of the suite's 102: 47 pass the plain-struct test
+(every member a public scalar, no base) and then go by what the body does - +14 made with no replay (member access on a
+public scalar member), the rest to their bodies' next reasons (a member function call, "a call through a value, a member or a
+class" and "a member that is no data member of a bound class"; a local or copy by value; a call passing it on); 54 have a
+member other than a public scalar and 1 a base. Taking those 55 too (the diagnostic build) makes 29 more with no replay
+(member access on a public scalar member of a class whose other members are not), 13 replay as a bound class returned by
+value, 4 as an operator over the class's object, 3 as a call through a member, the rest by their bodies' other reasons; all
+499 made under the check equal. Over the self-host the diagnostic build covers 2,787 (REF 1,374, +1,413), all 2,787 equal
+under -check=templates - the self-host's specializations are its library's (`std::vector<Entry>` and the like), whose
+members are private and class-typed: this commit takes 149 of the self-host's 1,609 (covered 1,523), and 1,407 replay as a
+specialization with a member other than a public scalar.
+
+**What lands.** `Templates::boundClass` takes a class template's specialization the instantiation has completed as m82z
+takes a plain struct of the unit: no base or virtual function, every member a public scalar of its own; member access and
+its records through `Typer::boundMember` and `Parser::memberRecord` as for a plain struct; held under -check=templates. Its
+refusals now say they are a specialization's ("a class template's specialization with a member other than a public scalar
+of its own", "... with a base or a virtual function", "... the instantiation has not completed"); a plain class's reasons are
+spelled as before. Not landed: the 55 above (the diagnostic build is the change; its gates are owed), (2) a member function
+call on the bound specialization, and m82ad's explicit-argument call.
+
+**The probe** `tests/cases/template-subst-spec` (`.flags` `-templates=subst`): `sumOf` over `Box<int>` and `Box<double>`,
+`bump`, `second` made with no replay (4 made, 4 equal; REF 0); `Row<int, 2>` (an array member), `Hid<int>` (a private member,
+a member function call) and `Wrap<int>` (a class member) replay as a specialization with a member other than a public scalar,
+`viaLocal` as a local by value. Its `.expected`: g++ and cxx3 on Linux, clang 19 and cxx3-msvc on Windows print it.
+tests/subst.sh: the probe's lines.
+
+**The census** (Linux, 1,304 units, 350 nonzero as REF): covered 546 (REF 528), 470 with no replay (REF 452), 76 replayed;
+**without the probes 250 of the suite's own bodies (REF 236, +14)**, covered 326 (REF 301). Self-host (102 sources, 0
+nonzero): covered 1,523 (REF 1,374, +149), all 1,523 made equal; 1,407 a specialization with a member other than a public
+scalar, 1,022 a class with one, 376 a 'name', 161 a dependent-name call, 98 a 'literal'.
+
+**src/**: Templates.cpp +2: 95,619 -> 95,621. EXCLUSIONS re-pointed (Templates.cpp 1744, 1796, 2493).
+
+**Gates** (REF `3ac9d01f` in `~/m82aeb`, NEW in `~/m82aec`, one path length; every check on this commit's tree): identical.sh
+without the flag 0 differ on four targets (x86_64-linux 1,910, x86_64-windows 3,820, arm64-darwin 1,910, tms6747 1,910) and
+with `-templates=subst` 0 differ on three (1,910, 3,820, 1,910); **-g** with and without the flag: x86_64-linux 221 differ by
+the tree path alone, x86_64-windows 214 by the path alone, 0 otherwise. **tests/subst.sh 0 failed** (self 102 of 102, 26
+under 26, 3 shapes of 3). run.sh 1297/0 without and with `-templates=subst`.
+`-check=templates -templates=subst` over tests/cases: 350 nonzero exits, REF's count, none failing on a difference.
+typed 947/0, syntax 7/0. `-check=fold` 16,952 compared, 0 differ, 0 units failing. Self-compile of Templates.cpp, Typing.cpp
+and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (89),
+ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows** (work\\m82aew, this source): cl /W4
+/WX clean (3 min 38 s with the ship, alone of this lane's, beside the coordinator's gate running cases); names.sh 955 passed
+0 failed; overload.sh 46 agreed 0 differed.
+
+**Left**: the 55 specializations with a member other than a public scalar or a base - the diagnostic build's one line, owed
+its gates (identical with and without the flag, -g, run.sh) and an answer to why m82z's plain-struct test asks every member
+to be a public scalar when the body reaches only the data members it names; a member function call on a bound class through
+the one ranking; m82ad's explicit-argument call (boxkit/m82ad-wip/s2-explicit-wip.patch).

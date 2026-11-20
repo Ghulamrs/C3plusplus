@@ -824,7 +824,8 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
 // What a type parameter bound to `t` reaches: the class or scalar itself, or what an lvalue reference to one refers to.
 static const Type *boundTo(const Type *t) { return (t->isReference() ? t->referent() : t)->unqualified(); }
 
-// A plain struct of the unit: no template's specialization, base or virtual function, its members public scalars at their place.
+// A plain struct - of the unit, or a class template's specialization the instantiation completed (its reasons named apart):
+// no base or virtual function, its members public scalars at their place.
 std::string Templates::boundClass(const Type &t) const {
     if (t.isArray()) return "an array";
     if (t.isReference()) {
@@ -835,13 +836,14 @@ std::string Templates::boundClass(const Type &t) const {
     if (t.kind() == Kind::Union) return "a union";
     if (t.isFunction()) return "a function type";
     if (t.kind() != Kind::Struct) return t.isVoid() ? "void" : "a type that is no class";
-    if (!t.templateName().empty()) return "a class template's specialization";
-    if (!t.bases().empty() || t.polymorphic()) return "a class with a base or a virtual function";
+    const std::string a = t.templateName().empty() ? "a class" : "a class template's specialization";
+    if (!t.templateName().empty() && !t.isComplete()) return a + " the instantiation has not completed";
+    if (!t.bases().empty() || t.polymorphic()) return a + " with a base or a virtual function";
     for (std::size_t m = 0; m < t.members().size(); m++) {
         const Member &x = t.members()[m];
         if (x.access != Access::Public || x.type == nullptr || !x.type->isScalar() || x.width != 0 || x.anonUnion != nullptr ||
             x.inVirtualBase != nullptr || x.declaredIn != nullptr || x.ambiguous)
-            return "a class with a member other than a public scalar of its own";
+            return a + " with a member other than a public scalar of its own";
     }
     return std::string();
 }
