@@ -5112,3 +5112,11 @@ ast-residue rc 0 (2,012/298: the baseline, not raised), ide up to date. src/ 95,
 global template-id base; an elaborated `enum E` in a nested block naming its enclosing block's renamed `E$2` finds the
 first; a function's local `E` is still declared under its tag for the rest of the unit (REF's over-acceptance, unchanged).
 **Owed to the wave gate:** winpass in both spellings, ssa.sh 1/2, make test.
+
+**m6d-w13's wave landed, 2026-11-20 (gate m6dw13h at 5ecc7445 against main 9306dde4: 40 passed, 0 failed; the fixed point
+checked not owed).** M8.2 (m82ae: T bound to a class template specialization passing the plain-struct test - 250 suite /
+1,523 self-host bodies with no replay) and lane m6d-def1's four refusals stricter than the standard mended: `: ::X(a)` in a
+mem-initializer (tests/open/global-qualified-base-initialiser moved to tests/cases), `struct ::n::S {`, two blocks of one
+function each declaring the same local enum, and a local enum shadowing a namespace's (the owner is the block; scopeIds_).
+The first gate (m6dw13g, f2f6d774) failed identical x4 on those four cases alone, 48 rows (5ecc7445). tests/wave-expected.txt
+emptied.
