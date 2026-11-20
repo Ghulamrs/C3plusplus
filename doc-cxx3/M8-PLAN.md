@@ -4147,3 +4147,108 @@ ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **
 its gates (identical with and without the flag, -g, run.sh) and an answer to why m82z's plain-struct test asks every member
 to be a public scalar when the body reaches only the data members it names; a member function call on a bound class through
 the one ranking; m82ad's explicit-argument call (boxkit/m82ad-wip/s2-explicit-wip.patch).
+
+## M8.2 slice 2f: every completed class template specialization bound to T, its members asked where the body reaches one (lane m82af, 2026-11-20)
+
+**Why m82z's plain-struct test asked what it asked** - each condition taken away alone in a diagnostic build (m82ae's s2,
+every completed specialization accepted) and held by probes (tests/cases/template-subst-member, -private-refused) against
+g++ and the replay:
+- **A public member - needed.** A body made from the read is not replayed under `-templates=subst`, and the replay is the
+  only thing that checks access (`checkAccessible` in the parser's member path; `Parser::memberRecord` and
+  `Typer::boundMember` carry no access). With the test gone, `peek(h)` reading `Hid<int>`'s private `x` compiled and
+  printed 2 where clang, g++ and the replay refuse it.
+- **A scalar member - needed.** `a.n = b.n` over a member of class type with its own `operator=` was made from the read and
+  the SSA lowering then refused the unit ("an assignment to what is not a scalar object"); the copy is the replay's (an
+  operator call), not a store. A member read by subscript (`r.v[0]`, an array of scalars) is made equal.
+- **No base - not needed.** A member declared in a base has its whole offset in `Member::offset` (`adjust` is only for
+  `o.Base::m`): `own` and `inBase` over `D1<int> : B0, B1` made equal and right; the conversion to a base (`toBase`) is made
+  right (6), its frame apart from the replay's under the check ("a slot given back"), so it replays there.
+- **No virtual function - not needed.** The vptr is already in the members' offsets: `poly` over `Poly<int>` made equal and
+  right (10). **A member in a virtual base - kept refused**: not at a constant offset (the parser reaches it through
+  `virtualBaseMember`); the diagnostic build typed `viaVirtual` apart from its replay under the check. Both were measured
+  with the probe's first form (boxkit/m82af-wip/template-subst-member-full.cpp, one template alone at a time by
+  boxkit/m82af-each.sh) and left out of the committed probe: names.sh on Windows found `VD<int>`'s vbtable name
+  `??_8VD<int>@@7B@` refused by the MASM spelling and the implicit C1/C2 constructors of both apart from clang's - neither
+  this slice's, both owed to the names register.
+- **Bit-fields - not needed.** `bits` writes and reads `int a : 3; int b : 5` made equal and right (10).
+- **A static member** is no data member: `t.s` replays by that name, as before.
+
+**What changed**: `Templates::boundClass` takes a completed specialization whatever its bases and members; `substShape`'s
+member case asks the member the body reaches: public, a scalar or an array of one, not in a virtual base, an anonymous union
+or two bases - each refused by name. A plain class of the unit keeps m82z's test whole (the next lane may move it to the
+access as well). The probes: template-subst-member (4 made with no replay, 3 equal under the check, `toBase` apart by its
+frame; `copyIn`, `byValue`, `stat` replay by name), template-subst-private-refused (an `.error` case: refused
+with and without the flag, the replay's message); template-subst-spec's three specializations now replay by their bodies'
+own shapes. tests/subst.sh: the probes' lines.
+
+**src/**: Templates.cpp +8: 95,621 -> 95,629. EXCLUSIONS re-pointed (Templates.cpp 1752, 1804, 2501).
+
+**The census** (Linux, 1,306 units, 351 nonzero - REF's 350 and the new `.error` case, none failing on a difference): covered
+579 (REF 546), 503 with no replay (REF 470), 76 replayed; **without the probes 279 of the suite's own bodies (REF 250,
++29)**, all 279 made equal, covered 355 (REF 326). **Self-host** (102 sources, 0 nonzero): covered 2,787 (REF 1,523,
++1,264), all 2,787 made equal; 1,022 a plain class with a member other than a public scalar, 376 a 'name', 278 a dependent
+call, 86 a plain class with a base or a virtual function.
+
+**Gates** (REF `844fae37` in `~/m82afb`, NEW in `~/m82afc`, one path length; every check on this commit's tree): identical.sh
+without the flag 0 differ on four targets (x86_64-linux 1,912, x86_64-windows 3,824, arm64-darwin 1,912, tms6747 1,912) and
+with `-templates=subst` 0 differ on three (1,912, 3,824, 1,912); **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path alone, 0 otherwise. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3).
+run.sh 1299/0 without and with `-templates=subst` (no probe builds an object in a made body: the ledger is not asked). `-check=templates -templates=subst` over tests/cases: 351
+nonzero exits as above. typed 948/0, syntax 7/0. `-check=fold` 16,958 compared, 0 differ, 0 units failing. Self-compile of
+Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0,
+memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows**
+(work\\m82afw, this source): cl /W4 /WX clean (173 s with the ship, alone); names.sh 955 passed with the probe's first form
+failing (above), then the committed probes 2 passed 0 failed; overload.sh 46 agreed 0 differed; clang 19 and cxx3-msvc print
+template-subst-member's `.expected` and both refuse the private read.
+
+**Left**: a plain class of the unit asked at the access as a specialization now is (its 1,022 self-host and 38 suite
+bodies); a member function call on a bound class through the one ranking; `VD<int>`'s vbtable name under the MASM spelling;
+m82ad's explicit-argument call (boxkit/m82ad-wip/s2-explicit-wip.patch).
+
+## M8.2 slice 2f: a plain class bound to T asked at the member a body reaches, as a specialization is (lane m82ag, 2026-11-20)
+
+**Why**: m82af showed which of m82z's whole-class conditions a made body needs - a public member (only the replay checks
+access), a scalar member (a class member's operator= the lowering refuses), no virtual base (no constant offset) - and which
+it does not (a base, a virtual function, a bit-field); it moved a specialization to the member reached and left a plain class
+of the unit on the whole-class test, its 38 suite and 1,022 self-host bodies replayed by "a class with a member other than a
+public scalar of its own" and 86 self-host by "a class with a base or a virtual function".
+
+**What changed**: `Templates::boundClass` takes any struct of the unit as it takes a completed specialization: one check for
+both, in `substShape`'s member case at the member the body reaches - public, a scalar or an array of one, not in a virtual
+base, an anonymous union or two bases, each refused by name as before. The two whole-class reasons are gone. The probes:
+tests/cases/template-subst-plain (g++ and cxx3 on Linux, clang 19 and cxx3-msvc on Windows print its `.expected`): REF made 0 (its seven
+templates replayed by the two whole-class reasons and one by a static member's name); now 5 made with no replay, 5 equal
+under the check (`scalarOf`, `own`, `inBase` over two bases, `bits` over bit-fields, `poly` through a pointer to a class with
+a virtual function), `copyIn` replayed by its class-typed member, `stat` by a static member's name;
+template-subst-plain-private-refused (an `.error` case: a plain class's private member read through T is refused with and
+without the flag, the replay's message, as clang and g++ refuse it). tests/subst.sh: the probe's lines.
+
+**src/**: Templates.cpp -9, Templates.h 0: 95,629 -> 95,620 (-9). EXCLUSIONS re-pointed (Templates.cpp 1743, 1795, 2492).
+
+**The census** (Linux, 1,308 units, 352 nonzero - REF's 351 and the new `.error` case; none fails on a difference, the
+`made ... differ: replayed` lines of four sfinae and decltype cases are REF's as they were): covered 601 (REF 579), 525 with
+no replay (REF 503); **without the probes 296 of the suite's own bodies (REF 279, +17)**, all made equal, covered 372; the
+whole-class reasons are gone from both corpora, their other bodies at their next reasons. **Self-host** (102 sources, 0
+nonzero): covered 3,824 (REF 2,787, +1,037), all 3,824 made equal under `-check=templates`.
+
+**Gates** (REF `3f7ca494` in `~/m82agb`, NEW in `~/m82agc`, one path length; every check on this commit's tree): identical.sh
+without the flag 0 differ on four targets (x86_64-linux 1,914, x86_64-windows 3,828, arm64-darwin 1,914, tms6747 1,914 -
+the two new cases agree with REF, which replays them) and with `-templates=subst` 0 differ on three (1,914, 3,828, 1,914);
+**-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path alone, 0
+otherwise. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1301/0 without and with
+`-templates=subst`. typed 949/0, syntax 7/0. `-check=fold` 16,962 compared, 0 differ, 0 units failing. Self-compile of
+Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0,
+memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows**
+(work\\m82agw, this source): cl /W4 /WX clean (215 s with the ship, alone); names.sh 957 passed 0 failed, the probes 2/0;
+overload.sh 46 agreed 0 differed; clang 19 and cxx3-msvc print template-subst-plain's `.expected`, both refuse the private
+read (clang: "'x' is a private member of 'Hid'").
+
+**Item (3), diagnosed from the source, not built**: a class-typed member reached through T is an assignment the read
+records as built in - the replay resolves `a.n = b.n` to `Noisy::operator=` (a call record on the assign node), the read has
+no record (the operands are dependent), so the made body reaches `Lowering.cpp:5544` "an assignment to what is not a scalar
+object"; the fix is the member-call record of item (2) applied to an operator, after it.
+
+**Left**: a member function call on a bound class (`t.f()`, `p->g(x)`) through the one ranking - scoped, not started
+(boxkit/m82ag-handover.md: the set `overloadsOf(tag::name)` ranked as `dependentCall` ranks, a non-public member refused by
+name, the record `completeCall` makes put on the call node by the Typer as `boundMembers_` puts a member's, and its own branch
+in `recordDiffers` since a member's `Signature::params` lack the `this` pointer); a class-typed member reached through T;
+`VD<int>`'s vbtable name under the MASM spelling; m82ad's explicit-argument call.

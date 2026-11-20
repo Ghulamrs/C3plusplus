@@ -824,8 +824,8 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
 // What a type parameter bound to `t` reaches: the class or scalar itself, or what an lvalue reference to one refers to.
 static const Type *boundTo(const Type *t) { return (t->isReference() ? t->referent() : t)->unqualified(); }
 
-// A plain struct - of the unit, or a class template's specialization the instantiation completed (its reasons named apart):
-// no base or virtual function, its members public scalars at their place.
+// A struct of the unit, or a class template's specialization the instantiation completed: substShape asks either at the
+// member the body reaches - public, a scalar or an array of one, not in a virtual base, an anonymous union or two bases.
 std::string Templates::boundClass(const Type &t) const {
     if (t.isArray()) return "an array";
     if (t.isReference()) {
@@ -836,15 +836,7 @@ std::string Templates::boundClass(const Type &t) const {
     if (t.kind() == Kind::Union) return "a union";
     if (t.isFunction()) return "a function type";
     if (t.kind() != Kind::Struct) return t.isVoid() ? "void" : "a type that is no class";
-    const std::string a = t.templateName().empty() ? "a class" : "a class template's specialization";
-    if (!t.templateName().empty() && !t.isComplete()) return a + " the instantiation has not completed";
-    if (!t.bases().empty() || t.polymorphic()) return a + " with a base or a virtual function";
-    for (std::size_t m = 0; m < t.members().size(); m++) {
-        const Member &x = t.members()[m];
-        if (x.access != Access::Public || x.type == nullptr || !x.type->isScalar() || x.width != 0 || x.anonUnion != nullptr ||
-            x.inVirtualBase != nullptr || x.declaredIn != nullptr || x.ambiguous)
-            return a + " with a member other than a public scalar of its own";
-    }
+    if (!t.templateName().empty() && !t.isComplete()) return "a class template's specialization the instantiation has not completed";
     return std::string();
 }
 
@@ -934,6 +926,13 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == boundTo(s.to[q]);
                 if (!bound || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
                     return "a member that is no data member of a bound class reached by name";
+                const Member &m = *c->unqualified()->findMember(name);
+                const Type *e = m.type;
+                while (e != nullptr && e->isArray()) e = e->pointee();
+                if (m.access != Access::Public) return "a bound class's member other than public, whose access the replay checks";
+                if (e == nullptr || !e->isScalar()) return "a bound class's member other than a scalar or an array of one, which an operator over it would copy";
+                if (m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.ambiguous)
+                    return "a bound class's member in a virtual base, an anonymous union or two bases, which the replay reaches apart";
                 continue;
             }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
