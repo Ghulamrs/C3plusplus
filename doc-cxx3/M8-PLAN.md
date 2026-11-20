@@ -4343,5 +4343,5 @@ member-template door (`Templates::instantiateMemberTemplate`) still re-reads its
 
 **The self-host under -templates=subst** (tools/self-host on Linux, -O0, the flag on every stage, ~/m82ai-selfh): stage 0
 102 of 102 sources (196 s), stage 1 built; stage 1 102 of 102 (1213 s, slots shared with the wave gate), stage 2 built;
-stage 2 compiling at the hour (98 of 102), so stage 1 = stage 2 was not yet compared and stage 3 not started - M8.2's
-close criterion is measured up to a stage 2 that builds and runs, not yet as a fixed point.
+stage 2 102 of 102 (980 s), stage 3 built: **102 of 102 sources the same object from stages 0, 1 and 2** (at 5f5f2698's
+code). Stage 2 = stage 3 not measured: stage 3's compile (about 16 minutes) was stopped at the lane's hour by its own PIDs.
