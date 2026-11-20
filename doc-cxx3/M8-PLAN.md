@@ -4048,3 +4048,47 @@ specializations under a `$explicit:` key - requestCall would take the list's tok
 the same in the instantiation's context, then rank as it ranks a deduced call; (3) functional and C-style casts over a
 scalar T (a C-style cast's `castTypes_` holds T as written, so the Typer's substitution already covers its record; substShape
 refuses it by name today); a static_cast to a non-reference dependent type (the read records no type for it).
+
+## M8.2 slice 2f: a C-style, a functional and a static_cast to a non-reference type under the binding (lane m82ad, 2026-11-20)
+
+**Step (0), the census at REF `9e0da666`** (Linux, 1,302 units, 350 nonzero): covered 511, 437 with no replay; without the
+probes 301 covered, 227 with no replay; the largest reasons there 116 a pack or template parameter, 102 a class template's
+specialization, 48 "a cast other than a static_cast to a reference", 38 a class with a member other than a public scalar,
+26 a 'name' the binding does not carry, 4 an explicit-argument call. Self-host (102 sources, 0 nonzero): covered 1,374, all
+equal; 1,609 a class template's specialization, 1,022 a class with a member other than a public scalar, 376 a 'name', 4 a cast.
+
+**What landed (m82ac's (3)).** `(T)e`, `T(e)` and `static_cast<T>(e)` to an arithmetic type or void under the binding, over an
+operand the typed tree types arithmetic, are made from the read: the C-style and functional casts' `castTypes_` already held T
+as written, and a read's `static_cast<T>` to a dependent non-reference type is now recorded so too (ParserExpr's
+noteKeywordForm, a read alone); `Templates::castRecord` substitutes it (the one cast typer, as m82ac's reference casts), and
+`Templates::valueCast` says why any other replays: "a cast to a type other than an arithmetic type or void under the
+binding", "a cast over an operand the typed tree does not type arithmetic", and "a cast to its operand's own type, which the
+replay records as its operand" (the replay's no-op conversion hands the cast node its operand's record, which the read does
+not have - seen as "resolved apart: its kind" under -check=templates before it was refused). typedApart holds a cast spelled
+as its recorded type (`$T0` against `int`) by the cast's type, as it holds a var's.
+
+**Not landed (m82ac's (2), the explicit-argument call).** Built and probed, not committed (boxkit/m82ad-wip/s2-explicit-wip.patch):
+`Templates::explicitMade` reads the list again from its token in a Trial per overload, deduces what it leaves and instantiates
+as Parser::templateCall's door does, requestCall ranking the made set; with a call returning an lvalue reference to a scalar
+taken as an argument, template-subst-fwd made 12 equal (was 11) - but (a) one body (`through`, `twice(fwd<T>(a))`) was read
+apart from its replay in a call node's place under -check=templates, not diagnosed, and (b) `std::forward<T>` found no one
+name token at the callee's place (a qualified callee's node is placed elsewhere than its last name: to be measured).
+
+**Probe** tests/cases/template-subst-cast (clang 19 and cxx3-msvc on Windows, g++ and cxx3 on Linux print its .expected): 5 made, 5 equal under
+-check=templates, 5 by "its operand's own type", 1 a cast to a pointer, 1 `T()`; tests/subst.sh: the probe's lines, template-subst-deduce 15 -> 16 made equal (`mix`'s `static_cast<T>(b)`).
+
+**The census** (Linux, 1,303 units, 350 nonzero as REF): covered 528 (REF 511), 452 with no replay (REF 437), 76 replayed;
+**without the probes 236 of the suite's own bodies (REF 227, +9)**, covered 312 (REF 301); the 48 casts now 13 "other than a
+static_cast to a reference" (named casts other than static_cast, `T()`, `T(a, b)`), 9 "its operand's own type", 6 "an operand
+not arithmetic", 1 "a type other than arithmetic or void". The self-host (102 sources, 0 nonzero): covered 1,374 (+0), all
+equal; its 4 casts are 2 by "its operand's own type" and 2 that now stop at a 'literal' (96 -> 98).
+
+**src/**: Templates.cpp +28, Templates.h +1, Typing.cpp +4, ParserExpr.cpp +1: 95,585 -> 95,619 (+34). EXCLUSIONS re-pointed
+(Templates.cpp 1742, 1794, 2491; ParserExpr.cpp 3772).
+
+**Gates** (REF `9e0da666` in `~/m82adb`, NEW in `~/m82adc`, one path length; every check on this commit's tree): identical.sh without the flag 0 differ on four targets (x86_64-linux 1,908, x86_64-windows 3,816, arm64-darwin 1,908, tms6747 1,908) and with `-templates=subst` 0 differ on three (1,908, 3,816, 1,908); **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path alone, 0 otherwise. g++ `-Werror` clean. `-check=templates -templates=subst` over tests/cases: 350 nonzero exits as REF, none failing on a difference. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3; it notes 4 ceiling counts below the record, not re-recorded). run.sh 1296/0 without and with `-templates=subst`.
+typed 946/0, syntax 7/0. `-check=fold` 16,938 compared, 0 differ, 0 units failing. Self-compile of Templates.cpp, Typing.cpp
+and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0, memory gate rc 0 (89), ast-residue
+rc 0 (2012/298, not raised), ide up to date. **Windows** (work\\m82adw, this source): cl /W4 /WX clean (442 s with the ship, a fresh tree, beside the coordinator's gate); names.sh 954 passed 0 failed; overload.sh 46 agreed 0 differed.
+
+**Left**: the explicit-argument call (above, its WIP patch and the two faults it showed); the 13 casts other than a static_cast to a reference that remain (const_cast and reinterpret_cast to no reference, `T()`, `T(a, b)`), and a no-op cast, which wants the replay's record of its operand made for the read; then the census's largest: 116 a pack or template parameter, 102 a class template's specialization.

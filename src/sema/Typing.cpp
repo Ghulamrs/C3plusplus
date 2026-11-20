@@ -1039,7 +1039,11 @@ std::string Typer::typedApart(TypedId a, TypedId b, std::map<int, int> &serials,
                        u.compare(0, ut->second->describe().size(), ut->second->describe()) == 0 &&
                        w.compare(0, wt->second->describe().size(), wt->second->describe()) == 0 &&
                        u.substr(ut->second->describe().size()) == w.substr(wt->second->describe().size());
-    const bool spelled = k == syntax::Kind::Function || named;
+    // `(T)e` and `T(e)` are spelled as the type they record, which the cast's type holds below (Templates::valueCast).
+    const auto uc = p_.castTypes_.find(x.syntax.v), wc = p_.castTypes_.find(y.syntax.v);
+    const bool cast = k == syntax::Kind::Cast && uc != p_.castTypes_.end() && wc != p_.castTypes_.end() &&
+                      u == uc->second->describe() && w == wc->second->describe();
+    const bool spelled = k == syntax::Kind::Function || named || cast;
     if (k != st.node(y.syntax).kind || (!spelled && u != w)) return at + "read apart from its replay: its spelling";
     if (st.node(x.syntax).loc != st.node(y.syntax).loc) return at + "read apart from its replay: its place";
     if (x.count != y.count) return at + "read apart from its replay: its parts";

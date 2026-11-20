@@ -861,6 +861,29 @@ bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
     return t != nullptr && t->unqualified()->isStructOrUnion();
 }
 
+// `(T)e`, `T(e)` or `static_cast<T>(e)` to an arithmetic type or void, its record the read's under the binding (castRecord),
+// over an operand the typed tree types arithmetic: the conversion the lowering makes of any cast ([expr.cast]/4).
+std::string Templates::valueCast(syntax::NodeId id, const Substituted &s) {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const std::string &t = st.text(id);
+    const Type *read = p_.castTypes_.at(id.v), *to = substituted(s, read);
+    const bool named = t.compare(0, 12, "static_cast<") == 0 && t.find('&') == std::string::npos;
+    if (st.node(id).count != 1 || !(named || t == read->describe()))
+        return "a cast other than a static_cast to a reference, which the read records no type for";
+    if (to == nullptr || p_.dependentType(to) || !(to->isVoid() || to->isArithmetic()))
+        return "a cast to a type other than an arithmetic type or void under the binding, which the replay converts";
+    Bound under;
+    under.s = s;
+    bound_[" operand"] = under;
+    const Type *v = p_.types_.type(Typer(p_).typeUnder(st.child(id, 0), " operand"));
+    bound_.erase(" operand");
+    if (v == nullptr || !(v->isReference() ? v->referent() : v)->isArithmetic())
+        return "a cast over an operand the typed tree does not type arithmetic, which the replay converts";
+    if ((v->isReference() ? v->referent() : v)->unqualified() == to->unqualified())
+        return "a cast to its operand's own type, which the replay records as its operand";
+    return std::string();
+}
+
 std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
                                   std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
@@ -930,6 +953,11 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 const std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator c = p_.refCastTypes_.find(id.v);
                 const syntax::NodeId o = n.count == 1 ? p_.syntaxTree_.child(id, 0) : syntax::NodeId();
                 const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = o.valid() ? p_.resolutions_.find(o.v) : p_.resolutions_.end();
+                if (c == p_.refCastTypes_.end() && p_.castTypes_.count(id.v) != 0) {
+                    const std::string why = valueCast(id, s);
+                    if (!why.empty()) return why;
+                    continue;
+                }
                 if (p_.syntaxTree_.text(id).compare(0, 12, "static_cast<") != 0 || c == p_.refCastTypes_.end())
                     return "a cast other than a static_cast to a reference, which the read records no type for";
                 if (p_.dependentType(castUnder(s, c->second).first)) return "a static_cast to a member type of a class the binding has not made";
