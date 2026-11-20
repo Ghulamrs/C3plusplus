@@ -5120,3 +5120,11 @@ mem-initializer (tests/open/global-qualified-base-initialiser moved to tests/cas
 function each declaring the same local enum, and a local enum shadowing a namespace's (the owner is the block; scopeIds_).
 The first gate (m6dw13g, f2f6d774) failed identical x4 on those four cases alone, 48 rows (5ecc7445). tests/wave-expected.txt
 emptied.
+
+**m6d-w14's wave landed, 2026-11-20 (gate m6dw14g at 6634c30a against main 55dacf3d: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 (M8-PLAN, m82af-m82ag): every completed class template specialization, and every plain class,
+bound to T with one check at the member a body reaches - refused by name when it is non-public (only the replay checked access:
+a private member through T compiled before this), not a scalar or scalar array, in a virtual base, in an anonymous union or in
+two bases - 296 of the suite's own bodies with no replay under -templates=subst and 3,824 of the self-host's, every one equal
+to its replay; nothing changes without the flag. Owed (Microsoft ABI, found by m82af): masm cannot spell a class template's
+vbtable name (??_8VD<int>@@7B@), and such a class's C1/C2 names differ from clang's.
