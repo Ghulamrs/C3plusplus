@@ -288,6 +288,8 @@ public:
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies);
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies);
     std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
+    std::string memberName(const Signature &a, const std::string &readTag, const std::string &tag, const Substituted &s) const;
+    std::string bodyKey(std::size_t start, const std::pair<PendingBody, std::string> &h, const std::string &tag, const Substituted &s) const;
     std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay

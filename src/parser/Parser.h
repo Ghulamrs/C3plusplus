@@ -1149,6 +1149,7 @@ private:
         }
         return qualified;
     }
+    static std::string conversionSpelling(const Type *t);     // the target a conversion function is filed under
     static std::string constructorKey(const std::string &cls) {
         return cls + "::" + localOf(cls);
     }

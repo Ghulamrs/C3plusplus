@@ -2574,7 +2574,7 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
 
 // **The name a conversion function is filed under names a class by its tag
 // alone.**
-static std::string conversionSpelling(const Type *t) {
+std::string Parser::conversionSpelling(const Type *t) {
     if (t->isConst() && t->unqualified() != t)
         return t->isPointer() ? conversionSpelling(t->unqualified()) + " const"
                               : "const " + conversionSpelling(t->unqualified());

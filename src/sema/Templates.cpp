@@ -3165,7 +3165,7 @@ const Type *Templates::carriedId(const Substituted &s, const Type *e, const Subs
 }
 
 // Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
-// each of a type that is no class.
+// each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                                   const Substituted *early) const {
     for (std::size_t q = 0; q < params.size(); q++) {
@@ -3197,7 +3197,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *t = substituted(*s, m.type), *e = t;
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
-        if (e->unqualified()->isStructOrUnion()) return "replayed: a data member of class type";
+        if (e->unqualified()->isStructOrUnion() && e->unqualified()->tag().find('$') != std::string::npos)
+            return "replayed: a data member of a class the read named over its parameters";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
@@ -3315,6 +3316,21 @@ static std::string retagged(std::string w, const std::string &from, const std::s
     return w;
 }
 
+// A read member function's name under the real tag; a conversion function's names its target under `s`, as operatorName files it.
+std::string Templates::memberName(const Signature &a, const std::string &readTag, const std::string &tag, const Substituted &s) const {
+    if (a.name == "operator " + Parser::conversionSpelling(a.returns)) return "operator " + Parser::conversionSpelling(substituted(s, a.returns));
+    return retagged(a.name, readTag, tag);
+}
+
+// A held body's key under the real tag: retagged, or a conversion function's as memberName names it.
+std::string Templates::bodyKey(std::size_t start, const std::pair<Parser::PendingBody, std::string> &h, const std::string &tag, const Substituted &s) const {
+    const std::pair<std::string, std::vector<Signature> > &r = readMembers_.at(start);
+    std::string key = retagged(h.first.key, r.first, tag);
+    for (const Signature &a : r.second)
+        if (a.symbol == h.second && memberName(a, r.first, tag, s) != retagged(a.name, r.first, tag)) key = tag + "::" + memberName(a, r.first, tag, s);
+    return key;
+}
+
 // Step (1): the read's written member functions declared under the real tag where the replay's class body declares them, and
 // its held bodies keyed to them (classSkip's records); the implicit specials are completeClass's.
 void Templates::membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<Parser::PendingBody> *bodies) {
@@ -3324,7 +3340,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
     for (const Signature &a : r.second) {
         if (a.implicit) continue;
         Signature f = a;
-        f.name = retagged(a.name, r.first, tag);
+        f.name = memberName(a, r.first, tag, s);
         f.owner = tag;
         f.returns = substituted(s, a.returns);
         for (const Type *&t : f.params) t = substituted(s, t);
@@ -3340,7 +3356,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
         bodies->push_back(h.first);
-        bodies->back().key = retagged(h.first.key, r.first, tag);
+        bodies->back().key = bodyKey(start, h, tag, s);
         bodies->back().tag = retagged(h.first.tag, r.first, tag);
         bodies->back().which = at.at(h.second);
     }
@@ -3359,7 +3375,7 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
     if (mine.size() != theirs.size()) return "differ: the number of data members";
     for (std::size_t i = 0; i < mine.size(); i++) {
         if (mine[i].name != theirs[i].name) return "differ: a data member's name";
-        if (mine[i].type != theirs[i].type) return "differ: a data member's type";
+        if (mine[i].type != theirs[i].type) return "differ: a data member's type: " + mine[i].type->describe() + " for " + theirs[i].type->describe();
         if (mine[i].offset != theirs[i].offset) return "differ: a data member's offset";
         if (mine[i].access != theirs[i].access || mine[i].isMutable != theirs[i].isMutable || mine[i].isVolatile != theirs[i].isVolatile)
             return "differ: a data member's access, mutable or volatile";
@@ -3374,17 +3390,24 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
                                     std::map<std::string, std::string> *symbols) const {
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
     if (r == readMembers_.end()) return "differ: no member functions kept from the read";
+    // A data member of class type: the implicit specials are its class's, completeClass's under the binding, not the read's.
+    bool specials = true;
+    for (const Member &m : readClass_.at(start)->members()) {
+        const Type *e = substituted(s, m.type);
+        while (e->isArray()) e = e->pointee();
+        specials = specials && !e->unqualified()->isStructOrUnion();
+    }
     readStands(start, made, &s);
-    std::vector<const Signature *> theirs;
+    std::vector<const Signature *> theirs, mine;
     for (std::size_t f = fnFrom; f < p_.lookup_.functions_.size(); f++)
-        if (p_.lookup_.functions_[f].owner == tag) theirs.push_back(&p_.lookup_.functions_[f]);
-    const std::vector<Signature> &mine = r->second.second;
+        if (p_.lookup_.functions_[f].owner == tag && (specials || !p_.lookup_.functions_[f].implicit)) theirs.push_back(&p_.lookup_.functions_[f]);
+    for (const Signature &a : r->second.second) if (specials || !a.implicit) mine.push_back(&a);
     const std::string &readTag = r->second.first;
     if (mine.size() != theirs.size()) return "differ: the number of member functions";
     for (std::size_t i = 0; i < mine.size(); i++) {
-        const Signature &a = mine[i], &b = *theirs[i];
-        const std::string name = retagged(a.name, readTag, tag);
-        if (name != b.name) return "differ: a member function's name";
+        const Signature &a = *mine[i], &b = *theirs[i];
+        const std::string name = memberName(a, readTag, tag, s);
+        if (name != b.name) return "differ: a member function's name: " + name + " for " + b.name;
         if (substituted(s, a.returns) != b.returns || a.params.size() != b.params.size()) return "differ: a member function's return type or arity";
         for (std::size_t k = 0; k < a.params.size(); k++)
             if (substituted(s, a.params[k]) != b.params[k]) return "differ: a member function's parameter type";
@@ -3412,7 +3435,7 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
         if (!p_.target_.microsoftNames()) {
             if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
             else if (name[0] == '~') itaniumDestructorName(tag, cls, true, &symbol);
-            else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+            else symbol = p_.linkage_.memberSymbol(tag, name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
         } else {
             // The written parameters under the binding stand where manglingType reads them; Classes names an implicit one public.
             const std::vector<const Type *> keptWritten = p_.writtenParams_, keptFor = p_.writtenFor_;
@@ -3423,7 +3446,7 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
             if (name == tag) microsoftConstructorName(tag, cls, p_.linkage_.manglingType(fn), code, &symbol, &why);
             else if (name[0] == '~') symbol = microsoftDestructorName(tag, cls, code);
             else if (a.implicit && name == "operator=") microsoftCopyAssignName(tag, cls, fn, 'Q', &symbol, &why);
-            else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+            else symbol = p_.linkage_.memberSymbol(tag, name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
             p_.writtenParams_ = keptWritten;
             p_.writtenFor_ = keptFor;
         }
@@ -3490,7 +3513,7 @@ std::string Templates::classSkip(std::size_t start, const std::string &tag, cons
     if (r->second.size() != bodies.size()) return "differ: the number of held member bodies";
     for (std::size_t i = 0; i < bodies.size(); i++) {
         const Parser::PendingBody &a = r->second[i].first, &b = bodies[i];
-        const std::string key = retagged(a.key, m->second.first, tag), owner = retagged(a.tag, m->second.first, tag);
+        const std::string key = bodyKey(start, r->second[i], tag, coveredClass_.at(tag)), owner = retagged(a.tag, m->second.first, tag);
         if (a.start != b.start || a.freeFunction != b.freeFunction || key != b.key || owner != b.tag || a.local != b.local)
             return "differ: a held member body's place, key, class or name";
         const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(r->second[i].second);

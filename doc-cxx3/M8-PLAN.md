@@ -5117,3 +5117,28 @@ raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 p
 **Where it stopped**: a constexpr member (its body compiled where a constant needs it, which the class made from the read does not
 reach yet), a member initialiser, and the data members of class type (m83m's try: the implicit specials' names and count) are
 next; then a member type of another class (10,424 self-host) and the template-ids not declared before the replay.
+
+## M8.3 slice 3b: data members of class type made from the read with no replay (lane m83p, 2026-11-23)
+
+**The measure**: classes made with no replay - suite **735 of 2,184** (668 at 6d85ca31; 723 without the probes, 657), self-host
+**30,707 beside** under the check (27,684).
+
+**Commit 1**: `classShape` takes a data member of class type (or an array of one) - a plain class, a specialization the program
+declared, a type parameter bound to a class - and refuses by name only one of a class the read named over its parameters
+("a data member of a class the read named over its parameters"). m83m's try parted the checks in two ways, both mended here.
+First, a class-typed member gives the class implicit special members that call the member's (`declareImplicitSpecials` asks the
+member's class), which the read, laying `T t;` over a template parameter, cannot know: with such a member `classMembers` holds
+the written member functions alone against the replay's, and the implicit specials are `completeClass`'s under the binding in
+the class made from the read, as in the replay's (same members, same written functions; identical.sh under the flag is their
+oracle). Second, the 15 differing classes over the cases (thread-pool's `atomic<T>`, 15 integer types) were not about members at
+all: a conversion function `operator T()` is filed under its target's spelling (`operatorName`), and the read's was "operator
+template parameter" where the replay's is "operator int" - `memberName` names it under the binding (`Parser::conversionSpelling`,
+now a static member, the one spelling), for the declared function, its symbol and its held body's key (`bodyKey`, which
+`classSkip` holds the same way). The differ reasons name the function or the type, so the next difference says what it is.
+Census (x86_64-linux, tests/cases): with no check classes made from the read with no replay **735** (668), 3 replayed for a member
+initialiser, 2 for a constexpr member, nonzero 353 (REF's). Under the check no class `differ`, class equal 826, skip "data
+members, member functions and held bodies alone" 167. **Self-host** under the check: nonzero 0, **30,707 classes beside** (27,684), class equal 31,307, frames, shells and made 3,864 + 1,030 equal, member covered 1,030; 25 classes `differ` in "a data member's type: int for int" - `EntryOf<I, Payload>` of OptCore.h, whose `Kind kind` is the read class's own member enumeration, set apart from the replay's as a nested class would be; the class is refused before the replay ("a member enumeration", and its member initialiser), so the census shows it and nothing the program sees changes - owed: a data member of a member enumeration refused by name in `classShape`, so the census holds no differ.
+src/: `Templates.cpp` +23, `Templates.h` +2, `Parser.h` +1, `ParserType.cpp` 0 (96,520 -> 96,546, +26; the static gate's count). No EXCLUSIONS line moved.
+Gates (the commit's tree, REF 6d85ca31): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three (1926/3852/1926: the 735 classes made with no replay emit what the replay did - the covered shapes: data members of scalar or class type with implicit specials alone, and with written member functions, held bodies, member typedefs and default arguments); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0 (1308 pass, 0 fail; the fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 4 minutes, alone, at the first try; delta of the commit about 2 minutes, alone), names.sh 963/0, overload.sh 46/0.
+**Left**: a member type of another class (10,424 self-host), the template-ids not declared before the replay, a constexpr member,
+a member initialiser, a data member of a class the read named over its parameters (35 over the cases, 2,582 self-host), a data member of a member enumeration refused by name (the 25 census differs).
