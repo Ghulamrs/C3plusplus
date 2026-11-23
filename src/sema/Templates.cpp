@@ -3066,8 +3066,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         classCensus_[!held.empty() ? held : "covered"]++;
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
-            coveredClass_[tag].from.push_back(readClass_.at(start));
-            coveredClass_[tag].to.push_back(made);
+            readStands(start, made, &coveredClass_[tag]);
         }
     }
 
@@ -3175,8 +3174,7 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
                                     std::map<std::string, std::string> *symbols) const {
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
     if (r == readMembers_.end()) return "differ: no member functions kept from the read";
-    s.from.push_back(readClass_.at(start));
-    s.to.push_back(made);
+    readStands(start, made, &s);
     std::vector<const Signature *> theirs;
     for (std::size_t f = fnFrom; f < p_.lookup_.functions_.size(); f++)
         if (p_.lookup_.functions_[f].owner == tag) theirs.push_back(&p_.lookup_.functions_[f]);
@@ -3254,9 +3252,6 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
         if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
         if (r != p_.resolutions_.end() && (overRead(s, r->second.owner) || overRead(s, r->second.type))) return "replayed: a member of a class the read named over its parameter";
         if (n.kind == syntax::Kind::Conditional) return "replayed: a 'conditional', whose type the read may hold apart from its replay";
-        if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Member && n.kind == syntax::Kind::Name &&
-            offsetUnder(s, r->second.owner != nullptr ? r->second.owner : s.from.back(), p_.syntaxTree_.text(id), r->second.serial) != r->second.serial)
-            return "replayed: a data member named alone, which the read lays at another offset than its class";
     }
     const std::vector<FrameEvent> &steps = readFrames_[body.start];
     for (std::size_t k = 0; k < steps.size(); k++)
@@ -3268,6 +3263,20 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
     if (!shape.empty()) return "replayed: " + shape;
     if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
     return "covered: typed under the class's binding beside the replay";
+}
+
+// The read class standing for `made`, last in `s` (offsetUnder); before it the class the program declared under the read's own tag
+// (`inner<$T0>`, made inside `outer`'s read before `inner<int>`'s), which the read's records may name in its place.
+void Templates::readStands(std::size_t start, const Type *made, Substituted *s) const {
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
+    std::string own = k != readMembers_.end() ? k->second.first : std::string();
+    const std::size_t at = own.find("$read");
+    std::size_t end = at == std::string::npos ? at : at + 5;
+    while (end < own.size() && own[end] >= '0' && own[end] <= '9') end++;
+    const Type *apart = at == std::string::npos ? nullptr : p_.lookup_.findTypedef(own.erase(at, end - at));
+    if (apart != nullptr && apart != readClass_.at(start) && apart->isStructOrUnion()) s->from.push_back(apart), s->to.push_back(made);
+    s->from.push_back(readClass_.at(start));
+    s->to.push_back(made);
 }
 
 // A specialization or a class nested in one the map does not carry (`Tree<$T0>::It`; `inner<int>` read inside `outer`'s read).
@@ -3283,7 +3292,9 @@ const std::string &Templates::symbolUnder(const std::string &symbol) const {
 }
 
 // A data member of the read class, named `m`, `.m` or `->m`, at its offset in the class `s` puts in its place; else `offset`.
+// Named alone, its record has no owner: its own class, the read class last in a covered class's map.
 int Templates::offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const {
+    if (owner == nullptr && !s.from.empty() && s.from.back()->isStructOrUnion()) owner = s.from.back();
     const Type *to = owner != nullptr ? substituted(s, owner->unqualified())->unqualified() : nullptr;
     const std::string name = spelled.substr(spelled.compare(0, 2, "->") == 0 ? 2 : spelled.compare(0, 1, ".") == 0 ? 1 : 0);
     if (to == nullptr || to == owner->unqualified() || !to->isStructOrUnion() || to->findMember(name) == nullptr) return offset;

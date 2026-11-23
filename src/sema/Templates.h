@@ -260,6 +260,7 @@ public:
     std::map<std::string, std::string> readSymbol_;     // a covered class's, which its bodies' records are typed by (Typer::record)
     const std::string &symbolUnder(const std::string &symbol) const;     // readSymbol_'s for a read member's, else `symbol`
     bool overRead(const Substituted &s, const Type *t) const;     // a class the read named over its parameter, the map lacks
+    void readStands(std::size_t start, const Type *made, Substituted *s) const;     // the read class, and one declared apart, for `made`
     int offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const;     // a read member's in `s`'s class
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
     struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members;
