@@ -4345,3 +4345,27 @@ member-template door (`Templates::instantiateMemberTemplate`) still re-reads its
 102 of 102 sources (196 s), stage 1 built; stage 1 102 of 102 (1213 s, slots shared with the wave gate), stage 2 built;
 stage 2 102 of 102 (980 s), stage 3 built: **102 of 102 sources the same object from stages 0, 1 and 2** (at 5f5f2698's
 code). Stage 2 = stage 3 not measured: stage 3's compile (about 16 minutes) was stopped at the lane's hour by its own PIDs.
+
+## M8.2: the member-template door's pattern kept from the declaration's read (lane m82aj, 2026-11-23)
+
+**Before**: `Templates::instantiateMemberTemplate` bound the class's parameters, then the member's own to the
+specialization's arguments, and re-read the signature from tokens (`readTemplateDeclaration`, the member's parameters
+bound to `Kind::TemplateParam`) at every new specialization, for the Itanium name alone. **Now**: the in-class record
+(ParserType.cpp, where a member template is met in its class's body - under the class's binding, which is the class
+layer the door re-bound) reads that pattern once and keeps it in `TemplateDecl::pattern`, as 1c3d48e4 keeps a free
+function template's; a member template declared in its class and defined at namespace scope takes the definition's read
+at the merge (1c3d48e4's line). The door spells from `mt.pattern` and fails by name where none was kept. So both doors
+spell the Itanium pattern from the one read at the declaration; what still reads a signature again is deduction's
+trial (`deduceTemplateArguments`) and the explicit specialization's match, which ask what a signature *is* under an
+argument, not its pattern. EXCLUSIONS re-pointed (22 ParserType.cpp lines, +5). src 95,813 -> 95,815 (+2).
+
+**Gates** (on the commit's own tree, REF 52cd1c1e): identical 0 differ on four targets plain (1926/3852/1926/1926) and three
+with -templates=subst (1926/3852/1926); -g 0 differ beyond the tree path both ways, with and without the flag (linux 221,
+windows 214); names 963/0 and overload 46/0 on Windows; subst.sh 0 failed (run 1308/0 and typed 955/0 at -O0 and -O2 with
+the switch, self 102/102, ceiling cases 17 of 17, self 26 of 26, 3 shapes of 3), run.sh 1308/0, typed 955/0, syntax 7/0,
+fold 16985 compared 0 differ; **census** the same as REF's beyond the tree path, over all cases (1315 units, 353 nonzero
+exits as REF, none failing on a difference; covered 614, 536 made with no replay, 78 replayed by reason) and without the
+probes (296 with no replay, 78 by reason): no body changes, the suite's own bodies made 296 before and after; self census
+102 sources 0 nonzero, 3847 substituted, made 3847 equal, as REF; self-compile of Templates.cpp, Typing.cpp, ParserExpr.cpp
+rc 0; static rc 0 all (exclusions 0/0 after the re-point, comments 0, memory 89, residue 2012/298 not raised, ide up to
+date); g++ -Werror clean; Windows cl /W4 /WX clean, first and alone (215 s with the ship).

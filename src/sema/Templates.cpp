@@ -3138,13 +3138,10 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
         if (args[i].isPack) { packs[i] = args[i].pack; packs[i].values = args[i].packValues; }
     bindTemplateParameters(mt.params, binding, values, packs, &undo);
 
-    // **The pattern the Itanium name is spelled from**: the member's own parameters as
-    // references to themselves, the class's already bound to its arguments above.
-    std::vector<const Type *> pattern(mt.params.size());
-    for (std::size_t i = 0; i < mt.params.size(); i++)
-        pattern[i] = p_.types_.templateParam(static_cast<int>(i));
-    std::string patternName;
-    const Type *patternFn = p_.readTemplateDeclaration(mt, pattern, values, &patternName);
+    // **The pattern the Itanium name is spelled from** is the declaration's read (ParserType's, or the
+    // out-of-line definition's): the member's own parameters as themselves, the class's bound - not read again.
+    const Type *patternFn = mt.pattern;
+    if (patternFn == nullptr) p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' has no pattern signature kept at its declaration");
 
     count(MemberTemplate);
     const std::size_t bodiesFrom = p_.syntaxTree_.size();
