@@ -4703,3 +4703,42 @@ the self-host (nonzero 0, by the step 2 build, whose memberShape is this one); s
 up to date); self-compile of Templates.cpp rc 0 plain and under the flag; g++ `-Werror` clean; Windows cl /W4 /WX clean, first and
 alone (219 s full, 209 s delta), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed (clang 19 on the box) -
 on the tree before the last refusal (a data member named alone), which the step 2 build's cl /W4 /WX holds clean (113 s delta).
+
+## M8.3 slice 3b, step 2: a covered member body made from its read with no replay under -templates=subst (lane m83g, 2026-11-23)
+
+**What landed**: under `-templates=subst` without `-check=templates`, each covered member body (`memberShape`'s "covered") is
+made from its read in place of its replay: `instantiatePending` keeps it in `memberMade_` (by its start, with its member's
+symbol), and `replayInlineBodies` asks `Templates::madeMember` in place of the body's `topLevel`, so each frame starts where the
+last one left `frameAlign_`. `madeMember` replays a constructor or destructor by name (their C1/C2 aliases are the replay's) and
+otherwise calls M8.2's `madeWithoutReplay` with the member: the frame laid from the read, `madeFromRead`'s shell with the display
+name under the class's whole name, no `discardableInline_` (a specialization's member is not discardable), `defined`, the frame's
+alignment, `unreplayed_` (the read is the body's root the driver lowers) and the callees used - `callsUsed` now reads a read
+member's symbol through `symbolUnder`, so a call to the class's own member function marks the program's. Under
+`-check=templates` the replay runs beside it as before (decision i), with memberFrame's frame, shell and made checks.
+
+**Census** - the cases with no check (`CXX1_TEMPLATE_CENSUS=1 -templates=subst`, x86_64-linux): member bodies **made with no
+replay 141** (139 without the probes), beside a replay 0, replayed 2 by name (a constructor or destructor) and the rest as
+`memberShape` replays them (its class replayed 3,911, out of line 72, ...); functions 536 with no replay as M8.2. With `-check=templates`:
+member bodies covered 143, beside a replay 143, frames 143 equal, shells 143 equal, made 141 equal and 2 apart (the constructor
+and destructor, replayed); built 751 substituted, 0 apart. Self-host (`-check=templates -templates=subst`): nonzero 0, class equal 3,868, member covered 338, beside a replay 338, frames, shells
+and made 338 equal, built 3,980 substituted, 0 apart.
+
+**src/**: `Parser.cpp` 0 net (the hook in place of `topLevel`), `Templates.h` +2, `Templates.cpp` +25 (`madeMember`,
+`madeWithoutReplay`'s member, `instantiatePending`'s `memberMade_`, `callsUsed` through `symbolUnder`): src/ 96,118 -> 96,145
+(+27). EXCLUSIONS re-pointed (3 Templates.cpp lines).
+
+**Gates** (the commit's own tree, Linux, REF `99ead8d2`): identical 0 differ on four targets plain (x86_64-linux 1926,
+x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - the covered shapes:
+a covered class's held member bodies other than its constructors and destructors (m83d's, m83e's `this` and own members), now
+made from the read with no replay against REF's replay, byte for byte; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3
+shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as
+recorded; none falls back, none fails); `-check=templates -templates=subst` class `differ` 0 and no unit failing on a difference
+over the cases (nonzero 353, REF's) and the self-host (nonzero 0); self-compile of Templates.cpp and Parser.cpp rc 0 plain and
+under the flag; static rc 0 (exclusions 0/0 after re-pointing, comments 0 over, memory gate 89 held, ast-residue 2012/298 not
+raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX clean (113 s delta over the step 1 build); names.sh 963/0 and
+overload.sh 46/0 were run on the step 1 build, not again on this one. Step 1's own identical runs, finished after its commit:
+0 differ on four targets plain (1926/3852/1926/1926) and three with `-templates=subst` (1926/3852/1926).
+
+**What is left**: step (3), `inner<$T0>` - a class the read made apart - in `Typer::record`'s map, and a 'name' record with no
+owner taken through the covered class's binding, so the 6 refused here are covered again; constructors and destructors made
+from the read (their C1/C2 aliases); out-of-line members and `meminit` bodies (72 and 38 over the cases).
