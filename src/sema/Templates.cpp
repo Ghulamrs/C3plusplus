@@ -3073,11 +3073,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     }
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
-    // Step (3): Parser::localOf cuts a tag at a '::' inside its arguments, so the replay keys a constructor's body apart from the read.
-    const std::size_t angle = tag.find('<');
-    const std::string split = angle != std::string::npos && tag.find("::", angle) != std::string::npos
-        ? "replayed: a template argument written with '::', where localOf cuts the constructor's key" : std::string();
-    const std::string before = substitute_ && !p_.patternUses_ ? (split.empty() ? classBefore(start, useParams, useBinding) : split) : std::string();
+    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class of data members and implicit special members alone made from the read; the replay beside under the check.
     std::string fromRead = before == "made from the read: data members and implicit special members alone" ? fromReadWhyNot(start) : "-";
@@ -3104,7 +3100,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
             readStands(start, made, &coveredClass_[tag]);
-            skip = split.empty() ? classSkip(start, tag, bodies, decl.name, typedefsFrom) : split;
+            skip = classSkip(start, tag, bodies, decl.name, typedefsFrom);
             classCensus_["skip: " + skip]++;
             classCensus_["skip, member bodies: " + skip] += static_cast<int>(bodies.size());
         }

@@ -4962,3 +4962,21 @@ then 175 s delta), names.sh 963/0 and overload.sh 46/0 on commit 3's tree.
 **Where it stopped**: the typedef classes (158 over the cases, 153 without the probes) still replay - made from the read they need
 their member typedefs and aliases declared under the real tag (`readTypedefs_` has them, under the binding), and the `::` refusal
 narrowed or `localOf` mended first; then the classes with member functions and held bodies (step 3's bodies already come from the read).
+
+## M8.3 slice 3b, step (1): Parser::localOf mended, and the typedef classes made from the read (lane m83l, 2026-11-23)
+
+**Commit 1**: `Parser::localOf` takes the tag's last `::` outside any template-id's arguments (a depth count over `<>` and
+`()`), so `initializer_list<const struct Type::BaseSpec *>` is its own local name, as the read's key has it, and `constructorKey`
+gives the replay the key the read gives. m83k's refusal of a tag with `::` inside its arguments, at the door and the skip, is
+removed: such a class goes to the same checks as any other, which take it where they hold it equal. No emitted name moved: the
+key is internal, and every lookup goes through the same `constructorKey`.
+Census of commit 1 (x86_64-linux, `-check=templates -templates=subst`): **self-host** nonzero 0; the skip takes 3,551 classes
+(4,290 member bodies) with their member typedefs and 168 with member functions and held bodies alone (m83k: 2,814 + 168), 149
+replay for an alias over a type the binding does not carry (m83k 76), none by the `::` name (m83k 810), no class `differ`; frames,
+shells and made functions 3,861 equal, member bodies 338 equal, built 3,985 substituted. **tests/cases** as at m83k: nonzero 353
+(REF's), with no check 50 classes made from the read with no replay, 158 typedef classes replayed by name, member bodies 147 with
+no replay; under the check no class `differ`. src/: `Parser.h` +5, `Templates.cpp` -4 (96,417 -> 96,418).
+Gates (commit 1's tree, REF 37fd67f9): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0; static rc 0 (exclusions 0/0,
+comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, about
+5 minutes, alone), names.sh 963/0, overload.sh 46/0.
