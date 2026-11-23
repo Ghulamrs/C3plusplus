@@ -1290,6 +1290,16 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
                 if (!own.empty()) readPattern_[own] = made;
+                // Slice 3b: its member functions too, the read's tag beside them, before the layer they are declared in pops.
+                if (substitute_ && outermost && door != ReadOutOfLine) {
+                    const std::size_t key = partial ? decl.partials[which].bodyAt : decl.afterParams;
+                    readClass_[key] = made;
+                    std::pair<std::string, std::vector<Signature> > &kept = readMembers_[key];
+                    kept.first = readTag;
+                    kept.second.clear();
+                    for (std::size_t f = layer.sizes.functions; f < p_.lookup_.functions_.size(); f++)
+                        if (p_.lookup_.functions_[f].owner == readTag) kept.second.push_back(p_.lookup_.functions_[f]);
+                }
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
@@ -1456,6 +1466,8 @@ std::string Templates::bodiesReport() const {
     }
     for (std::map<std::string, int>::const_iterator i = substCensus_.begin(); i != substCensus_.end(); ++i)
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = classCensus_.begin(); i != classCensus_.end(); ++i)
+        out += "-check=templates class (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = frameCensus_.begin(); i != frameCensus_.end(); ++i)
         out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = shellCensus_.begin(); i != shellCensus_.end(); ++i)
@@ -2964,6 +2976,14 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (!made->isStructOrUnion())
         p_.src_.fail(pos, "'" + decl.name + "' is not a class template");
     p_.lookup_.declareTypeName(tag, made);
+    // M8.3 slice 3a: the class the read laid, under the binding, held against the one replayed; the replay's is the program's.
+    if (substitute_ && !p_.patternUses_) {
+        Substituted s;
+        const std::string shape = classShape(start, useParams, useBinding, &s);
+        std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
+        if (held == "equal") held = classMembers(start, s, made, tag, fnFrom);
+        classCensus_[!held.empty() ? held : "covered"]++;
+    }
 
     Parser::Specialization sp;
     sp.key = tag;
@@ -2986,6 +3006,120 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     specializations_.push_back(sp);
     noteMade(tag, logFrom, fnFrom);
     return made;
+}
+
+// Slice 3a's shape: type parameters bound to scalars, and a read class of data members alone, each of a type that is no class.
+std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const {
+    for (std::size_t q = 0; q < params.size(); q++) {
+        if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
+        if (params[q].type != nullptr) return "replayed: a non-type parameter, bound by name";
+    }
+    const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
+    if (r == readClass_.end()) return "replayed: no class read at the declaration";
+    const Type *read = r->second;
+    if (!read->isStructOrUnion() || !read->isComplete()) return "replayed: the read made no complete class";
+    if (!read->bases().empty()) return "replayed: a base";
+    if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
+    if (read->hasVptr()) return "replayed: a virtual function";
+    if (!read->staticMembers().empty()) return "replayed: a static data member";
+    for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
+        const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
+        if (u == nullptr) return "replayed: a type parameter bound to no type";
+        if (!u->isScalar())
+            return std::string("replayed: a type parameter bound to ") + (u->isStructOrUnion() ? "a class" : u->isReference() ? "a reference" :
+                   u->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
+        s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
+        s->to.push_back(binding[q]);
+    }
+    for (const Member &m : read->members()) {
+        if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
+        const Type *t = substituted(*s, m.type), *e = t;
+        if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
+        while (e->isArray()) e = e->pointee();
+        if (e->unqualified()->isStructOrUnion()) return "replayed: a data member of class type";
+        if (!t->isComplete()) return "replayed: a data member of an incomplete type";
+    }
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
+    if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
+    for (const Signature &f : k->second.second) {
+        std::vector<const Type *> types(f.params);
+        types.push_back(f.returns);
+        for (const Type *t : types) {
+            const Type *e = substituted(*s, t);
+            while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+            e = e->unqualified();
+            // A class the read named over its parameters (`initializer_list<$T0>`) is no specialization once the read ends.
+            if (e != read && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+                return "replayed: a member function's signature over a type the binding does not carry";
+        }
+    }
+    return std::string();
+}
+
+// The read class's members laid under `s` as the parser lays a class of no base, vptr or bit-field; `made` is the replay's.
+std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
+    if (!made->isComplete()) return "differ: the replay's class is incomplete";
+    if (!made->bases().empty() || made->hasVptr()) return "differ: the replay's class has a base or a vptr";
+    if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
+    const std::vector<Member> &mine = read->members(), &theirs = made->members();
+    if (mine.size() != theirs.size()) return "differ: the number of data members";
+    long long cursor = 0;
+    int widest = 1;
+    for (std::size_t i = 0; i < mine.size(); i++) {
+        const Type *t = substituted(s, mine[i].type);
+        const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
+        const int a = slot->align(p_.target_);
+        const long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
+        cursor = std::max(cursor, at + slot->size(p_.target_));
+        widest = std::max(widest, a);
+        if (mine[i].name != theirs[i].name) return "differ: a data member's name";
+        if (t != theirs[i].type) return "differ: a data member's type";
+        if (at != theirs[i].offset) return "differ: a data member's offset";
+        if (mine[i].access != theirs[i].access || mine[i].isMutable != theirs[i].isMutable || mine[i].isVolatile != theirs[i].isVolatile)
+            return "differ: a data member's access, mutable or volatile";
+    }
+    const int size = mine.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest), align = mine.empty() ? 1 : widest;
+    if (size != made->size(p_.target_)) return "differ: the size";
+    if (align != made->align(p_.target_)) return "differ: the alignment";
+    return "equal";
+}
+
+// Slice 3b: the read's member functions under `s`, the read class standing for `made`, held against the replay's under `tag`.
+std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom) const {
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
+    if (r == readMembers_.end()) return "differ: no member functions kept from the read";
+    s.from.push_back(readClass_.at(start));
+    s.to.push_back(made);
+    std::vector<const Signature *> theirs;
+    for (std::size_t f = fnFrom; f < p_.lookup_.functions_.size(); f++)
+        if (p_.lookup_.functions_[f].owner == tag) theirs.push_back(&p_.lookup_.functions_[f]);
+    const std::vector<Signature> &mine = r->second.second;
+    const std::string &readTag = r->second.first;
+    if (mine.size() != theirs.size()) return "differ: the number of member functions";
+    for (std::size_t i = 0; i < mine.size(); i++) {
+        const Signature &a = mine[i], &b = *theirs[i];
+        std::string name = a.name;
+        for (std::size_t at = name.find(readTag); at != std::string::npos; at = name.find(readTag, at + tag.size())) name.replace(at, readTag.size(), tag);
+        if (name != b.name) return "differ: a member function's name";
+        if (substituted(s, a.returns) != b.returns || a.params.size() != b.params.size()) return "differ: a member function's return type or arity";
+        for (std::size_t k = 0; k < a.params.size(); k++)
+            if (substituted(s, a.params[k]) != b.params[k]) return "differ: a member function's parameter type";
+        if (a.variadic != b.variadic || a.constThis != b.constThis || a.access != b.access || a.isVirtual != b.isVirtual || a.isExplicit != b.isExplicit ||
+            a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody || a.refThis != b.refThis)
+            return "differ: a member function's qualifiers, access or kind";
+        if (a.implicit != b.implicit) return "differ: which special members are implicit";
+        // Its Itanium name for the real tag, from the read's signature (Microsoft's reads the declarator's written parameters).
+        if (p_.target_.microsoftNames()) continue;
+        std::vector<const Type *> params;
+        for (std::size_t k = 0; k < a.params.size(); k++) params.push_back(substituted(s, a.params[k]));
+        const Type *fn = p_.types_.functionType(substituted(s, a.returns), params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
+        std::string symbol, why;
+        if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
+        else if (name[0] == '~') itaniumDestructorName(tag, cls, true, &symbol);
+        else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+        if (symbol != b.symbol) return "differ: a member function's symbol";
+    }
+    return "equal";
 }
 
 // The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.

@@ -4388,3 +4388,126 @@ three compiles at once, SELFHOST_JOBS=3, resumed after stage 2's job): **102 of 
 52cd1c1e; 0f8c4df3 (the member door's pattern) and 4ceae8dd (tests only) were not self-hosted again (their identical,
 names and census rows above say no output changed). Left of M8.2's row: nothing this lane found; the deduction trial and
 the explicit specialization's match still read a signature under an argument (not the Itanium pattern).
+
+## M8.3 split into slices, the class door's census, and slice 3a: a class's layout by substitution, held against the replay's (lane m83a, 2026-11-23)
+
+Branch `m8-3a` from `f0a710a9` (m6d-w16: main `270035bb` and m8-2aj, M8.2 closed). **What the class door is today**: every
+class template specialization the program asks for is made by `Templates::makeClass` replaying the class head and body
+(`readClassBody`) under the arguments, its member bodies held and replayed on use; the class door's read at the declaration
+(M8.1 commit 5) lays the class out once over its own parameters, under a tag of the read alone (`C<$T0>$read3`, `readLayout_`),
+and reads its member bodies into syntax. That read class is what M8.3 substitutes. **Each slice is one commit of identical
+output without the flag**: identical.sh against REF `f0a710a9` 0 differ on four targets; with `-templates=subst` 0 differ;
+under `-check=templates -templates=subst` each class specialization prints `-check=templates class (N): equal`, `differ: <what>`
+or `replayed: <reason>`, and a `differ` fails the slice. **The oracle is the replay's class** - its layout and members are
+what identical.sh, names.sh and the cases' clang `.expected` already hold - compared field by field where the slice builds.
+
+| slice | what | covers | still replays |
+| --- | --- | --- | --- |
+| 3a (this) | the read class kept by the token its body is read from (`readClass_`, primary and partial), `classShape` (the census by reason), and the layout by substitution: the read class's data members, each type through `substituted` under the binding, laid as the parser lays a class of no base, vptr or bit-field, held against the replay's class - each member's name, type, offset, access, `mutable`, `volatile`; the size; the alignment | a primary or partial over type parameters bound to scalars, whose read class has data members alone of types that are no class (scalars, pointers, references, arrays of them), with no base, dependent base, vptr, static data member, bit-field or anonymous union; member functions, typedefs and nested types beside them are not looked at | the class itself: the replay still makes the program's class, its members and specials (3a builds and compares, nothing it builds is used) |
+| 3b | the class made from the read in place of the replay for 3a's shape: the `Type` under its real tag from the substituted members, the member functions' declarations entered under that tag with their signatures substituted, the specials as `Classes` decides them, the held bodies owed from the read's member bodies (typed under the `Binding` by M8.2's function path, on use, [temp.inst]/2); held against a replay run beside it under the check: the members, the functions' symbols and signatures, the specials' triviality | 3a's shape with no replay | the rest |
+| 3c | a type parameter bound to a class, and data members of class type: Itanium's empty subobjects and tail padding (`Conflict`, `dataSize`, `podForLayout`) from the substituted types; static data members on use ([temp.inst]/3) | the largest bucket (635 in the cases, 51,815 in the self-host) | bases, vptrs, non-type parameters |
+| 3d | bases - named and named through a parameter - and virtual functions: the vtable, vptr sites and thunks through `Classes` as today, from the substituted bases; the check compares the slots and the base offsets | 81 + 40 + 5 in the cases | non-type parameters, packs |
+| 3e | non-type parameters by value (the `Binding`'s values: an array bound, a static member's initialiser), alias templates (the type-id substituted), the injected class name, nested classes of a specialization | 458 in the cases | packs and member templates (M8.4) |
+
+**The census of the class door at 3a** (`-check=templates -templates=subst -S`, Linux, NEW at this commit; every class
+specialization `makeClass` makes, summed): **`tests/cases`** (1,315 units, 353 nonzero exits as REF's): 2,184 class
+specializations - **equal 613** (603 without the `template-subst-*` probes), **differ 0**; replayed by reason - a type
+parameter bound to a class 635, a non-type parameter 458, a static data member 183, a pack or template parameter 109, a base
+81, a base named through a parameter (the read lays it out as nothing) 40, a data member of class type 27, a type parameter
+bound to a type that is no scalar, class, reference or array (an enumeration, a member pointer) 24, a virtual function 5, bound
+to a reference 4, to an array 2, a data member of an incomplete type 1, of a type the binding does not carry 1, a bit-field or
+an anonymous union 1. **The self-host** (102 sources, 0 nonzero): 71,314 class specializations - **equal 15,992, differ 0**;
+bound to a class 51,815, a base 2,228, a pack or template parameter 401, a non-type parameter 259, a static data member 216, a
+base through a parameter 215, a data member of class type 63, bound to a reference 51, to another type 49, a data member of a
+type the binding does not carry 24, bound to an array 1. So 3a's shape is 28% of the class door over the cases and 22% over
+the compiler's own source; a type parameter bound to a class is 3c's, and the self-host's largest (73%). The first build of
+this slice (n1) found 40 cases and 211 self-host classes laid apart where the replay's class had a base the read had laid out
+as nothing (a base named through a parameter, `dependentBase`): those are refused by name now, before the compare.
+
+**src/**: `Templates.h` +5 (`readClass_`, `classCensus_`, `classShape`, `classLaid`), `Templates.cpp` +71 (the two functions,
+the read kept in `readDeclaration` under the flag alone, the census in `makeClass`, the report line): src/ 95,815 -> 95,891.
+Without `-templates=subst` nothing it adds is reached; with it and without `-check=templates` it adds a count only.
+
+**Gates** (on the commit's own tree, Linux, REF `f0a710a9` built in its own tree): identical 0 differ on four targets plain
+(x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) -
+3a changes no output with the flag either, the replay's class being the program's; subst.sh 0 failed (self 102 of 102,
+ceiling 26 of 26, 3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed
+their recorded output, 352 refused as recorded; no class falls back, since none leaves replay); `-check=templates
+-templates=subst` over the cases: 1315 units, 353 nonzero exits, the same set as REF's, every unit's report the same as REF's
+beyond the tree path and the new `class` lines, class `differ` 0; over the self-host 102 sources, 0 nonzero, class `differ` 0
+(built 3849 substituted, made 3849 equal, as before); self-compile of Templates.cpp by NEW rc 0; static: exclusions 0/0 after
+three Templates.cpp citations re-pointed (+3), comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to
+date; g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (about 8 minutes with the ship, the box shared and loaded),
+then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that build (clang 19 on the box).
+
+**Where it stopped**: 3a is the census and the compare; 3b - the class made from the read for 3a's shape, the replay not run -
+is the next commit, and its first question is the member functions: the read's declarations live in the read's lookup layer
+and go with it (`Lookup::Layer` in `readDeclaration`), so 3b keeps each member's read signature beside `readClass_` before
+the layer pops, as 1c3d48e4 kept a function template's pattern.
+
+## M8.3 slice 3b, first part: the read class's member functions kept past the read, and held against the replay's (lane m83b, 2026-11-23)
+
+Branch `m8-3b` from `f88b3dd3` (m83a). **What it does**: the class door's read (`readDeclaration`, under `-templates=subst` alone)
+keeps, beside `readClass_` and before the read's `Lookup::Layer` pops, every function the read declared under the read class's tag -
+the written member functions and the special members `Classes` declared at the class's end (a trivial one is no function and so
+is not among them) - with that tag (`readMembers_`). `classShape` asks one thing more: each kept function's return and parameter
+types, through `substituted` under the binding, must name no type the binding does not carry (a dependent member type, or a class
+the read named over its own parameters - `initializer_list<$T0>`, `pair<const $T0,$T1>`, which is no specialization once the read
+ends and its arguments are taken back). Under `-check=templates`, a class whose layout `classLaid` holds equal is held member by
+member against the replay's (`classMembers`): the functions the replay declared under the real tag, in order - the count; each
+name with the read's tag spelled as the real one; the return and parameter types under the binding, the read class standing for
+the replay's; variadic, const `this`, access, virtual, `explicit`, static, `noexcept`, defined in the class; implicit or written.
+The replay still makes the program's class; nothing here is used beyond the census line.
+
+**Census** (`-check=templates -templates=subst -S`, Linux, at this commit): **`tests/cases`** (1,315 units, 353 nonzero exits, the
+set REF's): 2,184 class specializations - **equal 406** (396 without the `template-subst-*` probes; layout and member functions),
+**differ 0**; the 207 that 3a held equal and 3b does not are `replayed: a member function's signature over a type the binding does
+not carry` (an `initializer_list<T>` constructor, a `const pair<const K,V> &` parameter, an iterator's `typename X<T>::reference`);
+the other reasons as 3a's. **The self-host** (102 sources, 0 nonzero): 71,314 - **equal 3,868, differ 0**; over a type the binding
+does not carry 12,131; the rest as 3a's (bound to a class 52,201, a base 2,252, ...). The first build (n1) found 207 cases and the
+self-host's 1,378 apart on a parameter's or return type; each was such a type, refused by name now before the compare.
+
+**src/**: `Templates.h` +3 (`readMembers_`, `classMembers`), `Templates.cpp` +53 (the kept functions in `readDeclaration`, the
+signature test in `classShape`, `classMembers`, its call in `makeClass`): src/ 95,891 -> 95,947 (+56). EXCLUSIONS re-pointed (3
+Templates.cpp lines, +9).
+
+**Where it stopped** (the hour): step (2), the class made from the read with no replay for this shape - the `Type` under its real
+tag, the kept functions entered under it with their signatures substituted and their symbols spelled for it, the specials as
+`Classes` declares them, the held bodies owed through M8.2's function path - is not begun; the census above is the set it would
+cover (406 in the cases, 3,868 in the self-host), and `classMembers` is the check it would be held by.
+
+**Gates** (on the commit's own tree, Linux, REF `f88b3dd3` built in its own tree): identical 0 differ on four targets plain
+(x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - no
+output changes with the flag either, the replay's class being the program's; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26,
+3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as
+recorded; no class falls back, none leaving replay); `-check=templates -templates=subst` over the cases: 1315 units, 353 nonzero
+exits, every unit's report REF's beyond the tree path and the `class` lines; class `differ` 0 in the cases and the self-host (built
+3852 substituted, made 3852 equal); self-compile of Templates.cpp by NEW rc 0; static: exclusions 0/0 after the three citations
+re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date; g++ `-Werror` clean; Windows cl
+/W4 /WX clean, first and alone (95 s with the ship).
+
+## M8.3 slice 3b, second part: each member function's Itanium name spelled for the real tag from the read's signature (lane m83b, 2026-11-23)
+
+The second thing the class made without a replay needs is its member functions' symbols, and the read's are spelled for the read's
+tag (`Box<$T0>$read3`, or `$pattern$...`). Under `-check=templates`, `classMembers` now spells each kept function's name for the
+real tag from its signature under the binding - a constructor by `itaniumConstructorName`, a destructor by `itaniumDestructorName`,
+every other member (operators, static members, the implicit assignments) by `Linkage::memberSymbol` as the parser's member
+declaration calls it - and holds it against the replay's symbol; `refThis` joins the qualifiers compared. The Microsoft spelling is
+not compared: `memberSymbol` reads the declarator's written parameters there (`manglingType`), which a class made from the read
+does not have - that is the first thing step (2) owes on x86_64-windows. **Census**: cases equal 406, differ 0; self-host equal
+3,868, differ 0 - every covered class's member names agree with the replay's, specials included. **src/**: `Templates.cpp` +10:
+95,947 -> 95,957.
+
+**Gates** (this commit's tree, Linux, REF `f88b3dd3`): identical 0 differ on four targets plain (1926/3852/1926/1926) and three
+with `-templates=subst` (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0; self-compile
+of Templates.cpp rc 0; static rc 0 (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date); g++
+`-Werror` clean; Windows cl /W4 /WX clean, first and alone (91 s with the ship). names.sh 963/0 and overload.sh 46/0 (Windows,
+clang 19) were run on the first part's build; this part changes only what `-check=templates` prints.
+
+**Where it stopped**: step (2) proper - the class made from the read with no replay (the `Type` under its real tag from
+`classLaid`'s layout, the kept functions entered under it with the names above, `Classes::declareImplicitSpecials` over the made
+type, the held member bodies owed through M8.2's function path on use) - is not begun; the 406 / 3,868 are its cover and
+`classLaid` + `classMembers` its check.
+
+**The second part's Windows rows**, added after its commit: names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed
+with the cl build of `902fdc62`'s src (clang 19 on the box).
