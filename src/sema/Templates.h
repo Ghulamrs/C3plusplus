@@ -269,6 +269,18 @@ public:
     // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
     std::map<std::string, Bound> bound_;
     std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
+    // Step 4: the read's held member bodies with each one's symbol, by start; a class's door reason, by tag.
+    std::map<std::size_t, std::vector<std::pair<PendingBody, std::string> > > readBodies_;
+    std::map<std::string, std::string> classWhy_;
+    std::string classSkip(std::size_t start, const std::string &tag, const std::vector<PendingBody> &bodies, const std::string &name,
+                          std::size_t typedefsFrom) const;     // the class skip's shape
+    std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > > readTypedefs_;     // step (2): by start, in order
+    std::string typedefsCarried(std::size_t start, const Substituted &s) const;
+    std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
+    std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
+    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const;
+    void laidFromRead(const Type *read, const Substituted &s, std::vector<Member> *laid, int *size, int *align) const;
+    std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay
     const Type *chosenType(const std::string &binding, std::uint32_t id) const;     // the function a bound call's node records

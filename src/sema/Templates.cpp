@@ -1292,6 +1292,11 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     kept.second.clear();
                     for (std::size_t f = layer.sizes.functions; f < p_.lookup_.functions_.size(); f++)
                         if (p_.lookup_.functions_[f].owner == readTag) kept.second.push_back(p_.lookup_.functions_[f]);
+                    std::vector<std::pair<Parser::PendingBody, std::string> > &held = readBodies_[key];
+                    held.clear();
+                    for (const Parser::PendingBody &b : bodies)
+                        held.push_back(std::make_pair(b, b.which < p_.lookup_.functions_.size() ? p_.lookup_.functions_[b.which].symbol : std::string()));
+                    readTypedefs_[key] = memberTypedefs(readTag, decl.name, layer.sizes.typedefs);
                 }
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
@@ -1840,7 +1845,7 @@ void Templates::instantiatePending() {
             if (specializations_[i].isClass && substitute_) {
                 for (std::size_t b = 0; b < now.size(); b++) {
                     Bound made;
-                    const std::string why = c == coveredClass_.end() ? "replayed: its class replayed" : memberShape(now[b], c->second, &made);
+                    const std::string why = c == coveredClass_.end() ? "replayed: its class replayed: " + classWhy(specializations_[i].key) : memberShape(now[b], c->second, &made);
                     memberCensus_[why]++;
                     if (why.compare(0, 8, "covered:") != 0) continue;
                     bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
@@ -3068,6 +3073,8 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     }
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
+    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding) : std::string();
+    const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     const Type *made = readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
 
     if (!made->isStructOrUnion())
@@ -3082,10 +3089,20 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
         if (held == "equal") held = members;
         classCensus_[!held.empty() ? held : "covered"]++;
+        std::string skip;
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
             readStands(start, made, &coveredClass_[tag]);
+            skip = classSkip(start, tag, bodies, decl.name, typedefsFrom);
+            classCensus_["skip: " + skip]++;
+            classCensus_["skip, member bodies: " + skip] += static_cast<int>(bodies.size());
         }
+        // Step (1) decides before the replay: what it takes is what the skip takes after it, or the two are apart.
+        const bool takes = before.compare(0, 18, "made from the read") == 0;
+        classCensus_["before the replay: " + before]++;
+        if (takes != (skip.compare(0, 18, "made from the read") == 0))
+            classCensus_["differ: the class skip before the replay and after it: " + (takes ? skip : before)]++;
+        classWhy_[tag] = held.empty() ? "covered" : held;
     }
 
     Parser::Specialization sp;
@@ -3159,29 +3176,42 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     return std::string();
 }
 
-// The read class's members laid under `s` as the parser lays a class of no base, vptr or bit-field; `made` is the replay's.
-std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
-    if (!made->isComplete()) return "differ: the replay's class is incomplete";
-    if (!made->bases().empty() || made->hasVptr()) return "differ: the replay's class has a base or a vptr";
-    if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
-    const std::vector<Member> &mine = read->members(), &theirs = made->members();
-    if (mine.size() != theirs.size()) return "differ: the number of data members";
+// The read class's data members under `s`, laid as the parser lays a class of no base, vptr or bit-field: step (1)'s layout.
+void Templates::laidFromRead(const Type *read, const Substituted &s, std::vector<Member> *laid, int *size, int *align) const {
     long long cursor = 0;
     int widest = 1;
-    for (std::size_t i = 0; i < mine.size(); i++) {
-        const Type *t = substituted(s, mine[i].type);
+    for (const Member &m : read->members()) {
+        const Type *t = substituted(s, m.type);
         const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         const int a = slot->align(p_.target_);
         const long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
         cursor = std::max(cursor, at + slot->size(p_.target_));
         widest = std::max(widest, a);
+        laid->push_back(m);
+        laid->back().type = t;
+        laid->back().offset = static_cast<int>(at);
+    }
+    *size = laid->empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest);
+    *align = laid->empty() ? 1 : widest;
+}
+
+// The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
+std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
+    if (!made->isComplete()) return "differ: the replay's class is incomplete";
+    if (!made->bases().empty() || made->hasVptr()) return "differ: the replay's class has a base or a vptr";
+    if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
+    std::vector<Member> mine;
+    int size = 0, align = 0;
+    laidFromRead(read, s, &mine, &size, &align);
+    const std::vector<Member> &theirs = made->members();
+    if (mine.size() != theirs.size()) return "differ: the number of data members";
+    for (std::size_t i = 0; i < mine.size(); i++) {
         if (mine[i].name != theirs[i].name) return "differ: a data member's name";
-        if (t != theirs[i].type) return "differ: a data member's type";
-        if (at != theirs[i].offset) return "differ: a data member's offset";
+        if (mine[i].type != theirs[i].type) return "differ: a data member's type";
+        if (mine[i].offset != theirs[i].offset) return "differ: a data member's offset";
         if (mine[i].access != theirs[i].access || mine[i].isMutable != theirs[i].isMutable || mine[i].isVolatile != theirs[i].isVolatile)
             return "differ: a data member's access, mutable or volatile";
     }
-    const int size = mine.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest), align = mine.empty() ? 1 : widest;
     if (size != made->size(p_.target_)) return "differ: the size";
     if (align != made->align(p_.target_)) return "differ: the alignment";
     return "equal";
@@ -3238,6 +3268,107 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
         (*symbols)[a.symbol] = b.symbol;
     }
     return "equal";
+}
+
+// What a class body declares at its own level beyond data members and member functions, by name; empty when nothing.
+std::string Templates::classBeyond(std::size_t start) const {
+    std::size_t t = start;
+    while (t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";")) t++;
+    for (int depth = 0; t < p_.tokens_.size(); t++) {
+        const Token &k = p_.tokens_[t];
+        if (k.is("{") || k.is("(") || k.is("[")) depth++;
+        else if ((k.is("}") || k.is(")") || k.is("]")) && --depth == 0) break;
+        else if (depth != 1) continue;
+        else if (k.is("using") && !(p_.tokens_[t + 1].kind == TokenKind::Ident && p_.tokens_[t + 2].is("=")))
+            return "replayed: a using-declaration";     // a member typedef or alias is the read's, readTypedefs_
+        else if (k.is("enum")) return "replayed: a member enumeration";
+        else if (k.is("struct") || k.is("class") || k.is("union")) return "replayed: a nested or elaborated class";
+        else if (k.is("friend")) return "replayed: a friend";
+        else if (k.is("template")) return "replayed: a member template";
+        else if (k.is("static_assert")) return "replayed: a static_assert";
+    }
+    return std::string();
+}
+
+// Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
+std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const {
+    Substituted s;
+    const std::string shape = classShape(start, params, binding, &s), beyond = shape.empty() ? classBeyond(start) : shape;
+    if (!beyond.empty()) return beyond;
+    const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
+    if (r == readBodies_.end() || readTypedefs_.count(start) == 0) return "replayed: no held member bodies kept from the read";
+    const std::string carried = typedefsCarried(start, s);
+    if (!carried.empty()) return carried;
+    for (const Signature &f : readMembers_.at(start).second)
+        if (!f.implicit || !r->second.empty()) return "made from the read: data members, member functions and held bodies";
+    return "made from the read: data members and implicit special members alone";
+}
+
+// Step (2): each of the read's member typedefs and aliases names, under `s`, a type the binding carries; else why not.
+std::string Templates::typedefsCarried(std::size_t start, const Substituted &s) const {
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
+        const Type *e = substituted(s, td.second);
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        e = e->unqualified();
+        if (e != readClass_.at(start) && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+            return "replayed: a member typedef or alias over a type the binding does not carry";
+    }
+    return std::string();
+}
+
+// Step 4's shape: a covered class made from the read lacks what its body declares beyond data members and member functions,
+// and its held member bodies are the read's records under the real tag, each one's function the replay's by readSymbol_.
+std::string Templates::classSkip(std::size_t start, const std::string &tag, const std::vector<Parser::PendingBody> &bodies,
+                                 const std::string &name, std::size_t typedefsFrom) const {
+    const std::string beyond = classBeyond(start);
+    if (!beyond.empty()) return beyond;
+    const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator m = readMembers_.find(start);
+    if (r == readBodies_.end() || m == readMembers_.end() || readTypedefs_.count(start) == 0) return "differ: no held member bodies kept from the read";
+    if (r->second.size() != bodies.size()) return "differ: the number of held member bodies";
+    for (std::size_t i = 0; i < bodies.size(); i++) {
+        const Parser::PendingBody &a = r->second[i].first, &b = bodies[i];
+        std::string key = a.key, owner = a.tag;
+        std::string *both[] = { &key, &owner };
+        for (std::string *w : both)
+            for (std::size_t at = w->find(m->second.first); at != std::string::npos; at = w->find(m->second.first, at + tag.size()))
+                w->replace(at, m->second.first.size(), tag);
+        if (a.start != b.start || a.freeFunction != b.freeFunction || key != b.key || owner != b.tag || a.local != b.local)
+            return "differ: a held member body's place, key, class or name";
+        const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(r->second[i].second);
+        if (b.which >= p_.lookup_.functions_.size() || f == readSymbol_.end() || f->second != p_.lookup_.functions_[b.which].symbol)
+            return "differ: a held member body's function";
+    }
+    // Step (2): each member typedef or alias the read's under the binding, as the replay declared it under the real tag.
+    const std::string carried = typedefsCarried(start, coveredClass_.at(tag));
+    if (!carried.empty()) return carried;
+    const std::vector<std::pair<std::string, const Type *> > &mine = readTypedefs_.at(start), theirs = memberTypedefs(tag, name, typedefsFrom);
+    if (mine.size() != theirs.size()) return "differ: the number of member typedefs and aliases";
+    for (std::size_t i = 0; i < mine.size(); i++)
+        if (mine[i].first != theirs[i].first || substituted(coveredClass_.at(tag), mine[i].second) != theirs[i].second)
+            return "differ: a member typedef's or alias's name or type";
+    return mine.empty() ? "made from the read: data members, member functions and held bodies alone"
+                        : "made from the read: member typedefs or aliases beside them";
+}
+
+// The member typedefs and aliases declared under `owner` since `from`, in order: not its injected name, not a nested class.
+std::vector<std::pair<std::string, const Type *> > Templates::memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const {
+    std::vector<std::pair<std::string, const Type *> > out;
+    for (std::size_t i = from; i < p_.lookup_.typedefs_.size(); i++) {
+        const std::string &key = p_.lookup_.typedefs_[i].name;
+        if (key.compare(0, owner.size() + 2, owner + "::") != 0) continue;
+        const std::string own = key.substr(owner.size() + 2);
+        const Type *t = p_.lookup_.typedefs_[i].type;
+        if (own == injected || own.find("::") != std::string::npos || (t->isStructOrUnion() && t->tag() == key)) continue;
+        out.push_back(std::make_pair(own, t));
+    }
+    return out;
+}
+
+// Why a class's member bodies replay: its door's reason, or that no door under the binding made it.
+std::string Templates::classWhy(const std::string &tag) const {
+    const std::map<std::string, std::string>::const_iterator w = classWhy_.find(tag);
+    return w == classWhy_.end() ? "not made at the class door" : w->second;
 }
 
 // The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.
