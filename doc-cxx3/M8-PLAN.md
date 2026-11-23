@@ -4444,3 +4444,44 @@ then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that
 is the next commit, and its first question is the member functions: the read's declarations live in the read's lookup layer
 and go with it (`Lookup::Layer` in `readDeclaration`), so 3b keeps each member's read signature beside `readClass_` before
 the layer pops, as 1c3d48e4 kept a function template's pattern.
+
+## M8.3 slice 3b, first part: the read class's member functions kept past the read, and held against the replay's (lane m83b, 2026-11-23)
+
+Branch `m8-3b` from `f88b3dd3` (m83a). **What it does**: the class door's read (`readDeclaration`, under `-templates=subst` alone)
+keeps, beside `readClass_` and before the read's `Lookup::Layer` pops, every function the read declared under the read class's tag -
+the written member functions and the special members `Classes` declared at the class's end (a trivial one is no function and so
+is not among them) - with that tag (`readMembers_`). `classShape` asks one thing more: each kept function's return and parameter
+types, through `substituted` under the binding, must name no type the binding does not carry (a dependent member type, or a class
+the read named over its own parameters - `initializer_list<$T0>`, `pair<const $T0,$T1>`, which is no specialization once the read
+ends and its arguments are taken back). Under `-check=templates`, a class whose layout `classLaid` holds equal is held member by
+member against the replay's (`classMembers`): the functions the replay declared under the real tag, in order - the count; each
+name with the read's tag spelled as the real one; the return and parameter types under the binding, the read class standing for
+the replay's; variadic, const `this`, access, virtual, `explicit`, static, `noexcept`, defined in the class; implicit or written.
+The replay still makes the program's class; nothing here is used beyond the census line.
+
+**Census** (`-check=templates -templates=subst -S`, Linux, at this commit): **`tests/cases`** (1,315 units, 353 nonzero exits, the
+set REF's): 2,184 class specializations - **equal 406** (396 without the `template-subst-*` probes; layout and member functions),
+**differ 0**; the 207 that 3a held equal and 3b does not are `replayed: a member function's signature over a type the binding does
+not carry` (an `initializer_list<T>` constructor, a `const pair<const K,V> &` parameter, an iterator's `typename X<T>::reference`);
+the other reasons as 3a's. **The self-host** (102 sources, 0 nonzero): 71,314 - **equal 3,868, differ 0**; over a type the binding
+does not carry 12,131; the rest as 3a's (bound to a class 52,201, a base 2,252, ...). The first build (n1) found 207 cases and the
+self-host's 1,378 apart on a parameter's or return type; each was such a type, refused by name now before the compare.
+
+**src/**: `Templates.h` +3 (`readMembers_`, `classMembers`), `Templates.cpp` +53 (the kept functions in `readDeclaration`, the
+signature test in `classShape`, `classMembers`, its call in `makeClass`): src/ 95,891 -> 95,947 (+56). EXCLUSIONS re-pointed (3
+Templates.cpp lines, +9).
+
+**Where it stopped** (the hour): step (2), the class made from the read with no replay for this shape - the `Type` under its real
+tag, the kept functions entered under it with their signatures substituted and their symbols spelled for it, the specials as
+`Classes` declares them, the held bodies owed through M8.2's function path - is not begun; the census above is the set it would
+cover (406 in the cases, 3,868 in the self-host), and `classMembers` is the check it would be held by.
+
+**Gates** (on the commit's own tree, Linux, REF `f88b3dd3` built in its own tree): identical 0 differ on four targets plain
+(x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - no
+output changes with the flag either, the replay's class being the program's; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26,
+3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as
+recorded; no class falls back, none leaving replay); `-check=templates -templates=subst` over the cases: 1315 units, 353 nonzero
+exits, every unit's report REF's beyond the tree path and the `class` lines; class `differ` 0 in the cases and the self-host (built
+3852 substituted, made 3852 equal); self-compile of Templates.cpp by NEW rc 0; static: exclusions 0/0 after the three citations
+re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date; g++ `-Werror` clean; Windows cl
+/W4 /WX clean, first and alone (95 s with the ship).

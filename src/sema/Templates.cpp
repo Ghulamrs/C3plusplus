@@ -1290,7 +1290,16 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
                 if (!own.empty()) readPattern_[own] = made;
-                if (substitute_ && outermost && door != ReadOutOfLine) readClass_[partial ? decl.partials[which].bodyAt : decl.afterParams] = made;
+                // Slice 3b: its member functions too, the read's tag beside them, before the layer they are declared in pops.
+                if (substitute_ && outermost && door != ReadOutOfLine) {
+                    const std::size_t key = partial ? decl.partials[which].bodyAt : decl.afterParams;
+                    readClass_[key] = made;
+                    std::pair<std::string, std::vector<Signature> > &kept = readMembers_[key];
+                    kept.first = readTag;
+                    kept.second.clear();
+                    for (std::size_t f = layer.sizes.functions; f < p_.lookup_.functions_.size(); f++)
+                        if (p_.lookup_.functions_[f].owner == readTag) kept.second.push_back(p_.lookup_.functions_[f]);
+                }
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
@@ -2971,7 +2980,9 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (substitute_ && !p_.patternUses_) {
         Substituted s;
         const std::string shape = classShape(start, useParams, useBinding, &s);
-        classCensus_[!shape.empty() ? shape : checkBodies_ ? classLaid(readClass_.at(start), s, made) : "covered"]++;
+        std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
+        if (held == "equal") held = classMembers(start, s, made, tag, fnFrom);
+        classCensus_[!held.empty() ? held : "covered"]++;
     }
 
     Parser::Specialization sp;
@@ -3028,6 +3039,20 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (e->unqualified()->isStructOrUnion()) return "replayed: a data member of class type";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
     }
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
+    if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
+    for (const Signature &f : k->second.second) {
+        std::vector<const Type *> types(f.params);
+        types.push_back(f.returns);
+        for (const Type *t : types) {
+            const Type *e = substituted(*s, t);
+            while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+            e = e->unqualified();
+            // A class the read named over its parameters (`initializer_list<$T0>`) is no specialization once the read ends.
+            if (e != read && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+                return "replayed: a member function's signature over a type the binding does not carry";
+        }
+    }
     return std::string();
 }
 
@@ -3056,6 +3081,34 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
     const int size = mine.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest), align = mine.empty() ? 1 : widest;
     if (size != made->size(p_.target_)) return "differ: the size";
     if (align != made->align(p_.target_)) return "differ: the alignment";
+    return "equal";
+}
+
+// Slice 3b: the read's member functions under `s`, the read class standing for `made`, held against the replay's under `tag`.
+std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom) const {
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
+    if (r == readMembers_.end()) return "differ: no member functions kept from the read";
+    s.from.push_back(readClass_.at(start));
+    s.to.push_back(made);
+    std::vector<const Signature *> theirs;
+    for (std::size_t f = fnFrom; f < p_.lookup_.functions_.size(); f++)
+        if (p_.lookup_.functions_[f].owner == tag) theirs.push_back(&p_.lookup_.functions_[f]);
+    const std::vector<Signature> &mine = r->second.second;
+    const std::string &readTag = r->second.first;
+    if (mine.size() != theirs.size()) return "differ: the number of member functions";
+    for (std::size_t i = 0; i < mine.size(); i++) {
+        const Signature &a = mine[i], &b = *theirs[i];
+        std::string name = a.name;
+        for (std::size_t at = name.find(readTag); at != std::string::npos; at = name.find(readTag, at + tag.size())) name.replace(at, readTag.size(), tag);
+        if (name != b.name) return "differ: a member function's name";
+        if (substituted(s, a.returns) != b.returns || a.params.size() != b.params.size()) return "differ: a member function's return type or arity";
+        for (std::size_t k = 0; k < a.params.size(); k++)
+            if (substituted(s, a.params[k]) != b.params[k]) return "differ: a member function's parameter type";
+        if (a.variadic != b.variadic || a.constThis != b.constThis || a.access != b.access || a.isVirtual != b.isVirtual || a.isExplicit != b.isExplicit ||
+            a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody)
+            return "differ: a member function's qualifiers, access or kind";
+        if (a.implicit != b.implicit) return "differ: which special members are implicit";
+    }
     return "equal";
 }
 
