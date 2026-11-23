@@ -5136,3 +5136,9 @@ signature kept from the declaration's read (TemplateDecl::pattern, no second rea
 -templates=subst measured - stages 0, 1 and 2 the same object for 102 of 102 sources, stage 2 = 3 owed (lane m82aj). The gate's
 one failure on its first run was the Mac's lldb step, case d1 with no output at all - lldb not starting on its first run after
 the Mac was cleaned and restarted; its verdict cleared, the step alone on the same tree (`-k`): 5 passed, 0 failed.
+
+**m6d-w16's wave landed, 2026-11-23 (gate m6dw16g at f0a710a9 against main 270035bb: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2's close (M8-PLAN, m82aj): the self-host under -templates=subst - tools/self-host on Linux at
+-O0, the flag on every stage - gives the same object for 102 of 102 sources from stages 0, 1 and 2 and from stages 2 and 3, the
+row's close criterion; the member-template door keeps the declaration's pattern (no second read); tests/subst.sh's two probes
+check that M8.1's stand-in takes none of their bodies and that none replays. Nothing changes without the flag.
