@@ -4437,7 +4437,8 @@ their recorded output, 352 refused as recorded; no class falls back, since none 
 beyond the tree path and the new `class` lines, class `differ` 0; over the self-host 102 sources, 0 nonzero, class `differ` 0
 (built 3849 substituted, made 3849 equal, as before); self-compile of Templates.cpp by NEW rc 0; static: exclusions 0/0 after
 three Templates.cpp citations re-pointed (+3), comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to
-date; g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (about 8 minutes with the ship, the box shared and loaded).
+date; g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (about 8 minutes with the ship, the box shared and loaded),
+then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that build (clang 19 on the box).
 
 **Where it stopped**: 3a is the census and the compare; 3b - the class made from the read for 3a's shape, the replay not run -
 is the next commit, and its first question is the member functions: the read's declarations live in the read's lookup layer
