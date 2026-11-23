@@ -5033,3 +5033,37 @@ thread-pool: 15 in a member function's name, 1 in the number of member functions
 function's name and 25 in a data member's type, 182 member bodies behind them. A class-typed member gives the class implicit
 special members that call the member's (non-trivial), whose names and count the read's records do not carry; that, and the
 member's type under the binding, is what the next round finds and mends or refuses by name before the shape is widened.
+
+## M8.3 slice 3b: a member function's signature over a class template-id, carried (lane m83n, 2026-11-23)
+
+**The measure**: classes made with no replay - suite **393 of 2,184** (unchanged, 152dc675's), self-host **17,254 beside** under the
+check (unchanged). The commit does not raise it, and is needed for the next: a class with written member functions is made only
+by the replay (`classFromRead` takes "data members and implicit special members alone"), so a signature the read now carries
+moves its class to the door's "data members, member functions and held bodies" shape, which the next step makes from the read.
+
+**Commit 1**: the reason, counted by kind. `classShape`'s refusal "a member function's signature over a type the binding does not
+carry" names the type's kind (`uncarriedKind`). Before the commit (n0, the same build mapping nothing), over the cases 276: a
+member type of another class over its parameters 138 (`reverse_iterator<It>`'s `typename iterator_traits<It>::reference`), a class
+template-id over the parameters 124 (`initializer_list<T>`, `pair<const K, V>`), its own template under other arguments 14; over
+the self-host 20,567 (10,424 / 9,762 / 381). The second and third are taken: a class template-id the read named over its parameters
+stands, under the binding, for the specialization the program declared by its key before the replay (`specializationUnder`,
+split from `memberUnder`, which uses it; `carriedId`); the pair goes into the class's `Substituted`, so `classMembers`,
+`classSkip` and the member bodies' typing see the real class. The ids found before the replay (`early`, kept from
+`classBefore`) are the only ones the census after it takes, so the door before and after the replay agree. A template-id the
+program had not declared before the replay stays refused by name; nothing the program sees changes.
+Census (x86_64-linux): **tests/cases** under the check - equal 758 (750), the signature reason 268 (276: 138 / 123 / 7), the door's
+held-bodies shape 279 (271), no class `differ`, nonzero 353 (REF's); with no check 393 made with no replay, member bodies 218, as
+before. **Self-host** under the check: nonzero 0, 17,254 beside, no `differ`; the signature reason 20,332 (20,567: a member type of
+another class 10,424, a template-id not declared before the replay 9,718, its own template under other arguments 190), the
+held-bodies shape 10,423 (10,188).
+src/: `Templates.h` +3, `Templates.cpp` +34 (96,428 -> 96,465, +37). EXCLUSIONS re-pointed (3 Templates.cpp lines, +1).
+Gates (commit 1's tree, REF 152dc675): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0 (1308 pass, 0 fail; the
+fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to
+date); self-compile of Templates.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 4
+minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped** (the hour): the largest kind left, a member type of another class (`iterator_traits<It>::reference` through a
+member typedef), and most template-ids, name a specialization the replay itself makes when it reads the body: the read carries
+them only once the door makes those specializations in the body's order, as the replay would. Then work (2): the classes of the
+held-bodies shape (279 / 10,423) made from the read with their member bodies through m83g's path, which is what raises the measure.

@@ -336,19 +336,20 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
 // m as memberTypeWalk's lookup finds it; `t`, still dependent, where an argument is no type or the class was not made.
 const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
     const Type *o = t->pointee();
-    if (o->isSpecialization()) {
-        std::vector<TemplateArg> args = o->templateArgs();
-        for (std::size_t k = 0; k < args.size(); k++) {
-            if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return t;
-            args[k].type = substituted(s, args[k].type);
-        }
-        o = p_.lookup_.findTypedef(specializationKey(o->templateName(), args));
-    } else {
-        o = substituted(s, o);
-    }
+    o = o->isSpecialization() ? specializationUnder(s, o) : substituted(s, o);
     if (o == nullptr || p_.dependentType(o) || !o->isStructOrUnion()) return t;
     const Type *m = p_.lookup_.lookupInClass(o, t->tag());
     return m != nullptr ? m : t;
+}
+
+// A specialization named over the parameters (`pair<const $T0,$T1>`) under `s`: the one the program declared by its key, or null.
+const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
+    std::vector<TemplateArg> args = o->templateArgs();
+    for (std::size_t k = 0; k < args.size(); k++) {
+        if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return nullptr;
+        args[k].type = substituted(s, args[k].type);
+    }
+    return p_.lookup_.findTypedef(specializationKey(o->templateName(), args));
 }
 
 const Type *Templates::valueUnder(const Substituted &s, const Type *t) const {
@@ -3073,7 +3074,8 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     }
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
-    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding) : std::string();
+    Substituted early;
+    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class of data members and implicit special members alone made from the read; the replay beside under the check.
     std::string fromRead = before == "made from the read: data members and implicit special members alone" ? fromReadWhyNot(start) : "-";
@@ -3090,7 +3092,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     // M8.3 slice 3a: the class the read laid, under the binding, held against the one replayed; the replay's is the program's.
     if (substitute_ && !p_.patternUses_) {
         Substituted s;
-        const std::string shape = classShape(start, useParams, useBinding, &s);
+        const std::string shape = classShape(start, useParams, useBinding, &s, &early);
         std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
         // Its member functions' symbols, the replay's for the read's: held under the check, kept for its bodies' records either way.
         const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
@@ -3135,9 +3137,37 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     return made;
 }
 
+// The kind of a type a signature names that the binding does not carry, for the class census.
+static std::string uncarriedKind(const Type *e, const Type *read) {
+    if (e->kind() == Kind::TemplateParam) return "a template parameter";
+    if (e->kind() == Kind::DependentExpr) return "a dependent expression's type";
+    if (e->isFunction()) return "a function type";
+    if (e->kind() == Kind::DependentMember) {
+        const Type *o = e->pointee()->unqualified();
+        if (o == read || (o->isSpecialization() && o->templateName() == read->templateName())) return "a member type of its own class";
+        return o->kind() == Kind::TemplateParam ? "a member type of a type parameter" : "a member type of another class over its parameters";
+    }
+    if (!e->isStructOrUnion()) return "another kind";
+    if (e->dependentLayout()) return "a nested class laid over its parameters";
+    if (e->tag().find('$') == std::string::npos) return "a class template-id over dependent arguments";
+    if (e->isSpecialization() && e->templateName() == read->templateName()) return "its own template under other arguments";
+    return "a class template-id over its parameters the program had not declared";
+}
+
+// A class template-id over the parameters under `s`: the class the program declared before the replay (`early`'s), or null.
+const Type *Templates::carriedId(const Substituted &s, const Type *e, const Substituted *early) const {
+    if (early != nullptr) {
+        for (std::size_t k = 0; k < early->from.size(); k++) if (early->from[k] == e) return early->to[k];
+        return nullptr;
+    }
+    const Type *real = specializationUnder(s, e);
+    return real == nullptr || !real->isStructOrUnion() || p_.dependentType(real) || real->tag().find('$') != std::string::npos ? nullptr : real;
+}
+
 // Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
 // each of a type that is no class.
-std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const {
+std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
+                                  const Substituted *early) const {
     for (std::size_t q = 0; q < params.size(); q++) {
         if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
         if (params[q].type != nullptr) return "replayed: a non-type parameter, bound by name";
@@ -3179,9 +3209,12 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *e = substituted(*s, t);
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
-            // A class the read named over its parameters (`initializer_list<$T0>`) is no specialization once the read ends.
-            if (e != read && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
-                return "replayed: a member function's signature over a type the binding does not carry";
+            // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
+            // the binding before the replay; one it had not is no specialization once the read ends.
+            const Type *real = e != read && e->isSpecialization() && e->tag().find('$') != std::string::npos ? carriedId(*s, e, early) : nullptr;
+            if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
+            else if (e != read && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+                return "replayed: a member function's signature over a type the binding does not carry: " + uncarriedKind(e, read);
         }
     }
     return std::string();
@@ -3362,8 +3395,9 @@ std::string Templates::classBeyond(std::size_t start) const {
 }
 
 // Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
-std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const {
-    Substituted s;
+std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
+                                   Substituted *early) const {
+    Substituted &s = *early;
     const std::string shape = classShape(start, params, binding, &s), beyond = shape.empty() ? classBeyond(start) : shape;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
