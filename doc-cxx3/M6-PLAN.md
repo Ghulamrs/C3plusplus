@@ -5189,3 +5189,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83k): Parser::completeClass, the clas
 specializations made from the read with no replay under -templates=subst - 50 in the suite (47 without the probes), emitting
 what the replay emitted on the three targets the flag covers; the 158 initializer_list<X::Y> classes refused by name (their
 cause, Parser::localOf's cut at a '::', mended on m8-3l). Nothing changes without the flag.
+
+**m6d-w24's wave landed, 2026-11-24 (gate m6dw24g at 2a563298 against main 2a1242ac: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83l-m83m): Parser::localOf no longer cuts a tag at a '::' inside template arguments;
+the typedef classes made from the read; a type parameter bound to a class accepted at the class door. **Class specializations
+made with no replay: suite 393 of 2,184 (from 50), self-host 17,254 held equal under the check (from 0).** Nothing changes
+without the flag.
