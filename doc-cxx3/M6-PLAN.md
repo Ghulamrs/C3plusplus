@@ -5156,3 +5156,10 @@ the suite's class specializations and 3,864 of the self-host's are held equal on
 symbols; and a covered class's held member body that reaches no `this` is typed from the read under the class's binding beside
 the replay and lowered from the read where typedApart holds them equal (52 suite / 72 self-host bodies); the replay still
 makes every class and runs for every member body, so nothing changes without the flag.
+
+**m6d-w19's wave landed, 2026-11-23 (gate m6dw19g at 255224fa against main f0c62d0e: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83e-m83f): a covered member body reaching `this` and its own class's
+members typed from the read beside the replay through one map from the read class to the program's (Typer::record) - 149
+suite / 337 self-host bodies; and a covered member body's frame steps logged at the class door (Parser::bodyFrames_), its
+frame, shell (`this` first) and made function held against the replay's (memberFrame) - self-host 338 of 338 equal, suite 148
+frames and 144 made of 149. The replay still runs for every member body, so nothing changes without the flag.
