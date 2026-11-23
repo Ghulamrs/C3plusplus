@@ -5128,3 +5128,11 @@ a private member through T compiled before this), not a scalar or scalar array, 
 two bases - 296 of the suite's own bodies with no replay under -templates=subst and 3,824 of the self-host's, every one equal
 to its replay; nothing changes without the flag. Owed (Microsoft ABI, found by m82af): masm cannot spell a class template's
 vbtable name (??_8VD<int>@@7B@), and such a class's C1/C2 names differ from clang's.
+
+**m6d-w15's wave landed, 2026-11-23 (gate m6dw15g at 52cd1c1e against main 7fc38269: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2 (M8-PLAN, m82ah-m82ai): a member function called on a bound class through the one ranking; a
+class-typed member assigned by the operator= the replay calls (Parser::copyAssignFor, the one writer); the Itanium pattern
+signature kept from the declaration's read (TemplateDecl::pattern, no second read per specialization); and the self-host under
+-templates=subst measured - stages 0, 1 and 2 the same object for 102 of 102 sources, stage 2 = 3 owed (lane m82aj). The gate's
+one failure on its first run was the Mac's lldb step, case d1 with no output at all - lldb not starting on its first run after
+the Mac was cleaned and restarted; its verdict cleared, the step alone on the same tree (`-k`): 5 passed, 0 failed.
