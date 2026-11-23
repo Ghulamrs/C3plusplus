@@ -344,12 +344,14 @@ const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
 
 // A specialization named over the parameters (`pair<const $T0,$T1>`) under `s`: the one the program declared by its key, or null.
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
-    std::vector<TemplateArg> args = o->templateArgs();
+    std::string name;
+    std::vector<TemplateArg> args;
+    if (!readId(o, &name, &args)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
         if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return nullptr;
         args[k].type = substituted(s, args[k].type);
     }
-    return p_.lookup_.findTypedef(specializationKey(o->templateName(), args));
+    return p_.lookup_.findTypedef(specializationKey(name, args));
 }
 
 const Type *Templates::valueUnder(const Substituted &s, const Type *t) const {
@@ -1333,6 +1335,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
         readingTag_.clear();
         // A pattern class the read was first to ask for keeps no arguments of the read's: the unit's first asker gives its own.
         for (std::size_t s = 0; s < readShallow_.size(); s++) {
+            readIds_[readShallow_[s]] = ReadId{ readShallow_[s]->templateName(), readShallow_[s]->templateArgs() };     // for the class door
             readShallow_[s]->setSpecialization(std::string(), std::vector<TemplateArg>());
             readShallow_[s]->setTemplateNamespace(std::string());
         }
@@ -3075,6 +3078,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
     Substituted early;
+    if (substitute_ && !p_.patternUses_) idsBefore(start, useParams, useBinding, pos);
     const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class the door takes made from the read, its written members and held bodies too; the replay beside under the check.
@@ -3161,13 +3165,71 @@ const Type *Templates::carriedId(const Substituted &s, const Type *e, const Subs
         return nullptr;
     }
     const Type *real = specializationUnder(s, e);
-    return real == nullptr || !real->isStructOrUnion() || p_.dependentType(real) || real->tag().find('$') != std::string::npos ? nullptr : real;
+    return real == nullptr || !real->isStructOrUnion() || p_.dependentType(real) || readIds_.count(real) != 0 || real->tag().find('$') != std::string::npos ? nullptr : real;
+}
+
+// A class template-id the read named over its parameters: its own, or the one the read's end cleared (readIds_).
+bool Templates::readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const {
+    const std::map<const Type *, ReadId>::const_iterator k = readIds_.find(e);
+    if (!e->isSpecialization() && k == readIds_.end()) return false;
+    if (name != nullptr) *name = e->isSpecialization() ? e->templateName() : k->second.name;
+    if (args != nullptr) *args = e->isSpecialization() ? e->templateArgs() : k->second.args;
+    return true;
+}
+
+// An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
+// each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
+bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args) const {
+    if (!readId(e, name, args)) return false;
+    const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
+    if (d == templates_.end() || *name == read->templateName() || d->second.isAlias || d->second.ttParam >= 0) return false;
+    // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
+    const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
+    if (!d->second.partials.empty()) return false;
+    for (std::size_t t = d->second.afterParams, depth = 0; t < p_.tokens_.size(); t++) {
+        if (p_.tokens_[t].text == own) return false;
+        if (p_.tokens_[t].is("{")) depth++;
+        if ((p_.tokens_[t].is("}") && --depth == 0) || (depth == 0 && p_.tokens_[t].is(";"))) break;
+    }
+    if (args->size() != d->second.params.size()) return false;
+    for (std::size_t k = 0; k < args->size(); k++) {
+        TemplateArg &a = (*args)[k];
+        const TemplateParam &q = d->second.params[k];
+        if (q.isPack || q.isTemplate || q.type != nullptr || !a.isType || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) return false;
+        a.type = substituted(s, a.type);
+        const Type *u = a.type;
+        while (u->unqualified() != u || u->isPointer() || u->isReference() || u->isArray())
+            u = u->unqualified() != u ? u->unqualified() : u->isReference() ? u->referent() : u->pointee();
+        if (p_.dependentType(a.type) || u->isFunction() || readIds_.count(u) != 0 || (u->isStructOrUnion() && u->tag().find('$') != std::string::npos)) return false;
+    }
+    return true;
+}
+
+// Work (2): the ids a class the door takes names over its parameters and the program had not declared, made before it through
+// makeClass, as its replay makes them when it reads the body - in the body's order, each declared once; nothing for another class.
+void Templates::idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, std::size_t pos) {
+    Substituted s;
+    std::vector<const Type *> wanted;
+    if (classBefore(start, params, binding, &s, &wanted).compare(0, 18, "made from the read") != 0 || wanted.empty() || !fromReadWhyNot(start).empty()) return;
+    for (const Type *e : wanted) {
+        std::string name;
+        std::vector<TemplateArg> args;
+        earlyArgs(s, e, readClass_.at(start), &name, &args);
+        const std::string tag = specializationKey(name, args);
+        if (p_.lookup_.findTypedef(tag) != nullptr) continue;
+        std::vector<const Type *> types;
+        for (const TemplateArg &a : args) types.push_back(a.type);
+        const TemplateDecl &decl = templates_.at(name);
+        const Parser::Nesting deep(&p_, pos, "template instantiation");
+        makeClass(decl, tag, types, std::vector<long long>(types.size(), 0), args, Packs(decl.params.size()), pos);
+        classCensus_["made before the class, as its replay makes it: a class template-id over its parameters"]++;
+    }
 }
 
 // Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
 // each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                                  const Substituted *early) const {
+                                  const Substituted *early, std::vector<const Type *> *wanted) const {
     for (std::size_t q = 0; q < params.size(); q++) {
         if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
         if (params[q].type != nullptr) return "replayed: a non-type parameter, bound by name";
@@ -3197,7 +3259,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *t = substituted(*s, m.type), *e = t;
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
-        if (e->unqualified()->isStructOrUnion() && e->unqualified()->tag().find('$') != std::string::npos)
+        if (e->unqualified()->isStructOrUnion() && (readIds_.count(e->unqualified()) != 0 || e->unqualified()->tag().find('$') != std::string::npos))
             return "replayed: a data member of a class the read named over its parameters";
         if (e->unqualified()->isEnumeration() && e->unqualified()->tag().find('$') != std::string::npos)
             return "replayed: a data member of a member enumeration the read named over its parameters";
@@ -3206,17 +3268,22 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
     for (const Signature &f : k->second.second) {
-        std::vector<const Type *> types(f.params);
-        types.push_back(f.returns);
+        std::vector<const Type *> types(1, f.returns);     // in the order the replay reads a declaration: its return type first
+        types.insert(types.end(), f.params.begin(), f.params.end());
         for (const Type *t : types) {
             const Type *e = substituted(*s, t);
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
-            const Type *real = e != read && e->isSpecialization() && e->tag().find('$') != std::string::npos ? carriedId(*s, e, early) : nullptr;
+            const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
+            const Type *real = id ? carriedId(*s, e, early) : nullptr;
+            std::string name;     // an id the program had not declared, wanted by idsBefore: made before the class
+            std::vector<TemplateArg> args;
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
-            else if (e != read && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args))
+                wanted->push_back(e);
+            else if (e != read && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
                 return "replayed: a member function's signature over a type the binding does not carry: " + uncarriedKind(e, read);
         }
     }
@@ -3478,9 +3545,9 @@ std::string Templates::classBeyond(std::size_t start) const {
 
 // Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                                   Substituted *early) const {
+                                   Substituted *early, std::vector<const Type *> *wanted) const {
     Substituted &s = *early;
-    const std::string shape = classShape(start, params, binding, &s), beyond = shape.empty() ? classBeyond(start) : shape;
+    const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), beyond = shape.empty() ? classBeyond(start) : shape;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
     if (r == readBodies_.end() || readTypedefs_.count(start) == 0) return "replayed: no held member bodies kept from the read";
@@ -3497,7 +3564,7 @@ std::string Templates::typedefsCarried(std::size_t start, const Substituted &s) 
         const Type *e = substituted(s, td.second);
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
         e = e->unqualified();
-        if (e != readClass_.at(start) && (p_.dependentType(e) || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
+        if (e != readClass_.at(start) && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
             return "replayed: a member typedef or alias over a type the binding does not carry";
     }
     return std::string();

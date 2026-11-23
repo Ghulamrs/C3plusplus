@@ -5175,3 +5175,28 @@ and its template name and arguments are gone by the time the door asks - neither
 step keeps them (the name, arguments and namespace each cleared shallow had, by type, beside `readShallow_`'s clearing) for the
 door's `earlyArgs`; the try and its probe (`template-subst-early`, clang's 4 5 7 / 2.5) are in boxkit (`m83q-ids-wip.patch`,
 `m83q-probe/`).
+
+## M8.3 slice 3b: the template-ids not declared before the replay, made before the class from the ids the read's end cleared (lane m83r, 2026-11-24)
+
+**The measure**: classes made with no replay - suite **779 of 2,184** (735; 761 without the probes, 723), self-host
+**35,003 beside** under the check (30,707).
+
+**Commit 1** (m83q's root, fixed): when a read ends, `readDeclaration` clears the template name and arguments of every shallow
+class the read was first to ask for (`readShallow_`); now each one's id is kept beside that loop (`readIds_`, by type), and
+`readId` answers a class's own id or the kept one - for `specializationUnder`, `classShape`'s signature ids and `earlyArgs`.
+`idsBefore` (m83q's try, its prints dropped) makes, before a class the door takes, each class template-id its member functions'
+signatures name over its parameters that the program had not declared, through `makeClass` in the body's order (return type
+first, as the replay reads a declaration); `classBefore` then carries them as `carriedId` does. A cleared shallow is never a
+carried class and counts as uncarried in the data members, the signatures, `typedefsCarried` and `earlyArgs` (a shallow such as
+`__tree_order<typename KeyOf::..., Cmp>` holds no `$` in its tag: carried, it let `__tree`'s typedef `order` through and 10 cases
+failed). `earlyArgs` takes no template with partial specializations and none whose body names the read's own template
+(`__tree_iterator` inside `__tree_const_iterator`: made there by the replay inside the class it has begun). Probe
+`template-subst-early` (clang's 4 5 7 / 2.5; 6 classes made with no replay under the flag).
+Census (x86_64-linux): **tests/cases** with no check 779 made from the read with no replay, nonzero 353 (REF's); under the check no class `differ`, class equal 907 (826), 779 beside.
+**Self-host** under the check: nonzero 0, 35,003 beside (30,707), class equal 39,561, no class `differ`; "a class template-id over its parameters the program had not declared" 9,289 (17,304 at m83q's count); frames, shells and made 3,865 + 2,073 equal.
+src/: `Templates.cpp` +67, `Templates.h` +6 (96,548 -> 96,621, +73). EXCLUSIONS: three citations re-pointed (Templates.cpp 1978,
+2030, 2727 moved 3 lines), no refusal moved.
+Gates (the commit's tree, REF 332e3cab): identical 0 differ on four targets plain (1928/3856/1928/1928, the probe one more) and with `-templates=subst` on three ( the covered shapes as at m83q, and a member function over a class template-id the program had not declared, of another template's type parameters, with no partial and not naming the class); subst.sh 0 failed, then run.sh 1309/0, then run.sh under the flag 1309/0 (1309 pass, 0 fail; the fallbacks are the census above); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (n1 full, alone, 00:46:24-00:48:03, ~1.6 min; the final
+tree's delta 01:00:15-01:01:46, ~1.5 min), probe on Windows clang 4 5 7 / 2.5 and cxx3-msvc the same, names.sh 964/0, overload.sh 46/0.
+Left: a member type of another class (13,691 self-host), a data member of a class the read named over its parameters (2,582).
