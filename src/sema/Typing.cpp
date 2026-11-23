@@ -127,7 +127,8 @@ Resolution Typer::boundCall(syntax::NodeId id) const {
     if (c == calls.end()) return out;
     const Signature &f = p_.lookup_.functions_[c->second];
     out.what = p_.syntaxTree_.node(id).kind == syntax::Kind::Call ? Resolution::Call : Resolution::Callee;
-    out.type = TypeTable::id(p_.types_.functionType(f.returns, f.params, f.variadic));
+    out.type = TypeTable::id(p_.tmpl_.chosenType(binding_, id.v));
+    out.hasThis = p_.tmpl_.bound_.at(binding_).members.count(id.v) != 0;     // a member call's (Templates::boundMemberCall)
     out.symbol = f.symbol;
     return out;
 }
@@ -144,6 +145,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
+    if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).assigns.count(id.v) != 0) boundAssigns_[t.v] = std::make_pair(p_.tmpl_.bound_.at(binding_).assigns.at(id.v).first, TypeTable::id(p_.tmpl_.bound_.at(binding_).assigns.at(id.v).second));
     const Resolution chosen = boundCall(id);
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (chosen.what != Resolution::None) {
@@ -501,7 +503,8 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         const Signature &f = p.lookup_.functions_[p.tmpl_.bound_.at(binding).calls.at(id)];
         const bool call = p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Call;
         if (n.resolved == 0 || tree.resolution(t).what != (call ? Resolution::Call : Resolution::Callee) || tree.resolution(t).symbol != f.symbol ||
-            p.types_.type(tree.resolution(t).type) != p.types_.functionType(f.returns, f.params, f.variadic))
+            p.types_.type(tree.resolution(t).type) != p.tmpl_.chosenType(binding, id) ||
+            tree.resolution(t).hasThis != (p.tmpl_.bound_.at(binding).members.count(id) != 0))
             return "the record the instantiation chose";
     }
     if (!chosen && (pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
@@ -822,7 +825,9 @@ bool Typer::namedReturnLocal(syntax::NodeId var) const {
     return i != p_.declaredLocals_.end() && i->second.byValueByAddress && !i->second.isParameter;
 }
 
-bool Typer::assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const {
+bool Typer::assignCall(syntax::NodeId value, TypedId typed, std::string &symbol, TypeId &signature) const {
+    const auto b = boundAssigns_.find(typed.v);
+    if (b != boundAssigns_.end()) return symbol = b->second.first, signature = b->second.second, true;
     const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.assignCalls_.find(value.v);
     if (i == p_.assignCalls_.end() || i->second.symbol.empty()) return false;
     symbol = i->second.symbol;

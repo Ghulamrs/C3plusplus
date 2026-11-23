@@ -1487,7 +1487,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
     lowering.setArrowCalls([&typer](syntax::NodeId o, std::vector<sema::Resolution> &out) { return typer.arrowCalls(o, out); });
     lowering.setConversionCall([&typer](syntax::NodeId o, sema::Resolution &out) { return typer.conversionCall(o, out); });
     lowering.setDynamicInits([&typer](std::vector<sema::DynamicInit> &out, bool tls) { return typer.dynamicInits(out, tls); });
-    lowering.setAssignCall([&typer](syntax::NodeId v, std::string &sym, TypeId &sig) { return typer.assignCall(v, sym, sig); });
+    lowering.setAssignCall([&typer](syntax::NodeId v, sema::TypedId t, std::string &sym, TypeId &sig) { return typer.assignCall(v, t, sym, sig); });
     // The facts Ast.h's Function carries, of any function; a body's typed-tree facts are added below.
     auto factsOf = [&typer](const Function &fn, ir::FunctionFacts &facts) {
         facts.symbol = fn.symbol();

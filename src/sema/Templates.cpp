@@ -421,7 +421,7 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
     std::vector<syntax::NodeId> requests;
-    const std::string shape = substShape(read->second, made.s, &made.calls, &requests);
+    const std::string shape = substShape(read->second, made.s, &made.calls, &made.members, &made.assigns, &requests);
     if (!shape.empty()) return *why = "replayed: " + shape, false;
     const std::string value = valueShape(read->second, sp, &made.values);
     if (!value.empty()) return *why = "replayed: " + value, false;
@@ -806,6 +806,15 @@ std::string Templates::requestCall(const Specialization sp, syntax::NodeId call,
     return std::string();
 }
 
+// The type a call the instantiation chose records, a member's with `this` first (boundMemberCall); `id` the call's or its callee's node.
+const Type *Templates::chosenType(const std::string &binding, std::uint32_t id) const {
+    const Bound &b = bound_.at(binding);
+    const std::map<std::uint32_t, const Type *>::const_iterator m = b.members.find(id);
+    if (m != b.members.end()) return m->second;
+    const Signature &f = p_.lookup_.functions_[b.calls.at(id)];
+    return p_.types_.functionType(f.returns, f.params, f.variadic);
+}
+
 // What the replay's resolution of each call in `body` marks used ([basic.def.odr]/3), made for a body built from the read.
 void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std::size_t> &calls) {
     for (std::vector<syntax::NodeId> work(1, body); !work.empty(); ) {
@@ -878,9 +887,95 @@ std::string Templates::valueCast(syntax::NodeId id, const Substituted &s) {
     return std::string();
 }
 
+// `o.m` or `p->m`: its object a name of a bound class (`.`) or of a pointer to one (`->`), or `*p` or `p[i]` of such a
+// pointer - that class as the object has it, cv-qualified; else null.
+const Type *Templates::boundObjectClass(syntax::NodeId member, const Substituted &s) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const bool arrow = st.text(member).compare(0, 2, "->") == 0;
+    if (st.node(member).count != 1) return nullptr;
+    syntax::NodeId o = st.child(member, 0);
+    while (st.node(o).kind == syntax::Kind::Paren && st.node(o).count == 1) o = st.child(o, 0);
+    const syntax::Node on = st.node(o);
+    const syntax::NodeId named = !arrow && on.count >= 1 && (on.kind == syntax::Kind::Subscript || (on.kind == syntax::Kind::Unary && st.text(o) == "*"))
+                                 ? st.child(o, 0) : o;
+    const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
+    const Type *c = st.node(named).kind == syntax::Kind::Name && r != p_.resolutions_.end() && r->second.type != nullptr
+                    ? substituted(s, r->second.type) : nullptr;
+    if (c != nullptr && c->isReference()) c = c->referent();
+    if (c != nullptr && (arrow || named.v != o.v)) c = c->isPointer() ? c->pointee() : nullptr;
+    for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++)
+        if (c->unqualified() == boundTo(s.to[q])) return c;
+    return nullptr;
+}
+
+// [over.match.call]/3: `o.f(x)` or `p->f(x)` over a bound class, ranked over the class's members of that name as the replay's
+// memberCallWith ranks them; `full` the record's function type, `this` first - a base's function on the base, as it converts.
+std::string Templates::boundMemberCall(syntax::NodeId call, const Substituted &s, const std::map<std::uint32_t, std::size_t> &calls,
+                                       std::size_t *chosen, const Type **full) {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const syntax::NodeId callee = st.child(call, 0);
+    const Type *obj = boundObjectClass(callee, s);
+    const Type *plain = obj->unqualified();
+    const std::string &t = st.text(callee);
+    const std::string name = t.substr(t.compare(0, 2, "->") == 0 ? 2 : 1);
+    if (name.empty() || name.find_first_of(":~<> ") != std::string::npos || p_.memberTemplateOwner(plain, name) != nullptr)
+        return "a member call on a bound class by a qualified, operator, destructor or template name, which the replay looks up";
+    const Type *owner = p_.lookup_.findMemberOwner(plain, name);
+    const std::vector<std::size_t> *set = owner != nullptr ? p_.lookup_.overloadsOf(owner->tag() + "::" + name) : nullptr;
+    if (set == nullptr || set->empty()) return "a member call on a bound class that names no member function of it";
+    if (owner != plain) {
+        int paths = 0;
+        for (std::size_t q = 0; q < plain->bases().size(); q++) {
+            const Type::BaseSpec &b = plain->bases()[q];
+            if (b.type->unqualified() == owner) paths += b.direct && !b.isVirtual && b.access == Access::Public && !plain->hasVirtualBase() ? 1 : 2;
+        }
+        if (paths != 1) return "a member call on a bound class of a function its base declares other than as one public, non-virtual direct base";
+    }
+    std::vector<const Type *> argTypes, given;
+    const std::string why = callArgTypes(call, s, &calls, &argTypes);
+    if (!why.empty()) return "a member call on a bound class over an argument the read does not type here";
+    for (std::size_t q = 0; q < argTypes.size(); q++) {
+        given.push_back((argTypes[q]->isReference() ? argTypes[q]->referent() : argTypes[q])->unqualified());
+        if (!given.back()->isScalar()) return "a member call on a bound class over a class argument, whose conversions the read does not ask";
+    }
+    std::vector<std::size_t> viable;
+    std::vector<std::vector<Rank> > ranks;
+    for (std::size_t k = 0; k < set->size(); k++) {
+        const Signature &f = p_.lookup_.functions_[(*set)[k]], &first = p_.lookup_.functions_[(*set)[0]];
+        bool scalars = !f.variadic && !f.deleted && f.owner == owner->tag() && p_.overload_.leastArguments(f) == f.params.size() &&
+                       f.constThis == first.constThis && f.refThis == RefQual::None && (f.returns->isVoid() || f.returns->isScalar());
+        for (std::size_t q = 0; scalars && q < f.params.size(); q++) scalars = f.params[q]->isScalar();
+        if (!scalars)
+            return "a member call on a bound class beside a candidate over a class, a reference, a default, variadic arguments or another object qualifier";
+        if (f.params.size() != given.size()) continue;
+        std::vector<Rank> rank;
+        for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
+            RankedArgument a;
+            a.type = given[q]->id();
+            a.lvalue = argTypes[q]->isReference();
+            rank.push_back(p_.overload_.rankArgument(a, f.params[q]));
+        }
+        if (rank.empty() || rank.back() != Rank::None) viable.push_back((*set)[k]), ranks.push_back(rank);
+    }
+    const int best = viable.empty() ? -1 : p_.overload_.bestViable(viable, ranks, given, false);
+    if (best < 0) return "a member call on a bound class with no best candidate, which the replay refuses";
+    const Signature &f = p_.lookup_.functions_[viable[static_cast<std::size_t>(best)]];
+    if (f.access != Access::Public) return "a bound class's member function other than public, whose access the replay checks";
+    if (f.isStaticMember) return "a bound class's static member function called through its object, which the replay evaluates apart";
+    if (f.isVirtual) return "a bound class's virtual member function, which the replay calls through its slot";
+    if (obj->isConst() && !f.constThis) return "a bound class's non-const member function on a const object, which the replay refuses";
+    std::vector<const Type *> params(1, p_.types_.pointerTo(f.constThis ? p_.types_.withConst(owner) : owner));
+    params.insert(params.end(), f.params.begin(), f.params.end());
+    *full = p_.types_.functionType(f.returns, params, f.variadic);
+    *chosen = viable[static_cast<std::size_t>(best)];
+    return std::string();
+}
+
 std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std::map<std::uint32_t, std::size_t> *calls,
+                                  std::map<std::uint32_t, const Type *> *members, std::map<std::uint32_t, std::pair<std::string, const Type *> > *assigns,
                                   std::vector<syntax::NodeId> *requests) {
     typedef syntax::Kind Kind;
+    std::vector<std::uint32_t> assigned;      // the class-typed members an assignment below calls operator= over
     bool classBound = false;
     for (std::size_t q = 0; q < s.to.size(); q++) classBound = classBound || boundTo(s.to[q])->isStructOrUnion();
     // Pass 1 the shapes the slice covers; pass 2 what the read records apart from any replay, refused at parse time (m82g).
@@ -910,39 +1005,60 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 const std::string &t = p_.syntaxTree_.text(id);
                 const bool arrow = t.compare(0, 2, "->") == 0;
                 const std::string name = t.substr(arrow ? 2 : 1);
-                if (p_.resolutions_.count(id.v) != 0) continue;
-                // Its object a name of the class (`.`) or of a pointer to it (`->`), or `*p` or `p[i]` of such a pointer.
-                syntax::NodeId o = p_.syntaxTree_.child(id, 0);
-                while (p_.syntaxTree_.node(o).kind == Kind::Paren && p_.syntaxTree_.node(o).count == 1) o = p_.syntaxTree_.child(o, 0);
-                const syntax::Node on = p_.syntaxTree_.node(o);
-                const syntax::NodeId named = !arrow && on.count >= 1 && (on.kind == Kind::Subscript || (on.kind == Kind::Unary && p_.syntaxTree_.text(o) == "*"))
-                                             ? p_.syntaxTree_.child(o, 0) : o;
-                const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
-                const Type *c = n.count == 1 && p_.syntaxTree_.node(named).kind == Kind::Name && r != p_.resolutions_.end() &&
-                                r->second.type != nullptr ? substituted(s, r->second.type) : nullptr;
-                if (c != nullptr && c->isReference()) c = c->referent();
-                if (c != nullptr && (arrow || named.v != o.v)) c = c->isPointer() ? c->pointee() : nullptr;
-                bool bound = false;
-                for (std::size_t q = 0; c != nullptr && q < s.to.size(); q++) bound = bound || c->unqualified() == boundTo(s.to[q]);
-                if (!bound || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
+                if (p_.resolutions_.count(id.v) != 0 || calls->count(id.v) != 0) continue;     // a member call's callee: boundMemberCall's
+                const Type *c = boundObjectClass(id, s);
+                if (c == nullptr || name.empty() || name.find_first_of(":~< ") != std::string::npos || c->unqualified()->findMember(name) == nullptr)
                     return "a member that is no data member of a bound class reached by name";
                 const Member &m = *c->unqualified()->findMember(name);
                 const Type *e = m.type;
                 while (e != nullptr && e->isArray()) e = e->pointee();
                 if (m.access != Access::Public) return "a bound class's member other than public, whose access the replay checks";
-                if (e == nullptr || !e->isScalar()) return "a bound class's member other than a scalar or an array of one, which an operator over it would copy";
+                if (e == nullptr || (!e->isScalar() && std::find(assigned.begin(), assigned.end(), id.v) == assigned.end()))
+                    return "a bound class's member other than a scalar or an array of one, which an operator over it would copy";
                 if (m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.ambiguous)
                     return "a bound class's member in a virtual base, an anonymous union or two bases, which the replay reaches apart";
                 continue;
             }
+            case Kind::Assign: {
+                // `a.m = b.m` of a class-typed member: the operator= the replay's assignValue calls (copyAssignFor), or its bytes.
+                const Type *to[2] = { nullptr, nullptr };
+                for (std::uint32_t c = 0; c < 2 && n.count == 2; c++) {
+                    const syntax::NodeId o = p_.syntaxTree_.child(id, c);
+                    const std::string &t = p_.syntaxTree_.text(o);
+                    const Type *k = p_.syntaxTree_.node(o).kind == Kind::Member ? boundObjectClass(o, s) : nullptr;
+                    const std::string name = k != nullptr && t.size() > 1 ? t.substr(t.compare(0, 2, "->") == 0 ? 2 : 1) : std::string();
+                    const Member *m = k != nullptr && !name.empty() ? k->unqualified()->findMember(name) : nullptr;
+                    if (m != nullptr && m->type->unqualified()->isStructOrUnion()) to[c] = k->isConst() ? p_.types_.withConst(m->type) : m->type;
+                }
+                if (to[0] == nullptr && to[1] == nullptr) continue;
+                if (p_.syntaxTree_.text(id) != "=" || to[0] == nullptr || to[1] == nullptr || to[0]->unqualified() != to[1]->unqualified() ||
+                    to[0]->isConst())
+                    return "an assignment over a bound class's class-typed member other than `a.m = b.m` of one class, which the replay converts";
+                const Type *cls = to[0]->unqualified();
+                const Signature *op = p_.copyAssignFor(cls, false);     // an lvalue member is copied
+                if (op != nullptr && (op->access != Access::Public || op->deleted || op->params.empty()))
+                    return "a class-typed member's operator= other than public, which the replay checks";
+                if (op != nullptr) (*assigns)[p_.syntaxTree_.child(id, 1).v] = std::make_pair(op->symbol, p_.assignCallType(cls, *op));
+                assigned.push_back(p_.syntaxTree_.child(id, 0).v), assigned.push_back(p_.syntaxTree_.child(id, 1).v);
+                continue;
+            }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
-            case Kind::Binary: case Kind::Assign: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
             case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
                 continue;
             case Kind::Call: {
                 if (nondependentCall(id).empty()) continue;
                 std::size_t chosen = 0;
+                const syntax::NodeId callee = n.count != 0 ? p_.syntaxTree_.child(id, 0) : syntax::NodeId();
+                if (callee.valid() && p_.syntaxTree_.node(callee).kind == Kind::Member && boundObjectClass(callee, s) != nullptr) {
+                    const Type *full = nullptr;
+                    const std::string why = boundMemberCall(id, s, *calls, &chosen, &full);
+                    if (!why.empty()) return why;
+                    (*calls)[id.v] = (*calls)[callee.v] = chosen;
+                    (*members)[id.v] = (*members)[callee.v] = full;
+                    continue;
+                }
                 const std::string why = dependentCall(id, s, &chosen);
                 if (why == DeducedCall) { requests->push_back(id); continue; }
                 if (!why.empty()) return why;
@@ -1539,6 +1655,10 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
     p_.frameAlign_ = std::max(startAlign, raised);
     unreplayed_.insert(sp.symbol);
     callsUsed(bound_.at(sp.symbol).read, bound_.at(sp.symbol).calls);
+    for (std::map<std::uint32_t, std::pair<std::string, const Type *> >::const_iterator a = bound_.at(sp.symbol).assigns.begin();
+         a != bound_.at(sp.symbol).assigns.end(); ++a)      // the operator= assignValue marks used
+        for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
+            if (p_.lookup_.functions_[q].symbol == a->second.first) { p_.noteUsed(q); break; }
     return true;
 }
 

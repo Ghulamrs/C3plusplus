@@ -570,7 +570,7 @@ bool Parser::templateDeclaration() {
     bool constructs = false;
     const Type *fnPattern = nullptr;
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
-    if (!decl.isClass) decl.signature = patternSignature_;
+    if (!decl.isClass) { decl.signature = patternSignature_; decl.pattern = fnPattern; }
     if (decl.isClass) refuseAfterPack(decl.params);
     else              tmpl_.requireDeducibleAfterPack(decl, fnPattern);
     if (!decl.isClass && !literalSuffix(decl.name).empty())
@@ -596,6 +596,7 @@ bool Parser::templateDeclaration() {
         mt->afterParams = decl.afterParams;
         mt->pos = decl.pos;
         mt->ns = decl.ns;
+        mt->pattern = fnPattern;
         mt->defined = mt->outOfLineBody = true;
         const TemplateDecl copy = *mt;
         tmpl_.definedOutOfLine(copy);
@@ -1257,15 +1258,10 @@ Parser::instantiate(const TemplateDecl &decl,
         return lookup_.functions_[first];
     }
 
-    // **The pattern the Itanium name is spelled from** keeps every parameter
-    // as a reference to itself - a type parameter as Kind::TemplateParam, a
-    // non-type one as the param-ref `V<N>` reads to.
-    std::vector<const Type *> pattern(decl.params.size());
-    for (std::size_t i = 0; i < decl.params.size(); i++)
-        pattern[i] = types_.templateParam(static_cast<int>(i));
-    std::string patternName;
-    const Type *patternFn =
-        readTemplateDeclaration(decl, pattern, values, &patternName);
+    // **The pattern the Itanium name is spelled from** is the declaration's read (templatedName), the
+    // one that wrote `decl.signature`: every parameter a reference to itself, not read again here.
+    const Type *patternFn = decl.pattern;
+    if (patternFn == nullptr) src_.fail(pos, "'" + decl.name + "' has no pattern signature kept at its declaration");
 
     // A `static` template has internal linkage, which Itanium writes as an L: `_ZL5near1...`.
     bool internal = false;

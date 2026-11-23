@@ -4252,3 +4252,96 @@ object"; the fix is the member-call record of item (2) applied to an operator, a
 name, the record `completeCall` makes put on the call node by the Typer as `boundMembers_` puts a member's, and its own branch
 in `recordDiffers` since a member's `Signature::params` lack the `this` pointer); a class-typed member reached through T;
 `VD<int>`'s vbtable name under the MASM spelling; m82ad's explicit-argument call.
+
+## M8.2 slice 2f: a member function called on a class bound to T, ranked over the class's members (lane m82ah, 2026-11-20)
+
+**Why**: m82ag left a member function call on a bound class (`t.f()`, `p->g(x)`) replayed by "a call through a value or a
+member with a type-dependent part": the read records no call for it (its object is dependent), so a body holding one was
+never made from the read.
+
+**What changed**: substShape's call case asks a call whose callee is a member of a bound class's object
+(`Templates::boundObjectClass`, factored out of the member case, which now asks it too) of `Templates::boundMemberCall`: the
+owner as `memberCallWith` finds it (`Lookup::findMemberOwner`), the set `overloadsOf(owner::name)` ranked over the arguments
+`callArgTypes` types (`Overload::rankArgument`, `bestViable`), the record's function type built as `memberCallWith` builds it,
+`this` first - a const member's `const C *`, a base's function on the base, which the lowering converts as it does any member
+call's (`toBase`). The chosen function is the call's and its callee's in `Bound::calls` (marked used by `callsUsed`), its type
+in `Bound::members`; `Templates::chosenType` is the one answer `Typer::boundCall` records (`hasThis` set) and `recordDiffers`
+holds. Refused by name, each replayed: a member function other than public (the replay checks access, and refuses it as clang
+does), a static one called through the object, a virtual one (its slot), a non-const one on a const object, a base's other
+than through one public non-virtual direct base, a qualified, operator, destructor or template name, a set with a candidate
+over a class, a reference, a default, variadic arguments or another object qualifier, a class argument.
+
+**Probes**: tests/cases/template-subst-mcall (g++ and cxx3 on Linux, clang 19 and cxx3-msvc on Windows print its
+`.expected`): 5 made with no replay; under `-check=templates` 4 equal and `onBase` apart by its frame - the replay's `this`
+conversion to a base at offset 4 lays a slot no local names - so it replays there; `virt` and `stat` replay by name.
+tests/cases/template-subst-mcall-private-refused (`.error`): refused with and without the flag, as clang refuses it.
+template-subst-spec's `asked(h)`, `h.get()` on `Hid<int>`, is made now (5 made, 5 equal; REF 4). tests/subst.sh: the
+probes' lines.
+
+**src/**: Templates.cpp, Templates.h, Typing.cpp: 95,620 -> 95,717 (+97). EXCLUSIONS re-pointed (Templates.cpp 1833, 1885, 2582).
+
+**The census** (Linux, 1,310 units, 353 nonzero - REF's 352 and the new `.error` case; none fails on a difference): covered
+609 (REF 601), 531 with no replay (REF 525) - the probes' 6; **without the probes 296 of the suite's own bodies (REF 296,
++0)**, all made equal. **Self-host** (102 sources, 0 nonzero): covered 3,824 (REF 3,824, +0), all made equal. No body of the
+suite's own or the self-host's is made by this commit alone: their member calls stand behind other reasons first (without the
+probes: 47 a dependent-name call, 21 a member that is no data member, 13 a call through a value the read did not resolve,
+10 a call through a member with a type-dependent part, 2 a member call by a qualified, operator or template name).
+
+**Gates** (REF `93668f05` in `~/m82ahb`, NEW in `~/m82ahc`, one path length; every check on this commit's tree but the
+probe's out-of-line `D2::D2`, re-probed alone): identical.sh without the flag 0 differ on four targets (x86_64-linux 1,916,
+x86_64-windows 3,832, arm64-darwin 1,916, tms6747 1,916) and with `-templates=subst` 0 differ on three (1,916, 3,832,
+1,916); **-g** with and without the flag: x86_64-linux 221 differ by the tree path alone, x86_64-windows 214 by the path
+alone, 0 otherwise. **tests/subst.sh 0 failed** (self 102 of 102, 26 under 26, 3 shapes of 3). run.sh 1303/0 without and
+with `-templates=subst`. typed 950/0, syntax 7/0. `-check=fold` 16,962 compared, 0 differ, 0 units failing. Self-compile of
+Templates.cpp, Typing.cpp and ParserExpr.cpp rc 0. Static, each tool's own status: exclusions rc 0 0/0, comments rc 0,
+memory gate rc 0 (89), ast-residue rc 0 (2012/298, not raised), ide up to date. g++ `-Werror` clean. **Windows**
+(work\\m82ahw, this source): cl /W4 /WX clean (about 3 minutes with the ship, alone); clang 19 and cxx3-msvc print
+template-subst-mcall's `.expected` and refuse the private call (clang: "'hidden' is a private member of 'Sec'").
+
+## M8.2 slice 2f: a class-typed member of a bound class assigned, `a.m = b.m`, by the operator= the replay calls (lane m82ah, 2026-11-20)
+
+**Why**: m82ag's item (3): the replay resolves `a.n = b.n` over a member class with its own operator= to a call of it -
+`Parser::assignValue` records the call on the value's node (`assignCalls_`) - while the read records nothing (its operands are
+dependent), so a made body reached `Lowering.cpp:5544` and substShape refused every class-typed member by "a bound class's
+member other than a scalar or an array of one, which an operator over it would copy".
+
+**What changed**: one writer of the choice: `Parser::copyAssignFor` (the copy or move assignment by the value's category) and
+`Parser::assignCallType` (the call's function type, `C *` returned and taken first), factored out of `assignValue`, which
+calls them. substShape's assignment case takes `a.m = b.m` where both are members of a bound class's object of one class type
+(the left not const): the operator= `copyAssignFor` answers for an lvalue is put in `Bound::assigns` by the value's node, or
+none for a class assigned by its bytes; the two members are then allowed past the scalar rule. The Typer gives a made body's
+value node that fact by its typed node (`Typer::boundAssigns_`, a read node being shared by every binding of one body), and
+the lowering's `assignCall` callback is handed the typed node beside the syntax one; `madeWithoutReplay` marks the operator=
+used as `assignValue` does. Refused by name: any other assignment over a class-typed member, an operator= other than public.
+
+**Probe**: tests/cases/template-subst-assign (g++ and cxx3 on Linux print its `.expected`): 3 made, 3 equal - an operator=
+through `.` and `->`, a member assigned by its bytes. template-subst-member (`copyIn`) and template-subst-plain (`copyIn`)
+are made now: 5 and 6 substituted with no replay (REF 4, 5), 4 and 6 equal under the check; tests/subst.sh: their lines.
+
+**Gates** (lane m82ai finished m82ah's item 2 and gated it on the commit's own tree, REF 80fe8c62): census 1311 units 353
+nonzero (REF 1310 / 353, the new case 0), covered 614 (REF 609), 536 made with no replay (REF 531), without the probes 296
+(REF 296, +0) all equal; identical against REF 0 differ on four targets plain (1918/3836/1918/1918) and three with
+-templates=subst (1918/3836/1918); -g 0 differ beyond the tree path both ways, with and without the flag (linux 221, windows
+214); subst.sh 0 failed (self 102/102, 26/26, 3/3), run.sh 1304/0 both, typed 951/0, syntax 7/0, fold 16962 compared 0
+differ; static rc 0 all (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date), g++ -Werror
+clean; Windows: cl /W4 /WX clean (213 s with ship), clang 19 and cxx3-msvc print template-subst-assign's `.expected`, names
+959/0 (probes 3/0), overload 46/0; self-host census 102 sources 0 nonzero, covered 3,843 (REF 3,824, +19) all equal; self Templates.cpp Typing.cpp ParserExpr.cpp rc 0; src 95,717 -> 95,762 (+45).
+
+## M8.2: the Itanium pattern signature kept from the declaration's read, and the self-host under -templates=subst (lane m82ai, 2026-11-20)
+
+**The pattern signature, before**: re-read from tokens at every new specialization. `Parser::instantiate`
+(ParserTemplate.cpp, after the key's dedupe) called `readTemplateDeclaration` a second time with every parameter bound
+to `Kind::TemplateParam`, and `itaniumTemplateFunctionName` spelled that; the declaration's own read - `templatedName`'s,
+the one that writes `TemplateDecl::signature` (the syntax signature, M8.1) - made the same pattern type and dropped it
+(`fnPattern`, used only by `requireDeducibleAfterPack` and the literal operator's check). **Now**: `TemplateDecl::pattern`
+keeps that read's function type beside `signature` (and an out-of-line member template's merge keeps its definition's),
+and `Parser::instantiate` spells the Itanium name from it; a decl without one fails by name. The syntax node itself carries
+spellings, not types, so "derived from the syntax signature" is met as "made by the one read that made it". Left: the
+member-template door (`Templates::instantiateMemberTemplate`) still re-reads its pattern under the class's binding layer.
+
+**Gates** (on the commit's own tree, REF 5f5f2698): identical against REF 5f5f2698 0 differ on four targets plain (1918/3836/1918/1918) and three with -templates=subst (1918/3836/1918); -g 0 differ beyond the tree path both ways, with and without the flag (linux 221, windows 214); names 959/0 and overload 46/0 on Windows; subst.sh 0 failed (self 102/102, 26/26, 3/3), run.sh 1304/0 both, typed 951/0, syntax 7/0, fold 16954 compared 0 differ (8 fewer than REF's 16962: the folds the second read made); census 1311 units 353 nonzero, covered 614, 536 no replay, without probes 296 - unchanged (no body changes; the self census not re-run); static rc 0 all (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date), g++ -Werror clean; Windows cl /W4 /WX clean (101 s with ship); src 95,762 -> 95,760 (-2).
+
+**The self-host under -templates=subst** (tools/self-host on Linux, -O0, the flag on every stage, ~/m82ai-selfh): stage 0
+102 of 102 sources (196 s), stage 1 built; stage 1 102 of 102 (1213 s, slots shared with the wave gate), stage 2 built;
+stage 2 102 of 102 (980 s), stage 3 built: **102 of 102 sources the same object from stages 0, 1 and 2** (at 5f5f2698's
+code). Stage 2 = stage 3 not measured: stage 3's compile (about 16 minutes) was stopped at the lane's hour by its own PIDs.

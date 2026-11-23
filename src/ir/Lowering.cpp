@@ -4265,7 +4265,7 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
         // A class's operator= the parser called: what it returns, `X &`, names an object (`(b = a).v`, `c = b = a`).
         std::string symbol;
         TypeId sig;
-        return count(id) == 2 && ((text(id) == "=" && assignCall_ && assignCall_(tree_.node(child(id, 1)).syntax, symbol, sig)) ||
+        return count(id) == 2 && ((text(id) == "=" && assignCall_ && assignCall_(tree_.node(child(id, 1)).syntax, child(id, 1), symbol, sig)) ||
                                   scalarAssignNode(id));
     }
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
@@ -5595,7 +5595,7 @@ bool Lowering::classAssign(sema::TypedId id, Val &out) {
     const Type &t = *T(lt).unqualified();
     std::string symbol;
     TypeId sig;
-    const bool called = assignCall_ && assignCall_(tree_.node(vn).syntax, symbol, sig);
+    const bool called = assignCall_ && assignCall_(tree_.node(vn).syntax, vn, symbol, sig);
     if (!called && (plainClass(t) || (assigned_ && assigned_(t.id())))) return false;     // a plain class's copy assignment written by hand is called
     if (!isLvalueNode(tn)) outside("a class assigned to what is not an object");
     const Val target = lvalue(tn);

@@ -1196,6 +1196,24 @@ ExprPtr Parser::assign() {
     return note(assignValue(std::move(n), std::move(value), pos), syntax::Kind::Assign, "=", pos, {l, vs});
 }
 
+// [class.copy]/18: the copy or move assignment `a = v` calls on a class with one of its own, by v's category; null for its bytes.
+const Parser::Signature *Parser::copyAssignFor(const Type *cls, bool wantMove) const {
+    const Signature *op = classes_.copyAssignOf(cls);
+    const std::vector<std::size_t> *set = op != nullptr ? lookup_.overloadsOf(assignmentKey(cls->tag())) : nullptr;
+    for (std::size_t i = 0; set != nullptr && i < set->size(); i++) {
+        const Signature &cand = lookup_.functions_[(*set)[i]];
+        if (!cand.params.empty() && cand.params[0]->isReference() && cand.params[0]->isRValueReference() == wantMove) return &cand;
+    }
+    return op;
+}
+
+// The function type `a = v`'s call of `op` records (assignCalls_): `cls *` returned, and taken before op's parameter.
+const Type *Parser::assignCallType(const Type *cls, const Signature &op) {
+    std::vector<const Type *> ps(1, types_.pointerTo(cls));
+    ps.push_back(op.params[0]);
+    return types_.functionType(ps[0], ps, false);
+}
+
 // `n = value` once both are read - by the class's `operator=` where it has one, else by bytes. Also
 // what `Base::operator=(o)` in a member of a derived class is, on the base subobject (M1 L8).
 ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *bytes) {
@@ -1224,19 +1242,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *byt
     // **A class with a copy assignment of its own is assigned by calling it**,
     // not by moving its bytes - the one for the value's category, an lvalue
     // taking `const T &` and an xvalue or prvalue `T &&` (review A22).
-    if (const Signature *op = classes_.copyAssignOf(to->unqualified())) {
-        const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(to->unqualified()->tag()));
-        if (set != nullptr) {
-            const bool wantMove = !isLvalue(*value) && !value->type()->isConst();     // a const prvalue is copied
-            for (std::size_t i = 0; i < set->size(); i++) {
-                const Signature &cand = lookup_.functions_[(*set)[i]];
-                if (cand.params.empty()) continue;
-                if (cand.params[0]->isReference() && cand.params[0]->isRValueReference() == wantMove) {
-                    op = &cand;
-                    break;
-                }
-            }
-        }
+    if (const Signature *op = copyAssignFor(to->unqualified(), !isLvalue(*value) && !value->type()->isConst())) {     // a const prvalue is copied
         markUsed(op);
         const Type *selfPtr = types_.pointerTo(to->unqualified());
         ExprPtr addr(new Unary('&', std::move(n)));
@@ -1248,7 +1254,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos, bool *byt
         ps.push_back(selfPtr);
         ps.push_back(op->params[0]);
         if (args[1]->syntax().valid())
-            assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, types_.functionType(selfPtr, ps, false), false, false,
+            assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, assignCallType(to->unqualified(), *op), false, false,
                                                                   std::vector<syntax::NodeId>(), nullptr, 0, 0 };
         ExprPtr call = completeCall(to->unqualified()->tag() + "::operator=",
                                     op->symbol, nullptr, selfPtr, ps, false, pos,

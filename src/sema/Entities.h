@@ -263,6 +263,8 @@ struct TemplateDecl {
     std::size_t pos = 0;
     // A function template's signature as syntax, read once at the declaration: a `function` over its parameters' `var`s (M8.1).
     syntax::NodeId signature;
+    // That read's function type, the parameters standing for themselves: the pattern Itanium spells, read once (M8.2).
+    const Type *pattern = nullptr;
     // **A member of this class template defined outside it** - `template <class T>
     // T Box<T>::get(int)`. Kept on the class rather than as a template of its own,
     // because that is what it is. Replayed when the class is instantiated.
