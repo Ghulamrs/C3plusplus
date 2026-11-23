@@ -1292,6 +1292,10 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     kept.second.clear();
                     for (std::size_t f = layer.sizes.functions; f < p_.lookup_.functions_.size(); f++)
                         if (p_.lookup_.functions_[f].owner == readTag) kept.second.push_back(p_.lookup_.functions_[f]);
+                    std::vector<std::pair<Parser::PendingBody, std::string> > &held = readBodies_[key];
+                    held.clear();
+                    for (const Parser::PendingBody &b : bodies)
+                        held.push_back(std::make_pair(b, b.which < p_.lookup_.functions_.size() ? p_.lookup_.functions_[b.which].symbol : std::string()));
                 }
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
@@ -1840,7 +1844,7 @@ void Templates::instantiatePending() {
             if (specializations_[i].isClass && substitute_) {
                 for (std::size_t b = 0; b < now.size(); b++) {
                     Bound made;
-                    const std::string why = c == coveredClass_.end() ? "replayed: its class replayed" : memberShape(now[b], c->second, &made);
+                    const std::string why = c == coveredClass_.end() ? "replayed: its class replayed: " + classWhy(specializations_[i].key) : memberShape(now[b], c->second, &made);
                     memberCensus_[why]++;
                     if (why.compare(0, 8, "covered:") != 0) continue;
                     bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
@@ -3085,7 +3089,11 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
             readStands(start, made, &coveredClass_[tag]);
+            const std::string skip = classSkip(start, tag, bodies);
+            classCensus_["skip: " + skip]++;
+            classCensus_["skip, member bodies: " + skip] += static_cast<int>(bodies.size());
         }
+        classWhy_[tag] = held.empty() ? "covered" : held;
     }
 
     Parser::Specialization sp;
@@ -3238,6 +3246,49 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
         (*symbols)[a.symbol] = b.symbol;
     }
     return "equal";
+}
+
+// Step 4's shape: a covered class made from the read lacks what its body declares beyond data members and member functions,
+// and its held member bodies are the read's records under the real tag, each one's function the replay's by readSymbol_.
+std::string Templates::classSkip(std::size_t start, const std::string &tag, const std::vector<Parser::PendingBody> &bodies) const {
+    std::size_t t = start;
+    while (t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";")) t++;
+    for (int depth = 0; t < p_.tokens_.size(); t++) {
+        const Token &k = p_.tokens_[t];
+        if (k.is("{") || k.is("(") || k.is("[")) depth++;
+        else if ((k.is("}") || k.is(")") || k.is("]")) && --depth == 0) break;
+        else if (depth != 1) continue;
+        else if (k.is("typedef") || k.is("using")) return "replayed: a member typedef, alias or using-declaration";
+        else if (k.is("enum")) return "replayed: a member enumeration";
+        else if (k.is("struct") || k.is("class") || k.is("union")) return "replayed: a nested or elaborated class";
+        else if (k.is("friend")) return "replayed: a friend";
+        else if (k.is("template")) return "replayed: a member template";
+        else if (k.is("static_assert")) return "replayed: a static_assert";
+    }
+    const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator m = readMembers_.find(start);
+    if (r == readBodies_.end() || m == readMembers_.end()) return "differ: no held member bodies kept from the read";
+    if (r->second.size() != bodies.size()) return "differ: the number of held member bodies";
+    for (std::size_t i = 0; i < bodies.size(); i++) {
+        const Parser::PendingBody &a = r->second[i].first, &b = bodies[i];
+        std::string key = a.key, owner = a.tag;
+        std::string *both[] = { &key, &owner };
+        for (std::string *w : both)
+            for (std::size_t at = w->find(m->second.first); at != std::string::npos; at = w->find(m->second.first, at + tag.size()))
+                w->replace(at, m->second.first.size(), tag);
+        if (a.start != b.start || a.freeFunction != b.freeFunction || key != b.key || owner != b.tag || a.local != b.local)
+            return "differ: a held member body's place, key, class or name";
+        const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(r->second[i].second);
+        if (b.which >= p_.lookup_.functions_.size() || f == readSymbol_.end() || f->second != p_.lookup_.functions_[b.which].symbol)
+            return "differ: a held member body's function";
+    }
+    return "made from the read: data members, member functions and held bodies alone";
+}
+
+// Why a class's member bodies replay: its door's reason, or that no door under the binding made it.
+std::string Templates::classWhy(const std::string &tag) const {
+    const std::map<std::string, std::string>::const_iterator w = classWhy_.find(tag);
+    return w == classWhy_.end() ? "not made at the class door" : w->second;
 }
 
 // The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.
