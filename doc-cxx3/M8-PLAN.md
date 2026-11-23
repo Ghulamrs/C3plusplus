@@ -4980,3 +4980,26 @@ Gates (commit 1's tree, REF 37fd67f9): identical 0 differ on four targets plain 
 on three (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0; static rc 0 (exclusions 0/0,
 comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, about
 5 minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Commit 2 (step 2)**: the typedef classes made from the read with no replay under `-templates=subst`. `classFromRead` declares
+each `readTypedefs_` entry under the real tag (`tag::name`, its type under the binding), after the injected name and the tag,
+before the completion tail - where a replay's class body declares it; `fromReadWhyNot` no longer refuses a member typedef or
+alias, only one naming the class itself ("replayed: a member typedef or alias naming its own class", which the read would give as
+the read class). `iterator_traits<int *>` and `remove_reference<int>` keep their member types: every case that runs links and runs
+under the flag. Under `-check=templates` the replay is the program's and the skip holds the typedefs against it, as before.
+
+Census of commit 2: **tests/cases** with no check: classes made from the read with no replay **208** (200 without the probes;
+commit 1: 50), 1 replayed for a member initialiser, none for a member typedef; member bodies with no replay 147; nonzero 353
+(REF's). Under the check 208 beside, no class `differ` (the free functions' frame and made lines as on commit 1's tree).
+**Self-host** under the check: nonzero 0; 2,423 classes beside (the replay the program's), the skip as on commit 1 (3,551 with
+member typedefs, 168 alone, 149 uncarried alias), no `differ`; frames/shells/made 3,861 equal, member bodies 338, built 3,985.
+src/: `Templates.cpp` +6 (96,418 -> 96,424).
+Gates (commit 2's tree, REF 37fd67f9): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926: the 208 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0,
+then run.sh under the flag 1308/0 (1308 pass, 0 fail; what falls back to the replay is the census above); static rc 0 (exclusions 0/0, comments 0, memory
+89, ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 on both commits'
+trees; g++ -Werror clean; Windows cl /W4 /WX clean (delta, about 4 minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped**: the classes with member functions and held bodies still replay with no check (the skip takes 168 over the
+self-host, their bodies already from the read); a typedef naming its own class replays by name; the 149 self-host classes with an
+alias over a type the binding does not carry replay by name.

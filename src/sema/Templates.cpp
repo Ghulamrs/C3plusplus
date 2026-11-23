@@ -3203,10 +3203,14 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     laid->align = laid->members.empty() ? 1 : widest;
 }
 
-// What a class made from the read cannot carry yet, by name: a pack, a member typedef, a member initialiser, alignas or final.
+// What a class made from the read cannot carry yet, by name: a pack, a typedef of its own class, a member initialiser, alignas, final.
 std::string Templates::fromReadWhyNot(std::size_t start) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
-    if (!readTypedefs_.at(start).empty()) return "replayed: a member typedef or alias, which the class made from the read would lack";
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
+        const Type *e = td.second;
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        if (e->unqualified() == readClass_.at(start)) return "replayed: a member typedef or alias naming its own class";
+    }
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
@@ -3235,6 +3239,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     type->setDeclaredClass(!partial && decl.classKey);
     type->setBeingDefined();
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
+        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
     std::vector<const Type *> outerClasses;
