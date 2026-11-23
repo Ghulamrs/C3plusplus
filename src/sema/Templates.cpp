@@ -3199,6 +3199,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         while (e->isArray()) e = e->pointee();
         if (e->unqualified()->isStructOrUnion() && e->unqualified()->tag().find('$') != std::string::npos)
             return "replayed: a data member of a class the read named over its parameters";
+        if (e->unqualified()->isEnumeration() && e->unqualified()->tag().find('$') != std::string::npos)
+            return "replayed: a data member of a member enumeration the read named over its parameters";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);

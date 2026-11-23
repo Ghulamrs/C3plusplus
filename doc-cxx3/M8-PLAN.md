@@ -5142,3 +5142,36 @@ src/: `Templates.cpp` +23, `Templates.h` +2, `Parser.h` +1, `ParserType.cpp` 0 (
 Gates (the commit's tree, REF 6d85ca31): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three (1926/3852/1926: the 735 classes made with no replay emit what the replay did - the covered shapes: data members of scalar or class type with implicit specials alone, and with written member functions, held bodies, member typedefs and default arguments); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0 (1308 pass, 0 fail; the fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 4 minutes, alone, at the first try; delta of the commit about 2 minutes, alone), names.sh 963/0, overload.sh 46/0.
 **Left**: a member type of another class (10,424 self-host), the template-ids not declared before the replay, a constexpr member,
 a member initialiser, a data member of a class the read named over its parameters (35 over the cases, 2,582 self-host), a data member of a member enumeration refused by name (the 25 census differs).
+
+## M8.3 slice 3b: a data member of a member enumeration refused by name, and why the template-ids not declared before the replay are not carried (lane m83q, 2026-11-24)
+
+**The measure**: classes made with no replay - suite **735 of 2,184** (unchanged, 7aad979c's), self-host **30,707 beside** under the
+check (unchanged). The commit does not raise it, and is needed for the next: it is m83p's owed refusal, so the self-host census
+holds no class `differ` and the next step's differences are its own.
+
+**Commit 1**: `classShape` refuses by name "a data member of a member enumeration the read named over its parameters" - an
+enumeration whose tag holds a `$`, as `EntryOf<I, Payload>`'s `Kind kind` of OptCore.h does (the read class's own `Kind`, set apart
+from the replay's as a nested class is). The class was refused before the replay anyway ("a member enumeration"), so nothing the
+program sees changes; the census now names it where m83p's showed 25 classes `differ` in "a data member's type: int for int".
+Census (x86_64-linux): **tests/cases** with no check 735 made from the read with no replay, nonzero 353 (REF's); under the check no
+class `differ`, class equal 826. **Self-host** under the check: nonzero 0, 30,707 beside, class equal 31,307, **no class `differ`**
+(25), 25 refused by the new name; frames, shells and made 3,864 + 1,030 equal.
+src/: `Templates.cpp` +2 (96,546 -> 96,548). No EXCLUSIONS line moved.
+Gates (the commit's tree, REF 7aad979c): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three
+(1926/3852/1926: the covered shapes as at m83p - data members of scalar or class type with implicit specials alone, and with
+written member functions, held bodies, member typedefs and default arguments); subst.sh 0 failed, then run.sh 1308/0, then run.sh
+under the flag 1308/0 (1308 pass, 0 fail; the fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89,
+ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp rc 0 plain and under the flag; g++ -Werror clean;
+Windows cl /W4 /WX clean (full, about 8 minutes, the header put back rebuilt every file; n1's full build, alone, 3.5 minutes),
+names.sh 963/0, overload.sh 46/0.
+
+**Tried and not committed** (work (2), the template-ids not declared before the replay: 17,304 self-host classes): `idsBefore`
+made, before a class the door takes, each class template-id its member functions' signatures name over its parameters that the
+program had not declared, through `makeClass` in the body's order (return type first, as the replay reads a declaration), then
+`classBefore` carried them as m83n's `carriedId` does. It made none: such an id's type is the read's shallow class
+(`Two<$T0,$T0>`), and when the read ends `readDeclaration` clears the specialization of every shallow class the read was first
+to ask for ("keeps no arguments of the read's": `readShallow_`, `setSpecialization("", {})`), so `isSpecialization()` is false
+and its template name and arguments are gone by the time the door asks - neither `carriedId` nor the door sees them. The next
+step keeps them (the name, arguments and namespace each cleared shallow had, by type, beside `readShallow_`'s clearing) for the
+door's `earlyArgs`; the try and its probe (`template-subst-early`, clang's 4 5 7 / 2.5) are in boxkit (`m83q-ids-wip.patch`,
+`m83q-probe/`).
