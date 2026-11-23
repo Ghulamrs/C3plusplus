@@ -281,6 +281,8 @@ public:
     // Step 2's end: the function the read made at its declaration, by `afterParams`; the replay's made from it and the shell.
     std::vector<Function> readFns_;
     std::map<std::size_t, std::size_t> readFnAt_;
+    void keepRead(std::size_t at, const Function &f);
+    void memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed);     // slice 3b: frame, shell
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;

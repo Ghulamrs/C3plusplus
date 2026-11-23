@@ -1862,6 +1862,7 @@ private:
     // M8.2 2c: each step of the frame's layout while `frameLog_` is set - Templates::layFrame names the kinds.
     typedef sema::FrameEvent FrameEvent;
     std::vector<FrameEvent> *frameLog_ = nullptr;
+    std::map<std::size_t, std::vector<FrameEvent> > *bodyFrames_ = nullptr;     // slice 3b: replayInlineBodies logs a body keyed here by its start
     void logFrame(char kind, const Type *t, int align, int offset, int serial = 0, const std::string *name = nullptr, bool param = false, int block = 0) {
         if (frameLog_ != nullptr) frameLog_->push_back(FrameEvent{ kind, t, align, offset, serial, name != nullptr ? *name : std::string(), param, block });
     }

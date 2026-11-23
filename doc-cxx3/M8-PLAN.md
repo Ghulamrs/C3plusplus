@@ -4624,3 +4624,52 @@ function door, Templates.cpp's `readFrames_[decl.afterParams]`), so neither `lay
 member body with no replay; `madeFromRead` takes a `Specialization` and wants a member's shell with `this` as the hidden first
 parameter. A member of a class the read named over its own parameter (`inner<$T0>` inside `outer<K>`) wants that class's
 specialization in the map as well.
+
+## M8.3 slice 3b, step 3's first part: a covered member body's frame steps logged at the class door, and its frame, shell and made function held against the replay's (lane m83f, 2026-11-23)
+
+**What landed**: the class door's read logs each held member body's frame steps, by the body's start, as the function door logs a
+function template's; the replay logs a covered member body's steps beside it; `layFrame`, `shellApart` and `madeApart` hold the
+member's frame, its shell (`this` first, then the parameters, the locals, -g's block table, the sret slot, the save area, the frame's
+size) and its function's records against the replay's. Nothing the program sees changes: the replay still makes every member body.
+
+- **One place that logs a member body's steps**: `Parser::bodyFrames_`, a map by body start, read by `replayInlineBodies` for each
+  body it holds a key for - inside its own `clearFunctionState`/`restoreFunctionState`, so neither the read nor the replay logs the
+  `p`/`q` of the batch's frame (m83f's first build set `frameLog_` around the read's call and every member frame was apart on that).
+  The class door points it at `readFrames_` for the one body it reads; `instantiatePending` at a map of the covered bodies of the
+  batch it replays. A replay nested in a body logs into the body's steps as before, and opens no log of its own.
+- **`keepRead`**: the function a read made, kept by its start (`readFns_`, `readFnAt_`) - the function door's copy moved into it,
+  and the class door's held bodies now kept beside their steps.
+- **`memberFrame`**: the frame laid from the read from the replay's own `z` alignment; the shell from `madeFromRead` under the covered
+  class's binding (a Specialization of the body's start and its member's symbol); `this` goes first among the parameters, as the
+  definition path inserts it after reading them; a member's display name is under its class's whole name, as the parser sets it.
+
+**Census** (`-check=templates -templates=subst`, the cases, x86_64-linux): class equal 406 differ 0, nonzero 353 (REF's set); member
+bodies covered 149 (147 without the probes), built 752 = 614 + 138, replayed by reason as m83e; member frames 148 equal, 1 apart
+("a local: typed apart", nested-class-of-class-template - a local of a nested class's type); shells 148 equal of 148; made 144 equal,
+4 apart ("its name, symbol or alias", template-class 2 and template-nested 2); member bodies made with no replay 0, beside a replay
+149, replayed 4,062 by reason. Self-host: nonzero 0, class equal 3,868 differ 0, member covered 338, frames 338 equal, shells 338
+equal, made 338 equal; built 3,979.
+
+**src/**: `Parser.h` +1 (`bodyFrames_`), `Parser.cpp` +9 (`replayInlineBodies` logs a body it holds a key for), `Templates.h` +2,
+`Templates.cpp` +42 net (`keepRead`, `memberFrame`, the class door's log, `instantiatePending`'s map, `this` first in
+`madeFromRead`): src/ 96,048 -> 96,102 (+54). EXCLUSIONS re-pointed (Parser.cpp 1 line, Templates.cpp 3 lines).
+
+**Gates** (on the commit's own tree, Linux, REF `48579d6c` built in its own tree): identical 0 differ on four targets plain
+(x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - the
+covered shapes: m83e's (a covered class's held member bodies, `this`, its own members), now with their frames and shells logged and
+held; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying
+`-templates=subst` 1308/0 (952 printed, 352 refused as recorded; none falls back, none fails); `-check=templates -templates=subst`
+class `differ` 0 over the cases and the self-host, no unit failing on a difference, the cases' nonzero set 353 as REF's, the
+self-host's 0; self-compile of Templates.cpp and Parser.cpp by NEW rc 0, plain and under the flag; static rc 0 (exclusions 0/0,
+comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX
+clean, first and alone (92 s full, 94 s for the final delta), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0
+differed with that build (clang 19 on the box).
+
+
+**Where it stopped**: step (2), a covered member body made with no replay. What it needs, found here: (a) made inside
+`replayInlineBodies`' batch, at the body's place (a hook in place of its `topLevel`), since each body's frame starts where the last
+one left `frameAlign_`; (b) `madeWithoutReplay`'s side effects without `discardableInline_` (a specialization's member is not
+discardable) and with the display name above; (c) constructors and destructors left to the replay (the 4 "name, symbol or alias"
+apart are there: the C1/C2 alias and the read's class name); (d) a refusal by name, before the body is trusted, of the 5 bodies
+typed apart beside the replay (4 reaching a member of `inner<$T0>` in template-nested, 1 conditional) and of the frame apart above -
+the class the read named over its own parameter in `Typer::record`'s map is what (d)'s four want, step (3).

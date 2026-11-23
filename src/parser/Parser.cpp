@@ -706,6 +706,10 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
     // A body replayed here was written inside a class body, so every definition it produces is implicitly inline.
     replayingInline_ = true;
 
+    // Slice 3b: the frames asked for, this call's bodies alone - a replay nested in one logs nothing of its own.
+    std::map<std::size_t, std::vector<FrameEvent> > *const logs = bodyFrames_;
+    std::vector<FrameEvent> *const wasLog = frameLog_;
+    bodyFrames_ = nullptr;
     // **The outer function comes back on every way out**: a member template instantiated
     // inside a trial may throw from here, and the call that follows still reads its locals.
     try {
@@ -727,7 +731,9 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         const bool scoped = mine[i].freeFunction && !mine[i].tag.empty();
         const Type *scope = scoped ? lookup_.findTypedef(mine[i].tag) : nullptr;
         if (scope != nullptr) classStack_.push_back(scope);
+        if (logs != nullptr && logs->count(mine[i].start) != 0) frameLog_ = &(*logs)[mine[i].start];
         topLevel(*current_);
+        frameLog_ = wasLog;
         if (scope != nullptr) classStack_.pop_back();
         inlineOwner_.clear();
         inlineOwnerName_.clear();
@@ -735,10 +741,13 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
     } catch (...) {
         inlineOwner_.clear();
         inlineOwnerName_.clear();
+        frameLog_ = wasLog;
+        bodyFrames_ = logs;
         restoreFunctionState(outer);
         throw;
     }
     restoreFunctionState(outer);
+    bodyFrames_ = logs;
 }
 
 // **One level of the program's nesting is one level of the parser's**, and the limit is said
