@@ -4373,9 +4373,18 @@ date); g++ -Werror clean; Windows cl /W4 /WX clean, first and alone (215 s with 
 **tests/subst.sh's two decision-ii probes, checked** (the same lane, its own commit): `template-subst` was re-pointed whole
 (42 with no replay plain and `-g`, 42 beside a replay and made 42 equal under the check); `template-subst-refused` asserted
 its 12 with no replay and beside a replay but not made 12 equal, and nothing held its refused shapes - all twelve bodies
-are M8.2's now (the conversions, the bool argument, the literal, and `viacall`'s call since m82r), so "each refused shape
+are M8.2's now (the conversions, the bool argument, the literal, and `viacall`'s call), so "each refused shape
 with its reason" is that none replays. **Finished**: made (12): equal under the check; for both probes, plain, `-g` and
 under the check, the census line's `by-substitution=0` (the stand-in takes none) and no `replay (N): replayed:` line (no
 body by reason); the case's two comment lines say all twelve. On that tree: subst.sh's census step 0 failed (535 with no
 replay, 44 and 34 by reason, as before), the case's own output the same as REF's plain and `-g` on x86_64-linux and
 x86_64-windows; src unchanged.
+
+**The self-host under -templates=subst, stage 2 = stage 3** (the same lane; M8.2's close criterion): tools/self-host on
+Linux at -O0 with the flag on every stage, at 52cd1c1e's code (REF, before 0f8c4df3), into ~/m82aj-selfh, one box job a
+stage: stage 0 102 of 102 (153 s), stage 1 102 of 102 (1084 s), stage 2 102 of 102 (859 s), stage 3 102 of 102 (507 s,
+three compiles at once, SELFHOST_JOBS=3, resumed after stage 2's job): **102 of 102 sources the same object from stages
+0, 1 and 2, and 102 of 102 the same object from stages 2 and 3** - differ.txt empty. M8.2's self-host gate is met at
+52cd1c1e; 0f8c4df3 (the member door's pattern) and 4ceae8dd (tests only) were not self-hosted again (their identical,
+names and census rows above say no output changed). Left of M8.2's row: nothing this lane found; the deduction trial and
+the explicit specialization's match still read a signature under an argument (not the Itanium pattern).
