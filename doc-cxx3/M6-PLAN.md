@@ -5183,3 +5183,9 @@ door's decision before the replay (classBefore, classBeyond, laidFromRead), memb
 held against the replay's (readTypedefs_, typedefsCarried); census only - nothing the program sees changes. The first run's
 one failure was names on Windows cut by the gate's time limit (no count line) while a lane ran names on the shared box; its
 verdict cleared, names alone on the same tree (`-k`): 963 passed, 0 failed.
+
+**m6d-w23's wave landed, 2026-11-24 (gate m6dw23g at 47f3be02 against main d361b85c: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83k): Parser::completeClass, the class-completion tail one function; the first class
+specializations made from the read with no replay under -templates=subst - 50 in the suite (47 without the probes), emitting
+what the replay emitted on the three targets the flag covers; the 158 initializer_list<X::Y> classes refused by name (their
+cause, Parser::localOf's cut at a '::', mended on m8-3l). Nothing changes without the flag.
