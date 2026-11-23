@@ -3105,9 +3105,19 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
         for (std::size_t k = 0; k < a.params.size(); k++)
             if (substituted(s, a.params[k]) != b.params[k]) return "differ: a member function's parameter type";
         if (a.variadic != b.variadic || a.constThis != b.constThis || a.access != b.access || a.isVirtual != b.isVirtual || a.isExplicit != b.isExplicit ||
-            a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody)
+            a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody || a.refThis != b.refThis)
             return "differ: a member function's qualifiers, access or kind";
         if (a.implicit != b.implicit) return "differ: which special members are implicit";
+        // Its Itanium name for the real tag, from the read's signature (Microsoft's reads the declarator's written parameters).
+        if (p_.target_.microsoftNames()) continue;
+        std::vector<const Type *> params;
+        for (std::size_t k = 0; k < a.params.size(); k++) params.push_back(substituted(s, a.params[k]));
+        const Type *fn = p_.types_.functionType(substituted(s, a.returns), params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
+        std::string symbol, why;
+        if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
+        else if (name[0] == '~') itaniumDestructorName(tag, cls, true, &symbol);
+        else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+        if (symbol != b.symbol) return "differ: a member function's symbol";
     }
     return "equal";
 }

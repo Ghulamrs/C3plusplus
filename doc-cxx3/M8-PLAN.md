@@ -4485,3 +4485,26 @@ exits, every unit's report REF's beyond the tree path and the `class` lines; cla
 3852 substituted, made 3852 equal); self-compile of Templates.cpp by NEW rc 0; static: exclusions 0/0 after the three citations
 re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date; g++ `-Werror` clean; Windows cl
 /W4 /WX clean, first and alone (95 s with the ship).
+
+## M8.3 slice 3b, second part: each member function's Itanium name spelled for the real tag from the read's signature (lane m83b, 2026-11-23)
+
+The second thing the class made without a replay needs is its member functions' symbols, and the read's are spelled for the read's
+tag (`Box<$T0>$read3`, or `$pattern$...`). Under `-check=templates`, `classMembers` now spells each kept function's name for the
+real tag from its signature under the binding - a constructor by `itaniumConstructorName`, a destructor by `itaniumDestructorName`,
+every other member (operators, static members, the implicit assignments) by `Linkage::memberSymbol` as the parser's member
+declaration calls it - and holds it against the replay's symbol; `refThis` joins the qualifiers compared. The Microsoft spelling is
+not compared: `memberSymbol` reads the declarator's written parameters there (`manglingType`), which a class made from the read
+does not have - that is the first thing step (2) owes on x86_64-windows. **Census**: cases equal 406, differ 0; self-host equal
+3,868, differ 0 - every covered class's member names agree with the replay's, specials included. **src/**: `Templates.cpp` +10:
+95,947 -> 95,957.
+
+**Gates** (this commit's tree, Linux, REF `f88b3dd3`): identical 0 differ on four targets plain (1926/3852/1926/1926) and three
+with `-templates=subst` (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0; self-compile
+of Templates.cpp rc 0; static rc 0 (exclusions 0/0, comments 0, memory 89, residue 2012/298 not raised, ide up to date); g++
+`-Werror` clean; Windows cl /W4 /WX clean, first and alone (91 s with the ship). names.sh 963/0 and overload.sh 46/0 (Windows,
+clang 19) were run on the first part's build; this part changes only what `-check=templates` prints.
+
+**Where it stopped**: step (2) proper - the class made from the read with no replay (the `Type` under its real tag from
+`classLaid`'s layout, the kept functions entered under it with the names above, `Classes::declareImplicitSpecials` over the made
+type, the held member bodies owed through M8.2's function path on use) - is not begun; the 406 / 3,868 are its cover and
+`classLaid` + `classMembers` its check.
