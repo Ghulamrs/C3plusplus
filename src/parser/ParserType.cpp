@@ -1616,6 +1616,25 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     int align = widest;
     if (members.empty() && totalBits == 0 && sizeFloor == 0) { size = 1; align = 1; }
     if (classAlign > align) { align = classAlign; size = static_cast<int>(alignTo(size, align)); }
+    ClassLaidOut laid;
+    laid.members.swap(members);
+    laid.totalBits = totalBits;
+    laid.size = size;
+    laid.align = align;
+    laid.endsZero = endsZero;
+    laid.leadsZero = leadsZero;
+    laid.dependentLaid = dependentLaid;
+    laid.dependentBase = dependentBase;
+    laid.empties.swap(empties);
+    return completeClass(type, tag, !specializationOf.empty(), laid, pos);
+}
+
+// The class laid out, completed: its data size, its held bodies, its implicit members, its tables, its bodies replayed.
+const Type *Parser::completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos) {
+    const std::vector<Member> &members = laid.members;
+    const long long totalBits = laid.totalBits;
+    const int size = laid.size;
+    std::vector<Type::EmptyAt> &empties = laid.empties;
     // **An empty class has sizeof 1 and a data size of 0**, which is the empty base
     // optimisation Itanium requires and both oracles do. **And tail padding is reused
     // only where the ABI says**: Itanium for a non-POD base, never on Microsoft.
@@ -1626,11 +1645,11 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     type->setDataSize(noData ? 0
                       : mayReuse ? static_cast<int>(unpadded) : size);
     // A zero-sized class both ends and leads with one, whatever its bases said.
-    type->setZeroSized(noData || endsZero, noData || leadsZero);
+    type->setZeroSized(noData || laid.endsZero, noData || laid.leadsZero);
     if (noData) empties.push_back(Type::EmptyAt{ type, 0 });
     type->setEmptySubobjects(empties);
-    type->complete(members, size, align);
-    if (dependentLaid) type->setDependentLayout(dependentBase);
+    type->complete(members, size, laid.align);
+    if (laid.dependentLaid) type->setDependentLayout(laid.dependentBase);
     // Held bodies are read now, class complete, so a body may name a later member; taken out of the vector first,
     // since a body may define a class with held bodies. A specialization also takes its nested classes' bodies,
     // [temp.inst]/2; **so does any class** (1.27, item 3): a nested one waits for the outermost, [class.mem]/2.
@@ -1695,7 +1714,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     bool insideSpecialization = false;
     for (std::size_t i = 0; i < classStack_.size(); i++)
         if (classStack_[i] != type && classStack_[i]->isSpecialization()) insideSpecialization = true;
-    if (!specializationOf.empty() && deferSpecializationBodies_)
+    if (specialization && deferSpecializationBodies_)
         heldForSpecialization_ = std::move(mine);
     else if (deferSpecializationBodies_ && insideSpecialization)
         // Nested in a specialization being made: compiled where called, with the specialization's own.

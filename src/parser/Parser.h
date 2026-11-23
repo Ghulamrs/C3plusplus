@@ -1134,6 +1134,8 @@ private:
     bool atTypeName() const;
     const Type *memberTypeWalk(const Type *t);
     const Type *structOrUnionSpecifier(Kind kind, bool isClass = false);
+    typedef sema::ClassLaidOut ClassLaidOut;
+    const Type *completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos);
     void checkAccessible(const Type *object, const Member &m, std::size_t pos) const;
     // A constructor is keyed in the function table under "Point::Point", so resolving
     // one is resolving an overload set like any other. And the last component of a

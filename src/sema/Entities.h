@@ -471,6 +471,15 @@ struct ConstexprSlot {
     std::string global;   // a global object being built, named by this slot
 };
 
+// A class's layout as laid, which Parser::completeClass finishes: the parser's from the body it read, a class door's from its read.
+struct ClassLaidOut {
+    std::vector<Member> members;
+    long long totalBits = 0;
+    int size = 1, align = 1;
+    bool endsZero = false, leadsZero = false, dependentLaid = false, dependentBase = false;
+    std::vector<Type::EmptyAt> empties;
+};
+
 // A member function body written inside the class, held until the class closes.
 // `start` is the token the whole declaration begins at, so the replay re-reads the
 // return type and parameters too rather than trying to reconstruct them.
