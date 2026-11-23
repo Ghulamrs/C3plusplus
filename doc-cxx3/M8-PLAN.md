@@ -4369,3 +4369,13 @@ probes (296 with no replay, 78 by reason): no body changes, the suite's own bodi
 102 sources 0 nonzero, 3847 substituted, made 3847 equal, as REF; self-compile of Templates.cpp, Typing.cpp, ParserExpr.cpp
 rc 0; static rc 0 all (exclusions 0/0 after the re-point, comments 0, memory 89, residue 2012/298 not raised, ide up to
 date); g++ -Werror clean; Windows cl /W4 /WX clean, first and alone (215 s with the ship).
+
+**tests/subst.sh's two decision-ii probes, checked** (the same lane, its own commit): `template-subst` was re-pointed whole
+(42 with no replay plain and `-g`, 42 beside a replay and made 42 equal under the check); `template-subst-refused` asserted
+its 12 with no replay and beside a replay but not made 12 equal, and nothing held its refused shapes - all twelve bodies
+are M8.2's now (the conversions, the bool argument, the literal, and `viacall`'s call since m82r), so "each refused shape
+with its reason" is that none replays. **Finished**: made (12): equal under the check; for both probes, plain, `-g` and
+under the check, the census line's `by-substitution=0` (the stand-in takes none) and no `replay (N): replayed:` line (no
+body by reason); the case's two comment lines say all twelve. On that tree: subst.sh's census step 0 failed (535 with no
+replay, 44 and 34 by reason, as before), the case's own output the same as REF's plain and `-g` on x86_64-linux and
+x86_64-windows; src unchanged.

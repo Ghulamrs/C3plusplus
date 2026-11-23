@@ -84,6 +84,11 @@ census)
         CXX1_TEMPLATE_CENSUS=1 $CXX1 -nologo $f -templates=subst -S tests/cases/$p.cpp -o /dev/null 2>&1 | tr -d '\r' > "$OUT/$p.$how"
     done; done
     probe() { grep -qxF -- "$3" "$OUT/$1.$2" || { echo "FAIL $1 ($2): no \"$3\""; bad=$((bad + 1)); }; }      # <case> <how> <line>
+    # template-subst and template-subst-refused, decision ii's two: every body M8.2's, none by reason, the stand-in taking none.
+    for p in template-subst template-subst-refused; do for how in plain check g; do
+        grep -q '^template-census: .* by-substitution=0$' "$OUT/$p.$how" || { echo "FAIL $p ($how): the stand-in substituted"; bad=$((bad + 1)); }
+        ! grep -q '^-check=templates replay ([0-9]*): replayed: ' "$OUT/$p.$how" || { echo "FAIL $p ($how): a body replayed by reason"; bad=$((bad + 1)); }
+    done; done
     for how in plain g; do
         probe template-subst $how "-check=templates replay (42): substituted with no replay"
         probe template-subst-refused $how "-check=templates replay (12): substituted with no replay"
@@ -111,6 +116,7 @@ census)
     probe template-subst check "-check=templates replay (42): beside a replay, under -check=templates"
     probe template-subst check "-check=templates made (42): equal"
     probe template-subst-refused check "-check=templates replay (12): beside a replay, under -check=templates"
+    probe template-subst-refused check "-check=templates made (12): equal"
     probe template-subst-call check "-check=templates made (10): equal"
     probe template-subst-depcall check "-check=templates made (10): equal"
     probe template-subst-deduce check "-check=templates made (16): equal"
