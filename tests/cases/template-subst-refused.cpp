@@ -1,5 +1,5 @@
-// M8.1-early's refusals, which M8.2 makes from the read under -templates=subst (2026-11-19) but the call, replayed by
-// name - a conversion between two parameters' types of another sign or floating kind, a bool argument, a literal.
+// M8.1-early's refusals, all twelve bodies M8.2 makes from the read under -templates=subst, the stand-in none: a
+// conversion between two parameters' types of another sign or floating kind, a bool argument, a literal, a call.
 extern "C" int printf(const char *, ...);
 
 template <class U, class T> U conv(T a) { return a; }
