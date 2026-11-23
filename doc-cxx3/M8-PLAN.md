@@ -4962,3 +4962,74 @@ then 175 s delta), names.sh 963/0 and overload.sh 46/0 on commit 3's tree.
 **Where it stopped**: the typedef classes (158 over the cases, 153 without the probes) still replay - made from the read they need
 their member typedefs and aliases declared under the real tag (`readTypedefs_` has them, under the binding), and the `::` refusal
 narrowed or `localOf` mended first; then the classes with member functions and held bodies (step 3's bodies already come from the read).
+
+## M8.3 slice 3b, step (1): Parser::localOf mended, and the typedef classes made from the read (lane m83l, 2026-11-23)
+
+**Commit 1**: `Parser::localOf` takes the tag's last `::` outside any template-id's arguments (a depth count over `<>` and
+`()`), so `initializer_list<const struct Type::BaseSpec *>` is its own local name, as the read's key has it, and `constructorKey`
+gives the replay the key the read gives. m83k's refusal of a tag with `::` inside its arguments, at the door and the skip, is
+removed: such a class goes to the same checks as any other, which take it where they hold it equal. No emitted name moved: the
+key is internal, and every lookup goes through the same `constructorKey`.
+Census of commit 1 (x86_64-linux, `-check=templates -templates=subst`): **self-host** nonzero 0; the skip takes 3,551 classes
+(4,290 member bodies) with their member typedefs and 168 with member functions and held bodies alone (m83k: 2,814 + 168), 149
+replay for an alias over a type the binding does not carry (m83k 76), none by the `::` name (m83k 810), no class `differ`; frames,
+shells and made functions 3,861 equal, member bodies 338 equal, built 3,985 substituted. **tests/cases** as at m83k: nonzero 353
+(REF's), with no check 50 classes made from the read with no replay, 158 typedef classes replayed by name, member bodies 147 with
+no replay; under the check no class `differ`. src/: `Parser.h` +5, `Templates.cpp` -4 (96,417 -> 96,418).
+Gates (commit 1's tree, REF 37fd67f9): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0; static rc 0 (exclusions 0/0,
+comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, about
+5 minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Commit 2 (step 2)**: the typedef classes made from the read with no replay under `-templates=subst`. `classFromRead` declares
+each `readTypedefs_` entry under the real tag (`tag::name`, its type under the binding), after the injected name and the tag,
+before the completion tail - where a replay's class body declares it; `fromReadWhyNot` no longer refuses a member typedef or
+alias, only one naming the class itself ("replayed: a member typedef or alias naming its own class", which the read would give as
+the read class). `iterator_traits<int *>` and `remove_reference<int>` keep their member types: every case that runs links and runs
+under the flag. Under `-check=templates` the replay is the program's and the skip holds the typedefs against it, as before.
+
+Census of commit 2: **tests/cases** with no check: classes made from the read with no replay **208** (200 without the probes;
+commit 1: 50), 1 replayed for a member initialiser, none for a member typedef; member bodies with no replay 147; nonzero 353
+(REF's). Under the check 208 beside, no class `differ` (the free functions' frame and made lines as on commit 1's tree).
+**Self-host** under the check: nonzero 0; 2,423 classes beside (the replay the program's), the skip as on commit 1 (3,551 with
+member typedefs, 168 alone, 149 uncarried alias), no `differ`; frames/shells/made 3,861 equal, member bodies 338, built 3,985.
+src/: `Templates.cpp` +6 (96,418 -> 96,424).
+Gates (commit 2's tree, REF 37fd67f9): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926: the 208 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0,
+then run.sh under the flag 1308/0 (1308 pass, 0 fail; what falls back to the replay is the census above); static rc 0 (exclusions 0/0, comments 0, memory
+89, ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 on both commits'
+trees; g++ -Werror clean; Windows cl /W4 /WX clean (delta, about 4 minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped**: the classes with member functions and held bodies still replay with no check (the skip takes 168 over the
+self-host, their bodies already from the read); a typedef naming its own class replays by name; the 149 self-host classes with an
+alias over a type the binding does not carry replay by name.
+
+## M8.3 slice 3b: a type parameter bound to a class, and data members of class type, made from the read (lane m83m, 2026-11-23)
+
+**Commit 1**: `classShape` takes a type parameter bound to a class - a struct `boundClass` takes (M8.2's: not a union, not a
+specialization the instantiation has not completed) whose tag the read did not name over its parameters - where it refused every
+binding that was no scalar; such a parameter goes to the same checks as a scalar one (`classLaid`, `classMembers`, `classSkip`),
+and a class the door takes as "data members and implicit special members alone" is made from the read with no replay under
+`-templates=subst` (`classFromRead`, m83k's path), its covered member bodies through m83g's path. A data member of
+class type stays refused by name here (commit 2 takes it), and a binding to a union, a reference or an array.
+Census of commit 1 (x86_64-linux): **tests/cases** with no check: classes made from the read with no replay **393** (384 without
+the probes; 2acec9d6: 208/200), 1 replayed for a member initialiser; member bodies with no replay 218 (147); nonzero 353 (REF's).
+Under `-check=templates`: 393 beside, no class `differ`; member bodies covered 219, frames, shells and made 218 equal and one
+thread-pool body apart in its frame (a slot no local names), which replays by name for its landing pads, so nothing apart is
+made; 25 classes replay bound to a class the read named over its parameters. **Self-host** under the check: nonzero 0; **17,254
+classes beside** (2,423), member bodies covered 1,026 (338), frames, shells and made 3,861 equal, no `differ`; the largest reasons
+left: a member function's signature over a type the binding does not carry 20,567 classes, a data member of class type 18,515.
+src/: `Templates.cpp` +4 (96,424 -> 96,428). No EXCLUSIONS line moved.
+Gates (commit 1's tree, REF 2acec9d6): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926: the 393 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0 (1308 pass, 0 fail; what falls back to
+the replay is the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to
+date); self-compile of Templates.cpp and ParserType.cpp rc 0; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 4
+minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Tried and not committed: a data member of class type.** `classShape` taking a data member of any class the read did not name
+over its parameters (the next reason, 210 classes over the cases and 18,515 over the self-host) makes only 9 more cases' classes
+with no replay (402) and parts the checks: under `-check=templates` 16 classes over the cases differ (forwarding-constructor,
+thread-pool: 15 in a member function's name, 1 in the number of member functions) and over the self-host 63 in a member
+function's name and 25 in a data member's type, 182 member bodies behind them. A class-typed member gives the class implicit
+special members that call the member's (non-trivial), whose names and count the read's records do not carry; that, and the
+member's type under the binding, is what the next round finds and mends or refuses by name before the shape is widened.

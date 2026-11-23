@@ -1137,12 +1137,17 @@ private:
     typedef sema::ClassLaidOut ClassLaidOut;
     const Type *completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos);
     void checkAccessible(const Type *object, const Member &m, std::size_t pos) const;
-    // A constructor is keyed in the function table under "Point::Point", so resolving
-    // one is resolving an overload set like any other. And the last component of a
-    // qualified tag: "Outer::Inner" is "Inner", which is what those two are written as.
+    // A constructor is keyed in the function table under "Point::Point", so resolving one is resolving an
+    // overload set like any other. And the last component of a qualified tag: "Outer::Inner" is "Inner";
+    // a '::' inside a template-id's arguments cuts nothing ("std::list<A::B>" is "list<A::B>").
     static std::string localOf(const std::string &qualified) {
-        const std::size_t at = qualified.rfind("::");
-        return at == std::string::npos ? qualified : qualified.substr(at + 2);
+        int depth = 0;
+        for (std::size_t at = qualified.size(); at-- > 1;) {
+            const char c = qualified[at];
+            depth += c == '>' || c == ')' ? 1 : c == '<' || c == '(' ? -1 : 0;
+            if (depth == 0 && c == ':' && qualified[at - 1] == ':') return qualified.substr(at + 1);
+        }
+        return qualified;
     }
     static std::string constructorKey(const std::string &cls) {
         return cls + "::" + localOf(cls);

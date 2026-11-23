@@ -3073,11 +3073,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     }
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
-    // Step (3): Parser::localOf cuts a tag at a '::' inside its arguments, so the replay keys a constructor's body apart from the read.
-    const std::size_t angle = tag.find('<');
-    const std::string split = angle != std::string::npos && tag.find("::", angle) != std::string::npos
-        ? "replayed: a template argument written with '::', where localOf cuts the constructor's key" : std::string();
-    const std::string before = substitute_ && !p_.patternUses_ ? (split.empty() ? classBefore(start, useParams, useBinding) : split) : std::string();
+    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class of data members and implicit special members alone made from the read; the replay beside under the check.
     std::string fromRead = before == "made from the read: data members and implicit special members alone" ? fromReadWhyNot(start) : "-";
@@ -3104,7 +3100,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
             readStands(start, made, &coveredClass_[tag]);
-            skip = split.empty() ? classSkip(start, tag, bodies, decl.name, typedefsFrom) : split;
+            skip = classSkip(start, tag, bodies, decl.name, typedefsFrom);
             classCensus_["skip: " + skip]++;
             classCensus_["skip, member bodies: " + skip] += static_cast<int>(bodies.size());
         }
@@ -3139,7 +3135,8 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     return made;
 }
 
-// Slice 3a's shape: type parameters bound to scalars, and a read class of data members alone, each of a type that is no class.
+// Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
+// each of a type that is no class.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const {
     for (std::size_t q = 0; q < params.size(); q++) {
         if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
@@ -3156,8 +3153,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
-        if (!u->isScalar())
-            return std::string("replayed: a type parameter bound to ") + (u->isStructOrUnion() ? "a class" : u->isReference() ? "a reference" :
+        const std::string cls = u->isStructOrUnion() ? boundClass(*u) : std::string();
+        if (u->isStructOrUnion() && (!cls.empty() || u->tag().find('$') != std::string::npos))
+            return "replayed: a type parameter bound to a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
+        if (!u->isScalar() && !u->isStructOrUnion())
+            return std::string("replayed: a type parameter bound to ") + (u->isReference() ? "a reference" :
                    u->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         s->to.push_back(binding[q]);
@@ -3207,10 +3207,14 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     laid->align = laid->members.empty() ? 1 : widest;
 }
 
-// What a class made from the read cannot carry yet, by name: a pack, a member typedef, a member initialiser, alignas or final.
+// What a class made from the read cannot carry yet, by name: a pack, a typedef of its own class, a member initialiser, alignas, final.
 std::string Templates::fromReadWhyNot(std::size_t start) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
-    if (!readTypedefs_.at(start).empty()) return "replayed: a member typedef or alias, which the class made from the read would lack";
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
+        const Type *e = td.second;
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        if (e->unqualified() == readClass_.at(start)) return "replayed: a member typedef or alias naming its own class";
+    }
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
@@ -3239,6 +3243,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     type->setDeclaredClass(!partial && decl.classKey);
     type->setBeingDefined();
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
+        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
     std::vector<const Type *> outerClasses;
