@@ -3073,9 +3073,20 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     }
     if (dependent) count(DependentBase);
     std::vector<Parser::PendingBody> bodies;
-    const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding) : std::string();
+    // Step (3): Parser::localOf cuts a tag at a '::' inside its arguments, so the replay keys a constructor's body apart from the read.
+    const std::size_t angle = tag.find('<');
+    const std::string split = angle != std::string::npos && tag.find("::", angle) != std::string::npos
+        ? "replayed: a template argument written with '::', where localOf cuts the constructor's key" : std::string();
+    const std::string before = substitute_ && !p_.patternUses_ ? (split.empty() ? classBefore(start, useParams, useBinding) : split) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
-    const Type *made = readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
+    // Step (1): a class of data members and implicit special members alone made from the read; the replay beside under the check.
+    std::string fromRead = before == "made from the read: data members and implicit special members alone" ? fromReadWhyNot(start) : "-";
+    if (fromRead.empty() && checkBodies_) fromRead = "beside: the replay the program's, under -check=templates";
+    Substituted bound;
+    if (fromRead.empty()) classShape(start, useParams, useBinding, &bound);
+    const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos)
+                     : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
+    if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
 
     if (!made->isStructOrUnion())
         p_.src_.fail(pos, "'" + decl.name + "' is not a class template");
@@ -3093,7 +3104,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
             readStands(start, made, &coveredClass_[tag]);
-            skip = classSkip(start, tag, bodies, decl.name, typedefsFrom);
+            skip = split.empty() ? classSkip(start, tag, bodies, decl.name, typedefsFrom) : split;
             classCensus_["skip: " + skip]++;
             classCensus_["skip, member bodies: " + skip] += static_cast<int>(bodies.size());
         }
@@ -3177,7 +3188,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
 }
 
 // The read class's data members under `s`, laid as the parser lays a class of no base, vptr or bit-field: step (1)'s layout.
-void Templates::laidFromRead(const Type *read, const Substituted &s, std::vector<Member> *laid, int *size, int *align) const {
+void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const {
     long long cursor = 0;
     int widest = 1;
     for (const Member &m : read->members()) {
@@ -3187,12 +3198,65 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, std::vector
         const long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
         cursor = std::max(cursor, at + slot->size(p_.target_));
         widest = std::max(widest, a);
-        laid->push_back(m);
-        laid->back().type = t;
-        laid->back().offset = static_cast<int>(at);
+        laid->members.push_back(m);
+        laid->members.back().type = t;
+        laid->members.back().offset = static_cast<int>(at);
     }
-    *size = laid->empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest);
-    *align = laid->empty() ? 1 : widest;
+    laid->totalBits = cursor * 8;
+    laid->size = laid->members.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest);
+    laid->align = laid->members.empty() ? 1 : widest;
+}
+
+// What a class made from the read cannot carry yet, by name: a pack, a member typedef, a member initialiser, alignas or final.
+std::string Templates::fromReadWhyNot(std::size_t start) const {
+    if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
+    if (!readTypedefs_.at(start).empty()) return "replayed: a member typedef or alias, which the class made from the read would lack";
+    const std::string &readTag = readMembers_.at(start).first;
+    for (const Member &m : readClass_.at(start)->members())
+        if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
+    for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
+        const Token &k = p_.tokens_[t];
+        if (k.is("alignas")) return "replayed: alignas";
+        if (depth == 0 && k.is("final")) return "replayed: a final class";
+        if (k.is("{")) depth++;
+        else if (k.is("}") && --depth == 0) break;
+    }
+    return std::string();
+}
+
+// Step (1): the class `tag` made from the read under `s` with no replay - the parser's head for a specialization, then its
+// completion tail (completeClass) over the read's members laid under the binding, in the scope a replay reads it in.
+const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
+                                     const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos) {
+    const Type *read = readClass_.at(start);
+    const Kind kind = partial ? Kind::Struct : read->kind();
+    Type *type = p_.types_.structType(kind, tag);
+    if (type->isComplete()) p_.src_.fail(pos, "struct " + tag + " is defined twice");
+    type->setLocalName(tag);
+    type->setSpecialization(read->templateName(), args);
+    type->setTemplateNamespace(decl.ns);
+    p_.lookup_.declareTypeName(tag + "::" + read->templateName(), type);
+    type->setDeclaredClass(!partial && decl.classKey);
+    type->setBeingDefined();
+    p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
+    ClassLaidOut laid;
+    laidFromRead(read, s, &laid);
+    std::vector<const Type *> outerClasses;
+    outerClasses.swap(p_.classStack_);
+    const Type *outerCurrent = p_.currentClass_;
+    p_.currentClass_ = nullptr;
+    const bool wasDeferring = p_.deferSpecializationBodies_;
+    p_.deferSpecializationBodies_ = true;
+    p_.heldForSpecialization_.clear();
+    const std::vector<std::string> outerStack = p_.namespaceStack_;
+    if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+    const Type *made = p_.completeClass(type, tag, true, laid, pos);
+    p_.namespaceStack_ = outerStack;
+    p_.heldForSpecialization_.clear();
+    p_.deferSpecializationBodies_ = wasDeferring;
+    p_.currentClass_ = outerCurrent;
+    p_.classStack_.swap(outerClasses);
+    return made;
 }
 
 // The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
@@ -3200,9 +3264,10 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
     if (!made->isComplete()) return "differ: the replay's class is incomplete";
     if (!made->bases().empty() || made->hasVptr()) return "differ: the replay's class has a base or a vptr";
     if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
-    std::vector<Member> mine;
-    int size = 0, align = 0;
-    laidFromRead(read, s, &mine, &size, &align);
+    ClassLaidOut laid;
+    laidFromRead(read, s, &laid);
+    const std::vector<Member> &mine = laid.members;
+    const int size = laid.size, align = laid.align;
     const std::vector<Member> &theirs = made->members();
     if (mine.size() != theirs.size()) return "differ: the number of data members";
     for (std::size_t i = 0; i < mine.size(); i++) {

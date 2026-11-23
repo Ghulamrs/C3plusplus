@@ -279,7 +279,10 @@ public:
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const;
-    void laidFromRead(const Type *read, const Substituted &s, std::vector<Member> *laid, int *size, int *align) const;
+    void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
+    std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
+    const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
+                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos);
     std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay
