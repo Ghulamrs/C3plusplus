@@ -1043,7 +1043,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 continue;
             }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
-            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript: case Kind::This:
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
             case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
                 continue;
@@ -1242,14 +1242,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
                 if (substitute_ && outermost) { readFrames_[decl.afterParams].clear(); p_.frameLog_ = &readFrames_[decl.afterParams]; }
                 p_.topLevel(pattern);
-                if (substitute_ && outermost && !pattern.functions.empty()) {
-                    const Function &f = pattern.functions.back();      // the definition: what else the read writes is data
-                    readFnAt_[decl.afterParams] = readFns_.size();
-                    readFns_.push_back(Function(f.name(), f.returns(), f.params(), p_.oneStatement({}), f.frameSize(), f.isStatic(), f.sretSlot(),
-                                                f.isVariadic(), f.regSaveSlot(), f.pos()));
-                    Function &g = readFns_.back();
-                    g.setHasThis(f.hasThis()); g.setHasLandingPads(f.hasLandingPads()); g.setNoexcept(f.isNoexcept()); g.setExceptionSpec(f.exceptionSpec());
-                }
+                if (substitute_ && outermost && !pattern.functions.empty()) keepRead(decl.afterParams, pattern.functions.back());     // the definition: what else the read writes is data
             } else if (door == ReadMember) {
                 const std::vector<TemplateArg> args = argumentsFromBinding(params, binding, values, Packs(params.size()));
                 const std::string display = specializationKey(decl.isConstructor ? decl.ownerLocal : decl.name, args);
@@ -1309,9 +1302,14 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 for (std::size_t b = 0; door != ReadOutOfLine && b < bodies.size(); b++) {
                     const std::size_t from = p_.syntaxTree_.size();
                     std::string refused;
+                    // Its frame steps logged as the replay logs a member's, inside replayInlineBodies' own frame.
+                    struct FramesBack { Parser *p; std::map<std::size_t, std::vector<FrameEvent> > *was; ~FramesBack() { p->bodyFrames_ = was; } } framesBack = { &p_, p_.bodyFrames_ };
+                    if (substitute_ && outermost) { readFrames_[bodies[b].start].clear(); p_.bodyFrames_ = &readFrames_; }
+                    const std::size_t fnsHad = pattern.functions.size();
                     try {
                         Parser::Trial one(&p_);
                         p_.replayInlineBodies(std::vector<Parser::PendingBody>(1, bodies[b]));
+                        if (substitute_ && outermost && pattern.functions.size() > fnsHad) keepRead(bodies[b].start, pattern.functions.back());
                     } catch (const SubstitutionFailure &f) {
                         refused = f.why;
                     }
@@ -1563,6 +1561,41 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
     return std::string();
 }
 
+// Step 2's end: the function a read made at its declaration, kept by `at` beside its steps - its records, no body.
+void Templates::keepRead(std::size_t at, const Function &f) {
+    readFnAt_[at] = readFns_.size();
+    readFns_.push_back(Function(f.name(), f.returns(), f.params(), p_.oneStatement({}), f.frameSize(), f.isStatic(), f.sretSlot(),
+                                f.isVariadic(), f.regSaveSlot(), f.pos()));
+    Function &g = readFns_.back();
+    g.setHasThis(f.hasThis()); g.setHasLandingPads(f.hasLandingPads()); g.setNoexcept(f.isNoexcept()); g.setExceptionSpec(f.exceptionSpec());
+}
+
+// Slice 3b: a covered member body's frame laid from its read's steps, and the shell made from them, held against the replay's.
+void Templates::memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed) {
+    const std::vector<FrameEvent> &read = readFrames_[body.start];
+    if (read.empty() || replayed.empty()) { frameCensus_["member: no steps logged"]++; return; }
+    int raised = 0;
+    std::vector<int> laid;
+    const std::string apart = layFrame(read, replayed, s, replayed.front().kind == 'z' ? replayed.front().align : 0, &raised, &laid);
+    frameCensus_[apart.empty() ? "member: equal" : "member: differ: " + apart]++;
+    if (!apart.empty()) return;
+    Specialization sp;
+    sp.start = body.start;
+    sp.symbol = p_.lookup_.functions_[body.which].symbol;
+    const std::vector<Function> &made = p_.current_->functions;
+    std::size_t at = made.size();
+    while (at-- > 0 && made[at].symbol() != sp.symbol) {}
+    if (at >= made.size()) { shellCensus_["member: no function made"]++; return; }
+    std::vector<Function> own;
+    const std::string fromRead = madeFromRead(sp, s, read, laid, &own);
+    const Type *const cls = p_.lookup_.findTypedef(body.tag);     // a member's display name is under its class's whole name
+    if (cls != nullptr) own.back().setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + own.back().name()));
+    const std::string shell = shellApart(own.back(), made[at]);
+    shellCensus_[shell.empty() ? "member: equal" : "member: differ: " + shell]++;
+    const std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
+    madeCensus_[side.empty() ? "member: equal" : "member: differ: " + side]++;
+}
+
 // **Step 2's shell**: a Function's records, made from the read's steps as laid - a parameter's and a
 // local's from its `d` (name, stored type, offset, scope, alignment, serial), the sret slot, the save area and the frame's size -
 // and the rest from the function the read made at its declaration, as the replay's definition path sets it for a free function.
@@ -1583,7 +1616,8 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
         else if (r.kind == 'e') size = laid[k];
         if (r.kind != 'd') continue;
         const Type *t = substituted(s, r.type), *stored = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
-        if (r.param) params.push_back(Param{ stored, laid[k] });
+        // A member's `this` is declared after its parameters and is its first (definition's paramSlots).
+        if (r.param) params.insert(r.name == "this" ? params.begin() : params.end(), Param{ stored, laid[k] });
         locals.push_back(::Local(r.name, stored, laid[k], r.param, std::string(), r.block));
         locals.back().align = std::max(r.align, objectAlign(stored, p_.target_));
         locals.back().serial = r.serial;
@@ -1760,13 +1794,16 @@ void Templates::instantiatePending() {
                 if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
                 substCensus_[why]++;
             }
+            std::map<std::size_t, std::vector<FrameEvent> > memberFrames;     // a covered member body's replayed steps, by its start
+            const std::map<std::string, Substituted>::const_iterator c = coveredClass_.find(specializations_[i].key);
             if (specializations_[i].isClass && substitute_) {
-                const std::map<std::string, Substituted>::const_iterator c = coveredClass_.find(specializations_[i].key);
                 for (std::size_t b = 0; b < now.size(); b++) {
                     Bound made;
                     const std::string why = c == coveredClass_.end() ? "replayed: its class replayed" : memberShape(now[b], c->second, &made);
                     memberCensus_[why]++;
-                    if (why.compare(0, 8, "covered:") == 0) bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
+                    if (why.compare(0, 8, "covered:") != 0) continue;
+                    bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
+                    memberFrames[now[b].start];
                 }
                 if (!outsideNow.empty()) memberCensus_["replayed: a member defined out of line"] += static_cast<int>(outsideNow.size());
             }
@@ -1803,7 +1840,12 @@ void Templates::instantiatePending() {
             if (sp.isClass) {
                 count(MemberBody, now.size() + outsideNow.size());
                 // Its member functions, held here; inlineOwner_ gives the scope.
+                struct FramesBack { Parser *p; std::map<std::size_t, std::vector<FrameEvent> > *was; ~FramesBack() { p->bodyFrames_ = was; } } framesBack = { &p_, p_.bodyFrames_ };
+                p_.bodyFrames_ = memberFrames.empty() ? nullptr : &memberFrames;
                 p_.replayInlineBodies(now);
+                p_.bodyFrames_ = framesBack.was;
+                for (std::size_t b = 0; b < now.size(); b++)
+                    if (memberFrames.count(now[b].start) != 0) memberFrame(now[b], c->second, memberFrames[now[b].start]);
                 // And the ones written outside it, which need no owner: the
                 // tokens say `Box<T>::get`, so with T bound the ordinary
                 // member-definition path reads the qualifier itself.
@@ -2993,7 +3035,9 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         Substituted s;
         const std::string shape = classShape(start, useParams, useBinding, &s);
         std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
-        if (held == "equal") held = classMembers(start, s, made, tag, fnFrom);
+        // Its member functions' symbols, the replay's for the read's: held under the check, kept for its bodies' records either way.
+        const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
+        if (held == "equal") held = members;
         classCensus_[!held.empty() ? held : "covered"]++;
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
@@ -3102,7 +3146,8 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
 }
 
 // Slice 3b: the read's member functions under `s`, the read class standing for `made`, held against the replay's under `tag`.
-std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom) const {
+std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom,
+                                    std::map<std::string, std::string> *symbols) const {
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
     if (r == readMembers_.end()) return "differ: no member functions kept from the read";
     s.from.push_back(readClass_.at(start));
@@ -3149,6 +3194,7 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             p_.writtenFor_ = keptFor;
         }
         if (symbol != b.symbol) return "differ: a member function's symbol";
+        (*symbols)[a.symbol] = b.symbol;
     }
     return "equal";
 }
@@ -3180,13 +3226,7 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
         const syntax::Node n = p_.syntaxTree_.node(id);
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-        const Type *owner = r != p_.resolutions_.end() && r->second.owner != nullptr ? r->second.owner->unqualified() : nullptr;
-        const Parser::Resolved::What what = r != p_.resolutions_.end() ? r->second.what : Parser::Resolved::None;
-        if (n.kind == syntax::Kind::This || what == Parser::Resolved::This) return "replayed: `this` written, which the made class owes";
-        if (what == Parser::Resolved::Member) return "replayed: a data member of its own class, which the made class owes";
-        if (what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
-        if (owner != nullptr && owner->isStructOrUnion() && owner->tag().find("$read") != std::string::npos)
-            return "replayed: a member function of its own class called, which the made class owes";
+        if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
     }
     made->read = read->second;
     made->s = s;
@@ -3195,6 +3235,19 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
     if (!shape.empty()) return "replayed: " + shape;
     if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
     return "covered: typed under the class's binding beside the replay";
+}
+
+const std::string &Templates::symbolUnder(const std::string &symbol) const {
+    const std::map<std::string, std::string>::const_iterator m = readSymbol_.find(symbol);
+    return m == readSymbol_.end() ? symbol : m->second;
+}
+
+// A data member of the read class, named `m`, `.m` or `->m`, at its offset in the class `s` puts in its place; else `offset`.
+int Templates::offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const {
+    const Type *to = owner != nullptr ? substituted(s, owner->unqualified())->unqualified() : nullptr;
+    const std::string name = spelled.substr(spelled.compare(0, 2, "->") == 0 ? 2 : spelled.compare(0, 1, ".") == 0 ? 1 : 0);
+    if (to == nullptr || to == owner->unqualified() || !to->isStructOrUnion() || to->findMember(name) == nullptr) return offset;
+    return to->findMember(name)->offset;
 }
 
 void Templates::noteMade(const std::string &key, std::size_t from, std::size_t fnFrom) {
