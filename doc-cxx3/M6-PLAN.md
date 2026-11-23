@@ -5195,3 +5195,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83l-m83m): Parser::localOf no longer 
 the typedef classes made from the read; a type parameter bound to a class accepted at the class door. **Class specializations
 made with no replay: suite 393 of 2,184 (from 50), self-host 17,254 held equal under the check (from 0).** Nothing changes
 without the flag.
+
+**m6d-w25's wave landed, 2026-11-24 (gate m6dw25g at cd400ed5 against main c05b3ae9: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83n-m83o): the signature reason counted by kind and a template-id standing for a
+declared specialization; classes with written member functions and held bodies made from the read (membersFromRead), default
+arguments carried, a constexpr class body replayed by name. **Class specializations made with no replay: suite 668 of 2,184
+(from 393), self-host 27,684 held equal under the check (from 17,254).** Nothing changes without the flag.
