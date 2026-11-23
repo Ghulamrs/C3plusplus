@@ -5170,3 +5170,9 @@ point checked not owed; names.sh and overload.sh, which lane m83g ran on an earl
 than constructors and destructors made from the read with no replay under -templates=subst - 141 in the suite (139 without
 the probes), the self-host's 338 covered held equal under the check; the classes themselves are still the replay's, and
 nothing changes without the flag.
+
+**m6d-w21's wave landed, 2026-11-24 (gate m6dw21g at df038883 against main 762b9e0d: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83h): a data member named without `this->` read at its offset in its own
+class, so the refused bodies are covered again; and a covered class's constructors and destructors made from the read with no
+replay, with their Itanium C2/D2 aliases - 147 member bodies made with no replay in the suite (145 without the probes), the
+self-host's 338 covered held equal; the classes are still the replay's, and nothing changes without the flag.
