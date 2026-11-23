@@ -5149,3 +5149,10 @@ a class specialization's layout built by substitution and held against the repla
 signature kept past the read (readMembers_) and held against the replay's (classMembers), and the Itanium symbols spelled for
 the real tag - 406 of the suite's class specializations and 3,868 of the self-host's held equal; the replay still makes the
 program's class, so nothing changes with or without the flag.
+
+**m6d-w18's wave landed, 2026-11-23 (gate m6dw18g at e573c1a6 against main 5a8581d0: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83c-m83d): the class check holds the Microsoft member names too, so 406 of
+the suite's class specializations and 3,864 of the self-host's are held equal on layout, members, specials and both ABIs'
+symbols; and a covered class's held member body that reaches no `this` is typed from the read under the class's binding beside
+the replay and lowered from the read where typedApart holds them equal (52 suite / 72 self-host bodies); the replay still
+makes every class and runs for every member body, so nothing changes without the flag.
