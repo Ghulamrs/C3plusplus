@@ -3227,7 +3227,15 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
         if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
+        if (r != p_.resolutions_.end() && (overRead(s, r->second.owner) || overRead(s, r->second.type))) return "replayed: a member of a class the read named over its parameter";
+        if (n.kind == syntax::Kind::Conditional) return "replayed: a 'conditional', whose type the read may hold apart from its replay";
+        if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Member && n.kind == syntax::Kind::Name &&
+            offsetUnder(s, r->second.owner != nullptr ? r->second.owner : s.from.back(), p_.syntaxTree_.text(id), r->second.serial) != r->second.serial)
+            return "replayed: a data member named alone, which the read lays at another offset than its class";
     }
+    const std::vector<FrameEvent> &steps = readFrames_[body.start];
+    for (std::size_t k = 0; k < steps.size(); k++)
+        if (steps[k].kind == 'd' && overRead(s, steps[k].type)) return "replayed: a local of a class the read named over its parameter";
     made->read = read->second;
     made->s = s;
     std::vector<syntax::NodeId> requests;
@@ -3235,6 +3243,13 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
     if (!shape.empty()) return "replayed: " + shape;
     if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
     return "covered: typed under the class's binding beside the replay";
+}
+
+// A specialization or a class nested in one the map does not carry (`Tree<$T0>::It`; `inner<int>` read inside `outer`'s read).
+bool Templates::overRead(const Substituted &s, const Type *t) const {
+    while (t != nullptr && (t->unqualified() != t || t->isPointer() || t->isReference() || t->isArray()))
+        t = t->unqualified() != t ? t->unqualified() : t->isReference() ? t->referent() : t->pointee();
+    return t != nullptr && t->isStructOrUnion() && substituted(s, t) == t && t->tag().find('<') != std::string::npos;
 }
 
 const std::string &Templates::symbolUnder(const std::string &symbol) const {

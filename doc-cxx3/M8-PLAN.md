@@ -4673,3 +4673,33 @@ discardable) and with the display name above; (c) constructors and destructors l
 apart are there: the C1/C2 alias and the read's class name); (d) a refusal by name, before the body is trusted, of the 5 bodies
 typed apart beside the replay (4 reaching a member of `inner<$T0>` in template-nested, 1 conditional) and of the frame apart above -
 the class the read named over its own parameter in `Typer::record`'s map is what (d)'s four want, step (3).
+
+## M8.3 slice 3b, step 2's named refusals: every covered member body the checks held apart now replays by name (lane m83g, 2026-11-23)
+
+**What landed**: `memberShape` refuses by name, at parse time, each member body m83e and m83f found apart beside the replay, so
+none of them is covered and the census shows 0 apart: a member or a local of a class the binding's map does not carry
+(`overRead`: an unmapped specialization or a class nested in one - `Tree<$T0>::It`, nested-class-of-class-template's frame
+apart), a data member named alone at a read offset other than its class's (template-nested's 4: `n_++` after `T last_` in
+`inner<T>`, whose 'name' record keeps the read's offset where the record has no owner - `this->n_` is mapped already), and a
+`conditional` (regex-ecmascript's `sub_match::length`, typed apart). Nothing the program sees changes.
+
+**Census** (`-check=templates -templates=subst`, the cases, x86_64-linux): class equal 406 differ 0, nonzero 353 (REF's set);
+member bodies covered 143 (m83f 149), the six apart now replayed by name - a local of a class the read named over its parameter
+5, a `conditional` 5, a data member named alone at another offset 4, a member of a class the read named over its parameter 1
+(the reasons overlap the earlier ones they now come before: `meminit` 44 -> 38); member frames 143 equal of 143, shells 143
+equal, made 141 equal and 2 "its name, symbol or alias" (constructors and destructors: step 2 replays them); built 751
+substituted, **0 apart** (m83f 5); made with no replay 0. Self-host: nonzero 0, class equal 3,868 differ 0, member covered 338 (all
+338 m83f's), frames, shells and made 338 equal, built 3,980 substituted, 0 apart (by the step 2 build: one memberShape).
+
+**src/**: `Templates.h` +1 (`overRead`), `Templates.cpp` +15 (`overRead`, four refusals in `memberShape`): src/ 96,102 -> 96,118
+(+16). EXCLUSIONS unchanged (0/0).
+
+**Gates** (the commit's own tree, Linux, REF `99ead8d2` built in its own tree): subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3
+shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as
+recorded; none falls back, none fails); identical 0 differ plain on x86_64-linux (1926) and x86_64-windows (3852) at the commit,
+the rest of its runs still going (the step 2 entry has them; that tree, a superset, is 0 differ on four targets plain and three
+with the flag); `-check=templates` class `differ` 0 and no unit failing on a difference over the cases (nonzero 353, REF's) and
+the self-host (nonzero 0, by the step 2 build, whose memberShape is this one); static rc 0 (exclusions 0/0, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide
+up to date); self-compile of Templates.cpp rc 0 plain and under the flag; g++ `-Werror` clean; Windows cl /W4 /WX clean, first and
+alone (219 s full, 209 s delta), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed (clang 19 on the box) -
+on the tree before the last refusal (a data member named alone), which the step 2 build's cl /W4 /WX holds clean (113 s delta).
