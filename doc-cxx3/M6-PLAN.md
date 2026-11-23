@@ -5142,3 +5142,10 @@ point checked not owed).** M8.2's close (M8-PLAN, m82aj): the self-host under -t
 -O0, the flag on every stage - gives the same object for 102 of 102 sources from stages 0, 1 and 2 and from stages 2 and 3, the
 row's close criterion; the member-template door keeps the declaration's pattern (no second read); tests/subst.sh's two probes
 check that M8.1's stand-in takes none of their bodies and that none replays. Nothing changes without the flag.
+
+**m6d-w17's wave landed, 2026-11-23 (gate m6dw17g at c8a05d51 against main e5a82b26: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3's start (M8-PLAN, m83a-m83b): the plan in slices 3a-3e and the class door's census; slice 3a,
+a class specialization's layout built by substitution and held against the replay's; slice 3b's checks - each member's read
+signature kept past the read (readMembers_) and held against the replay's (classMembers), and the Itanium symbols spelled for
+the real tag - 406 of the suite's class specializations and 3,868 of the self-host's held equal; the replay still makes the
+program's class, so nothing changes with or without the flag.
