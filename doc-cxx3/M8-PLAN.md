@@ -4911,3 +4911,54 @@ the flag with the check; g++ `-Werror` clean; Windows cl /W4 /WX clean (91 s del
 
 **Where it stopped**: the 158 self-host classes apart in their held bodies are not diagnosed (one or two per source, so a
 library header's class); the class itself made from the read (step (1)) is not begun - the previous entry says what it must set.
+
+## M8.3 slice 3b, step (1): the class made from the read - the completion tail shared, the data-member classes made with no replay, the 158 diagnosed (lane m83k, 2026-11-23)
+
+**Commit 1 (refactor)**: `structOrUnionSpecifier`'s tail after the layout is laid - the data size, zero-sized flags and empty
+subobjects, `complete()`, the held bodies taken, the using-members, implicit specials and inheriting constructors, cl's flag, the
+non-trivial copy and destructor, abstract, the vtable and vbtable, the bodies replayed or held - is `Parser::completeClass`, over
+one record of the layout (`sema::ClassLaidOut`, in Entities.h); the parser calls it as before. Identical on four targets.
+
+**Commit 2 (decision i)**: under `-templates=subst`, a class the door takes before the replay as "data members and implicit special
+members alone" is made from the read with no replay (`classFromRead`: the parser's head for a specialization - the tag, its
+template and arguments, the injected name, the class key - then `laidFromRead` into the record and `completeClass`, in the scope a
+replay reads it in); under `-check=templates` the replay is the program's and the class door holds it as before ("beside").
+`fromReadWhyNot` refuses by name what the made class could not carry yet: `#pragma pack`, a member initialiser (`memberInit_` is
+keyed by the read's tag), `alignas`, `final`, and a member typedef or alias. The last one is load-bearing: a first build took the
+typedef-only classes (`iterator_traits<int *>`, `remove_reference<int>`), which `classBefore` also calls "data members and implicit
+specials alone", and made them without their member types - 48 cases stopped compiling under the flag; refused, none does.
+
+**Commit 3 (the 158, census only)**: every one of the 158 self-host classes apart in a held body's key is `initializer_list<X>`
+with X written with `::` (`const struct Type::BaseSpec *` 60, `enum opt::mn::Mn` 26, `const struct opt::Region *` 25, `enum
+sema::Rank` 24, `opt::MOperand *` 14, `c6x::Node *` 4, `ir::Inst *` 3, two of one): its constructor's held body. `Parser::localOf`
+takes what follows the tag's last `::`, inside the argument list too, so `constructorKey` gives the replay
+`initializer_list<const struct Type::BaseSpec *>::BaseSpec *>` where the read, over `$T0`, gives `tag::tag`. The replay is
+self-consistent (every lookup goes through the same `constructorKey`), so the program is right; the read's key is the true one.
+Mending `localOf` changes the replay's names (`~` + localOf for destructors, the constructor test in the declarators) and is
+owed to its own round; until then the door and the skip refuse by name a tag with `::` inside its arguments ("replayed: a template
+argument written with '::', where localOf cuts the constructor's key"), so nothing apart is ever made from the read.
+The refusal is wider than the fault: it takes every covered class with such an argument (810 over the self-host, 632 held bodies
+- exactly the 158's), 579 of them with no body apart; narrowing it to a class whose constructor has a held body, or mending
+`localOf` to skip a template-id's arguments, is the next step before step (2)'s typedef classes are made from the read.
+
+**Census** (x86_64-linux, tests/cases, `-templates=subst` with no check, `CXX1_TEMPLATE_CENSUS=1`): nonzero 353 (REF's); classes
+made from the read with no replay **50** (47 without the probes), 1 replayed by name for a member initialiser, 158 (153) typedef
+classes replayed by name; member bodies with no replay 147 as before. Under `-check=templates` (commit 3's tree): 49 beside, 1
+member initialiser, 155 typedef, the 3 others now under the `::` refusal; nonzero 353; no class `differ`. **Self-host** under the
+check: nonzero 0; skip 2,814 + 168 made from the read, 810 refused by the `::` name, 76 by an uncarried alias, no `differ` - the
+158 are gone; no data-member class of the self-host reaches the made path (each has a member typedef or a `::` argument).
+
+**src/**: commit 1 `Parser.h` +2, `ParserType.cpp` +19, `Entities.h` +9 (96,319 -> 96,349); commit 2 `Templates.h` +3,
+`Templates.cpp` +61 (96,413); commit 3 `Templates.cpp` +4 (96,417). EXCLUSIONS re-pointed in commit 1 (12 ParserType.cpp lines).
+
+**Gates** (each commit's own tree, Linux, REF `f3cee43e`): commits 1 and 2 - identical 0 differ on four targets plain
+(1926/3852/1926/1926), commit 2 also with `-templates=subst` on three (1926/3852/1926: the 50 classes made with no replay emit what
+the replay did); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0. Commit 3 (census only) - subst.sh 0
+failed, identical x86_64-linux plain and under the flag 0 differ, the check census over the cases and the self-host above. Static
+rc 0 on every tree (exclusions 0/0, comments 0, memory gate 89, ast-residue 2012/298 not raised, ide up to date); self-compile
+of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ `-Werror` clean; Windows cl /W4 /WX clean (229 s full,
+then 175 s delta), names.sh 963/0 and overload.sh 46/0 on commit 3's tree.
+
+**Where it stopped**: the typedef classes (158 over the cases, 153 without the probes) still replay - made from the read they need
+their member typedefs and aliases declared under the real tag (`readTypedefs_` has them, under the binding), and the `::` refusal
+narrowed or `localOf` mended first; then the classes with member functions and held bodies (step 3's bodies already come from the read).
