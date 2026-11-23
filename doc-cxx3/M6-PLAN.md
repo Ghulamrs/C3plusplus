@@ -5176,3 +5176,10 @@ point checked not owed).** M8.3 slice 3b (M8-PLAN, m83h): a data member named wi
 class, so the refused bodies are covered again; and a covered class's constructors and destructors made from the read with no
 replay, with their Itanium C2/D2 aliases - 147 member bodies made with no replay in the suite (145 without the probes), the
 self-host's 338 covered held equal; the classes are still the replay's, and nothing changes without the flag.
+
+**m6d-w22's wave landed, 2026-11-24 (gate m6dw22g at 430b7118 against main a397bd63: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83i-m83j): the class skip's check (classSkip, readBodies_, classWhy) and the class
+door's decision before the replay (classBefore, classBeyond, laidFromRead), member typedefs and aliases kept by the read and
+held against the replay's (readTypedefs_, typedefsCarried); census only - nothing the program sees changes. The first run's
+one failure was names on Windows cut by the gate's time limit (no count line) while a lane ran names on the shared box; its
+verdict cleared, names alone on the same tree (`-k`): 963 passed, 0 failed.
