@@ -4511,3 +4511,67 @@ type, the held member bodies owed through M8.2's function path on use) - is not 
 
 **The second part's Windows rows**, added after its commit: names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed
 with the cl build of `902fdc62`'s src (clang 19 on the box).
+
+## M8.3 slice 3b, third part: each member function's Microsoft name spelled for the real tag from the read's signature (lane m83c, 2026-11-23)
+
+Branch `m8-3c` from `76ca4f46` (m83b). **What it does**: the Microsoft spelling of a member reads the parameters as written
+(`Linkage::manglingType` - a `const T` or an array parameter keeps what [dcl.fct]/5 drops), which a read's signature did not keep
+once its declarator was gone. A member function's `Signature` now keeps them where they differ (`written`, set where the parser
+declares a constructor, a static member function and a member function), and under `-check=templates` `classMembers` spells each
+kept function's Microsoft name for the real tag as the parser and `Classes` do: the written parameters under the binding standing
+where `manglingType` reads them; a constructor by `microsoftConstructorName`, a destructor by `microsoftDestructorName`, Classes'
+implicit `operator=` by `microsoftCopyAssignName` and its implicit specials as public; every other member by
+`Linkage::memberSymbol`. So a covered class's members are held on both ABIs' symbols. Nothing the program sees changes:
+`written` is read only by the check.
+
+**Census** (`-check=templates -templates=subst -S`, Linux, NEW at this commit): **`tests/cases` under `-arch x86_64-windows`**
+(1,315 units, 377 nonzero exits, the set REF's under the same flags, every unit's report REF's beyond the `class` lines): 2,184 class specializations - **equal 406** (396 without the `template-subst-*`
+probes; layout, member functions and their Microsoft symbols), **differ 0**; the reasons as m83b's. **The self-host under `-arch x86_64-windows`** (102 sources, 0 nonzero): **equal 3,864, differ 0** (3,868 on x86_64-linux; the target's headers differ); built 3,848 substituted, made 3,848 equal. Over the cases on x86_64-linux (353 nonzero, as REF's): equal 406, differ 0, as m83b's.
+
+**src/**: `Entities.h` +2 (`Signature::written`), `ParserClass.cpp` +3 (it set at the three member declarations), `Templates.cpp`
++14 (`classMembers`' Microsoft spelling): src/ 95,957 -> 95,976 (+19). EXCLUSIONS re-pointed (3 ParserClass.cpp lines).
+
+**Gates** (this commit's tree, Linux, REF `76ca4f46` built in its own tree): identical 0 differ on four targets plain (x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - no output changes with the flag either, the replay's class being the program's; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as recorded; no class falls back, none leaving replay); `-check=templates -templates=subst` class `differ` 0 over the cases on both x86_64 targets and the self-host under x86_64-windows; self-compile of Templates.cpp and ParserClass.cpp by NEW rc 0, plain and under the flag; static rc 0 (exclusions 0/0 after the three citations re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (218 s with the ship), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that build (clang 19 on the box).
+
+**Where it stopped**: step (2) - the class made from the read with no replay for the classes the checks hold (the `Type` under
+its real tag from `classLaid`'s layout, the kept functions entered under it with the names `classMembers` now spells on both
+ABIs, `Classes`' specials over the made type, the held member bodies owed through M8.2's function path on use, and the replay run
+beside it only under `-check=templates`) - is not begun: the hour went to this part and its gates. The 406 classes in the cases
+and 3,868 in the self-host (x86_64-linux) are its cover. What it meets first: M8.2's function path (`instantiate` in
+`instantiatePending`) is taken for a specialization that is no class alone; a class specialization's held member bodies are replayed
+by `replayInlineBodies(now)` beside it, so a class made with no replay owes its member bodies that path extended to a member (the
+made class's `this`, the read tag's names respelled for the real one) before the class itself can skip its replay. The self-host
+under `-templates=subst` was not run: this part changes nothing the program sees, and its three stages pass the hour.
+
+## M8.3 slice 3b, step 2's first part: a covered class's held member bodies typed under its binding beside the replay (lane m83d, 2026-11-23)
+
+Branch `m8-3d` from `8fda8eb6` (m83c). **What it does**: under `-templates=subst`, the class door's read keeps each held member body's
+read by the token it is read from (`readBody_`, as the function door's); `makeClass` keeps, for a class the checks cover (`classShape`
+empty, and `classLaid` + `classMembers` equal under `-check=templates`), its binding with the read class standing for the replay's
+(`coveredClass_`). In `instantiatePending`, each held member body a class specialization owes now is asked `memberShape`: its read;
+no friend; an overload of its own (`PendingBody::which`); no `this`, no data member, static member or member function of its own
+class (the made class owes those: `this` and the members through it); then M8.2's `substShape` under the class's binding, and no
+deduced call (the class's binding as the outer layer of a request is not built). A body that passes is registered in `bound_` under
+its member's symbol, and `Typer::typeBody` - M8.2's function path - types the read under the binding beside the replay's body and
+lowers the read where `typedApart` holds them equal, the replay's where not, by name. The replay still runs for every member body
+(`replayInlineBodies(now)`), lays the frame and makes the function; nothing is made from the read with no replay yet.
+
+**Census** (`-check=templates -templates=subst -S`, Linux, NEW built from this commit's src but for one comment's place in `Templates.h`). **`tests/cases`** (1,315 units, 353 nonzero exits as
+m83c's): class equal 406 (396 without the `template-subst-*` probes), differ 0, the reasons as m83c's; **member bodies owed** 4,211 -
+**covered 52, typed beside the replay and lowered from the read** (`built`: 666 substituted = 614 function specializations + 52 member
+bodies, 0 replayed apart), made with no replay 0; replayed by reason - its class replayed 3,911, a data member of its own class 105,
+defined out of line 72, a `meminit` in the body 44, no body read at the declaration 16, a call through a value, a member or a class 3,
+a bound class's member other than public 2, a `sizeof` 2, `this` written 2, a dependent-name call another scope declares 1, a
+`literal` 1. **The self-host** (102 sources, 0 nonzero): class equal 3,868, differ 0, the reasons as m83b's; member bodies owed 57,920 - **covered 164**, of which 72 reach the typed tree and type equal beside the replay (`built`: 3,925 substituted = 3,853 function specializations + 72; the other 92 are bodies the unit does not emit, which the Typer never asks for), made with no replay 0; replayed by reason - its class replayed 57,570, a data member of its own class 173, a `meminit` 13. Functions as before: frame 3,853 equal, made 3,853 equal.
+
+**src/**: `Templates.h` +3 (`coveredClass_`, `memberCensus_`, `memberShape`), `Templates.cpp` +47 (the read kept in `tallyRead`, the
+binding kept in `makeClass`, the census and registration in `instantiatePending`, `memberShape`, the report line): src/ 95,976 ->
+96,026 (+50). EXCLUSIONS re-pointed (3 Templates.cpp lines).
+
+**Gates** (on the commit's own tree, Linux, REF `8fda8eb6` built in its own tree): identical 0 differ on four targets plain (x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - the covered shape: a held member body of a class the checks hold, reaching no `this` and no member of its own class, lowered from its read; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as recorded; no class falls back, none leaving replay); `-check=templates -templates=subst` class `differ` 0 and member bodies typed apart 0 over the cases and the self-host, the cases' nonzero set m83c's; self-compile of Templates.cpp by NEW rc 0, plain and under the flag; static rc 0 (exclusions 0/0 after the three citations re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (141 s with the ship; 94 s for the final delta), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that build (clang 19 on the box).
+
+**Where it stopped**: step (1) proper - a member body made from the read with no replay (`madeWithoutReplay` for a member: the
+frame from the read's steps, which the class door's read does not log yet; the shell with `this`; `madeApart` against the replay's
+function under `-check=templates`) - and the bodies that reach `this` or their own class's members (105 + 2 + the member calls),
+which need the Typer to take the read class's records (`owner`, a member's offset in `serial`) for the made class's; step (2), the
+class made from the read with no replay, waits on both.

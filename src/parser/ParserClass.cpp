@@ -938,6 +938,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
     lookup_.functions_.back().isNoexcept = pendingNoexcept_;
     lookup_.functions_.back().spec = pendingSpec_;
     lookup_.functions_.back().deleted = special == SpecialDef::Deleted;
+    if (linkage_.manglingType(fn) != fn) lookup_.functions_.back().written = writtenParams_;
     pendingNoexcept_ = false;
 }
 
@@ -2267,6 +2268,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
             fn->returns(), params, fn->isVariadicFn(), false, d.pos, false,
             cls, false, access, false });
         lookup_.functions_.back().isStaticMember = true;
+        if (linkage_.manglingType(fn) != fn) lookup_.functions_.back().written = writtenParams_;
         lookup_.functions_.back().isNoexcept = pendingNoexcept_;
         lookup_.functions_.back().spec = pendingSpec_;
         pendingNoexcept_ = false;
@@ -2339,6 +2341,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     lookup_.functions_.back().spec = pendingSpec_;
     lookup_.functions_.back().refThis = refThis;
     lookup_.functions_.back().isExplicit = explicitConversion;
+    if (linkage_.manglingType(fn) != fn) lookup_.functions_.back().written = writtenParams_;
     pendingNoexcept_ = false;
 
     if (!isVirtual) return;

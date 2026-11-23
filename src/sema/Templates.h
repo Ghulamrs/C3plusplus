@@ -262,6 +262,9 @@ public:
     // calls: callee and call nodes; values: 2f's folds, each + 2^31; members: a member call's function type, `this` first;
     // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
     std::map<std::string, Bound> bound_;
+    std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
+    std::map<std::string, int> memberCensus_;
+    std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay
     const Type *chosenType(const std::string &binding, std::uint32_t id) const;     // the function a bound call's node records
     std::map<std::string, int> builtCensus_;
     // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.
