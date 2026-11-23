@@ -260,6 +260,7 @@ public:
     std::map<std::string, std::string> readSymbol_;     // a covered class's, which its bodies' records are typed by (Typer::record)
     const std::string &symbolUnder(const std::string &symbol) const;     // readSymbol_'s for a read member's, else `symbol`
     bool overRead(const Substituted &s, const Type *t) const;     // a class the read named over its parameter, the map lacks
+    void readStands(std::size_t start, const Type *made, Substituted *s) const;     // the read class, and one declared apart, for `made`
     int offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const;     // a read member's in `s`'s class
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
     struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members;
@@ -290,6 +291,7 @@ public:
     bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr);
     std::map<std::size_t, std::pair<std::string, Substituted> > memberMade_;     // by start: a covered member body owed no replay, its symbol
     bool madeMember(const PendingBody &body);           // in replayInlineBodies, in place of its topLevel: false replays it
+    void memberNamed(const PendingBody &body, Function *g) const;     // its display name; a constructor's or destructor's alias
     std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
     std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
     std::string builtReport() const;
