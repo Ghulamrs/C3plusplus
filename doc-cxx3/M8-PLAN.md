@@ -5070,7 +5070,7 @@ held-bodies shape (279 / 10,423) made from the read with their member bodies thr
 
 ## M8.3 slice 3b: the held-bodies shape made from the read - written member functions and their held bodies with no replay (lane m83o, 2026-11-23)
 
-**The measure**: classes made with no replay - suite **544 of 2,184** (393 at 13fc1432; 533 without the probes, 384), self-host
+**The measure** at commit 1: classes made with no replay - suite **544 of 2,184** (393 at 13fc1432; 533 without the probes, 384), self-host
 **24,819 beside** under the check (17,254).
 
 **Commit 1**: `classFromRead` takes the door's second shape, "data members, member functions and held bodies", as well as the
@@ -5095,6 +5095,25 @@ Gates (commit 1's tree, REF 13fc1432): identical 0 differ on four targets plain 
 under the flag 1308/0 (1308 pass, 0 fail; the fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
 raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 2.5 minutes, alone), names.sh 963/0, overload.sh 46/0.
 
-**Where it stopped**: the 126 suite classes with a member function's default argument (its tokens are kept by the read's
-symbol: copied to the real symbol they would be read in the class made from the read) and the data members of class type
-(m83m's try: the implicit specials' names and count) are next; then a member type of another class (10,424 self-host).
+**Commit 2**: a member function's default arguments carried. `declareMember` keeps a default's tokens and the scope they are
+read in by the function's symbol (`defaultArgs_`, `defaultArgNamespace_`); `membersFromRead` copies the read symbol's entries to
+the real symbol, and `classMembers` holds them against the replay's under the check ("differ: a member function's default
+arguments or the scope they are read in": none over the cases or the self-host). Most of the 126 were no default at all - an
+entry `defaultArgs_` holds for a symbol with an empty list counted as one - so the refusal went whole; in its place a class
+body with `constexpr` replays by name ("a constexpr member, whose body a constant compiles where it is needed": W<int> and
+W<double> of constexpr-object-template, which stopped compiling when made from the read - their constructor's body is
+compiled at the fold, through the replay's path).
+Census: with no check classes made from the read with no replay **668** (544; 657 without the probes), 2 replayed for a constexpr
+member, 3 for a member initialiser, nonzero 353 (REF's); under the check 668 beside, no class `differ`. **Self-host** under the
+check: nonzero 0, **27,684 classes beside** (24,819; the whole of the door's two shapes), member covered 1,030, frames,
+shells and made 3,864 + 1,030 equal, no `differ`.
+src/: `Templates.cpp` +6 (96,514 -> 96,520). No EXCLUSIONS line moved.
+Gates (commit 2's tree, REF 13fc1432): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three
+(1926/3852/1926: the 668 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0, then run.sh
+under the flag 1308/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean
+(delta, about 1 minute, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped**: a constexpr member (its body compiled where a constant needs it, which the class made from the read does not
+reach yet), a member initialiser, and the data members of class type (m83m's try: the implicit specials' names and count) are
+next; then a member type of another class (10,424 self-host) and the template-ids not declared before the replay.

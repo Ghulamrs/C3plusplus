@@ -3251,11 +3251,10 @@ std::string Templates::fromReadWhyNot(std::size_t start) const {
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
-    // A written member's defaults and a defaulted special are kept by the read's symbol and tag; each held body is a written one's.
+    // A defaulted special is kept by the read's tag; each held body is a written member's.
     if (p_.defaulted_.count(readTag) != 0) return "replayed: a defaulted special member";
     std::map<std::string, bool> written;
     for (const Signature &f : readMembers_.at(start).second) {
-        if (p_.defaultArgs_.count(f.symbol) != 0) return "replayed: a member function's default argument";
         written[f.symbol] = !f.implicit;
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start))
@@ -3264,6 +3263,7 @@ std::string Templates::fromReadWhyNot(std::size_t start) const {
         const Token &k = p_.tokens_[t];
         if (k.is("alignas")) return "replayed: alignas";
         if (depth == 0 && k.is("final")) return "replayed: a final class";
+        if (k.is("constexpr")) return "replayed: a constexpr member, whose body a constant compiles where it is needed";
         if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
     }
@@ -3330,6 +3330,8 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         for (const Type *&t : f.params) t = substituted(s, t);
         for (const Type *&t : f.written) t = substituted(s, t);
         f.symbol = memberSymbol(a, f.name, s, tag);
+        if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
+            p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
         f.defined = f.used = false;
         const std::string key = f.name == tag ? Parser::constructorKey(tag) : f.name[0] == '~' ? Parser::destructorKey(tag) : tag + "::" + f.name;
         at[a.symbol] = p_.lookup_.functions_.size();
@@ -3391,6 +3393,10 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             return "differ: a member function's qualifiers, access or kind";
         if (a.implicit != b.implicit) return "differ: which special members are implicit";
         if (memberSymbol(a, name, s, tag) != b.symbol) return "differ: a member function's symbol";
+        const bool defaults = p_.defaultArgs_.count(a.symbol) != 0;
+        if (defaults != (p_.defaultArgs_.count(b.symbol) != 0) || (defaults && (p_.defaultArgs_.at(a.symbol) != p_.defaultArgs_.at(b.symbol) ||
+            p_.defaultArgNamespace_.at(a.symbol) != p_.defaultArgNamespace_.at(b.symbol))))
+            return "differ: a member function's default arguments or the scope they are read in";
         (*symbols)[a.symbol] = b.symbol;
     }
     return "equal";
