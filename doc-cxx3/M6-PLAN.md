@@ -5201,3 +5201,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83n-m83o): the signature reason count
 declared specialization; classes with written member functions and held bodies made from the read (membersFromRead), default
 arguments carried, a constexpr class body replayed by name. **Class specializations made with no replay: suite 668 of 2,184
 (from 393), self-host 27,684 held equal under the check (from 17,254).** Nothing changes without the flag.
+
+**m6d-w26's wave landed, 2026-11-24 (gate m6dw26g at 69f8394c against main 9afe7bc2: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83p): data members of class type made from the read; a conversion function named
+under the binding (memberName, Parser::conversionSpelling) for its declaration, symbol and held body's key. **Class
+specializations made with no replay: suite 735 of 2,184 (from 668), self-host 30,707 held equal under the check (from
+27,684).** Nothing changes without the flag.
