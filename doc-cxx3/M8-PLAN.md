@@ -4511,3 +4511,34 @@ type, the held member bodies owed through M8.2's function path on use) - is not 
 
 **The second part's Windows rows**, added after its commit: names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed
 with the cl build of `902fdc62`'s src (clang 19 on the box).
+
+## M8.3 slice 3b, third part: each member function's Microsoft name spelled for the real tag from the read's signature (lane m83c, 2026-11-23)
+
+Branch `m8-3c` from `76ca4f46` (m83b). **What it does**: the Microsoft spelling of a member reads the parameters as written
+(`Linkage::manglingType` - a `const T` or an array parameter keeps what [dcl.fct]/5 drops), which a read's signature did not keep
+once its declarator was gone. A member function's `Signature` now keeps them where they differ (`written`, set where the parser
+declares a constructor, a static member function and a member function), and under `-check=templates` `classMembers` spells each
+kept function's Microsoft name for the real tag as the parser and `Classes` do: the written parameters under the binding standing
+where `manglingType` reads them; a constructor by `microsoftConstructorName`, a destructor by `microsoftDestructorName`, Classes'
+implicit `operator=` by `microsoftCopyAssignName` and its implicit specials as public; every other member by
+`Linkage::memberSymbol`. So a covered class's members are held on both ABIs' symbols. Nothing the program sees changes:
+`written` is read only by the check.
+
+**Census** (`-check=templates -templates=subst -S`, Linux, NEW at this commit): **`tests/cases` under `-arch x86_64-windows`**
+(1,315 units, 377 nonzero exits, the set REF's under the same flags, every unit's report REF's beyond the `class` lines): 2,184 class specializations - **equal 406** (396 without the `template-subst-*`
+probes; layout, member functions and their Microsoft symbols), **differ 0**; the reasons as m83b's. **The self-host under `-arch x86_64-windows`** (102 sources, 0 nonzero): **equal 3,864, differ 0** (3,868 on x86_64-linux; the target's headers differ); built 3,848 substituted, made 3,848 equal. Over the cases on x86_64-linux (353 nonzero, as REF's): equal 406, differ 0, as m83b's.
+
+**src/**: `Entities.h` +2 (`Signature::written`), `ParserClass.cpp` +3 (it set at the three member declarations), `Templates.cpp`
++14 (`classMembers`' Microsoft spelling): src/ 95,957 -> 95,976 (+19). EXCLUSIONS re-pointed (3 ParserClass.cpp lines).
+
+**Gates** (this commit's tree, Linux, REF `76ca4f46` built in its own tree): identical 0 differ on four targets plain (x86_64-linux 1926, x86_64-windows 3852, arm64-darwin 1926, tms6747 1926) and three with `-templates=subst` (1926/3852/1926) - no output changes with the flag either, the replay's class being the program's; subst.sh 0 failed (self 102 of 102, ceiling 26 of 26, 3 shapes of 3), then run.sh 1308/0, then run.sh with CXX1 carrying `-templates=subst` 1308/0 (952 printed, 352 refused as recorded; no class falls back, none leaving replay); `-check=templates -templates=subst` class `differ` 0 over the cases on both x86_64 targets and the self-host under x86_64-windows; self-compile of Templates.cpp and ParserClass.cpp by NEW rc 0, plain and under the flag; static rc 0 (exclusions 0/0 after the three citations re-pointed, comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX clean, first and alone (218 s with the ship), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed with that build (clang 19 on the box).
+
+**Where it stopped**: step (2) - the class made from the read with no replay for the classes the checks hold (the `Type` under
+its real tag from `classLaid`'s layout, the kept functions entered under it with the names `classMembers` now spells on both
+ABIs, `Classes`' specials over the made type, the held member bodies owed through M8.2's function path on use, and the replay run
+beside it only under `-check=templates`) - is not begun: the hour went to this part and its gates. The 406 classes in the cases
+and 3,868 in the self-host (x86_64-linux) are its cover. What it meets first: M8.2's function path (`instantiate` in
+`instantiatePending`) is taken for a specialization that is no class alone; a class specialization's held member bodies are replayed
+by `replayInlineBodies(now)` beside it, so a class made with no replay owes its member bodies that path extended to a member (the
+made class's `this`, the read tag's names respelled for the real one) before the class itself can skip its replay. The self-host
+under `-templates=subst` was not run: this part changes nothing the program sees, and its three stages pass the hour.

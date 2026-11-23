@@ -138,6 +138,8 @@ struct Signature {
     bool deleted = false;
     // **The ref-qualifier, half of a member's identity beside its const** - [over.load]/2.
     RefQual refThis = RefQual::None;
+    // A member's parameters as written, where that differs (Linkage::manglingType): Microsoft spells these, M8.3 respells them.
+    std::vector<const Type *> written;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Signature(std::string name = std::string(), std::string symbol = std::string(),

@@ -3108,15 +3108,29 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody || a.refThis != b.refThis)
             return "differ: a member function's qualifiers, access or kind";
         if (a.implicit != b.implicit) return "differ: which special members are implicit";
-        // Its Itanium name for the real tag, from the read's signature (Microsoft's reads the declarator's written parameters).
-        if (p_.target_.microsoftNames()) continue;
+        // Its name for the real tag from the read's signature, as the parser and Classes spell it on each ABI.
         std::vector<const Type *> params;
         for (std::size_t k = 0; k < a.params.size(); k++) params.push_back(substituted(s, a.params[k]));
         const Type *fn = p_.types_.functionType(substituted(s, a.returns), params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
         std::string symbol, why;
-        if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
-        else if (name[0] == '~') itaniumDestructorName(tag, cls, true, &symbol);
-        else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+        if (!p_.target_.microsoftNames()) {
+            if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
+            else if (name[0] == '~') itaniumDestructorName(tag, cls, true, &symbol);
+            else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+        } else {
+            // The written parameters under the binding stand where manglingType reads them; Classes names an implicit one public.
+            const std::vector<const Type *> keptWritten = p_.writtenParams_, keptFor = p_.writtenFor_;
+            p_.writtenParams_.clear();
+            for (const Type *w : a.written) p_.writtenParams_.push_back(substituted(s, w));
+            p_.writtenFor_ = a.written.empty() ? std::vector<const Type *>() : params;
+            const char code = a.implicit ? 'Q' : a.isVirtual ? 'U' : a.access == Access::Public ? 'Q' : a.access == Access::Protected ? 'I' : 'A';
+            if (name == tag) microsoftConstructorName(tag, cls, p_.linkage_.manglingType(fn), code, &symbol, &why);
+            else if (name[0] == '~') symbol = microsoftDestructorName(tag, cls, code);
+            else if (a.implicit && name == "operator=") microsoftCopyAssignName(tag, cls, fn, 'Q', &symbol, &why);
+            else symbol = p_.linkage_.memberSymbol(tag, a.name, fn, a.access, a.constThis, a.refThis, a.pos, a.isVirtual, a.isStaticMember);
+            p_.writtenParams_ = keptWritten;
+            p_.writtenFor_ = keptFor;
+        }
         if (symbol != b.symbol) return "differ: a member function's symbol";
     }
     return "equal";
