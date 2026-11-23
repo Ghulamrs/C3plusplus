@@ -5163,3 +5163,10 @@ members typed from the read beside the replay through one map from the read clas
 suite / 337 self-host bodies; and a covered member body's frame steps logged at the class door (Parser::bodyFrames_), its
 frame, shell (`this` first) and made function held against the replay's (memberFrame) - self-host 338 of 338 equal, suite 148
 frames and 144 made of 149. The replay still runs for every member body, so nothing changes without the flag.
+
+**m6d-w20's wave landed, 2026-11-23 (gate m6dw20g at 2f226681 against main b45bd7a8: 40 passed, 0 failed, no row; the fixed
+point checked not owed; names.sh and overload.sh, which lane m83g ran on an earlier build, ran here on this tree).** M8.3 slice
+3b (M8-PLAN, m83g): the member bodies the checks find apart refused by name, and a covered class's held member bodies other
+than constructors and destructors made from the read with no replay under -templates=subst - 141 in the suite (139 without
+the probes), the self-host's 338 covered held equal under the check; the classes themselves are still the replay's, and
+nothing changes without the flag.
