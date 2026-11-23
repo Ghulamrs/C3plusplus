@@ -3135,7 +3135,8 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     return made;
 }
 
-// Slice 3a's shape: type parameters bound to scalars, and a read class of data members alone, each of a type that is no class.
+// Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
+// each of a type that is no class.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const {
     for (std::size_t q = 0; q < params.size(); q++) {
         if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
@@ -3152,8 +3153,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
-        if (!u->isScalar())
-            return std::string("replayed: a type parameter bound to ") + (u->isStructOrUnion() ? "a class" : u->isReference() ? "a reference" :
+        const std::string cls = u->isStructOrUnion() ? boundClass(*u) : std::string();
+        if (u->isStructOrUnion() && (!cls.empty() || u->tag().find('$') != std::string::npos))
+            return "replayed: a type parameter bound to a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
+        if (!u->isScalar() && !u->isStructOrUnion())
+            return std::string("replayed: a type parameter bound to ") + (u->isReference() ? "a reference" :
                    u->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         s->to.push_back(binding[q]);
