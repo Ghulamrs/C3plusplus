@@ -4847,3 +4847,37 @@ m83g's path) - is not begun: it replaces `readClassBody`'s replay in `makeClass`
 entries the bodies' `which` index, implicit specials, the class scope's names) are what step 4's records must stand for; the
 replay beside it only under `-check=templates`. Then the shape widened: member typedefs (266 classes), static data members
 (2,076 bodies), out-of-line member bodies (72).
+
+## M8.3 slice 3b, step (1)'s door: the class skip asked before the replay, and the read's layout split out (lane m83j, 2026-11-23)
+
+**What landed** (census only; nothing the program sees changes, with or without the flag): step (1) replaces `readClassBody`'s
+replay in `makeClass`, so its decision cannot wait for the replay as `classSkip` does. `classBefore` asks it first - `classShape`,
+then `classBeyond` (classSkip's scan of the body's own level, split out: a typedef, alias or using-declaration, an enumeration, a
+nested or elaborated class, a friend, a member template, a `static_assert`, refused by name), then the read's records kept - and
+the census holds what it takes against what `classSkip` takes after the replay ("differ: the class skip before the replay and
+after it" when they part). `laidFromRead` is `classLaid`'s layout split out: the read's data members under the binding, offset,
+size and alignment, which the class made from the read completes; `classLaid` now holds that against the replay's.
+
+**Census** (x86_64-linux, `-check=templates -templates=subst` over tests/cases): before the replay the door takes **123** (118
+without the probes) - 72 (70) with member functions or held bodies and **51** (48) of data members and implicit special members
+alone, the first shape a class made with no replay needs no function table for - exactly the 123 the skip takes after it; no
+`differ`; every other class's reason before the replay is its reason after (a type parameter bound to a class 635, a non-type
+parameter 458, a member typedef, alias or using-declaration 266, a signature over an uncarried type 207, a static data member
+183, ...). nonzero 353 (REF's). Self-host: nonzero 0, before the replay 168 = the skip's 168, no `differ`; member typedefs 3,700.
+
+**src/**: `Templates.h` +3, `Templates.cpp` +39 (`classBeyond`, `classBefore`, `laidFromRead`, the census in `makeClass`):
+src/ 96,232 -> 96,274 (+42). No EXCLUSIONS line moved (its Templates.cpp citations are all before the change).
+
+**Gates** (the commit's own tree, Linux, REF `235c0e6e`): identical 0 differ plain on x86_64-linux 1926, x86_64-windows 3852,
+arm64-darwin 1926 (tms6747 and the `-templates=subst` legs in the lane's handover); subst.sh 0 failed (self 102 of 102, ceiling
+26 of 26, 3 shapes of 3); `-check=templates` class `differ` 0 over the cases and the self-host; static rc 0 (exclusions 0/0,
+comments 0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); g++ `-Werror` clean; Windows cl /W4 /WX
+clean, first and alone (101 s full), then names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed.
+
+**Where it stopped**: the class itself made from the read is not begun. What the replay sets that a class made from the read must
+set too (structOrUnionSpecifier, ParserType.cpp): the Type under the tag with its local name, specialization, template namespace,
+injected class name (`tag::name`) and class-key name; its members and size from `laidFromRead`, data size, zero-sized and empty
+subobjects, `complete`; the implicit specials (`Classes::declareImplicitSpecials`), non-trivial copy and destructor flags; any
+member initialiser's place (`memberInit_`). One implementation of those is the parser's tail, so the next step is that tail
+split into a function both call, then the 51 classes of data members alone made through it with the replay beside them only
+under `-check=templates`.

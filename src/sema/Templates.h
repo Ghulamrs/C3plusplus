@@ -273,6 +273,9 @@ public:
     std::map<std::size_t, std::vector<std::pair<PendingBody, std::string> > > readBodies_;
     std::map<std::string, std::string> classWhy_;
     std::string classSkip(std::size_t start, const std::string &tag, const std::vector<PendingBody> &bodies) const;     // the class skip's shape
+    std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
+    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const;
+    void laidFromRead(const Type *read, const Substituted &s, std::vector<Member> *laid, int *size, int *align) const;
     std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay
