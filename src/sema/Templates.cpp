@@ -826,7 +826,7 @@ void Templates::callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
         if (p_.syntaxTree_.node(id).kind != syntax::Kind::Call || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call) continue;
         for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
-            if (p_.lookup_.functions_[q].symbol == r->second.symbol) { p_.noteUsed(q); break; }
+            if (p_.lookup_.functions_[q].symbol == symbolUnder(r->second.symbol)) { p_.noteUsed(q); break; }
     }
 }
 
@@ -1687,7 +1687,7 @@ std::string Templates::madeApart(const Function &g, const Function &f) const {
 
 // Step 2's end: the function, its frame's alignment and the unit's records the replay's definition path leaves, made from the
 // read alone; false - and replayed - where the read leaves what the made function does not carry or a generator walks the Ast.
-bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why) {
+bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member) {
     if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
     int raised = 0;
     std::vector<int> laid;
@@ -1695,10 +1695,12 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
     if (!why->empty()) return *why = "the frame: " + *why, false;
     std::vector<Function> own;
     if (!(*why = madeFromRead(sp, s, readFrames_[sp.start], laid, &own)).empty()) return false;
+    const Type *const cls = member != nullptr ? p_.lookup_.findTypedef(member->tag) : nullptr;     // under its class's whole name
+    if (cls != nullptr) own.back().setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + own.back().name()));
     p_.current_->functions.push_back(std::move(own.back()));
     for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
         if (p_.lookup_.functions_[q].symbol == sp.symbol) p_.lookup_.functions_[q].defined = true;
-    p_.discardableInline_.insert(sp.symbol);
+    if (member == nullptr) p_.discardableInline_.insert(sp.symbol);     // a specialization's member is not discardable
     if (raised > alignHad) p_.frameAligns_[sp.symbol] = raised;
     p_.frameAlign_ = std::max(startAlign, raised);
     unreplayed_.insert(sp.symbol);
@@ -1708,6 +1710,27 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
         for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
             if (p_.lookup_.functions_[q].symbol == a->second.first) { p_.noteUsed(q); break; }
     return true;
+}
+
+// Slice 3b, step 2: a covered member body owed no replay, made from its read where its replay would stand in the batch, so its
+// frame starts where the last one left frameAlign_; constructors and destructors, and what the read cannot carry, replay.
+bool Templates::madeMember(const PendingBody &body) {
+    const std::map<std::size_t, std::pair<std::string, Substituted> >::iterator m = memberMade_.find(body.start);
+    if (m == memberMade_.end() || body.which >= p_.lookup_.functions_.size() || p_.lookup_.functions_[body.which].symbol != m->second.first) return false;
+    const Substituted s = m->second.second;
+    memberMade_.erase(m);
+    Specialization sp;
+    sp.start = body.start;
+    sp.symbol = p_.lookup_.functions_[body.which].symbol;
+    const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
+    std::string why;
+    if (body.key == Parser::constructorKey(body.tag) || body.key == Parser::destructorKey(body.tag)) why = "a constructor or destructor, whose aliases the replay makes";
+    else if (madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
+        replayCensus_["member: substituted with no replay"]++;
+        return true;
+    }
+    replayCensus_["member: replayed: " + why]++;
+    return false;
 }
 
 std::string Templates::builtReport() const {
@@ -1803,7 +1826,9 @@ void Templates::instantiatePending() {
                     memberCensus_[why]++;
                     if (why.compare(0, 8, "covered:") != 0) continue;
                     bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
-                    memberFrames[now[b].start];
+                    // Step 2: made from the read at its place in the batch (madeMember); the replay beside it only under -check=templates.
+                    if (checkBodies_) memberFrames[now[b].start], replayCensus_["member: beside a replay, under -check=templates"]++;
+                    else memberMade_[now[b].start] = std::make_pair(p_.lookup_.functions_[now[b].which].symbol, c->second);
                 }
                 if (!outsideNow.empty()) memberCensus_["replayed: a member defined out of line"] += static_cast<int>(outsideNow.size());
             }
@@ -3227,7 +3252,15 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
         if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
+        if (r != p_.resolutions_.end() && (overRead(s, r->second.owner) || overRead(s, r->second.type))) return "replayed: a member of a class the read named over its parameter";
+        if (n.kind == syntax::Kind::Conditional) return "replayed: a 'conditional', whose type the read may hold apart from its replay";
+        if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Member && n.kind == syntax::Kind::Name &&
+            offsetUnder(s, r->second.owner != nullptr ? r->second.owner : s.from.back(), p_.syntaxTree_.text(id), r->second.serial) != r->second.serial)
+            return "replayed: a data member named alone, which the read lays at another offset than its class";
     }
+    const std::vector<FrameEvent> &steps = readFrames_[body.start];
+    for (std::size_t k = 0; k < steps.size(); k++)
+        if (steps[k].kind == 'd' && overRead(s, steps[k].type)) return "replayed: a local of a class the read named over its parameter";
     made->read = read->second;
     made->s = s;
     std::vector<syntax::NodeId> requests;
@@ -3235,6 +3268,13 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
     if (!shape.empty()) return "replayed: " + shape;
     if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
     return "covered: typed under the class's binding beside the replay";
+}
+
+// A specialization or a class nested in one the map does not carry (`Tree<$T0>::It`; `inner<int>` read inside `outer`'s read).
+bool Templates::overRead(const Substituted &s, const Type *t) const {
+    while (t != nullptr && (t->unqualified() != t || t->isPointer() || t->isReference() || t->isArray()))
+        t = t->unqualified() != t ? t->unqualified() : t->isReference() ? t->referent() : t->pointee();
+    return t != nullptr && t->isStructOrUnion() && substituted(s, t) == t && t->tag().find('<') != std::string::npos;
 }
 
 const std::string &Templates::symbolUnder(const std::string &symbol) const {

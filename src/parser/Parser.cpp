@@ -732,7 +732,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         const Type *scope = scoped ? lookup_.findTypedef(mine[i].tag) : nullptr;
         if (scope != nullptr) classStack_.push_back(scope);
         if (logs != nullptr && logs->count(mine[i].start) != 0) frameLog_ = &(*logs)[mine[i].start];
-        topLevel(*current_);
+        if (!tmpl_.madeMember(mine[i])) topLevel(*current_);     // slice 3b: a covered member body made from its read
         frameLog_ = wasLog;
         if (scope != nullptr) classStack_.pop_back();
         inlineOwner_.clear();
