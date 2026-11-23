@@ -1290,6 +1290,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
                 if (!own.empty()) readPattern_[own] = made;
+                if (substitute_ && outermost && door != ReadOutOfLine) readClass_[partial ? decl.partials[which].bodyAt : decl.afterParams] = made;
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
@@ -1456,6 +1457,8 @@ std::string Templates::bodiesReport() const {
     }
     for (std::map<std::string, int>::const_iterator i = substCensus_.begin(); i != substCensus_.end(); ++i)
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = classCensus_.begin(); i != classCensus_.end(); ++i)
+        out += "-check=templates class (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = frameCensus_.begin(); i != frameCensus_.end(); ++i)
         out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = shellCensus_.begin(); i != shellCensus_.end(); ++i)
@@ -2964,6 +2967,12 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (!made->isStructOrUnion())
         p_.src_.fail(pos, "'" + decl.name + "' is not a class template");
     p_.lookup_.declareTypeName(tag, made);
+    // M8.3 slice 3a: the class the read laid, under the binding, held against the one replayed; the replay's is the program's.
+    if (substitute_ && !p_.patternUses_) {
+        Substituted s;
+        const std::string shape = classShape(start, useParams, useBinding, &s);
+        classCensus_[!shape.empty() ? shape : checkBodies_ ? classLaid(readClass_.at(start), s, made) : "covered"]++;
+    }
 
     Parser::Specialization sp;
     sp.key = tag;
@@ -2986,6 +2995,68 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     specializations_.push_back(sp);
     noteMade(tag, logFrom, fnFrom);
     return made;
+}
+
+// Slice 3a's shape: type parameters bound to scalars, and a read class of data members alone, each of a type that is no class.
+std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const {
+    for (std::size_t q = 0; q < params.size(); q++) {
+        if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
+        if (params[q].type != nullptr) return "replayed: a non-type parameter, bound by name";
+    }
+    const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
+    if (r == readClass_.end()) return "replayed: no class read at the declaration";
+    const Type *read = r->second;
+    if (!read->isStructOrUnion() || !read->isComplete()) return "replayed: the read made no complete class";
+    if (!read->bases().empty()) return "replayed: a base";
+    if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
+    if (read->hasVptr()) return "replayed: a virtual function";
+    if (!read->staticMembers().empty()) return "replayed: a static data member";
+    for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
+        const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
+        if (u == nullptr) return "replayed: a type parameter bound to no type";
+        if (!u->isScalar())
+            return std::string("replayed: a type parameter bound to ") + (u->isStructOrUnion() ? "a class" : u->isReference() ? "a reference" :
+                   u->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
+        s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
+        s->to.push_back(binding[q]);
+    }
+    for (const Member &m : read->members()) {
+        if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
+        const Type *t = substituted(*s, m.type), *e = t;
+        if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
+        while (e->isArray()) e = e->pointee();
+        if (e->unqualified()->isStructOrUnion()) return "replayed: a data member of class type";
+        if (!t->isComplete()) return "replayed: a data member of an incomplete type";
+    }
+    return std::string();
+}
+
+// The read class's members laid under `s` as the parser lays a class of no base, vptr or bit-field; `made` is the replay's.
+std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
+    if (!made->isComplete()) return "differ: the replay's class is incomplete";
+    if (!made->bases().empty() || made->hasVptr()) return "differ: the replay's class has a base or a vptr";
+    if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
+    const std::vector<Member> &mine = read->members(), &theirs = made->members();
+    if (mine.size() != theirs.size()) return "differ: the number of data members";
+    long long cursor = 0;
+    int widest = 1;
+    for (std::size_t i = 0; i < mine.size(); i++) {
+        const Type *t = substituted(s, mine[i].type);
+        const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
+        const int a = slot->align(p_.target_);
+        const long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
+        cursor = std::max(cursor, at + slot->size(p_.target_));
+        widest = std::max(widest, a);
+        if (mine[i].name != theirs[i].name) return "differ: a data member's name";
+        if (t != theirs[i].type) return "differ: a data member's type";
+        if (at != theirs[i].offset) return "differ: a data member's offset";
+        if (mine[i].access != theirs[i].access || mine[i].isMutable != theirs[i].isMutable || mine[i].isVolatile != theirs[i].isVolatile)
+            return "differ: a data member's access, mutable or volatile";
+    }
+    const int size = mine.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest), align = mine.empty() ? 1 : widest;
+    if (size != made->size(p_.target_)) return "differ: the size";
+    if (align != made->align(p_.target_)) return "differ: the alignment";
+    return "equal";
 }
 
 // The first n functions in the order the program would have declared them: a seated one just before the first declared after its ask.

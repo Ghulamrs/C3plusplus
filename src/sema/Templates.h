@@ -248,6 +248,11 @@ public:
     void callsUsed(syntax::NodeId body, const std::map<std::uint32_t, std::size_t> &calls);
     std::map<std::size_t, syntax::NodeId> readBody_;            // a function template's read body, by its `afterParams`
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
+    // M8.3: a class template's or a partial's class read at the declaration, by the token its body is read from.
+    std::map<std::size_t, const Type *> readClass_;
+    std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
+    std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const;
+    std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
     struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members;
                    std::map<std::uint32_t, std::pair<std::string, const Type *> > assigns; };
