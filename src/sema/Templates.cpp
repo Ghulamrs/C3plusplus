@@ -1043,7 +1043,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 continue;
             }
             case Kind::IntLit: case Kind::FloatLit: case Kind::CharLit: case Kind::Name: case Kind::Unary: case Kind::Postfix:
-            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript:
+            case Kind::Binary: case Kind::Conditional: case Kind::Comma: case Kind::Paren: case Kind::Subscript: case Kind::This:
             case Kind::Block: case Kind::ExprStmt: case Kind::DeclStmt: case Kind::Return: case Kind::If: case Kind::While:
             case Kind::Do: case Kind::For: case Kind::Break: case Kind::Continue: case Kind::Null: case Kind::Var: case Kind::Function:
                 continue;
@@ -2993,7 +2993,9 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         Substituted s;
         const std::string shape = classShape(start, useParams, useBinding, &s);
         std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
-        if (held == "equal") held = classMembers(start, s, made, tag, fnFrom);
+        // Its member functions' symbols, the replay's for the read's: held under the check, kept for its bodies' records either way.
+        const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
+        if (held == "equal") held = members;
         classCensus_[!held.empty() ? held : "covered"]++;
         if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
             coveredClass_[tag] = s;
@@ -3102,7 +3104,8 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
 }
 
 // Slice 3b: the read's member functions under `s`, the read class standing for `made`, held against the replay's under `tag`.
-std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom) const {
+std::string Templates::classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom,
+                                    std::map<std::string, std::string> *symbols) const {
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator r = readMembers_.find(start);
     if (r == readMembers_.end()) return "differ: no member functions kept from the read";
     s.from.push_back(readClass_.at(start));
@@ -3149,6 +3152,7 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             p_.writtenFor_ = keptFor;
         }
         if (symbol != b.symbol) return "differ: a member function's symbol";
+        (*symbols)[a.symbol] = b.symbol;
     }
     return "equal";
 }
@@ -3180,13 +3184,7 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
         const syntax::Node n = p_.syntaxTree_.node(id);
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-        const Type *owner = r != p_.resolutions_.end() && r->second.owner != nullptr ? r->second.owner->unqualified() : nullptr;
-        const Parser::Resolved::What what = r != p_.resolutions_.end() ? r->second.what : Parser::Resolved::None;
-        if (n.kind == syntax::Kind::This || what == Parser::Resolved::This) return "replayed: `this` written, which the made class owes";
-        if (what == Parser::Resolved::Member) return "replayed: a data member of its own class, which the made class owes";
-        if (what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
-        if (owner != nullptr && owner->isStructOrUnion() && owner->tag().find("$read") != std::string::npos)
-            return "replayed: a member function of its own class called, which the made class owes";
+        if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
     }
     made->read = read->second;
     made->s = s;
@@ -3195,6 +3193,19 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
     if (!shape.empty()) return "replayed: " + shape;
     if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
     return "covered: typed under the class's binding beside the replay";
+}
+
+const std::string &Templates::symbolUnder(const std::string &symbol) const {
+    const std::map<std::string, std::string>::const_iterator m = readSymbol_.find(symbol);
+    return m == readSymbol_.end() ? symbol : m->second;
+}
+
+// A data member of the read class, named `m`, `.m` or `->m`, at its offset in the class `s` puts in its place; else `offset`.
+int Templates::offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const {
+    const Type *to = owner != nullptr ? substituted(s, owner->unqualified())->unqualified() : nullptr;
+    const std::string name = spelled.substr(spelled.compare(0, 2, "->") == 0 ? 2 : spelled.compare(0, 1, ".") == 0 ? 1 : 0);
+    if (to == nullptr || to == owner->unqualified() || !to->isStructOrUnion() || to->findMember(name) == nullptr) return offset;
+    return to->findMember(name)->offset;
 }
 
 void Templates::noteMade(const std::string &key, std::size_t from, std::size_t fnFrom) {

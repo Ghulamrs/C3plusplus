@@ -155,6 +155,10 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     } else if (r != p_.resolutions_.end()) {
         Resolution out = copied(r->second);
         if (!binding_.empty() && out.type.valid()) out.type = r->second.what == Parser::Resolved::Value ? boundValue(out.type) : bound(out.type);
+        if (!binding_.empty() && out.owner.valid()) out.owner = bound(out.owner);     // a covered class's member: the class the program uses
+        if (!binding_.empty()) out.symbol = p_.tmpl_.symbolUnder(out.symbol);
+        if (!binding_.empty() && r->second.what == Parser::Resolved::Member)       // the offset the program's class lays it at
+            out.serial = p_.tmpl_.offsetUnder(p_.tmpl_.bound_.at(binding_).s, r->second.owner, p_.syntaxTree_.text(id), out.serial);
         if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).values.count(id.v) != 0)
             out.value = static_cast<long long>(p_.tmpl_.bound_.at(binding_).values.at(id.v)) - 2147483648LL;     // slice 2f: the replay's value
         tree_.setResolution(t, out);
@@ -516,7 +520,10 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
                                                                                     : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.type));
         const bool folded = !binding.empty() && p.tmpl_.bound_.at(binding).values.count(id) != 0;
         if (r.what != pr->second.what || p.types_.type(r.type) != p.types_.type(want) ||
-            p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
+            p.types_.type(r.owner) != (binding.empty() ? pr->second.owner : p.tmpl_.substituted(p.tmpl_.bound_.at(binding).s, pr->second.owner)) ||
+            r.symbol != (binding.empty() ? pr->second.symbol : p.tmpl_.symbolUnder(pr->second.symbol)) ||
+            r.serial != (binding.empty() || pr->second.what != Parser::Resolved::Member ? pr->second.serial
+                         : p.tmpl_.offsetUnder(p.tmpl_.bound_.at(binding).s, pr->second.owner, p.syntaxTree_.text(n.syntax), pr->second.serial)) ||
             r.value != (folded ? static_cast<long long>(p.tmpl_.bound_.at(binding).values.at(id)) - 2147483648LL : pr->second.value) || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
             r.viaWrapper != pr->second.viaWrapper || r.isVolatile != pr->second.isVolatile ||
             r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)

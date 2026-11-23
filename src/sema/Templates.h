@@ -255,7 +255,11 @@ public:
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
-    std::string classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom) const;
+    std::string classMembers(std::size_t start, Substituted s, const Type *made, const std::string &tag, std::size_t fnFrom,
+                             std::map<std::string, std::string> *symbols) const;     // symbols: each read member's to the replay's
+    std::map<std::string, std::string> readSymbol_;     // a covered class's, which its bodies' records are typed by (Typer::record)
+    const std::string &symbolUnder(const std::string &symbol) const;     // readSymbol_'s for a read member's, else `symbol`
+    int offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const;     // a read member's in `s`'s class
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
     struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members;
                    std::map<std::uint32_t, std::pair<std::string, const Type *> > assigns; };
