@@ -3077,12 +3077,12 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     Substituted early;
     const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
-    // Step (1): a class of data members and implicit special members alone made from the read; the replay beside under the check.
-    std::string fromRead = before == "made from the read: data members and implicit special members alone" ? fromReadWhyNot(start) : "-";
+    // Step (1): a class the door takes made from the read, its written members and held bodies too; the replay beside under the check.
+    std::string fromRead = before.compare(0, 18, "made from the read") == 0 ? fromReadWhyNot(start) : "-";
     if (fromRead.empty() && checkBodies_) fromRead = "beside: the replay the program's, under -check=templates";
     Substituted bound;
     if (fromRead.empty()) classShape(start, useParams, useBinding, &bound);
-    const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos)
+    const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies)
                      : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
     if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
 
@@ -3251,6 +3251,15 @@ std::string Templates::fromReadWhyNot(std::size_t start) const {
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
+    // A written member's defaults and a defaulted special are kept by the read's symbol and tag; each held body is a written one's.
+    if (p_.defaulted_.count(readTag) != 0) return "replayed: a defaulted special member";
+    std::map<std::string, bool> written;
+    for (const Signature &f : readMembers_.at(start).second) {
+        if (p_.defaultArgs_.count(f.symbol) != 0) return "replayed: a member function's default argument";
+        written[f.symbol] = !f.implicit;
+    }
+    for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start))
+        if (!written[h.second]) return "replayed: a held body of no written member";
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t];
         if (k.is("alignas")) return "replayed: alignas";
@@ -3264,7 +3273,8 @@ std::string Templates::fromReadWhyNot(std::size_t start) const {
 // Step (1): the class `tag` made from the read under `s` with no replay - the parser's head for a specialization, then its
 // completion tail (completeClass) over the read's members laid under the binding, in the scope a replay reads it in.
 const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
-                                     const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos) {
+                                     const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos,
+                                     std::vector<Parser::PendingBody> *bodies) {
     const Type *read = readClass_.at(start);
     const Kind kind = partial ? Kind::Struct : read->kind();
     Type *type = p_.types_.structType(kind, tag);
@@ -3278,6 +3288,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
         p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
+    p_.lookup_.declareTypeName(tag, type);
+    membersFromRead(start, tag, s, type, bodies);
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
     std::vector<const Type *> outerClasses;
@@ -3296,6 +3308,40 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.currentClass_ = outerCurrent;
     p_.classStack_.swap(outerClasses);
     return made;
+}
+
+static std::string retagged(std::string w, const std::string &from, const std::string &to) {
+    for (std::size_t at = w.find(from); at != std::string::npos; at = w.find(from, at + to.size())) w.replace(at, from.size(), to);
+    return w;
+}
+
+// Step (1): the read's written member functions declared under the real tag where the replay's class body declares them, and
+// its held bodies keyed to them (classSkip's records); the implicit specials are completeClass's.
+void Templates::membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<Parser::PendingBody> *bodies) {
+    readStands(start, made, &s);
+    const std::pair<std::string, std::vector<Signature> > &r = readMembers_.at(start);
+    std::map<std::string, std::size_t> at;     // the read's symbol, its function here
+    for (const Signature &a : r.second) {
+        if (a.implicit) continue;
+        Signature f = a;
+        f.name = retagged(a.name, r.first, tag);
+        f.owner = tag;
+        f.returns = substituted(s, a.returns);
+        for (const Type *&t : f.params) t = substituted(s, t);
+        for (const Type *&t : f.written) t = substituted(s, t);
+        f.symbol = memberSymbol(a, f.name, s, tag);
+        f.defined = f.used = false;
+        const std::string key = f.name == tag ? Parser::constructorKey(tag) : f.name[0] == '~' ? Parser::destructorKey(tag) : tag + "::" + f.name;
+        at[a.symbol] = p_.lookup_.functions_.size();
+        p_.lookup_.functionIndex_[key].push_back(p_.lookup_.functions_.size());
+        p_.lookup_.functions_.push_back(f);
+    }
+    for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
+        bodies->push_back(h.first);
+        bodies->back().key = retagged(h.first.key, r.first, tag);
+        bodies->back().tag = retagged(h.first.tag, r.first, tag);
+        bodies->back().which = at.at(h.second);
+    }
 }
 
 // The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
@@ -3335,8 +3381,7 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
     if (mine.size() != theirs.size()) return "differ: the number of member functions";
     for (std::size_t i = 0; i < mine.size(); i++) {
         const Signature &a = mine[i], &b = *theirs[i];
-        std::string name = a.name;
-        for (std::size_t at = name.find(readTag); at != std::string::npos; at = name.find(readTag, at + tag.size())) name.replace(at, readTag.size(), tag);
+        const std::string name = retagged(a.name, readTag, tag);
         if (name != b.name) return "differ: a member function's name";
         if (substituted(s, a.returns) != b.returns || a.params.size() != b.params.size()) return "differ: a member function's return type or arity";
         for (std::size_t k = 0; k < a.params.size(); k++)
@@ -3345,7 +3390,15 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody || a.refThis != b.refThis)
             return "differ: a member function's qualifiers, access or kind";
         if (a.implicit != b.implicit) return "differ: which special members are implicit";
-        // Its name for the real tag from the read's signature, as the parser and Classes spell it on each ABI.
+        if (memberSymbol(a, name, s, tag) != b.symbol) return "differ: a member function's symbol";
+        (*symbols)[a.symbol] = b.symbol;
+    }
+    return "equal";
+}
+
+// A read member function's name for the real tag from its signature under `s`, as the parser and Classes spell it on each ABI.
+std::string Templates::memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const {
+    {
         std::vector<const Type *> params;
         for (std::size_t k = 0; k < a.params.size(); k++) params.push_back(substituted(s, a.params[k]));
         const Type *fn = p_.types_.functionType(substituted(s, a.returns), params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
@@ -3368,10 +3421,8 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             p_.writtenParams_ = keptWritten;
             p_.writtenFor_ = keptFor;
         }
-        if (symbol != b.symbol) return "differ: a member function's symbol";
-        (*symbols)[a.symbol] = b.symbol;
+        return symbol;
     }
-    return "equal";
 }
 
 // What a class body declares at its own level beyond data members and member functions, by name; empty when nothing.
@@ -3433,11 +3484,7 @@ std::string Templates::classSkip(std::size_t start, const std::string &tag, cons
     if (r->second.size() != bodies.size()) return "differ: the number of held member bodies";
     for (std::size_t i = 0; i < bodies.size(); i++) {
         const Parser::PendingBody &a = r->second[i].first, &b = bodies[i];
-        std::string key = a.key, owner = a.tag;
-        std::string *both[] = { &key, &owner };
-        for (std::string *w : both)
-            for (std::size_t at = w->find(m->second.first); at != std::string::npos; at = w->find(m->second.first, at + tag.size()))
-                w->replace(at, m->second.first.size(), tag);
+        const std::string key = retagged(a.key, m->second.first, tag), owner = retagged(a.tag, m->second.first, tag);
         if (a.start != b.start || a.freeFunction != b.freeFunction || key != b.key || owner != b.tag || a.local != b.local)
             return "differ: a held member body's place, key, class or name";
         const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(r->second[i].second);

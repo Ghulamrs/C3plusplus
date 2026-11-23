@@ -285,7 +285,9 @@ public:
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
-                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos);
+                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies);
+    void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies);
+    std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
     std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay
