@@ -216,6 +216,8 @@ public:
     struct Substituted { std::vector<const Type *> from, to; };
     const Type *substituted(const Substituted &s, const Type *t) const;
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
+    const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
+    const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
     std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;
     std::pair<TypeId, bool> castRecord(std::uint32_t id, const std::string &binding) const;     // a node's cast, under `binding`
@@ -251,7 +253,8 @@ public:
     // M8.3: a class template's or a partial's class read at the declaration, by the token its body is read from.
     std::map<std::size_t, const Type *> readClass_;
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
-    std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const;
+    std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
+                           const Substituted *early = nullptr) const;     // early: the template-ids carried before the replay
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
@@ -278,11 +281,13 @@ public:
     std::string typedefsCarried(std::size_t start, const Substituted &s) const;
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
-    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding) const;
+    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
-                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos);
+                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies);
+    void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies);
+    std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
     std::string classWhy(const std::string &tag) const;
     std::map<std::string, int> memberCensus_;
     std::string memberShape(const PendingBody &body, const Substituted &s, Bound *made);     // a covered body: typed beside its replay

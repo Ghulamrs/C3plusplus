@@ -5033,3 +5033,87 @@ thread-pool: 15 in a member function's name, 1 in the number of member functions
 function's name and 25 in a data member's type, 182 member bodies behind them. A class-typed member gives the class implicit
 special members that call the member's (non-trivial), whose names and count the read's records do not carry; that, and the
 member's type under the binding, is what the next round finds and mends or refuses by name before the shape is widened.
+
+## M8.3 slice 3b: a member function's signature over a class template-id, carried (lane m83n, 2026-11-23)
+
+**The measure**: classes made with no replay - suite **393 of 2,184** (unchanged, 152dc675's), self-host **17,254 beside** under the
+check (unchanged). The commit does not raise it, and is needed for the next: a class with written member functions is made only
+by the replay (`classFromRead` takes "data members and implicit special members alone"), so a signature the read now carries
+moves its class to the door's "data members, member functions and held bodies" shape, which the next step makes from the read.
+
+**Commit 1**: the reason, counted by kind. `classShape`'s refusal "a member function's signature over a type the binding does not
+carry" names the type's kind (`uncarriedKind`). Before the commit (n0, the same build mapping nothing), over the cases 276: a
+member type of another class over its parameters 138 (`reverse_iterator<It>`'s `typename iterator_traits<It>::reference`), a class
+template-id over the parameters 124 (`initializer_list<T>`, `pair<const K, V>`), its own template under other arguments 14; over
+the self-host 20,567 (10,424 / 9,762 / 381). The second and third are taken: a class template-id the read named over its parameters
+stands, under the binding, for the specialization the program declared by its key before the replay (`specializationUnder`,
+split from `memberUnder`, which uses it; `carriedId`); the pair goes into the class's `Substituted`, so `classMembers`,
+`classSkip` and the member bodies' typing see the real class. The ids found before the replay (`early`, kept from
+`classBefore`) are the only ones the census after it takes, so the door before and after the replay agree. A template-id the
+program had not declared before the replay stays refused by name; nothing the program sees changes.
+Census (x86_64-linux): **tests/cases** under the check - equal 758 (750), the signature reason 268 (276: 138 / 123 / 7), the door's
+held-bodies shape 279 (271), no class `differ`, nonzero 353 (REF's); with no check 393 made with no replay, member bodies 218, as
+before. **Self-host** under the check: nonzero 0, 17,254 beside, no `differ`; the signature reason 20,332 (20,567: a member type of
+another class 10,424, a template-id not declared before the replay 9,718, its own template under other arguments 190), the
+held-bodies shape 10,423 (10,188).
+src/: `Templates.h` +3, `Templates.cpp` +34 (96,428 -> 96,465, +37). EXCLUSIONS re-pointed (3 Templates.cpp lines, +1).
+Gates (commit 1's tree, REF 152dc675): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst`
+on three (1926/3852/1926); subst.sh 0 failed, then run.sh 1308/0, then run.sh under the flag 1308/0 (1308 pass, 0 fail; the
+fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to
+date); self-compile of Templates.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 4
+minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped** (the hour): the largest kind left, a member type of another class (`iterator_traits<It>::reference` through a
+member typedef), and most template-ids, name a specialization the replay itself makes when it reads the body: the read carries
+them only once the door makes those specializations in the body's order, as the replay would. Then work (2): the classes of the
+held-bodies shape (279 / 10,423) made from the read with their member bodies through m83g's path, which is what raises the measure.
+
+## M8.3 slice 3b: the held-bodies shape made from the read - written member functions and their held bodies with no replay (lane m83o, 2026-11-23)
+
+**The measure** at commit 1: classes made with no replay - suite **544 of 2,184** (393 at 13fc1432; 533 without the probes, 384), self-host
+**24,819 beside** under the check (17,254).
+
+**Commit 1**: `classFromRead` takes the door's second shape, "data members, member functions and held bodies", as well as the
+first. `membersFromRead` declares each written member function of the read (`readMembers_`, not the implicit ones) under the
+real tag where the replay's class body declares it, before `completeClass` makes the implicit specials: its name and owner
+retagged (`retagged`, now the one spelling `classMembers` and `classSkip` use too), its types under the binding with the read
+class standing for the made one (`readStands`), its symbol from the read's signature (`memberSymbol`, split from
+`classMembers`, which holds the replay's against it under the check), keyed by `constructorKey`, `destructorKey` or
+`tag::name` as `declareMember` keys it. The read's held bodies (`readBodies_`) become the class's, retagged and keyed to those
+functions, so `classSkip`, the member census and `replayInlineBodies` see the records a replay would have held; a covered body
+is made from its read (m83g's path), the rest replay as bodies of a class the replay made do. `fromReadWhyNot` refuses by name
+what is kept by the read's symbol or tag: a member function's default argument (`defaultArgs_`), a defaulted special member
+(`defaulted_`), and a held body of no written member. Under `-check=templates` the replay is the program's, beside, as before.
+Census (x86_64-linux, tests/cases): with no check classes made from the read with no replay **544** (393), 126 replayed for a
+member function's default argument, 3 for a member initialiser; member bodies with no replay 218; nonzero 353 (REF's). Under the
+check 544 beside, no class `differ`, before the replay 394 + 279 by shape, member covered 219 (the thread-pool body apart in its
+frame replays by name, as at m83m). **Self-host** under the check: nonzero 0, **24,819 classes beside** (17,254), 2,864 replayed for a member function's default
+argument, before the replay 17,258 + 10,425 by shape, member covered 1,028, frames, shells and made 3,863 + 1,028 equal, no `differ`.
+src/: `Templates.h` +3, `Templates.cpp` +46 (96,465 -> 96,514, +49). No EXCLUSIONS line moved.
+Gates (commit 1's tree, REF 13fc1432): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three
+(1926/3852/1926: the 544 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0, then run.sh
+under the flag 1308/0 (1308 pass, 0 fail; the fallbacks are the census above); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, about 2.5 minutes, alone), names.sh 963/0, overload.sh 46/0.
+
+**Commit 2**: a member function's default arguments carried. `declareMember` keeps a default's tokens and the scope they are
+read in by the function's symbol (`defaultArgs_`, `defaultArgNamespace_`); `membersFromRead` copies the read symbol's entries to
+the real symbol, and `classMembers` holds them against the replay's under the check ("differ: a member function's default
+arguments or the scope they are read in": none over the cases or the self-host). Most of the 126 were no default at all - an
+entry `defaultArgs_` holds for a symbol with an empty list counted as one - so the refusal went whole; in its place a class
+body with `constexpr` replays by name ("a constexpr member, whose body a constant compiles where it is needed": W<int> and
+W<double> of constexpr-object-template, which stopped compiling when made from the read - their constructor's body is
+compiled at the fold, through the replay's path).
+Census: with no check classes made from the read with no replay **668** (544; 657 without the probes), 2 replayed for a constexpr
+member, 3 for a member initialiser, nonzero 353 (REF's); under the check 668 beside, no class `differ`. **Self-host** under the
+check: nonzero 0, **27,684 classes beside** (24,819; the whole of the door's two shapes), member covered 1,030, frames,
+shells and made 3,864 + 1,030 equal, no `differ`.
+src/: `Templates.cpp` +6 (96,514 -> 96,520). No EXCLUSIONS line moved.
+Gates (commit 2's tree, REF 13fc1432): identical 0 differ on four targets plain (1926/3852/1926/1926) and with `-templates=subst` on three
+(1926/3852/1926: the 668 classes made with no replay emit what the replay did); subst.sh 0 failed, then run.sh 1308/0, then run.sh
+under the flag 1308/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); self-compile of Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean
+(delta, about 1 minute, alone), names.sh 963/0, overload.sh 46/0.
+
+**Where it stopped**: a constexpr member (its body compiled where a constant needs it, which the class made from the read does not
+reach yet), a member initialiser, and the data members of class type (m83m's try: the implicit specials' names and count) are
+next; then a member type of another class (10,424 self-host) and the template-ids not declared before the replay.
