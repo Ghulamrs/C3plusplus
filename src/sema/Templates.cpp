@@ -1167,7 +1167,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
-    if (wantsBody && door == ReadFunction) readBody_[at] = read;
+    if (wantsBody && (door == ReadFunction || (substitute_ && (door == ReadClass || door == ReadPartial)))) readBody_[at] = read;
     if (wantsBody) p_.syntaxTree_.noteRead(read);
     else declTally_[door][0]++;
 }
@@ -1468,6 +1468,8 @@ std::string Templates::bodiesReport() const {
         out += "-check=templates subst (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = classCensus_.begin(); i != classCensus_.end(); ++i)
         out += "-check=templates class (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = memberCensus_.begin(); i != memberCensus_.end(); ++i)
+        out += "-check=templates member (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = frameCensus_.begin(); i != frameCensus_.end(); ++i)
         out += "-check=templates frame (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = shellCensus_.begin(); i != shellCensus_.end(); ++i)
@@ -1757,6 +1759,16 @@ void Templates::instantiatePending() {
                 b.values = specializations_[i].values;
                 if (instantiate(i, b, &why)) { count(BySubstitution); continue; }
                 substCensus_[why]++;
+            }
+            if (specializations_[i].isClass && substitute_) {
+                const std::map<std::string, Substituted>::const_iterator c = coveredClass_.find(specializations_[i].key);
+                for (std::size_t b = 0; b < now.size(); b++) {
+                    Bound made;
+                    const std::string why = c == coveredClass_.end() ? "replayed: its class replayed" : memberShape(now[b], c->second, &made);
+                    memberCensus_[why]++;
+                    if (why.compare(0, 8, "covered:") == 0) bound_[p_.lookup_.functions_[now[b].which].symbol] = made;     // Typer::typeBody
+                }
+                if (!outsideNow.empty()) memberCensus_["replayed: a member defined out of line"] += static_cast<int>(outsideNow.size());
             }
 
             // Copied, not held by reference: replaying may append to the
@@ -2983,6 +2995,11 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
         if (held == "equal") held = classMembers(start, s, made, tag, fnFrom);
         classCensus_[!held.empty() ? held : "covered"]++;
+        if (held.empty() || held == "equal") {      // the read class standing for the replay's, as classMembers holds it
+            coveredClass_[tag] = s;
+            coveredClass_[tag].from.push_back(readClass_.at(start));
+            coveredClass_[tag].to.push_back(made);
+        }
     }
 
     Parser::Specialization sp;
@@ -3150,6 +3167,36 @@ std::vector<std::size_t> Templates::seatedOrder(std::size_t n) const {
 }
 
 // Made while a held class is: entered in the log, and seated by its key with what its own making logged before it.
+// Step 2's census: a held member body of a covered class, the function path's shape test under the class's binding; `this` and
+// the class's own members wait for the made class, so a body reaching them replays by name.
+std::string Templates::memberShape(const PendingBody &body, const Substituted &s, Bound *made) {
+    const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(body.start);
+    if (read == readBody_.end()) return "replayed: no body read at the declaration";
+    if (body.freeFunction) return "replayed: a friend defined in its class";
+    if (body.which >= p_.lookup_.functions_.size()) return "replayed: no overload of its own to key the binding by";
+    for (std::vector<syntax::NodeId> work(1, read->second); !work.empty(); ) {
+        const syntax::NodeId id = work.back();
+        work.pop_back();
+        const syntax::Node n = p_.syntaxTree_.node(id);
+        for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+        const Type *owner = r != p_.resolutions_.end() && r->second.owner != nullptr ? r->second.owner->unqualified() : nullptr;
+        const Parser::Resolved::What what = r != p_.resolutions_.end() ? r->second.what : Parser::Resolved::None;
+        if (n.kind == syntax::Kind::This || what == Parser::Resolved::This) return "replayed: `this` written, which the made class owes";
+        if (what == Parser::Resolved::Member) return "replayed: a data member of its own class, which the made class owes";
+        if (what == Parser::Resolved::StaticMember) return "replayed: a static member of its own class";
+        if (owner != nullptr && owner->isStructOrUnion() && owner->tag().find("$read") != std::string::npos)
+            return "replayed: a member function of its own class called, which the made class owes";
+    }
+    made->read = read->second;
+    made->s = s;
+    std::vector<syntax::NodeId> requests;
+    const std::string shape = substShape(read->second, s, &made->calls, &made->members, &made->assigns, &requests);
+    if (!shape.empty()) return "replayed: " + shape;
+    if (!requests.empty()) return "replayed: a function template's call, which the class's binding would ask as the outer layer";
+    return "covered: typed under the class's binding beside the replay";
+}
+
 void Templates::noteMade(const std::string &key, std::size_t from, std::size_t fnFrom) {
     if (!making_) return;
     const std::size_t fnTo = p_.lookup_.functions_.size();
