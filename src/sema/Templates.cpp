@@ -1588,8 +1588,7 @@ void Templates::memberFrame(const PendingBody &body, const Substituted &s, const
     if (at >= made.size()) { shellCensus_["member: no function made"]++; return; }
     std::vector<Function> own;
     const std::string fromRead = madeFromRead(sp, s, read, laid, &own);
-    const Type *const cls = p_.lookup_.findTypedef(body.tag);     // a member's display name is under its class's whole name
-    if (cls != nullptr) own.back().setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + own.back().name()));
+    memberNamed(body, &own.back());
     const std::string shell = shellApart(own.back(), made[at]);
     shellCensus_[shell.empty() ? "member: equal" : "member: differ: " + shell]++;
     const std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
@@ -1631,7 +1630,11 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
         body != readBody_.end() ? p_.declaredReturns_.find(body->second.v) : p_.declaredReturns_.end();
     const Type *as = written != p_.declaredReturns_.end() && written->second != nullptr ? substituted(s, written->second) : f != nullptr ? substituted(s, f->returns()) : nullptr;
     const Type *returns = as != nullptr && as->isReference() ? p_.types_.pointerTo(as->referent()) : as;
-    out->push_back(Function(f != nullptr ? f->name() : std::string(), returns, params, p_.oneStatement({}), size, f != nullptr && f->isStatic(), sret,
+    // A covered class's constructor or destructor is named by its class: the program's, which the read class stands for.
+    std::string name = f != nullptr ? f->name() : std::string();
+    const bool cls = !s.from.empty() && s.from.back()->isStructOrUnion() && s.to.back()->isStructOrUnion();
+    if (cls && (name == s.from.back()->tag() || name == "~" + s.from.back()->tag())) name = (name[0] == '~' ? "~" : "") + s.to.back()->tag();
+    out->push_back(Function(name, returns, params, p_.oneStatement({}), size, f != nullptr && f->isStatic(), sret,
                             f != nullptr && f->isVariadic(), save, f != nullptr ? f->pos() : 0, locals));
     Function &g = out->back();
     g.setBlocks(blocks, opens);
@@ -1674,7 +1677,8 @@ std::string Templates::shellApart(const Function &g, const Function &f) const {
 
 // Step 2's end: the rest of what the replay's definition path sets on the function, held against the one made from the read.
 std::string Templates::madeApart(const Function &g, const Function &f) const {
-    if (g.name() != f.name() || g.symbol() != f.symbol() || g.alias() != f.alias()) return "its name, symbol or alias";
+    if (g.name() != f.name()) return "its name";
+    if (g.symbol() != f.symbol() || g.alias() != f.alias()) return "its symbol or alias";
     if (g.returns() != f.returns()) return "its return type";
     if (g.isStatic() != f.isStatic() || g.isInline() != f.isInline()) return "its linkage";
     if (g.isVariadic() != f.isVariadic() || g.pos() != f.pos() || g.hasThis() != f.hasThis()) return "its signature's marks";
@@ -1695,8 +1699,7 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
     if (!why->empty()) return *why = "the frame: " + *why, false;
     std::vector<Function> own;
     if (!(*why = madeFromRead(sp, s, readFrames_[sp.start], laid, &own)).empty()) return false;
-    const Type *const cls = member != nullptr ? p_.lookup_.findTypedef(member->tag) : nullptr;     // under its class's whole name
-    if (cls != nullptr) own.back().setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + own.back().name()));
+    if (member != nullptr) memberNamed(*member, &own.back());
     p_.current_->functions.push_back(std::move(own.back()));
     for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
         if (p_.lookup_.functions_[q].symbol == sp.symbol) p_.lookup_.functions_[q].defined = true;
@@ -1713,7 +1716,7 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
 }
 
 // Slice 3b, step 2: a covered member body owed no replay, made from its read where its replay would stand in the batch, so its
-// frame starts where the last one left frameAlign_; constructors and destructors, and what the read cannot carry, replay.
+// frame starts where the last one left frameAlign_ - a constructor and a destructor too (memberNamed); what the read cannot carry replays.
 bool Templates::madeMember(const PendingBody &body) {
     const std::map<std::size_t, std::pair<std::string, Substituted> >::iterator m = memberMade_.find(body.start);
     if (m == memberMade_.end() || body.which >= p_.lookup_.functions_.size() || p_.lookup_.functions_[body.which].symbol != m->second.first) return false;
@@ -1724,13 +1727,28 @@ bool Templates::madeMember(const PendingBody &body) {
     sp.symbol = p_.lookup_.functions_[body.which].symbol;
     const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
     std::string why;
-    if (body.key == Parser::constructorKey(body.tag) || body.key == Parser::destructorKey(body.tag)) why = "a constructor or destructor, whose aliases the replay makes";
-    else if (madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
+    if (madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
         replayCensus_["member: substituted with no replay"]++;
         return true;
     }
     replayCensus_["member: replayed: " + why]++;
     return false;
+}
+
+// A covered member's display name under its class's whole name; a constructor's or destructor's C2 or D2 alias on Itanium, as the
+// replay's definition path names it (a covered class has no base, so no virtual base splits it).
+void Templates::memberNamed(const PendingBody &body, Function *g) const {
+    const Type *const cls = p_.lookup_.findTypedef(body.tag);
+    if (cls != nullptr) g->setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + g->name()));
+    if (cls == nullptr || p_.target_.microsoftNames() || body.which >= p_.lookup_.functions_.size()) return;
+    std::string alias, why;
+    if (body.key == Parser::destructorKey(body.tag)) itaniumDestructorName(body.tag, cls, false, &alias);
+    else if (body.key == Parser::constructorKey(body.tag)) {
+        const std::map<std::string, std::string>::const_iterator c2 = p_.constructorC2_.find(g->symbol());
+        if (c2 != p_.constructorC2_.end()) alias = c2->second;
+        else itaniumConstructorName(body.tag, cls, p_.types_.functionType(p_.types_.get(Kind::Void), p_.lookup_.functions_[body.which].params, false), false, &alias, &why);
+    }
+    if (!alias.empty()) g->setAlias(alias);
 }
 
 std::string Templates::builtReport() const {
