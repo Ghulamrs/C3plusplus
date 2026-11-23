@@ -4508,3 +4508,6 @@ clang 19) were run on the first part's build; this part changes only what `-chec
 `classLaid`'s layout, the kept functions entered under it with the names above, `Classes::declareImplicitSpecials` over the made
 type, the held member bodies owed through M8.2's function path on use) - is not begun; the 406 / 3,868 are its cover and
 `classLaid` + `classMembers` its check.
+
+**The second part's Windows rows**, added after its commit: names.sh 963 passed 0 failed and overload.sh 46 agreed 0 differed
+with the cl build of `902fdc62`'s src (clang 19 on the box).
