@@ -4881,3 +4881,33 @@ subobjects, `complete`; the implicit specials (`Classes::declareImplicitSpecials
 member initialiser's place (`memberInit_`). One implementation of those is the parser's tail, so the next step is that tail
 split into a function both call, then the 51 classes of data members alone made through it with the replay beside them only
 under `-check=templates`.
+
+## M8.3 slice 3b, step (2)'s record: a covered class's member typedefs and aliases read under the binding, held against the replay's (lane m83j, 2026-11-23)
+
+**What landed** (census only; nothing the program sees changes, with or without the flag): the read keeps each covered class's
+member typedefs and aliases in order (`readTypedefs_`, by the class's start, from the read's layer: every `readTag::name` but the
+injected name and a nested class), and the class skip takes a class that declares them: `classBeyond` refuses by name only a
+using-declaration now; `typedefsCarried` (before and after the replay alike) refuses by name an alias whose type the binding does
+not carry (a class named over the read's parameter, as `classShape` does for a signature); after the replay `classSkip` holds
+each one's name and its type under the binding against the replay's own `tag::name` (`memberTypedefs` over the replay's typedefs).
+
+**Census** (x86_64-linux, `-check=templates -templates=subst` over tests/cases): the skip takes **368** classes (358 without the
+probes), 123 as before and **245** (240) with member typedefs or aliases (348 held bodies), their aliases equal to the replay's in
+every one; 17 replay by name (an alias over a type the binding does not carry); no `differ`; before the replay the door takes the
+same 368 (209 of data members and implicit specials alone, 159 with member functions or held bodies). nonzero 353 (REF's).
+**Self-host**: nonzero 0; the skip takes 168 + **3,393** with member typedefs (3,658 held bodies), 149 replay by name; but
+**158 classes (632 held bodies) differ in a held member body's place, key, class or name** - the typedef classes reach the held
+bodies' comparison for the first time, and in the library's headers some of them are apart. The door before the replay takes
+those 158 too ("differ: the class skip before the replay and after it", 158), so step (1) may not take a class with member
+typedefs until that difference is found and mended or refused by name; the cases hold none of it.
+
+**src/**: `Templates.h` +5, `Templates.cpp` +40 (`readTypedefs_` at the read, `memberTypedefs`, `typedefsCarried`, `classSkip`'s
+comparison): src/ 96,274 -> 96,319 (+45). EXCLUSIONS re-pointed (3 Templates.cpp lines: 1976->1977, 2028->2029, 2725->2726).
+
+**Gates** (the commit's own tree, Linux, REF `235c0e6e`): in the lane's handover (identical plain on four targets and with
+`-templates=subst` on three, subst.sh, run.sh plain and under the flag); static rc 0 (exclusions 0/0 after re-pointing, comments
+0 over, memory gate 89 held, ast-residue 2012/298 not raised, ide up to date); self-compile of Templates.cpp rc 0 plain and under
+the flag with the check; g++ `-Werror` clean; Windows cl /W4 /WX clean (91 s delta), names.sh and overload.sh in the handover.
+
+**Where it stopped**: the 158 self-host classes apart in their held bodies are not diagnosed (one or two per source, so a
+library header's class); the class itself made from the read (step (1)) is not begun - the previous entry says what it must set.
