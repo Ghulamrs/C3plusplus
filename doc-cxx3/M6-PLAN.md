@@ -5239,3 +5239,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83x, m83y): an id's id arguments made
 made from the read; idsBefore names what stopped it; tests/open/partial-ctor-out-of-line records a refusal with no flag.
 **Class specializations made with no replay: suite 1,262 of 2,184 (from 1,204), self-host 65,332 held equal under the check
 (from 64,733).** Nothing changes without the flag.
+
+**m6d-w33's wave landed, 2026-11-24 (gate m6dw33g at 7f67e3a3 against main fe88fc77: 40 passed, 0 failed, no row, after two
+-k reruns - the first run failed 8 steps on the Linux disk at 71%, the landed gates' trees left there, removed; the fixed point
+checked not owed).** M8.3 (M8-PLAN, m83z): a signature id's arguments made first (argsWanted; earlyArgs counts ids already
+wanted). **Class specializations made with no replay: suite 1,272 of 2,184 (from 1,262), self-host 65,354 held equal under
+the check (from 65,332).** Nothing changes without the flag.
