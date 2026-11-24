@@ -5268,3 +5268,8 @@ specializations made with no replay: suite 1,346 of 2,184 (from 1,320), self-hos
 point checked not owed).** M8.3 (M8-PLAN, m83ae): __hash_node, a member pointing at its own class, made from the read; a class
 template-id a member already wants no longer refused. **Class specializations made with no replay: suite 1,360 of 2,184 (from
 1,346), self-host 71,987 of 74,390 held equal under the check (from 71,081).** Nothing changes without the flag.
+
+**m6d-w38's wave landed, 2026-11-24 (gate m6dw38g at 4b25614c against main b7b4b072: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83af): an argument that is a member type of a class already wanted taken by
+earlyArgs (unordered_map's pair<iterator, bool> insert). **Class specializations made with no replay: suite 1,368 of 2,184
+(from 1,360), self-host 72,046 of 74,390 held equal under the check (from 71,987).** Nothing changes without the flag.
