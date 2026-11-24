@@ -379,9 +379,25 @@ static bool foldBound(const std::vector<Token> &k, std::size_t *t, std::size_t e
     return true;
 }
 
-// Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value; a written one (a read class's are its
-// stand-ins) or an expression, no.
+// Slice 3h: the read's DepExpr of an argument (`X<N + 1>`) folded under `values` as foldBound folds a bound's tokens.
+static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long long *out) {
+    long long a = 0, b = 0;
+    if (e->op == DepExpr::Literal) return !e->floating && e->type != nullptr && e->type->kind() == Kind::Int && (*out = e->value) >= 0;
+    if (e->op == DepExpr::TemplateParam)
+        return e->index >= 0 && static_cast<std::size_t>(e->index) < values.size() && ((*out = values[static_cast<std::size_t>(e->index)]), true);
+    if (e->op != DepExpr::Operator || e->kids.empty() || e->kids.size() > 2 || !foldArg(e->kids[0], values, &a)) return false;
+    if (e->kids.size() == 1) return (e->code == "ng" || e->code == "ps") && ((*out = e->code == "ng" ? -a : a), true);
+    if (!foldArg(e->kids[1], values, &b) || ((e->code == "dv" || e->code == "rm") && (b <= 0 || a < 0))) return false;
+    *out = e->code == "pl" ? a + b : e->code == "mi" ? a - b : e->code == "ml" ? a * b : e->code == "dv" ? a / b : a % b;
+    return (e->code == "pl" || e->code == "mi" || e->code == "ml" || e->code == "dv" || e->code == "rm") && *out >= INT_MIN && *out <= INT_MAX;
+}
+
+// Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value, or (3h) its expression folded; a written
+// one (a read class's are its stand-ins), no.
 static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
+    long long v = 0;
+    if (!a->isType && !a->isPack && !a->isTemplate && a->expr != nullptr && a->dependentValue && foldArg(a->expr, s.values, &v) && v >= 0)
+        return a->expr = nullptr, a->dependentValue = false, a->value = v, true;
     if (a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->dependentValue || !a->isParam) return false;
     if (a->paramIndex < 0 || static_cast<std::size_t>(a->paramIndex) >= s.values.size()) return false;
     a->isParam = false, a->value = s.values[static_cast<std::size_t>(a->paramIndex)];
@@ -3493,8 +3509,17 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         return t + 1 + 2 * params.size();
     };
     const auto idArg = [&](std::size_t t) {     // `N` a whole argument of a class template-id (`V<N>`, `Mx<M, N>`), made by its value
-        if (t + 1 >= p_.tokens_.size() || !(p_.tokens_[t - 1].is("<") || p_.tokens_[t - 1].is(",")) || !(p_.tokens_[t + 1].is(">") || p_.tokens_[t + 1].is(","))) return false;
-        for (std::size_t b = t - 1, angles = 0; b > start; b--) {
+        std::size_t lo = t, hi = t + 1, at = 0;     // 3h: or in one foldBound folds (`V<N + 1>`), which argValued folds as well
+        long long v = 0;
+        const auto stops = [&](std::size_t k) { return p_.tokens_[k].is(";") || p_.tokens_[k].is("{") || p_.tokens_[k].is("}"); };
+        for (int parens = 0; lo > start + 1 && !stops(lo - 1) && (parens > 0 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(","))); lo--)
+            parens += (p_.tokens_[lo - 1].is(")") ? 1 : 0) - (p_.tokens_[lo - 1].is("(") ? 1 : 0);
+        for (int parens = 0; hi < p_.tokens_.size() && !stops(hi) && (parens > 0 || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(","))); hi++)
+            parens += (p_.tokens_[hi].is("(") ? 1 : 0) - (p_.tokens_[hi].is(")") ? 1 : 0);
+        if (hi >= p_.tokens_.size() || lo <= start + 1 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(",")) || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(",")) ||
+            (hi != t + 1 || lo != t ? !foldBound(p_.tokens_, &(at = lo), hi, params, s->values, 0, &v) || at != hi || v < 0 : false))
+            return false;
+        for (std::size_t b = lo - 1, angles = 0; b > start; b--) {
             const Token &x = p_.tokens_[b];
             if (x.is(";") || x.is("{") || x.is("}") || x.is("(") || x.is(")") || x.is("=")) return false;
             if (x.is(">")) angles++;
