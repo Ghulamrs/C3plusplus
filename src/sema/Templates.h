@@ -215,8 +215,9 @@ public:
     // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
     bool substitute_ = false;
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
-    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; };
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; Packs packs; };     // packs: by parameter, or none
     const Type *substituted(const Substituted &s, const Type *t) const;
+    std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
@@ -262,7 +263,7 @@ public:
     void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
     std::string idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                          const std::vector<long long> &values, std::size_t pos);     // what stopped it
+                          const std::vector<long long> &values, std::size_t pos, const Packs &packs = Packs());     // what stopped it
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
@@ -304,7 +305,8 @@ public:
                             const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
-                           const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args);
+                           const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
+                           const Packs &packs);
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
     void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`

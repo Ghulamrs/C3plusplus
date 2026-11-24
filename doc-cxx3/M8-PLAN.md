@@ -5769,3 +5769,39 @@ box shared), names.sh 983/0, overload.sh 46/0.
 expanded under the binding in the read's member signatures (substituted over `packExpansion`), which the self-host's 401
 (`function<R(Args...)>`, `__fn_model`) need as well; after it, the suite's non-type 350 (lane m83al's).
 Owed above, run after the commit on its tree (b3957edc, the probe naming its pack in a data member): subst.sh 0 failed.
+
+## M8.3 slice 3g: a pack expanded under the binding in a class's member signatures and data members, under -templates=subst (lane m83ao, 2026-11-25)
+
+classShape refused a class naming its pack anywhere but member bodies. A pack expanded in a parameter list - `R(Args...)`,
+`R (*call_)(void *, Args...)`, `R operator()(Args... a)`, `const Ts &...` - is now made from the read: `Substituted` carries
+the class's packs (makeClass's, a partial's chosen ones), and `paramsUnder` lays a read's `packExpansion` parameter as one
+parameter per member, as Parser::packParameter makes them for the replay (cv dropped); substituted's function types,
+membersFromRead's signatures and written parameters, classMembers and memberSymbol (both ABIs) go through it. The scan
+takes a pack name whose innermost bracket is `(` and which `...` follows (through `&`, `&&`, `*`), and skips a
+mem-initializer list as it skips the body; a pack in a template-id (`Tagged<int, Ts...>`), a base or a typedef still
+replays by name. templatesFromRead binds the class's packs for its member templates, and templatesHeld holds them
+(a pack's class binding is the class's own).
+Probe `template-subst-packsig` (Fn<R(Args...)> with a function-pointer member over the pack and a member taking one,
+Sink<Ts...> over `const Ts &...`, the empty pack; 7 7 100 / 2 0 3 / 2 2 / 0 0 / 1, clang 19 the same; 6 classes `equal`,
+REF replays all 6). A first probe gave its members function parameter packs (`f(Args... a)`): their declarations differ in
+shape from the replay under REF too (the declaration door's pack family), and lifted subst.sh's class-members shape to 11
+and partial-members to 2, so the probe carries the pack in function types alone.
+src 97,233 -> 97,273 (+40); 3 EXCLUSIONS citations re-pointed.
+The measure: class specializations made with no replay - suite 1,548 of 2,184 (1,533; measured 1,551 with the first
+probe's 9 classes, the final probe makes 6; 9 of the suite's own), self-host 72,963 of 74,390 beside under the check
+(72,623; the self-host's 401 "a pack or template parameter, bound by name" are all gone: 340 made from the read, the rest
+replayed for the next reason, "a type parameter bound to a class the read named over its parameters" 252 -> 310).
+Census (n2): no check nonzero 353; check `equal` 1,730 (1,711), no class differ, nonzero 353; the suite's reason 102 -> 80
+(left: a pack in a template-id, a base or a typedef); one new member `differ` in std-function, "the read's frame's size
+where the replay has a slot no local names" (the frame family thread-pool shows under REF), owed. Self-host census on n2
+nonzero 1: Templates.cpp itself, whose new range-for over a PackMembers is outside the SSA lowering ("a range-based for's
+begin or end taking another type"); n3 indexes it.
+Gates (REF 684b39a6, on n2; n3 differs by that loop and three citations): identical 0 differ on four targets plain
+(1968/3936/1968/1968) and three with `-templates=subst` (1968/3936/1968); run.sh 1329/0, then under the flag 1329/0;
+subst.sh 1 failed on the first probe (above), re-run on the final probe owed or below; static rc 0 (exclusions 0/0 after
+re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile ParserType.cpp rc 0
+plain and under the flag, Templates.cpp rc 1 on n2 (the loop above), re-run on n3 below; g++ -Werror clean; Windows cl
+/W4 /WX clean on n2 (~3.5 min) and n3 (~6 min, box shared); names.sh and overload.sh below.
+**Next**: the suite's 80 left name the pack in a template-id or a base; the largest reason in the suite census is "a
+non-type parameter named outside its member bodies" 350, and in the self-host "a type parameter bound to a class the read
+named over its parameters" 310.
