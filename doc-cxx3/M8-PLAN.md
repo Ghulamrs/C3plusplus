@@ -5733,3 +5733,22 @@ Gates (REF f1ca11db), on n5 (the commit's build): subst.sh 0 failed, run.sh 1327
 **Next**: a non-type parameter in a base (`Q : V<I>`, refused as a base over its parameters) and in a typedef's or a bound's
 expression (`[N + 1]`, `X<N + 1>`, folded under the values), member bodies folded under the values (valueShape) rather than
 replayed; then the 577 `unordered_map<unsigned,...>`.
+
+## M8.3 slice 3g: a class over a non-type parameter named in a data member's bound expression, under -templates=subst (lane m83al, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,451 of 2,184 (1,445; the probe's 6, no other unit has the shape), self-host 72,368 of 74,390 beside under the
+check (72,055). classShape's scan takes a non-type parameter in one more place: a data member's first bound in the class's own
+braces (`T slot[N + 1];`, `char cells[R * C + (R - 1)];`, `int w[(N + 1) / 2], h;`), which the read laid with no bound (the
+member as nothing, ParserType's arraySuffix). `foldBound` folds the bound's tokens as int under the class's values (its integral
+non-type parameters, int literals, `+ - * / %`, parentheses; anything else, a fold past int or a bound not positive replays),
+`Substituted::bounds` keeps the value by the member's name, and `dataUnder` lays that member as the array of it wherever the
+read's data members are taken under `s` (classShape's member loop, laidFromRead, so classLaid holds it under the check). A bound
+inside parentheses (a parameter's), a typedef's or a static member's, one in a nested class, and one another dimension follows replay as
+before; an expression argument of an id (`V<N + 1>`) and a base (`Q : V<I>`, laid by the read as nothing) still replay.
+Probe template-subst-valuebound (clang 19 `3 16 13 20 / 1 16 1.5 24 / 7 10 1 4 11 / 3 16 1 8 15`), right plain, under the flag, under the check and by REF; its 6 classes made from the read, 6 `equal` under the check.
+The suite moves by its probe alone (no other unit declares such a bound); the self-host's 72,368 is over n1's own sources, whose Templates.h names a new `std::map<std::string, long long>` in every includer, so it is not like for like with 72,055 (n0 over e2701905's sources). The fold is the one the next step (`X<N + 1>`, a typedef's bound) takes.
+src 97,200 -> 97,262 (+62); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2130/2182/2879 -> 2164/2216/2913).
+Owed by m83aj, on its final build e2701905 against REF f1ca11db: identical 0 differ plain x86_64-windows 3928, arm64-darwin 1964, tms6747 1964, and with `-templates=subst` x86_64-linux 1964, x86_64-windows 3928, arm64-darwin 1964; no-check census nonzero 353, classes 1,445; check census nonzero 353, `constants: equal` 1,135, no class differ; self-host census nonzero 0, 72,055 beside, `constants: equal` 11,621.
+Census (n1, this commit's build): no check 1,335 units, nonzero 353 (the same set), classes 1,451; check nonzero 353, `constants: equal` 1,135, no class differ; self-host nonzero 0, no class differ, `constants: equal` 11,625, 72,368 beside.
+Gates (REF f1ca11db), on n1: subst.sh 0 failed, then run.sh 1328/0; identical 0 differ plain x86_64-linux 1966, x86_64-windows 3932, arm64-darwin 1966, tms6747 1966; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; Windows cl /W4 /WX clean (full, alone, ~3.8 min), names.sh 983/0, overload.sh 46/0, the probe by clang 19 and cxx3-msvc the same. Owed to the wave gate (running at the hour): run.sh under the flag, identical with `-templates=subst` on three targets.
+**Next**: an expression argument of a class template-id (`X<N + 1>`: argValued folding the read's `DepExpr` - Literal, TemplateParam, the arithmetic Operators - keyed by the value) and a typedef's bound; a base over the parameters (`Q : V<I>`, which the read lays as nothing: the head's id made first under the values and laid by layBases); member bodies folded by valueShape rather than replayed; then the 577 `unordered_map<unsigned,...>`.

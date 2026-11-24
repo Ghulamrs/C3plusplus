@@ -215,8 +215,10 @@ public:
     // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
     bool substitute_ = false;
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
-    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; };
+    // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name.
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; };
     const Type *substituted(const Substituted &s, const Type *t) const;
+    const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;

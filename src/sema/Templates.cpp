@@ -345,6 +345,40 @@ const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
     return m != nullptr ? m : t;
 }
 
+// Slice 3g: the read laid `T a[N + 1]` with no bound; classShape folded it into `s.bounds`.
+const Type *Templates::dataUnder(const Substituted &s, const Member &m) const {
+    const std::map<std::string, long long>::const_iterator b = s.bounds.find(m.name);
+    if (b == s.bounds.end() || !m.type->isArray() || m.type->length() != -1) return substituted(s, m.type);
+    return p_.types_.arrayOf(substituted(s, m.type->pointee()), b->second);
+}
+
+// Slice 3g: a bound's tokens folded as int under the class's values - its non-type parameters, int literals, + - * / % and
+// parentheses (`level` 0 additive, 1 multiplicative, 2 unary); false at any other token or past int.
+static bool foldBound(const std::vector<Token> &k, std::size_t *t, std::size_t end, const std::vector<TemplateParam> &params,
+                      const std::vector<long long> &values, int level, long long *out) {
+    if (*t >= end) return false;
+    if (level == 2) {
+        const Token &x = k[*t];
+        ++*t;
+        if (x.is("-") || x.is("+")) { if (!foldBound(k, t, end, params, values, 2, out)) return false; *out = x.is("-") ? -*out : *out; return true; }
+        if (x.is("(")) return foldBound(k, t, end, params, values, 0, out) && *t < end && k[(*t)++].is(")");
+        if (x.kind == TokenKind::Num && !x.isFloat && !x.isChar && !x.suffixU && !x.suffixL && !x.suffixLL && x.value >= 0) { *out = x.value; return true; }
+        for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
+            if (params[q].type != nullptr && params[q].type->isInteger() && !params[q].name.empty() && x.text == params[q].name)
+                { *out = values[q]; return true; }
+        return false;
+    }
+    if (!foldBound(k, t, end, params, values, level + 1, out)) return false;
+    while (*t < end && (level == 0 ? k[*t].is("+") || k[*t].is("-") : k[*t].is("*") || k[*t].is("/") || k[*t].is("%"))) {
+        const std::string op = k[(*t)++].text;
+        long long b = 0;
+        if (!foldBound(k, t, end, params, values, level + 1, &b) || ((op == "/" || op == "%") && b == 0)) return false;
+        *out = op == "+" ? *out + b : op == "-" ? *out - b : op == "*" ? *out * b : op == "/" ? *out / b : *out % b;
+        if (*out < INT_MIN || *out > INT_MAX) return false;
+    }
+    return true;
+}
+
 // Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value; a written one (a read class's are its
 // stand-ins) or an expression, no.
 static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
@@ -3472,6 +3506,26 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         }
         return false;
     };
+    // Slice 3g: or in a data member's first bound (`T a[N + 1];`, in the class's own braces), folded into `s->bounds`.
+    const auto boundAt = [&](std::size_t t, std::size_t depth) {
+        std::size_t open = t, close = t, at = 0;
+        for (; open > start && !p_.tokens_[open].is("["); open--)
+            if (p_.tokens_[open].is(";") || p_.tokens_[open].is("{") || p_.tokens_[open].is("}") || p_.tokens_[open].is("]")) return false;
+        while (close + 1 < p_.tokens_.size() && !p_.tokens_[close].is("]") && !p_.tokens_[close].is(";")) close++;
+        long long v = 0;
+        if (depth != 1 || open <= start + 1 || !p_.tokens_[open].is("[") || !p_.tokens_[close].is("]") || p_.tokens_[open - 1].kind != TokenKind::Ident ||
+            !(p_.tokens_[close + 1].is(";") || p_.tokens_[close + 1].is(",")) || !foldBound(p_.tokens_, &(at = open + 1), close, params, s->values, 0, &v) ||
+            at != close || v <= 0)
+            return false;
+        for (std::size_t b = open - 1, parens = 0; b > start; b--) {     // a data member's declarator: inside no `(`, no typedef
+            const Token &x = p_.tokens_[b];
+            if (x.is(";") || x.is("{") || x.is("}")) break;
+            if (x.is("typedef") || x.is("static") || (x.is("(") && parens == 0)) return false;
+            parens += x.is(")"), parens -= x.is("(");
+        }
+        s->bounds[p_.tokens_[open - 1].text] = v;
+        return true;
+    };
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
@@ -3484,7 +3538,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
-                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t))
+                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
+                !boundAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
@@ -3539,7 +3594,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     std::vector<std::size_t> dataAt;     // the data members that want ids, where the body declares them
     for (const Member &m : read->members()) {
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
-        const Type *t = substituted(*s, m.type), *e = t;
+        const Type *t = dataUnder(*s, m), *e = t;
         if (pointsAtOwn(m.type)) continue;     // `__hash_node *next`: a pointer, the made class once readStands maps it
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
@@ -3554,7 +3609,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
         std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
         std::vector<TemplateArg> args;
-        if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = substituted(*s, m.type);
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = dataUnder(*s, m);
         else if (over) {
             if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args, false, wanted))
                 return "replayed: a data member of a class the read named over its parameters";
@@ -3565,6 +3620,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (e->unqualified()->isEnumeration() && e->unqualified()->tag().find('$') != std::string::npos)
             return "replayed: a data member of a member enumeration the read named over its parameters";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
+    }
+    for (const std::pair<const std::string, long long> &b : s->bounds) {     // each folded bound a data member's the read left open
+        bool open = false;
+        for (const Member &m : read->members()) open = open || (m.name == b.first && m.type->isArray() && m.type->length() == -1);
+        if (!open) return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
@@ -3657,7 +3717,7 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     laid->endsZero = bases.endsZero, laid->leadsZero = bases.leadsZero;
     for (std::size_t i = own; i < read->members().size(); i++) {
         const Member &m = read->members()[i];
-        const Type *t = substituted(s, m.type);
+        const Type *t = dataUnder(s, m);
         const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         const int a = slot->align(p_.target_);
         long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
