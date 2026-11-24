@@ -5245,3 +5245,9 @@ made from the read; idsBefore names what stopped it; tests/open/partial-ctor-out
 checked not owed).** M8.3 (M8-PLAN, m83z): a signature id's arguments made first (argsWanted; earlyArgs counts ids already
 wanted). **Class specializations made with no replay: suite 1,272 of 2,184 (from 1,262), self-host 65,354 held equal under
 the check (from 65,332).** Nothing changes without the flag.
+
+**m6d-w34's wave landed, 2026-11-24 (gate m6dw34g at 6a11078c against main 4115dbc7: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83aa): a constructor made from the read records its members' constructors, held
+under -check=templates against the replay's (the check had not seen it); map and set made from the read. **Class
+specializations made with no replay: suite 1,301 of 2,184 (from 1,272), self-host 67,222 held equal under the check (from
+65,354).** Nothing changes without the flag.
