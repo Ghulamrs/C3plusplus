@@ -330,6 +330,9 @@ public:
     std::map<std::size_t, std::size_t> readFnAt_;
     void keepRead(std::size_t at, const Function &f);
     void memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed);     // slice 3b: frame, shell
+    // A replayed body's start where the bodies replayed before it in one call had counted a call that may throw (mayThrow_).
+    std::set<std::size_t> throwsBefore_;
+    bool wrapInherited(const PendingBody &body) const;
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;

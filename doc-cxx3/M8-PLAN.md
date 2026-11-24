@@ -5809,3 +5809,39 @@ Owed above, run after the commit: on n3 (the commit's tree) the probe right plai
 static rc 0 (src 97,273), self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; subst.sh on the
 final probe 0 failed (cases 17 unread under 17, 53 shapes of 53; self 26 under 26); Windows names.sh 984/0 and overload.sh
 46/0 (the full runs on n2; the probe's final form 1/0 on n3); cl /W4 /WX clean on n3.
+
+## M8.3 slice 3h: a type parameter bound to a lambda's closure type, and a noexcept body the replay wraps for the bodies before it, under -templates=subst (lane m83aq, 2026-11-25)
+
+Found by a debug build (boxkit/m83aq-Tdbg.cpp, cxx3-msvc `-arch x86_64-linux` on Windows): every class the census called "a type
+parameter bound to a class: one the read named over its parameters" was bound to a closure type - `main::$_0`, whose tag holds a
+`$` - in `is_same`, `__fn_callable`, `__fn_model`, `remove_reference`, `decay` over a lambda. The door's thirteen tests of a read
+id by a `$` in the tag now ask `overParameters`: a `$` that is no program closure's `$_N` or `$deduced_N` (a read's own closure,
+`$read$f::$_0`, is still over its parameters). No class is copied: the closure's class is the program's, bound as any class is.
+Work (0): std-function's one member frame `differ` ("the read's frame's size where the replay has a slot no local names") and
+thread-pool's under REF are one cause - `explicit operator bool() const noexcept` in `function` and `unique_lock`: the replay's
+`replayInlineBodies` clears `mayThrow_` once per call, not per body, so a call in a body replayed before it wraps a noexcept body
+for [except.spec]/9 (wrapUp's `.ex.ptr` slot) where the read, one body a call, does not. The read cannot know the replay's order:
+`wrapInherited` (asked at madeMember before every replayed body, `throwsBefore_`) replays such a body by name, and memberFrame
+names it ("member: replayed: a noexcept body wrapped by the calls of the bodies before it"). Not changed: the replay's wrap
+itself (clang wraps neither body; resetting `mayThrow_` per body changes emitted code against REF - owed, the user's call). The
+two function-door frame `differ`s m83ap names (template-subst-mcall `onBase`, template-subst-member `toBase`) are another cause:
+a derived-to-base conversion at a nonzero offset, whose `.bp` slot (ParserOverload.cpp, `off > 0`) the read over `const T &`
+cannot lay - owed.
+Probe `template-subst-closurearg` (Holder<F>, Model<F>, Same<A, B>, Unref<T &> over three closures; 107 1 / 17 1 / 42 4 13 / 1 0 /
+25, clang 19 on Windows and cxx3-msvc the same; its 8 classes `equal`; `.nonames`: the closure numbering lambda.nonames records).
+src 97,273 -> 97,294 (+21); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2085/2137/2834 -> 2096/2148/2845).
+The measure: class specializations made with no replay - suite 1,595 of 2,184 (1,548 on 7d70abef's build, counted now; the
+probe's 8, so 39 of the suite's own), self-host 73,446 of 74,390 beside under the check (72,963; the 310 "bound to a class the
+read named over its parameters" all gone, the reason no longer in either census).
+Work (0), counted on 7d70abef's build: suite no check 1,548, check `equal` 1,727, no class differ, nonzero 353, member frame
+`differ` 2 (std-function, thread-pool). On n1: check `equal` 1,786, no class differ, nonzero 353, member frame `differ` 0 (2
+named); self-host nonzero 0, `equal` 73,979, member frame `differ` 0 (39 named, the n2 census's 39 `differ`s); the function
+door's frame `differ` 2 (mcall, member: the `.bp` cause above, REF's).
+Gates (REF 684b39a6, n1): identical 0 differ on four targets plain (1970/3940/1970/1970); run.sh 1330/0, then under the flag
+1330/0; subst.sh on the first probe 1 failed (its `hold` template's brace list into a shallow `Holder<F>`, "'' is full": a
+function-door read's reason the ceiling does not record), the probe rewritten without it, re-run below; static rc 0
+(exclusions 0/0 after re-pointing, memory 89, ast-residue 2012/298 not raised, ide up to date; comments 0 after one group
+the helper split was mended); g++ -Werror clean; Windows cl /W4 /WX clean (full, 00:42-00:45, ~3 min); names.sh 985/0,
+overload.sh 46/0; clang 19 and cxx3-msvc on the probe the same.
+**Next**: the suite's largest reason, "a non-type parameter named outside its member bodies" (lane m83ah's family), and the
+self-host's unordered_map left; the function door's `.bp` frame family; the replay's per-call `mayThrow_` (the user's call).
