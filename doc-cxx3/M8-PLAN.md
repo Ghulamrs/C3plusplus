@@ -5224,3 +5224,19 @@ Census (x86_64-linux): **tests/cases** with no check 783 made, nonzero 353 (REF'
 parameters" 13,739 before the replay (unchanged); frames, shells and made 3,865 + 2,073 equal.
 src/: `Templates.cpp` +7 (96,621 -> 96,628). EXCLUSIONS: no line moved.
 Gates (the commit's tree, REF b6c8b37a): identical 0 differ on four targets plain (1930/3860/1930/1930) and with `-templates=subst` on three (1930/3860/1930; the covered shapes as at m83r, and a member function over a member type of a class template-id the program had not declared, of a template with no partial); subst.sh 0 failed, then run.sh 1310/0, then run.sh under the flag 1310/0 (1310 pass, 0 fail; the fallbacks are the census above); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, alone, 11:09:23-11:13:08, ~3.8 min), probe on Windows clang 5 7 / 2.5 and cxx3-msvc the same, names.sh 965/0, overload.sh 46/0.
+
+**Commit 2** (work (2)): a data member of a class template-id the read named over its parameters (`Cell<$T0> c`) is the
+program's `Cell<U>` where it was declared before the class (`carriedId`, carried as the signatures' ids are), and otherwise wanted
+by `idsBefore` when `earlyArgs` takes it, so the door makes it first and the class from the read. The replay makes a data
+member's class and a signature's in the body's order, which the read's members and signatures do not keep apart: a class
+wanting both is refused by name ("class template-ids made first for a data member and a member function's signature").
+Probe `template-subst-datamember` (clang's 9 / 3.0 8 on Windows). The measure: suite **792 of 2,184** (783: the probe 4,
+template-nested 3, template-nested-angle 1, template-subst-spec 1), self-host 35,003 beside (unchanged: its 2,606 are refused by
+`earlyArgs`, the same templates as below). Census: no check 792, nonzero 353; under the check the same 18 skip differs as
+commit 1 (self-host 151), no other; self-host nonzero 0. src/: `Templates.cpp` +14 (96,628 -> 96,642). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF b6c8b37a): identical 0 differ on four targets plain (1932/3864/1932/1932) and with `-templates=subst` on three (1932/3864/1932; the covered shapes and a data member of a class template-id the program had not declared, of a template with no partial); subst.sh 0 failed, then run.sh 1311/0, then run.sh under the flag 1311/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta, alone, 11:39:41-11:42:10, ~2.5 min), probe on Windows clang 9 / 3.0 8 and cxx3-msvc the same, names.sh 966/0, overload.sh 46/0.
+**Tried, not committed (the hour)**: `boxkit/m83s-n4-wip.patch` (against commit 2) - `earlyArgs` takes a template with partial
+specializations when none of its bodies names the read's template (`makeClass` chooses the partial), and `typedefsCarried` wants a
+typedef's `X<$T0>`, ahead of the members' (the replay reads typedefs first): suite **810**, self-host **35,154 beside**, class
+differ 0 in both (the 18 and 151 gone), nonzero 353 / 0; no gate run. The 13,739 `iterator_traits<$T0>` stay refused there:
+next, why `earlyArgs` still refuses them (a debug line in `classShape`'s member-type branch, as m83s-dbg.sh did).

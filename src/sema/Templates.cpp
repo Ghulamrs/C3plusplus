@@ -3259,14 +3259,25 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *t = substituted(*s, m.type), *e = t;
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
-        if (e->unqualified()->isStructOrUnion() && (readIds_.count(e->unqualified()) != 0 || e->unqualified()->tag().find('$') != std::string::npos))
-            return "replayed: a data member of a class the read named over its parameters";
+        const Type *u = e->unqualified();
+        const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || u->tag().find('$') != std::string::npos);
+        const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
+        std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
+        std::vector<TemplateArg> args;
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = substituted(*s, m.type);
+        else if (over) {
+            if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args))
+                return "replayed: a data member of a class the read named over its parameters";
+            wanted->push_back(u);
+            continue;
+        }
         if (e->unqualified()->isEnumeration() && e->unqualified()->tag().find('$') != std::string::npos)
             return "replayed: a data member of a member enumeration the read named over its parameters";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
+    const std::size_t dataIds = wanted != nullptr ? wanted->size() : 0;     // the replay makes them in the body's order, not data first
     for (const Signature &f : k->second.second) {
         std::vector<const Type *> types(1, f.returns);     // in the order the replay reads a declaration: its return type first
         types.insert(types.end(), f.params.begin(), f.params.end());
@@ -3280,6 +3291,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
             if (of != nullptr && wanted != nullptr && of != read && readId(of, nullptr, nullptr) && carriedId(*s, of, nullptr) == nullptr
                 && earlyArgs(*s, of, read, &name, &args)) {
+                if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
                 wanted->push_back(of);
                 continue;
             }
@@ -3288,8 +3300,10 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
-            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args))
+            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args)) {
+                if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
                 wanted->push_back(e);
+            }
             else if (e != read && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
                 return "replayed: a member function's signature over a type the binding does not carry: " + uncarriedKind(e, read);
         }
