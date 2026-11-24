@@ -2836,10 +2836,9 @@ Parser::Effect Parser::constructMember(const std::string &cls, const Type *type,
                                        const Member &m, int thisSlot,
                                        std::vector<ExprPtr> &args, std::size_t pos,
                                        bool implicit) {
-    const Type *mc = memberClass(m.type);
-    if (mc == nullptr || mc->tag().empty() || m.type->isReference()) return Effect();
+    const Type *mc = constructedClass(m);
+    if (mc == nullptr) return Effect();
     const std::string key = constructorKey(mc->tag());
-    if (lookup_.overloadsOf(key) == nullptr) return Effect();
     if (!args.empty() && m.type->isArray())
         src_.fail(pos, "'" + m.name + "' is an array, and an initialiser list "
                        "cannot say what to pass to each element of it");
@@ -2895,9 +2894,7 @@ Parser::Effect Parser::constructMember(const std::string &cls, const Type *type,
             : "'" + mc->tag() + "' has no public constructor taking these "
               "arguments for '" + m.name + "' - the one that matches is " +
               (chosen.access == Access::Private ? "private" : "protected"));
-    // Through noteUsed: inside a candidate's body, ranked and not yet chosen, the use waits with the rest.
-    for (std::size_t k = 0; k < lookup_.functions_.size(); k++)
-        if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
+    noteChosen(chosen.symbol);
     const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
     noteEntryDefaults("." + m.name, args, written);     // an array's too, evaluated again for each element
@@ -2932,20 +2929,36 @@ Parser::Effect Parser::constructMember(const std::string &cls, const Type *type,
         ps.push_back(chosen.params[k]);
     }
     // Keyed by the function being defined, or synthesised (M3b.3) - a member template's specialization by its own symbol.
-    {
-        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written, false };
-        const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
-        // Two choices under one key - a constructor template's specializations read under one name - are no record at all.
-        const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
-        if (had == memberBuilt_.end()) memberBuilt_[key] = b;
-        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
-    }
+    const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written, false };
+    keepMemberBuilt(currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos)), b);
     Effect one(completeCall(mc->tag(), chosen.symbol, nullptr, types_.get(Kind::Void),
                             ps, false, pos, std::move(all)));
     if (!m.type->isArray()) return one;
     one.loop = indexSlot;
     one.count = count;
     return one;
+}
+
+// The class whose constructor builds member `m` - none for a reference or a class with no constructor: constructMember's, and a
+// constructor made from the read's (Templates::membersBuilt).
+const Type *Parser::constructedClass(const Member &m) const {
+    const Type *mc = memberClass(m.type);
+    if (mc == nullptr || mc->tag().empty() || m.type->isReference()) return nullptr;
+    return lookup_.overloadsOf(constructorKey(mc->tag())) != nullptr ? mc : nullptr;
+}
+
+// The constructor chosen for a member noted used, through noteUsed: inside a candidate's body the use waits with the rest.
+void Parser::noteChosen(const std::string &symbol) {
+    for (std::size_t k = 0; k < lookup_.functions_.size(); k++)
+        if (lookup_.functions_[k].symbol == symbol) noteUsed(k);
+}
+
+// What builds a member, keyed `fn|m|pos`; two choices under one key - a constructor template's specializations read under one
+// name - are no record at all.
+void Parser::keepMemberBuilt(const std::string &key, const MemberBuilt &b) {
+    const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
+    if (had == memberBuilt_.end()) memberBuilt_[key] = b;
+    else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
 }
 
 // An array member's loop, under its elements' guard ([except.ctor]/3) when they have a destructor.

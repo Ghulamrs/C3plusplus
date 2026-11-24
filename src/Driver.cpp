@@ -1748,6 +1748,7 @@ bool Driver::compile(const Job &job) {
     if (checkTemplates_) {
         const std::string report = parser.templatesReport();
         std::fwrite(report.data(), 1, report.size(), stdout);
+        if (parser.templatesFailed()) return false;
     }
     if (dumpSyntax_) {
         std::string dumped;
