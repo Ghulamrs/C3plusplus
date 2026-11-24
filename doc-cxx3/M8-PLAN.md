@@ -5543,3 +5543,33 @@ the final build (n3: the loop alone) runs the probe the same and self-compiles r
 M8.2's boundClass binds it, with substituted's collapse; refuse a data member the binding makes a reference); a base beside
 a data member over the parameters (1,631); a data member of a type the binding does not carry (906) and one of a class the read named over its parameters (906). Member bodies:
 "a 'meminit' in the body" (7,734) and "a call with a type-dependent argument" (7,576) lead.
+
+## M8.3 slice 3b: a type parameter bound to a reference, in a class made from the read under -templates=subst (lane m83ac, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,320 of 2,184 (1,308; the probe's 4 and eight of the suite's),
+self-host 69,034 beside under the check (67,222). "A type parameter bound to a reference", the largest reason at 1,841, is
+down to 1 (a reference to a class the read named over its parameters).
+`classShape`'s binding loop took a scalar or a class (`boundClass`'s) and refused every reference. It now asks the same of
+the referent: `T` bound to `U &` or `U &&` with U a scalar or a bound class is substituted as it is, and `substituted`
+already collapses `T &`, `T &&` and `const T` over it as [dcl.ref]/1 and /6 say - the library's iterators
+(`Iter<T, T &, T *>`, `R operator*()`) are this shape. Two shapes the replay builds otherwise are refused by name: a data
+member the binding makes a reference ("a data member the binding makes a reference": `Box<int &>`'s `T v_`), and a `const`
+or `volatile` over a parameter bound to a reference in a signature or a member typedef (`cvOverReference`: "a signature's
+const over a parameter bound to a reference") - the replay keeps the qualifier on the reference (`const R` with R =
+`const int &` reads as "const const int &"), so the out-of-line definition of a member declared by the read failed under
+the flag on the first build ("was declared to return 'const int &' and this says 'const const int &'"). Neither refusal
+occurs in the self-host. Not changed: the replay's own handling of `const` over a reference.
+Probe `template-subst-refbound` (`Iter<int, int &, int *>`, `Iter<int, const int &, const int *>`, `Iter<Pt, Pt &, Pt *>` and
+`Box<int>` made from the read; `Peek<int &>`'s `const R` and `Box<int &>` replayed by name; clang 28 4 40 10 / 10 7 12 12,
+cxx3-msvc the same, cxx3 the same plain, under the flag and under the check; `.nonames` for x86_64-linux's C1). src 96,981
+-> 96,999 (+18); no EXCLUSIONS line moved.
+Census: no check nonzero 353 (the set before); under the check no class differ, nonzero 353 (the three frame lines
+`template-subst-mcall`, `template-subst-member` and `thread-pool` print are REF's too); self-host nonzero 0. Gates (REF
+5ab642ea): identical 0 differ on four targets plain (1952/3904/1952/1952) and with `-templates=subst` on three
+(1952/3904/1952: every case and the probe among them); subst.sh 0 failed, then run.sh 1321/0, then run.sh under the flag 1321/0; static rc 0 (exclusions 0/0, comments 0,
+memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++
+-Werror clean; Windows cl /W4 /WX clean (full 18:00:52-18:08:02 on the first build, ~7 min, the box shared; the final delta
+18:10:04-18:14:09, ~4 min); names.sh 976/0 and the probe under its .nonames 0 failed; overload.sh 46/0.
+**Next**: the largest reasons, self-host under the check: a base beside a data member over the parameters (1,631 - the
+parser's base layout made one shared path, m83y); a data member of a type the binding does not carry (906) and one of a
+class the read named over its parameters (906).

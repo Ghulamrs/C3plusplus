@@ -3343,8 +3343,22 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
     return std::string();
 }
 
-// Slice 3a's shape: type parameters bound to scalars or to a class (boundClass's), and a read class of data members alone,
-// each of a scalar type or a class the read did not name over its parameters.
+// `const T` (or volatile) anywhere in `t` with T bound to a reference: the read collapses it, the replay keeps the qualifier.
+static bool cvOverReference(const Templates::Substituted &s, const Type *t) {
+    if (t == nullptr) return false;
+    if (t->unqualified() != t) {
+        for (std::size_t k = 0; k < s.from.size(); k++) if (t->unqualified() == s.from[k] && s.to[k]->isReference()) return true;
+        return cvOverReference(s, t->unqualified());
+    }
+    if (t->isPointer() || t->isArray()) return cvOverReference(s, t->pointee());
+    if (t->isReference()) return cvOverReference(s, t->referent());
+    if (!t->isFunction()) return false;
+    for (std::size_t k = 0; k < t->params().size(); k++) if (cvOverReference(s, t->params()[k])) return true;
+    return cvOverReference(s, t->returns());
+}
+
+// Slice 3a's shape: type parameters bound to scalars, to a class (boundClass's) or to a reference to either, and a read
+// class of data members alone, each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                                   const Substituted *early, std::vector<const Type *> *wanted) const {
     for (std::size_t q = 0; q < params.size(); q++) {
@@ -3367,12 +3381,13 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
-        const std::string cls = u->isStructOrUnion() ? boundClass(*u) : std::string();
-        if (u->isStructOrUnion() && (!cls.empty() || u->tag().find('$') != std::string::npos))
-            return "replayed: a type parameter bound to a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
-        if (!u->isScalar() && !u->isStructOrUnion())
-            return std::string("replayed: a type parameter bound to ") + (u->isReference() ? "a reference" :
-                   u->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
+        const Type *to = u->isReference() ? u->referent()->unqualified() : u;     // `T` bound to `U &`: substituted collapses
+        const std::string cls = to->isStructOrUnion() ? boundClass(*to) : std::string(), ref = u->isReference() ? "a reference to " : "";
+        if (to->isStructOrUnion() && (!cls.empty() || to->tag().find('$') != std::string::npos))
+            return "replayed: a type parameter bound to " + ref + "a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
+        if (!to->isScalar() && !to->isStructOrUnion())
+            return std::string("replayed: a type parameter bound to ") + ref + (to->isReference() ? "a reference" :
+                   to->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         s->to.push_back(binding[q]);
     }
@@ -3393,6 +3408,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *t = substituted(*s, m.type), *e = t;
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
+        if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
         const Type *u = e->unqualified();
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || u->tag().find('$') != std::string::npos);
         if (!read->bases().empty() && (over || t != m.type)) return "replayed: a base, beside a data member over the parameters";
@@ -3421,6 +3437,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
     std::size_t first = 0;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
     for (std::size_t i = 0; tds != readTypedefs_.end() && i < tds->second.size(); i++) {
+        if (cvOverReference(*s, tds->second[i].second)) return "replayed: a typedef's const over a parameter bound to a reference";
         const Type *e = substituted(*s, tds->second[i].second);
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
         e = e->unqualified();
@@ -3449,6 +3466,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         types.insert(types.end(), f.params.begin(), f.params.end());
         const bool ahead = dataIds != 0 && placed && f.pos < dataLo, behind = dataIds == 0 || (placed && f.pos > dataHi);
         for (const Type *t : types) {
+            if (cvOverReference(*s, t)) return "replayed: a signature's const over a parameter bound to a reference";
             const Type *e = substituted(*s, t);
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
