@@ -3374,8 +3374,29 @@ static bool cvOverReference(const Templates::Substituted &s, const Type *t) {
 // class of data members alone, each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                                   const Substituted *early, std::vector<const Type *> *wanted) const {
-    for (std::size_t q = 0; q < params.size(); q++)
-        if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
+    // Slice 3f: a pack or template parameter its class names in member bodies alone (replayed by name, as instantiate's door
+    // asks) is in its tag alone; a partial's scan from past its written arguments, which name it (`is_function<R(A...)>`).
+    std::size_t from = start;
+    if (p_.tokens_[start].is("{")) {
+        while (from > 0 && !p_.tokens_[from].is("struct") && !p_.tokens_[from].is("class") && !p_.tokens_[from].is("union")) from--;
+        for (int angle = 0, k = 0; from < start && k < 2; from++) {     // `struct name` to the `<`, then to its `>`
+            angle += p_.tokens_[from].is("<") ? 1 : p_.tokens_[from].is(">") ? -1 : p_.tokens_[from].is(">>") ? -2 : 0;
+            k += p_.tokens_[from].is("<") && angle == 1 ? 1 : angle <= 0 && k == 1 ? 1 : 0;
+        }
+    }
+    for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
+        const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
+        if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
+            for (std::size_t inner = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
+                inner += p_.tokens_[t].is("{");
+                if (p_.tokens_[t].is("}") && --inner == 0) break;
+            }
+        else if (k.is("{")) depth++;
+        else if ((k.is("}") && --depth == 0) || (depth == 0 && k.is(";"))) break;
+        for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
+            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && p_.tokens_[t].text == params[q].name)
+                return "replayed: a pack or template parameter, bound by name";
+    }
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
     // keeps as the parameter (Type::boundParam) and substituted lays under `s`'s values; anywhere else it replays by name.
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
@@ -3408,7 +3429,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
-        if (params[q].type != nullptr) continue;     // a non-type parameter: its value, in the replayed bodies alone
+        if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
         const Type *to = u->isReference() ? u->referent()->unqualified() : u;     // `T` bound to `U &`: substituted collapses

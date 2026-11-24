@@ -5736,3 +5736,35 @@ ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 
 with the probe, overload.sh 46/0, clang 19 and cxx3-msvc on the probe 7 9 1 2 0.
 **Next**: the suite's "a pack or template parameter, bound by name" (136), not reached this hour; the self-host's next
 largest after this: a pack or template parameter 401, non-type 259, bound to a class over its parameters 252.
+
+## M8.3 slice 3f: a class over a pack or a template template parameter it names in member bodies alone, under -templates=subst (lane m83am, 2026-11-24)
+
+classShape refused every class with a pack or a template template parameter ("a pack or template parameter, bound by
+name"). It now scans the class - a primary from its head, a partial from past its written arguments (which name the
+parameter: `is_function<R(A...)>`) - through its bases and body, a member function's body skipped as slice 3e skips it,
+and refuses by that name only a pack or template parameter named there; one named nowhere else is in the class's tag
+alone, so the class is made from the read like any other, and its member bodies, which instantiate's door refuses for any
+pack or template parameter, replay under the specialization's packs as before. The binding loop passes such a parameter.
+A parameter named in a signature, a data member, a base or a mem-initialiser still replays by name.
+Probe `template-subst-packparam` (Tagged<T, Ts...>, Traits<R(A...)>, Holder<template<class> class C, T>, Seq<int... Ns>,
+Maker<C> and Count<Ts...> naming theirs in a body, Call<Ts...> naming its pack in a data member `Tagged<int, Ts...>`; clang
+19 7 b 7 9 42 5 8 3 / 4 8 4 / 2 4, cxx3 the same plain, under the flag, under the check and cxx3-msvc on Windows; its 11
+classes `equal`, Call replayed). A first probe named the pack as `f(Ts... a)`: that member's read differs in shape from its
+replay under REF too (the function parameter pack family M8.1 records), and lifted subst.sh's class-members shape over 9.
+Work (0): tests/subst.sh on a fresh tree at 3a6be07b (its own exe): 0 failed.
+src 97,212 -> 97,233 (+21); no EXCLUSIONS line moved.
+The measure: class specializations made with no replay - suite 1,533 of 2,184 (1,502; the probe's 11, so 20 of the
+suite's own), self-host 72,623 of 74,390 beside under the check (72,623, unchanged: its 401 -
+`function<R(Args...)>`, `__fn_model<F, R, Args...>` - name the pack in a signature or a data member; `equal` 73,095, nonzero 0).
+Census: no check nonzero 353; check `equal` 1,711 (1,671; the first probe's 10), no class differ, nonzero 353; still in the
+suite "a pack or template parameter, bound by name" 102 (136): named in a signature, a data member, a base or an id.
+Gates (REF 3a6be07b, on the commit's build): identical 0 differ on four targets plain (1966/3932/1966/1966) and with
+`-templates=subst` on three (1966/3932/1966: every case and the probe among them); run.sh 1328/0, then run.sh under the flag
+1328/0; subst.sh on the first probe 1 failed (class-members shape 10 over 9, the `f(Ts... a)` above); the probe's bodies step
+now reads shape 0, so 9 again - the re-run of subst.sh was queued behind the box's other jobs at the hour (owed: the wave
+gate); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (~5.5 min,
+box shared), names.sh 983/0, overload.sh 46/0.
+**Next**: the suite's other 102 of the reason name the pack in a signature (`f(Ts... a)`), a data member or a base: a pack
+expanded under the binding in the read's member signatures (substituted over `packExpansion`), which the self-host's 401
+(`function<R(Args...)>`, `__fn_model`) need as well; after it, the suite's non-type 350 (lane m83al's).
