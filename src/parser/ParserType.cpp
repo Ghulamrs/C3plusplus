@@ -137,6 +137,9 @@ void Parser::memberTemplate(const std::string &tag, const std::string &local, Ac
 }
 
 
+// `#pragma pack(n)` caps an alignment at n; 0 is no pack.
+namespace { struct Packed { static int to(int a, int cap) { return cap != 0 && a > cap ? cap : a; } }; }
+
 const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     const char *what = isClass ? "class" : (kind == Kind::Struct ? "struct" : "union");
     skipAttributes();
@@ -148,9 +151,6 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                        std::to_string(pack) + ")', and the C6000 backend loads words "
                        "aligned only - a packed member is not supported for this "
                        "target yet");
-    struct Packed {
-        static int to(int a, int cap) { return cap != 0 && a > cap ? cap : a; }
-    };
 
     // `struct alignas(16) S` - the class's own alignment, folded into the
     // layout below as if a member had asked for it.
@@ -440,123 +440,21 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     for (std::size_t bi = 0; bi < written.size(); bi++)
         if (!written[bi].isVirtual && written[bi].type != primary)
             layOrder.push_back(bi);
+    // The non-virtual bases in that order, laid by the one path a class door's read takes too (layBases).
+    std::vector<BaseToLay> order;
+    for (std::size_t li = 0; li < layOrder.size(); li++)
+        order.push_back(BaseToLay{ written[layOrder[li]].type, written[layOrder[li]].access, layOrder[li] });
+    BasesLaid bases;
+    layBases(order, primary, pack, tag, what, pos, &bases);
     std::vector<int> baseAt(written.size(), 0);
-    // cl's two flags, carried by the last base or class-typed member laid and
-    // by the first base - see Type::endsWithZeroSized.
-    bool endsZero = false, leadsZero = false, leadsKnown = false;
-    const Type *prevBase = nullptr;
-    // Itanium's conflict list for this class, and the size an empty base pushed
-    // past the cursor still claims - `struct CC : E1, C1 { int x; }` has C1 at 1.
+    for (std::size_t li = 0; li < layOrder.size(); li++) baseAt[layOrder[li]] = bases.at[li];
+    members.swap(bases.members);
     std::vector<Type::EmptyAt> empties;
-    long long sizeFloor = 0;
-    struct Conflict {
-        static bool at(const std::vector<Type::EmptyAt> &have, const Type *t, int off) {
-            const std::vector<Type::EmptyAt> &in = t->unqualified()->emptySubobjects();
-            for (std::size_t i = 0; i < in.size(); i++)
-                for (std::size_t j = 0; j < have.size(); j++)
-                    if (have[j].type == in[i].type && have[j].offset == in[i].offset + off)
-                        return true;
-            return false;
-        }
-        static void add(std::vector<Type::EmptyAt> &have, const Type *t, int off) {
-            const std::vector<Type::EmptyAt> &in = t->unqualified()->emptySubobjects();
-            for (std::size_t i = 0; i < in.size(); i++)
-                have.push_back(Type::EmptyAt{ in[i].type, in[i].offset + off });
-        }
-    };
-
-    std::size_t membersFromBases = 0;
-    for (std::size_t li = 0; li < layOrder.size(); li++) {
-        // A virtual base is not in that order at all: it goes after every
-        // non-virtual byte, which is not known until the members have been read.
-        const std::size_t bi = layOrder[li];
-        const Type *b = written[bi].type;
-        const Access how = written[bi].access;
-        // **cl lays every base with a vfptr before the rest**, wherever it was
-        // written - `struct PX : E1, PV` has PV at 0 - which is not laid here. The
-        // vtable code refuses it only when the class adds a virtual of its own.
-        if (target_.microsoftNames() && bi != 0 && b->polymorphic())
-            src_.fail(pos, "'" + tag + "' has virtual functions in a base "
-                           "that is not the first, and the Microsoft ABI "
-                           "lays that out differently - the base with the "
-                           "vfptr goes first, wherever it was written. Not "
-                           "supported yet; it is measured for Itanium only");
-
-        // Each base starts where the last one's data ended, aligned to its own requirement.
-        long long byteCursor = (bitCursor + 7) / 8;
-        // **On Microsoft a base that leads with a zero-sized subobject goes a byte
-        // past one that ends with one** - cl lays `struct A : E1, E2 { int x; }`
-        // with E2 at 1 and x at 4, where Itanium puts both empties at 0.
-        if (target_.microsoftNames() && prevBase != nullptr &&
-            prevBase->endsWithZeroSized() && b->leadsWithZeroSized())
-            byteCursor++;
-        // **The same refusal the member list gets, one base earlier.** The sum of the
-        // bases is measured in `long long` where `at` is an `int`, so a third huge
-        // base wrapped it negative and every later number came from the wreck.
-        const int balign = Packed::to(b->align(target_), pack);
-        const long long basesEnd = (byteCursor + balign - 1) / balign * balign +
-                                   b->dataSize();
-        if (basesEnd > 2147483647LL)
-            src_.fail(pos, std::string("this ") + what + " is larger than this "
-                           "compiler can lay out: its bases need " +
-                           std::to_string(basesEnd) + " bytes, past the "
-                           "2147483647 an object here is measured in");
-        int at = static_cast<int>(alignTo(static_cast<int>(byteCursor), balign));
-        // **Itanium puts an empty base at 0**, and only where an empty subobject of
-        // the same type is there already does it go to the cursor and on, by its
-        // alignment, until nothing of its type is under it. It claims no data.
-        if (!target_.microsoftNames()) {
-            const bool emptyBase = b->dataSize() == 0 && !b->hasVptr();
-            if (emptyBase && !Conflict::at(empties, b, 0)) at = 0;
-            else while (Conflict::at(empties, b, at)) at += balign;
-            if (emptyBase) {
-                if (at + b->size(target_) > sizeFloor) sizeFloor = at + b->size(target_);
-                Conflict::add(empties, b, at);
-                baseAt[bi] = at;
-                if (balign > widest) widest = balign;
-                prevBase = b;
-                continue;
-            }
-        }
-        Conflict::add(empties, b, at);
-
-        const std::vector<Member> &inherited = b->members();
-        for (std::size_t i = 0; i < inherited.size(); i++) {
-            Member m = inherited[i];
-            m.offset += at;
-            // Whose it is, kept through the flattening: a base's private
-            // member stays the base's for the access check, however many
-            // classes down it is copied.
-            if (b->hasVirtualBase() && m.offset >= b->nvDataSize() + at) continue;
-            if (m.declaredIn == nullptr) m.declaredIn = b;
-            if (m.access == Access::Private) m.access = Access::Private;
-            else if (how == Access::Private) m.access = Access::Private;
-            else if (how == Access::Protected) m.access = Access::Protected;
-            // The same name already copied down from an earlier base: both
-            // are ambiguous in this class - [class.member.lookup] - though a
-            // member the class writes itself, added after, hides them both.
-            for (std::size_t j = 0; j < membersFromBases; j++)
-                if (members[j].name == m.name) { members[j].ambiguous = true; m.ambiguous = true; }
-            members.push_back(m);
-        }
-        membersFromBases = members.size();
-        baseAt[bi] = at;
-        endsZero = b->endsWithZeroSized();
-        if (!leadsKnown) { leadsZero = b->leadsWithZeroSized(); leadsKnown = true; }
-        prevBase = b;
-
-        // The base's DATA size, not its sizeof - see Type::dataSize.
-        bitCursor = static_cast<long long>(at + b->nvDataSize()) * 8;
-        if (balign > widest) widest = balign;
-        // The base at offset 0 hands its slots down in order, and an override
-        // in this class replaces one rather than appending - declareMember
-        // does that.
-        const bool atZero = primary != nullptr ? b == primary : bi == 0;
-        if (!tag.empty() && atZero && b->polymorphic()) {
-            classes_.vtables_[tag] = classes_.vtables_[b->tag()];
-            classes_.ownSlotsFrom_[tag] = classes_.vtables_[tag].size();
-        }
-    }
+    empties.swap(bases.empties);
+    bitCursor = bases.bitCursor;
+    widest = bases.widest;
+    long long sizeFloor = bases.sizeFloor;
+    bool endsZero = bases.endsZero, leadsZero = bases.leadsZero;
     // Recorded in the order written, whatever order they were laid in: the
     // constructor and the destructor walk this list.
     for (std::size_t bi = 0; bi < written.size(); bi++)
@@ -1001,8 +899,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 // The one slot is laid as a member of the union's type would be, the empty-subobject walk included.
                 endsZero = u->endsWithZeroSized();
                 if (!target_.microsoftNames() && kind != Kind::Union)
-                    while (Conflict::at(empties, u, static_cast<int>(at))) at += a;
-                Conflict::add(empties, u, static_cast<int>(at));
+                    while (emptyClash(empties, u, static_cast<int>(at))) at += a;
+                addEmpties(empties, u, static_cast<int>(at));
                 const std::vector<Member> &inner = u->members();
                 const std::vector<std::size_t> &where = anonUnionMemberPos_[u];
                 for (std::size_t i = 0; i < inner.size(); i++) {
@@ -1405,12 +1303,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                         while (clash) {
                             clash = false;
                             for (long long i = 0; i < count && !clash; i++)
-                                clash = Conflict::at(empties, element, static_cast<int>(at + i * each));
+                                clash = emptyClash(empties, element, static_cast<int>(at + i * each));
                             if (clash) at += a;
                         }
                     }
                     for (long long i = 0; i < count; i++)
-                        Conflict::add(empties, element, static_cast<int>(at + i * each));
+                        addEmpties(empties, element, static_cast<int>(at + i * each));
                 }
             }
             members.push_back(Member{ d.name, d.type, static_cast<int>(at), 0, 0,
@@ -1634,6 +1532,126 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     laid.dependentBase = dependentBase;
     laid.empties.swap(empties);
     return completeClass(type, tag, !specializationOf.empty(), laid, pos);
+}
+
+// Itanium's conflict list: an empty subobject of `t` placed at `off` over one of its type `have` holds already.
+bool Parser::emptyClash(const std::vector<Type::EmptyAt> &have, const Type *t, int off) {
+    const std::vector<Type::EmptyAt> &in = t->unqualified()->emptySubobjects();
+    for (std::size_t i = 0; i < in.size(); i++)
+        for (std::size_t j = 0; j < have.size(); j++)
+            if (have[j].type == in[i].type && have[j].offset == in[i].offset + off) return true;
+    return false;
+}
+
+void Parser::addEmpties(std::vector<Type::EmptyAt> &have, const Type *t, int off) {
+    const std::vector<Type::EmptyAt> &in = t->unqualified()->emptySubobjects();
+    for (std::size_t i = 0; i < in.size(); i++) have.push_back(Type::EmptyAt{ in[i].type, in[i].offset + off });
+}
+
+// The non-virtual bases in lay order, each where the last one's data ended: the members they hand down, their offsets, the
+// empty subobjects and the cursor the class's own members go on from - one path for the body read and a class door's read.
+void Parser::layBases(const std::vector<BaseToLay> &order, const Type *primary, int pack, const std::string &tag, const char *what,
+                      std::size_t pos, BasesLaid *out) {
+    out->at.assign(order.size(), 0);
+    // cl's two flags, carried by the last base laid and by the first - see Type::endsWithZeroSized.
+    bool leadsKnown = false;
+    const Type *prevBase = nullptr;
+    std::size_t membersFromBases = 0;
+    long long &bitCursor = out->bitCursor;
+    int &widest = out->widest;
+    std::vector<Member> &members = out->members;
+    std::vector<Type::EmptyAt> &empties = out->empties;
+    for (std::size_t li = 0; li < order.size(); li++) {
+        // A virtual base is not in that order at all: it goes after every
+        // non-virtual byte, which is not known until the members have been read.
+        const std::size_t bi = order[li].written;
+        const Type *b = order[li].type;
+        const Access how = order[li].access;
+        // **cl lays every base with a vfptr before the rest**, wherever it was
+        // written - `struct PX : E1, PV` has PV at 0 - which is not laid here. The
+        // vtable code refuses it only when the class adds a virtual of its own.
+        if (target_.microsoftNames() && bi != 0 && b->polymorphic())
+            src_.fail(pos, "'" + tag + "' has virtual functions in a base "
+                           "that is not the first, and the Microsoft ABI "
+                           "lays that out differently - the base with the "
+                           "vfptr goes first, wherever it was written. Not "
+                           "supported yet; it is measured for Itanium only");
+
+        // Each base starts where the last one's data ended, aligned to its own requirement.
+        long long byteCursor = (bitCursor + 7) / 8;
+        // **On Microsoft a base that leads with a zero-sized subobject goes a byte
+        // past one that ends with one** - cl lays `struct A : E1, E2 { int x; }`
+        // with E2 at 1 and x at 4, where Itanium puts both empties at 0.
+        if (target_.microsoftNames() && prevBase != nullptr &&
+            prevBase->endsWithZeroSized() && b->leadsWithZeroSized())
+            byteCursor++;
+        // **The same refusal the member list gets, one base earlier.** The sum of the
+        // bases is measured in `long long` where `at` is an `int`, so a third huge
+        // base wrapped it negative and every later number came from the wreck.
+        const int balign = Packed::to(b->align(target_), pack);
+        const long long basesEnd = (byteCursor + balign - 1) / balign * balign +
+                                   b->dataSize();
+        if (basesEnd > 2147483647LL)
+            src_.fail(pos, std::string("this ") + what + " is larger than this "
+                           "compiler can lay out: its bases need " +
+                           std::to_string(basesEnd) + " bytes, past the "
+                           "2147483647 an object here is measured in");
+        int at = static_cast<int>(alignTo(static_cast<int>(byteCursor), balign));
+        // **Itanium puts an empty base at 0**, and only where an empty subobject of
+        // the same type is there already does it go to the cursor and on, by its
+        // alignment, until nothing of its type is under it. It claims no data.
+        if (!target_.microsoftNames()) {
+            const bool emptyBase = b->dataSize() == 0 && !b->hasVptr();
+            if (emptyBase && !emptyClash(empties, b, 0)) at = 0;
+            else while (emptyClash(empties, b, at)) at += balign;
+            if (emptyBase) {
+                if (at + b->size(target_) > out->sizeFloor) out->sizeFloor = at + b->size(target_);
+                addEmpties(empties, b, at);
+                out->at[li] = at;
+                if (balign > widest) widest = balign;
+                prevBase = b;
+                continue;
+            }
+        }
+        addEmpties(empties, b, at);
+
+        const std::vector<Member> &inherited = b->members();
+        for (std::size_t i = 0; i < inherited.size(); i++) {
+            Member m = inherited[i];
+            m.offset += at;
+            // Whose it is, kept through the flattening: a base's private
+            // member stays the base's for the access check, however many
+            // classes down it is copied.
+            if (b->hasVirtualBase() && m.offset >= b->nvDataSize() + at) continue;
+            if (m.declaredIn == nullptr) m.declaredIn = b;
+            if (m.access == Access::Private) m.access = Access::Private;
+            else if (how == Access::Private) m.access = Access::Private;
+            else if (how == Access::Protected) m.access = Access::Protected;
+            // The same name already copied down from an earlier base: both
+            // are ambiguous in this class - [class.member.lookup] - though a
+            // member the class writes itself, added after, hides them both.
+            for (std::size_t j = 0; j < membersFromBases; j++)
+                if (members[j].name == m.name) { members[j].ambiguous = true; m.ambiguous = true; }
+            members.push_back(m);
+        }
+        membersFromBases = members.size();
+        out->at[li] = at;
+        out->endsZero = b->endsWithZeroSized();
+        if (!leadsKnown) { out->leadsZero = b->leadsWithZeroSized(); leadsKnown = true; }
+        prevBase = b;
+
+        // The base's DATA size, not its sizeof - see Type::dataSize.
+        bitCursor = static_cast<long long>(at + b->nvDataSize()) * 8;
+        if (balign > widest) widest = balign;
+        // The base at offset 0 hands its slots down in order, and an override
+        // in this class replaces one rather than appending - declareMember
+        // does that.
+        const bool atZero = primary != nullptr ? b == primary : bi == 0;
+        if (!tag.empty() && atZero && b->polymorphic()) {
+            classes_.vtables_[tag] = classes_.vtables_[b->tag()];
+            classes_.ownSlotsFrom_[tag] = classes_.vtables_[tag].size();
+        }
+    }
 }
 
 // The class laid out, completed: its data size, its held bodies, its implicit members, its tables, its bodies replayed.

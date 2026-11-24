@@ -5573,3 +5573,29 @@ memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templa
 **Next**: the largest reasons, self-host under the check: a base beside a data member over the parameters (1,631 - the
 parser's base layout made one shared path, m83y); a data member of a type the binding does not carry (906) and one of a
 class the read named over its parameters (906).
+
+**M8.3 slice 3b, a base beside a data member over the parameters, 2026-11-24 (lane m83ad, from f21e8b73).** The measure:
+class specializations made with no replay - suite 1,346 of 2,184 (1,320; the probe's 5), self-host 71,081 beside under the
+check (69,034). The parser's layout of a class's non-virtual bases is one function now, `Parser::layBases` (ParserType.cpp):
+the body `structOrUnionSpecifier` reads calls it over its lay order, and `Templates::laidFromRead` calls it over the read's
+bases (non-virtual, direct, none polymorphic: classShape's), then lays the read's own data members under the binding from
+the cursor it hands back, stepping an empty subobject of their type past one already there on Itanium (`emptyClash`,
+`addEmpties`: the parser's conflict list, which was a local struct, is the one both paths ask) and carrying cl's
+zero-sized flags as the parser's member loop does. So classShape no longer refuses "a base, beside a data member over the
+parameters", and laidFromRead no longer takes the read's own layout whole for a class with bases. `Packed` moved to file
+scope with it. classLaid holds the data size and cl's two zero-sized flags against the replay's from the laid record
+(completeClass's formula), where it held the read's data size. Not changed: the parser's virtual bases, vptr and vbptr
+placement and its member loop; a class with a virtual or polymorphic base or a base over the parameters still replays by name.
+Probe `template-subst-basebeside` (`One<int>`, `One<E>` with E both base and member, `Two<double>`'s array, `Pad<char>` in
+Tail's tail padding on Itanium, `Mix<E, char>` over two bases, each held against the same class written out; clang 10 1 1 /
+10 1 1 / 10 7 1 1 / 33 1 1 1, cxx3-msvc the same, cxx3 the same plain, under the flag and under the check, REF replays all
+five by name; `.nonames` for x86_64-linux's C1 of Pad<char>'s and PadC's implicit constructors, template-subst-plainbase's
+difference). src 96,999 -> 97,053 (+54); 25 EXCLUSIONS citations re-pointed (ParserType.cpp's lines moved; one into layBases).
+Census: no check nonzero 353 (the set before); under the check no class differ, nonzero 353; self-host nonzero 0; "a base, beside a data member over the parameters" 1,631 -> 0.
+Gates (REF f21e8b73): identical 0 differ on four targets plain (1954/3908/1954/1954) and with `-templates=subst` on three
+(1954/3908/1954: every case and the probe among them); subst.sh 0 failed, then run.sh 1322/0, then run.sh under the flag 1322/0;
+static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (the delta
+18:42:45-18:46:26, ~3.7 min, and again 18:49-18:52 on the final tree; the first full build failed on `Packed`, fixed);
+names.sh 977/0 and the probe under its .nonames 0 failed; overload.sh 46/0.
+**Next**: the largest reasons, self-host under the check: a data member of a type the binding does not carry (906), a data member of a class the read named over its parameters (906), and a signature over a member type of another class over its parameters (906, before the replay) - one class template, by their equal counts; read which before choosing.

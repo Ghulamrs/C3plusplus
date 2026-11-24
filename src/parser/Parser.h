@@ -1138,6 +1138,12 @@ private:
     void memberTemplate(const std::string &tag, const std::string &local, Access access);     // at `template` in a class body
     typedef sema::ClassLaidOut ClassLaidOut;
     const Type *completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos);
+    struct BaseToLay { const Type *type; Access access; std::size_t written; };     // `written`: its place in the base list
+    typedef sema::BasesLaid BasesLaid;
+    void layBases(const std::vector<BaseToLay> &order, const Type *primary, int pack, const std::string &tag, const char *what,
+                  std::size_t pos, BasesLaid *out);
+    static bool emptyClash(const std::vector<Type::EmptyAt> &have, const Type *t, int off);
+    static void addEmpties(std::vector<Type::EmptyAt> &have, const Type *t, int off);
     void checkAccessible(const Type *object, const Member &m, std::size_t pos) const;
     // A constructor is keyed in the function table under "Point::Point", so resolving one is resolving an
     // overload set like any other. And the last component of a qualified tag: "Outer::Inner" is "Inner";
