@@ -336,7 +336,7 @@ const Type *Templates::substituted(const Substituted &s, const Type *t) const {
 // m as memberTypeWalk's lookup finds it; `t`, still dependent, where an argument is no type or the class was not made.
 const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
     const Type *o = t->pointee();
-    o = o->isSpecialization() ? specializationUnder(s, o) : substituted(s, o);
+    o = readId(o, nullptr, nullptr) ? specializationUnder(s, o) : substituted(s, o);     // a cleared shallow by its kept id
     if (o == nullptr || p_.dependentType(o) || !o->isStructOrUnion()) return t;
     const Type *m = p_.lookup_.lookupInClass(o, t->tag());
     return m != nullptr ? m : t;
@@ -3274,12 +3274,19 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *e = substituted(*s, t);
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
+            // `X<$T0>::m` whose X<U> the program had not declared: X<U> wanted by idsBefore, the member found once it is made.
+            std::string name;
+            std::vector<TemplateArg> args;
+            const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
+            if (of != nullptr && wanted != nullptr && of != read && readId(of, nullptr, nullptr) && carriedId(*s, of, nullptr) == nullptr
+                && earlyArgs(*s, of, read, &name, &args)) {
+                wanted->push_back(of);
+                continue;
+            }
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
-            std::string name;     // an id the program had not declared, wanted by idsBefore: made before the class
-            std::vector<TemplateArg> args;
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
             else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args))
                 wanted->push_back(e);

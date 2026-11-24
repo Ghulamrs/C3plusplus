@@ -5200,3 +5200,27 @@ Gates (the commit's tree, REF 332e3cab): identical 0 differ on four targets plai
 raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (n1 full, alone, 00:46:24-00:48:03, ~1.6 min; the final
 tree's delta 01:00:15-01:01:46, ~1.5 min), probe on Windows clang 4 5 7 / 2.5 and cxx3-msvc the same, names.sh 964/0, overload.sh 46/0.
 Left: a member type of another class (13,691 self-host), a data member of a class the read named over its parameters (2,582).
+
+## M8.3 slice 3b: a member type of another class, its class made before the class the door takes (lane m83s, 2026-11-24)
+
+**The measure**: classes made with no replay - suite **783 of 2,184** (779; the probe's 4, two of them REF's too), self-host
+**35,003 beside** under the check (35,003, unchanged).
+
+**Commit 1** (m83r's n5 and the door's want): `memberUnder` asks `readId`, so `X<$T0>::m` over a shallow the read's end cleared
+finds the program's `X<U>` by its kept id; `classShape` wants, for `idsBefore`, the class `X<$T0>` of a member type a member
+function's signature names when the program had not declared it and `earlyArgs` takes it, and the second `classBefore` then finds
+the member in the class `idsBefore` made (in the body's order, through `makeClass`). Probe `template-subst-memtype` (clang's
+5 7 / 2.5 on Windows; `Traits<int>` before `Box<int>`, which is made from the read).
+**Why the self-host did not move, measured** (a debug build over Templates.cpp, Parser.cpp, Lowering.cpp): every member type
+the door met there is `iterator_traits<$T0>::...`, a template with two partial specializations, which `earlyArgs` refuses. The
+next commit takes them; this one is the path they need.
+**What it changed in the census**: under the check no class is made from the read that the replay refuses, but "differ: the
+class skip before the replay and after it: replayed: a member typedef or alias over a type the binding does not carry" is new
+(tests/cases 18, self-host 151): before the replay a typedef `typename X<T>::m` is refused because `X<U>` is not made yet, after
+it `memberUnder` now finds the replay's `X<U>` and takes it. The class is replayed either way (no-check census 783 made, as
+under the check), so nothing the program sees changes; owed: the typedef's `X<U>` made before the class too (tried, below).
+Census (x86_64-linux): **tests/cases** with no check 783 made, nonzero 353 (REF's); under the check class equal 1,083 (907).
+**Self-host** under the check: nonzero 0, 35,003 beside, class equal 53,300 (39,561); "a member type of another class over its
+parameters" 13,739 before the replay (unchanged); frames, shells and made 3,865 + 2,073 equal.
+src/: `Templates.cpp` +7 (96,621 -> 96,628). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF b6c8b37a): identical 0 differ on four targets plain (1930/3860/1930/1930) and with `-templates=subst` on three (1930/3860/1930; the covered shapes as at m83r, and a member function over a member type of a class template-id the program had not declared, of a template with no partial); subst.sh 0 failed, then run.sh 1310/0, then run.sh under the flag 1310/0 (1310 pass, 0 fail; the fallbacks are the census above); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, alone, 11:09:23-11:13:08, ~3.8 min), probe on Windows clang 5 7 / 2.5 and cxx3-msvc the same, names.sh 965/0, overload.sh 46/0.
