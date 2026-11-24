@@ -1589,6 +1589,9 @@ void Templates::memberFrame(const PendingBody &body, const Substituted &s, const
     const std::string symbol = p_.lookup_.functions_[body.which].symbol, stops = membersBuilt(body, symbol, &reads, &guards, s);
     const std::string built = stops.empty() ? builtApart(symbol, reads) : std::string();
     if (!built.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[body.start].pos) + ": " + built);
+    std::size_t root = p_.definedBodies_.size();
+    while (root-- > 0 && !(p_.syntaxFunctions_.count(p_.definedBodies_[root].v) && p_.syntaxFunctions_.at(p_.definedBodies_[root].v) == symbol)) {}
+    constantsHeld(symbol, root < p_.definedBodies_.size() ? p_.definedBodies_[root] : syntax::NodeId(), body.start);
     const std::vector<FrameEvent> read = stops.empty() ? guardedFrame(readFrames_[body.start], guards.size()) : readFrames_[body.start];
     if (read.empty() || replayed.empty()) { frameCensus_["member: no steps logged"]++; return; }
     int raised = 0;
@@ -1708,6 +1711,56 @@ std::string Templates::madeApart(const Function &g, const Function &f) const {
     if (g.isNoexcept() != f.isNoexcept() || g.exceptionSpec() != f.exceptionSpec()) return "its exception specification";
     if (!f.synthesised().empty()) return "a synthesised function";
     return std::string();
+}
+
+// What a node folds to on the typed tree (Typer::typeNode): a sizeof's or a case's value, an enumerator's or a folded static
+// member's - under a binding, 2f's value first - and an array local's bound; `has` false where the node carries none.
+long long Templates::constantOf(const Bound *b, syntax::NodeId id, bool *has) const {
+    const Parser &p = p_;
+    *has = true;
+    if (b != nullptr && b->values.count(id.v) != 0) return static_cast<long long>(b->values.at(id.v)) - 2147483648LL;
+    const auto k = p.keywordValues_.find(id.v);
+    if (k != p.keywordValues_.end()) return k->second.first;
+    const auto c = p.caseFacts_.find(id.v);
+    if (c != p.caseFacts_.end() && !c->second.isDefault) return c->second.value;
+    const auto r = p.resolutions_.find(id.v);
+    if (r != p.resolutions_.end() && (r->second.what == Parser::Resolved::Enumerator || (r->second.what == Parser::Resolved::StaticMember && r->second.serial == 1)))
+        return r->second.value;
+    const auto l = p.declaredLocals_.find(id.v);
+    const Type *t = l != p.declaredLocals_.end() && l->second.type != nullptr ? l->second.type->unqualified() : nullptr;
+    if (t != nullptr && b != nullptr) t = substituted(b->s, t);
+    if (t != nullptr && t->isArray()) return t->length();
+    return *has = false, 0;
+}
+
+// Work (1): the two bodies walked together, node for node where their shapes agree; the first constant apart, by its text.
+std::string Templates::constantsApart(const std::string &symbol, syntax::NodeId read, syntax::NodeId replay) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const std::map<std::string, Bound>::const_iterator b = bound_.find(symbol);
+    std::vector<std::pair<syntax::NodeId, syntax::NodeId> > work(1, std::make_pair(read, replay));
+    while (!work.empty()) {
+        const syntax::NodeId a = work.back().first, y = work.back().second;
+        work.pop_back();
+        if (st.node(a).kind != st.node(y).kind || st.node(a).count != st.node(y).count) continue;     // a shape apart: the body check's
+        bool hasA = false, hasY = false;
+        const long long va = constantOf(b != bound_.end() ? &b->second : nullptr, a, &hasA), vy = constantOf(nullptr, y, &hasY);
+        if (hasA != hasY || va != vy)
+            return "a constant: '" + st.text(a) + "' " + (hasA ? std::to_string(va) : "none") + " for the replay's " + (hasY ? std::to_string(vy) : "none");
+        for (std::uint32_t c = 0; c < st.node(a).count; c++) work.push_back(std::make_pair(st.child(a, c), st.child(y, c)));
+    }
+    return std::string();
+}
+
+// The replay's body of `symbol` held against the read's: a difference fails the unit by name, as builtApart does.
+void Templates::constantsHeld(const std::string &symbol, syntax::NodeId replay, std::size_t start) {
+    const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(start);
+    if (read == readBody_.end() || !replay.valid() || p_.syntaxTree_.node(read->second).kind != p_.syntaxTree_.node(replay).kind) {
+        madeCensus_["constants: no body to hold"]++;
+        return;
+    }
+    const std::string apart = constantsApart(symbol, read->second, replay);
+    madeCensus_[apart.empty() ? "constants: equal" : "constants: differ: " + apart]++;
+    if (!apart.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[start].pos) + ": " + apart);
 }
 
 // Step 2's end: the function, its frame's alignment and the unit's records the replay's definition path leaves, made from the
@@ -2011,6 +2064,8 @@ void Templates::instantiatePending() {
                     if (bound != bound_.end()) replayCensus_[checkBodies_ ? skip : "replayed: " + skip]++;
                     p_.topLevel(*p_.current_);
                     p_.frameLog_ = logBack.was;
+                    if (bound != bound_.end() && checkBodies_)
+                        constantsHeld(sp.symbol, p_.definedBodies_.size() == rootsHad + 1 ? p_.definedBodies_.back() : syntax::NodeId(), sp.start);
                     if (bound != bound_.end()) {
                         int raised = 0;
                         std::vector<int> laid;

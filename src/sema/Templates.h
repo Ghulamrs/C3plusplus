@@ -325,6 +325,10 @@ public:
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
+    // A covered body's constants as the Typer reads them under `symbol`'s binding, against its replay's: apart fails the unit.
+    void constantsHeld(const std::string &symbol, syntax::NodeId replay, std::size_t start);
+    std::string constantsApart(const std::string &symbol, syntax::NodeId read, syntax::NodeId replay) const;
+    long long constantOf(const Bound *b, syntax::NodeId id, bool *has) const;
     bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr,
                            const std::vector<std::string> *guards = nullptr);
     std::map<std::size_t, std::pair<std::string, Substituted> > memberMade_;     // by start: a covered member body owed no replay, its symbol
