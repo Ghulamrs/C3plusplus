@@ -5240,3 +5240,26 @@ specializations when none of its bodies names the read's template (`makeClass` c
 typedef's `X<$T0>`, ahead of the members' (the replay reads typedefs first): suite **810**, self-host **35,154 beside**, class
 differ 0 in both (the 18 and 151 gone), nonzero 353 / 0; no gate run. The 13,739 `iterator_traits<$T0>` stay refused there:
 next, why `earlyArgs` still refuses them (a debug line in `classShape`'s member-type branch, as m83s-dbg.sh did).
+
+## M8.3 slice 3b: a member type of a template with partial specializations, its class made before the class the door takes (lane m83t, 2026-11-24)
+
+**Commit 1** (m83s's n4, gated): `earlyArgs` takes a template with partial specializations when none of its bodies (the
+primary's or a partial's) names the read's template - `makeClass` picks the partial, the same pattern match the replay uses, so
+the class made first is the replay's - and `typedefsCarried` wants a typedef's `X<$T0>` whose `X<U>` the program had not
+declared, ahead of the members' (the replay reads the typedefs first). Probe `template-subst-partial` (`Traits` with `T *` and
+`const T *` partials, `Rev<int *>` and `Rev<const double *>`; clang's 9 9 18 / 2.5 5.0 on Windows, cxx3-msvc the same). The
+measure: suite **814 of 2,184** (792; the probe's 4), self-host **35,154 beside** under the check (35,003). Census: no check 814
+made, nonzero 353 (REF's); under the check no class differ (m83s's 18 skip differs gone), self-host nonzero 0, no class differ.
+src/: `Templates.cpp` +10, `Templates.h` +1 (96,642 -> 96,653). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF d0a6d92b): identical 0 differ on four targets plain (1934/3868/1934/1934) and with
+`-templates=subst` on three (1934/3868/1934; the covered shapes, a data member's and a signature's class template-id the program
+had not declared, and now one of a template with partials); subst.sh 0 failed, then run.sh 1312/0, then run.sh under the flag
+1312/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0,
+memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, alone,
+11:55:32-11:57:07, ~1.6 min), names.sh 967/0, overload.sh 46/0.
+**Found, not yet mended**: the self-host's 13,739 "a member type of another class over its parameters" are not `earlyArgs`'s - a
+debug line shows it takes `iterator_traits<$T0>` under the binding (a pointer argument). They are all `reverse_iterator<$T0>`,
+whose body holds `template <class U> reverse_iterator(const reverse_iterator<U> &)`: the first `classBefore` (with `wanted`)
+is refused by `classBeyond`'s "a member template", so `idsBefore` makes nothing, and the second (no `wanted`) reports the
+signature's member type because `classShape` is asked before `classBeyond`. The census names the wrong reason (owed: the
+member template's reason first); the next step for these is a member template in a class made from the read.
