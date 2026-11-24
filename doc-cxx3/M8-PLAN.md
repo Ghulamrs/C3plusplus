@@ -5757,3 +5757,29 @@ Gates (REF f1ca11db), on n5 (the commit's build): subst.sh 0 failed, run.sh 1327
 **Next**: a non-type parameter in a base (`Q : V<I>`, refused as a base over its parameters) and in a typedef's or a bound's
 expression (`[N + 1]`, `X<N + 1>`, folded under the values), member bodies folded under the values (valueShape) rather than
 replayed; then the 577 `unordered_map<unsigned,...>`.
+
+## M8.3 slice 3d: a dependent member keyed by its owner, so two reads' `pair<table::iterator, bool>` are two pattern ids, under -templates=subst (lane m83ak, 2026-11-24)
+
+Found by three debug builds (boxkit/m83ak-dbgline.txt, m83ak-dbg2.sh, m83ak-dbg3.sh over Templates.cpp): the self-host's
+`unordered_map<unsigned,...>` of Parser.h stopped on `pair<table::iterator, bool> insert` because the `table` that
+`iterator`'s owner named was `unordered_set`'s (`__hash_table<$T0,$T0,__unordered_set_key<$T0>,...>`), not its own -
+keySpelling spelled every dependent member as `dependent member type`, so `pair<table::iterator, bool>` read in
+`<unordered_set>` and in `<unordered_map>` was one shallow class, and readIds_ kept the last read's arguments. Not the
+program's `pair<const unsigned,V>` (a map over the same arguments first, as members, at namespace scope: all `equal`).
+keySpelling now spells a dependent member as its owner's key and `::name`; a real specialization's key has none.
+Probe `template-subst-twotables` (two class templates each naming `Pair<iterator, bool>` over their own table's
+`table::iterator`; 7 9 1 2 0 by hand, cxx3 the same plain, under the flag and under the check; its 6 classes `equal`, REF 5
+and one stopped on "a class template-id over dependent arguments").
+src 97,211 -> 97,212 (+1); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2814, 2117, 2065).
+The measure: class specializations made with no replay - suite 1,502 of 2,184 (1,484; the probe's 6), self-host 72,623 of
+74,390 beside under the check (72,046: the 577 `unordered_map<unsigned,...>` of Parser.h).
+Census: no check nonzero 353; check `equal` 1,671, no class differ, nonzero 353; self-host nonzero 0, `equal` 73,095.
+Gates (REF a8dd1cd3): identical 0 differ on four targets plain (1966/3932/1966/1966) and with `-templates=subst` on three
+(1966/3932/1964); run.sh 1328/0, then run.sh under the flag 1328/0 (the two counted beyond the probe's: a set-aside probe rsync
+left in the box tree); subst.sh: its one failure is that set-aside probe's stale output in tests/out-subst (an unread reason of
+`G::get(...)`), removed after the run - owed: subst.sh once more on a clean tree (the wave gate); static rc 0 (exclusions 0/0
+after the re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and
+ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full ~3.5 min), names.sh 982/0
+with the probe, overload.sh 46/0, clang 19 and cxx3-msvc on the probe 7 9 1 2 0.
+**Next**: the suite's "a pack or template parameter, bound by name" (136), not reached this hour; the self-host's next
+largest after this: a pack or template parameter 401, non-type 259, bound to a class over its parameters 252.

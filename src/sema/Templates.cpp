@@ -20,6 +20,7 @@ static std::string keySpelling(const Type *t) {
         return t->isPointer() ? keySpelling(t->unqualified()) + " const" : "const " + keySpelling(t->unqualified());
     if (t->isEnumeration()) return "enum " + t->enumTag();
     if (t->isPointer() && !t->pointee()->isFunction()) return keySpelling(t->pointee()) + " *";
+    if (t->kind() == Kind::DependentMember) return keySpelling(t->pointee()) + "::" + t->tag();     // `table::iterator` by its owner
     if (t->kind() == Kind::LValueRef) return keySpelling(t->referent()) + " &";
     if (t->kind() == Kind::RValueRef) return keySpelling(t->referent()) + " &&";
     return t->describe();
