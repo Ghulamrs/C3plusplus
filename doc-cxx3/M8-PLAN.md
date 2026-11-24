@@ -5200,3 +5200,82 @@ Gates (the commit's tree, REF 332e3cab): identical 0 differ on four targets plai
 raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (n1 full, alone, 00:46:24-00:48:03, ~1.6 min; the final
 tree's delta 01:00:15-01:01:46, ~1.5 min), probe on Windows clang 4 5 7 / 2.5 and cxx3-msvc the same, names.sh 964/0, overload.sh 46/0.
 Left: a member type of another class (13,691 self-host), a data member of a class the read named over its parameters (2,582).
+
+## M8.3 slice 3b: a member type of another class, its class made before the class the door takes (lane m83s, 2026-11-24)
+
+**The measure**: classes made with no replay - suite **783 of 2,184** (779; the probe's 4, two of them REF's too), self-host
+**35,003 beside** under the check (35,003, unchanged).
+
+**Commit 1** (m83r's n5 and the door's want): `memberUnder` asks `readId`, so `X<$T0>::m` over a shallow the read's end cleared
+finds the program's `X<U>` by its kept id; `classShape` wants, for `idsBefore`, the class `X<$T0>` of a member type a member
+function's signature names when the program had not declared it and `earlyArgs` takes it, and the second `classBefore` then finds
+the member in the class `idsBefore` made (in the body's order, through `makeClass`). Probe `template-subst-memtype` (clang's
+5 7 / 2.5 on Windows; `Traits<int>` before `Box<int>`, which is made from the read).
+**Why the self-host did not move, measured** (a debug build over Templates.cpp, Parser.cpp, Lowering.cpp): every member type
+the door met there is `iterator_traits<$T0>::...`, a template with two partial specializations, which `earlyArgs` refuses. The
+next commit takes them; this one is the path they need.
+**What it changed in the census**: under the check no class is made from the read that the replay refuses, but "differ: the
+class skip before the replay and after it: replayed: a member typedef or alias over a type the binding does not carry" is new
+(tests/cases 18, self-host 151): before the replay a typedef `typename X<T>::m` is refused because `X<U>` is not made yet, after
+it `memberUnder` now finds the replay's `X<U>` and takes it. The class is replayed either way (no-check census 783 made, as
+under the check), so nothing the program sees changes; owed: the typedef's `X<U>` made before the class too (tried, below).
+Census (x86_64-linux): **tests/cases** with no check 783 made, nonzero 353 (REF's); under the check class equal 1,083 (907).
+**Self-host** under the check: nonzero 0, 35,003 beside, class equal 53,300 (39,561); "a member type of another class over its
+parameters" 13,739 before the replay (unchanged); frames, shells and made 3,865 + 2,073 equal.
+src/: `Templates.cpp` +7 (96,621 -> 96,628). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF b6c8b37a): identical 0 differ on four targets plain (1930/3860/1930/1930) and with `-templates=subst` on three (1930/3860/1930; the covered shapes as at m83r, and a member function over a member type of a class template-id the program had not declared, of a template with no partial); subst.sh 0 failed, then run.sh 1310/0, then run.sh under the flag 1310/0 (1310 pass, 0 fail; the fallbacks are the census above); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, alone, 11:09:23-11:13:08, ~3.8 min), probe on Windows clang 5 7 / 2.5 and cxx3-msvc the same, names.sh 965/0, overload.sh 46/0.
+
+**Commit 2** (work (2)): a data member of a class template-id the read named over its parameters (`Cell<$T0> c`) is the
+program's `Cell<U>` where it was declared before the class (`carriedId`, carried as the signatures' ids are), and otherwise wanted
+by `idsBefore` when `earlyArgs` takes it, so the door makes it first and the class from the read. The replay makes a data
+member's class and a signature's in the body's order, which the read's members and signatures do not keep apart: a class
+wanting both is refused by name ("class template-ids made first for a data member and a member function's signature").
+Probe `template-subst-datamember` (clang's 9 / 3.0 8 on Windows). The measure: suite **792 of 2,184** (783: the probe 4,
+template-nested 3, template-nested-angle 1, template-subst-spec 1), self-host 35,003 beside (unchanged: its 2,606 are refused by
+`earlyArgs`, the same templates as below). Census: no check 792, nonzero 353; under the check the same 18 skip differs as
+commit 1 (self-host 151), no other; self-host nonzero 0. src/: `Templates.cpp` +14 (96,628 -> 96,642). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF b6c8b37a): identical 0 differ on four targets plain (1932/3864/1932/1932) and with `-templates=subst` on three (1932/3864/1932; the covered shapes and a data member of a class template-id the program had not declared, of a template with no partial); subst.sh 0 failed, then run.sh 1311/0, then run.sh under the flag 1311/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta, alone, 11:39:41-11:42:10, ~2.5 min), probe on Windows clang 9 / 3.0 8 and cxx3-msvc the same, names.sh 966/0, overload.sh 46/0.
+**Tried, not committed (the hour)**: `boxkit/m83s-n4-wip.patch` (against commit 2) - `earlyArgs` takes a template with partial
+specializations when none of its bodies names the read's template (`makeClass` chooses the partial), and `typedefsCarried` wants a
+typedef's `X<$T0>`, ahead of the members' (the replay reads typedefs first): suite **810**, self-host **35,154 beside**, class
+differ 0 in both (the 18 and 151 gone), nonzero 353 / 0; no gate run. The 13,739 `iterator_traits<$T0>` stay refused there:
+next, why `earlyArgs` still refuses them (a debug line in `classShape`'s member-type branch, as m83s-dbg.sh did).
+
+## M8.3 slice 3b: a member type of a template with partial specializations, its class made before the class the door takes (lane m83t, 2026-11-24)
+
+**Commit 1** (m83s's n4, gated): `earlyArgs` takes a template with partial specializations when none of its bodies (the
+primary's or a partial's) names the read's template - `makeClass` picks the partial, the same pattern match the replay uses, so
+the class made first is the replay's - and `typedefsCarried` wants a typedef's `X<$T0>` whose `X<U>` the program had not
+declared, ahead of the members' (the replay reads the typedefs first). Probe `template-subst-partial` (`Traits` with `T *` and
+`const T *` partials, `Rev<int *>` and `Rev<const double *>`; clang's 9 9 18 / 2.5 5.0 on Windows, cxx3-msvc the same). The
+measure: suite **814 of 2,184** (792; the probe's 4), self-host **35,154 beside** under the check (35,003). Census: no check 814
+made, nonzero 353 (REF's); under the check no class differ (m83s's 18 skip differs gone), self-host nonzero 0, no class differ.
+src/: `Templates.cpp` +10, `Templates.h` +1 (96,642 -> 96,653). EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF d0a6d92b): identical 0 differ on four targets plain (1934/3868/1934/1934) and with
+`-templates=subst` on three (1934/3868/1934; the covered shapes, a data member's and a signature's class template-id the program
+had not declared, and now one of a template with partials); subst.sh 0 failed, then run.sh 1312/0, then run.sh under the flag
+1312/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0,
+memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full, alone,
+11:55:32-11:57:07, ~1.6 min), names.sh 967/0, overload.sh 46/0.
+**Found, not yet mended**: the self-host's 13,739 "a member type of another class over its parameters" are not `earlyArgs`'s - a
+debug line shows it takes `iterator_traits<$T0>` under the binding (a pointer argument). They are all `reverse_iterator<$T0>`,
+whose body holds `template <class U> reverse_iterator(const reverse_iterator<U> &)`: the first `classBefore` (with `wanted`)
+is refused by `classBeyond`'s "a member template", so `idsBefore` makes nothing, and the second (no `wanted`) reports the
+signature's member type because `classShape` is asked before `classBeyond`. The census names the wrong reason (owed: the
+member template's reason first); the next step for these is a member template in a class made from the read.
+
+**Commit 2** (the census names the blocker): `classBefore` reports `classBeyond`'s refusal before the shape's. Under a member
+template the first `classBefore` (with `wanted`) is refused, `idsBefore` makes nothing, and the second then failed on a
+signature's id that only that refusal left unmade - so the census named an id, not the member template. Only the reason
+changes: every refusal of either starts "replayed:", so the door decides as before (identical 0 differ). Why it is needed
+for the next step: the measure's next classes are these. The self-host's "before the replay: replayed: a member template" is
+now **29,588** (`reverse_iterator<$T0>` 13,739 by its converting constructor template, `vector<$T0>`'s `initializer_list<$T0>`,
+`pair<$T0,$T1>`'s `template <class U1, class U2> pair(const pair<U1, U2> &)`), the cases' 540 (57); the signature lines of 13,739 and 9,289
+fall to 0 and 906 (its own template under other arguments, 2,234, is `pair<const K, V>` naming `pair<K, V>`). The measure unchanged: suite 814, self-host 35,154 beside. src/: `Templates.cpp` +1 (96,653 -> 96,654).
+EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF d0a6d92b): identical 0 differ on four targets plain (1934/3868/1934/1934) and with
+`-templates=subst` on three (1934/3868/1934; commit 1's shapes); subst.sh 0 failed, then run.sh 1312/0, then run.sh under the
+flag 1312/0; census no class differ in the cases or the self-host, nonzero 353 (REF's) / 0; self-compile Templates.cpp and
+ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta, alone, ~1 min, done 12:14:09), names.sh 967/0,
+overload.sh 46/0, the probe on clang and cxx3-msvc the same.

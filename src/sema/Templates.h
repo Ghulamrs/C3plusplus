@@ -283,7 +283,7 @@ public:
     std::string classSkip(std::size_t start, const std::string &tag, const std::vector<PendingBody> &bodies, const std::string &name,
                           std::size_t typedefsFrom) const;     // the class skip's shape
     std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > > readTypedefs_;     // step (2): by start, in order
-    std::string typedefsCarried(std::size_t start, const Substituted &s) const;
+    std::string typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted = nullptr) const;
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
