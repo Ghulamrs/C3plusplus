@@ -3302,6 +3302,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         Substituted laidAs = s;
         readStands(start, made, &laidAs);
         std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), laidAs, made) : shape;
+        if (held == "equal") held = staticsHeld(start, decl, tag, s, made, useParams, useBinding, useValues);
         // Its member functions' symbols, the replay's for the read's: held under the check, kept for its bodies' records either way.
         const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
         if (held == "equal") held = members;
@@ -3582,7 +3583,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
     if (read->hasVptr()) return "replayed: a virtual function";
-    if (!read->staticMembers().empty()) return "replayed: a static data member";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         if (params[q].type != nullptr) continue;     // a non-type parameter: its value, in the replayed bodies alone
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
@@ -3597,6 +3597,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         s->to.push_back(binding[q]);
     }
+    const std::string statics = staticShape(start, *s);
+    if (!statics.empty()) return statics;
     // A data member's place in the body: its name in the class's own braces before `;`, `,`, `[` or `=`; 0 where none is.
     const auto memberAt = [&](const std::string &n) -> std::size_t {
         for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
@@ -3823,6 +3825,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
         p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
+    staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
     ClassLaidOut laid;
     Substituted own = s;     // a pointer to the class itself is one to the class being made
     readStands(start, type, &own);
@@ -3846,6 +3849,112 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.currentClass_ = outerCurrent;
     p_.classStack_.swap(outerClasses);
     return made;
+}
+
+// A static data member's declarator in the class's own braces: the token after its name and bounds, 0 where none is; `cx`
+// whether `constexpr` is written on its declaration, `name` its name's position.
+std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const {
+    *cx = false;
+    for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
+        const Token &k = p_.tokens_[t], &next = p_.tokens_[t + 1];
+        braces += k.is("{"), parens += k.is("(");
+        if ((k.is("}") && --braces == 0) || (braces == 0 && k.is(";"))) break;
+        if (k.is(")") && parens > 0) parens--;
+        if (braces != 1 || parens != 0) continue;
+        if (k.is(";") || k.is("{") || k.is("}") || k.is(":")) *cx = false;
+        *cx = *cx || k.is("constexpr");
+        if (k.text != n || !(next.is(";") || next.is(",") || next.is("[") || next.is("=") || next.is("{"))) continue;
+        *name = k.pos;
+        std::size_t at = t + 1;
+        while (at < p_.tokens_.size() && p_.tokens_[at].is("["))
+            for (int d = 0; at < p_.tokens_.size(); ) {
+                d += p_.tokens_[at].is("[") ? 1 : p_.tokens_[at].is("]") ? -1 : 0;
+                at++;
+                if (d == 0) break;
+            }
+        return at;
+    }
+    return 0;
+}
+
+// Work (1): what keeps a read static data member from being declared by staticsFromRead under `s`, by name; empty when nothing.
+std::string Templates::staticShape(std::size_t start, const Substituted &s) const {
+    const Type *read = readClass_.at(start);
+    const auto names = [&](const std::string &n) {     // a template, whose use in an initialiser makes a class out of the body's order
+        if (templates_.count(n) != 0) return true;
+        for (std::map<std::string, TemplateDecl>::const_iterator i = templates_.begin(); i != templates_.end(); ++i)
+            if (i->first.size() > n.size() + 2 && i->first.compare(i->first.size() - n.size() - 2, n.size() + 2, "::" + n) == 0) return true;
+        return false;
+    };
+    for (const Type::StaticMember &m : read->staticMembers()) {
+        bool cx = false;
+        std::size_t name = 0;
+        const std::size_t at = staticAt(start, m.name, &cx, &name);
+        if (at == 0) return "replayed: a static data member its class's braces do not declare by name";
+        if (cx) return "replayed: a constexpr static data member";
+        const Type *t = substituted(s, m.type), *e = t;
+        if (p_.dependentType(t)) return "replayed: a static data member of a type the binding does not carry";
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        e = e->unqualified();
+        if (e == read || e->tag().find('$') != std::string::npos || readIds_.count(e) != 0)
+            return "replayed: a static data member of a class the read named over its parameters";
+        for (std::size_t k = at, depth = 0; k < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{")); k++) {
+            const Token &w = p_.tokens_[k];
+            depth += w.is("(") || w.is("{") || w.is("[");
+            if ((w.is(")") || w.is("}") || w.is("]")) && depth > 0 && --depth == 0 && w.is("}")) break;
+            if (depth == 0 && (w.is(";") || w.is(","))) break;
+            if (w.kind == TokenKind::Ident && names(w.text)) return "replayed: a static data member's initialiser naming a template";
+        }
+    }
+    return std::string();
+}
+
+// Work (1): the read's static data members declared on `owner` by the class body's own path (Parser::declareStaticMember), each at
+// its name in the body under the binding and in `scope`'s braces, so an initialiser in the class is evaluated as the replay does.
+void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, Type *owner,
+                                const Type *scope, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
+                                const std::vector<long long> &values) {
+    const std::vector<Type::StaticMember> &statics = readClass_.at(start)->staticMembers();
+    if (statics.empty()) return;
+    std::vector<Shadow> undo;
+    bindTemplateParameters(params, binding, values, Packs(params.size()), &undo);
+    const Parser::LocalsHidden hidden(&p_);
+    const std::size_t resume = p_.at_, angle = p_.angleSplit_;
+    std::vector<const Type *> outerClasses(1, scope);
+    outerClasses.swap(p_.classStack_);
+    const Type *outerCurrent = p_.currentClass_;
+    p_.currentClass_ = nullptr;
+    const std::vector<std::string> outerStack = p_.namespaceStack_;
+    if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+    for (const Type::StaticMember &m : statics) {
+        bool cx = false;
+        std::size_t name = 0;
+        p_.at_ = staticAt(start, m.name, &cx, &name);
+        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substituted(s, m.type), name), m.access, m.isVolatile, m.isThreadLocal, false);
+    }
+    p_.namespaceStack_ = outerStack;
+    p_.currentClass_ = outerCurrent;
+    p_.classStack_.swap(outerClasses);
+    p_.angleSplit_ = angle;
+    p_.at_ = resume;
+    unbindTemplateParameters(undo);
+}
+
+// Under -check=templates: staticsFromRead's members on a class of their own, in the scope of `made`, held against the replay's.
+std::string Templates::staticsHeld(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, const Type *made,
+                                   const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
+                                   const std::vector<long long> &values) {
+    Type *mine = p_.types_.anonymousStruct(made->kind());
+    staticsFromRead(start, decl, tag, s, mine, made, params, binding, values);
+    const std::vector<Type::StaticMember> &a = mine->staticMembers(), &b = made->staticMembers();
+    if (a.size() != b.size()) return "differ: the number of static data members";
+    for (std::size_t i = 0; i < a.size(); i++) {
+        if (a[i].name != b[i].name || a[i].type != b[i].type || a[i].access != b[i].access || a[i].symbol != b[i].symbol)
+            return "differ: a static data member's name, type, access or symbol";
+        if (a[i].folded != b[i].folded || a[i].value != b[i].value || a[i].isThreadLocal != b[i].isThreadLocal || a[i].isVolatile != b[i].isVolatile)
+            return "differ: a static data member's value, thread_local or volatile";
+    }
+    return "equal";
 }
 
 static std::string retagged(std::string w, const std::string &from, const std::string &to) {
@@ -4003,7 +4112,6 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
         if (a.type != b.type || a.offset != b.offset || a.access != b.access || a.isVirtual != b.isVirtual || a.direct != b.direct || a.written != b.written)
             return "differ: a base's class, offset or access";
     }
-    if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
     const bool noData = laid.members.empty() && laid.totalBits == 0;     // completeClass's data size and cl's flags from `laid`

@@ -298,6 +298,12 @@ public:
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,
                               const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
+    std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const;     // a static member's declarator
+    std::string staticShape(std::size_t start, const Substituted &s) const;     // what keeps the read's static data members from the read
+    void staticsFromRead(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, Type *owner, const Type *scope,
+                         const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
+    std::string staticsHeld(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, const Type *made,
+                            const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
                            const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args);
