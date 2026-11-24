@@ -5768,3 +5768,4 @@ box shared), names.sh 983/0, overload.sh 46/0.
 **Next**: the suite's other 102 of the reason name the pack in a signature (`f(Ts... a)`), a data member or a base: a pack
 expanded under the binding in the read's member signatures (substituted over `packExpansion`), which the self-host's 401
 (`function<R(Args...)>`, `__fn_model`) need as well; after it, the suite's non-type 350 (lane m83al's).
+Owed above, run after the commit on its tree (b3957edc, the probe naming its pack in a data member): subst.sh 0 failed.
