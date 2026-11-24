@@ -5251,3 +5251,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83aa): a constructor made from the re
 under -check=templates against the replay's (the check had not seen it); map and set made from the read. **Class
 specializations made with no replay: suite 1,301 of 2,184 (from 1,272), self-host 67,222 held equal under the check (from
 65,354).** Nothing changes without the flag.
+
+**m6d-w35's wave landed, 2026-11-24 (gate m6dw35g at 91284b8a against main eb0a2501: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ab, m83ac): a constructor made from the read lays the replay's guard for a member
+with a destructor; a type parameter bound to a reference in a class made from the read (two shapes refused by name). **Class
+specializations made with no replay: suite 1,320 of 2,184 (from 1,301), self-host 69,034 held equal under the check (from
+67,222).** Nothing changes without the flag.
