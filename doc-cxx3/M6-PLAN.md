@@ -5292,3 +5292,12 @@ argument of another id; a dependent member keyed by its owner (two tables' pair<
 the 577 unordered_map<unsigned,...> of Parser.h made. **Class specializations made with no replay: suite about 1,511 of 2,184
 (m83aj +9, m83ak +18 over the base; not census-counted merged), self-host 72,632 of 74,390 held equal under the check.**
 Nothing changes without the flag.
+
+**m6d-w42's wave landed, 2026-11-25 (gate m6dw42g at 1c459bd9 against main 558112af: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** Two lanes' lines (m8-3ap: m83al, m83an, m83ap over main; m8-3ao: m83am, m83ao), merged by hand -
+the plan's and EXCLUSIONS' conflicts, Templates.h's Substituted given both lanes' fields, and two locals `from` in classShape
+(one renamed, 1c459bd9); the merged tree built and censused under -check=templates on Linux before the gate (353 nonzero, as
+the base). M8.3: a data member's bound over the values folded; V<N + 1> keyed by value; a non-type parameter in a static
+member's initialiser; a member typedef naming its own class; a pack named in member bodies or its tag, and expanded in member
+signatures and data members. **Class specializations made with no replay: suite about 1,720 of 2,184 (m8-3ap 1,705 and
+m8-3ao's pack classes; not counted merged), self-host about 73,400 of 74,390.** Nothing changes without the flag.
