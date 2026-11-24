@@ -1139,6 +1139,7 @@ void Parser::topLevel(Program &program) {
     if (!replayingInline_) localTypes_.clear();
     // Closures are numbered within the function that writes them, which is what clang does.
     lambdaCount_ = 0;
+    mayThrow_ = 0;      // [except.spec]/9 asks of this definition alone, never of what was read before it
     // The mem-initializer list, [class.base.init], parsed here because `this` and the parameters are in scope and the body has not begun.
     std::vector<MemberStep> memberInits;
     auto addStep = [&](Effect e) { memberInits.emplace_back(); memberInits.back().effects.push_back(std::move(e)); };

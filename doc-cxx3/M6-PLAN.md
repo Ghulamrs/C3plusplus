@@ -5136,3 +5136,152 @@ signature kept from the declaration's read (TemplateDecl::pattern, no second rea
 -templates=subst measured - stages 0, 1 and 2 the same object for 102 of 102 sources, stage 2 = 3 owed (lane m82aj). The gate's
 one failure on its first run was the Mac's lldb step, case d1 with no output at all - lldb not starting on its first run after
 the Mac was cleaned and restarted; its verdict cleared, the step alone on the same tree (`-k`): 5 passed, 0 failed.
+
+**m6d-w16's wave landed, 2026-11-23 (gate m6dw16g at f0a710a9 against main 270035bb: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.2's close (M8-PLAN, m82aj): the self-host under -templates=subst - tools/self-host on Linux at
+-O0, the flag on every stage - gives the same object for 102 of 102 sources from stages 0, 1 and 2 and from stages 2 and 3, the
+row's close criterion; the member-template door keeps the declaration's pattern (no second read); tests/subst.sh's two probes
+check that M8.1's stand-in takes none of their bodies and that none replays. Nothing changes without the flag.
+
+**m6d-w17's wave landed, 2026-11-23 (gate m6dw17g at c8a05d51 against main e5a82b26: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3's start (M8-PLAN, m83a-m83b): the plan in slices 3a-3e and the class door's census; slice 3a,
+a class specialization's layout built by substitution and held against the replay's; slice 3b's checks - each member's read
+signature kept past the read (readMembers_) and held against the replay's (classMembers), and the Itanium symbols spelled for
+the real tag - 406 of the suite's class specializations and 3,868 of the self-host's held equal; the replay still makes the
+program's class, so nothing changes with or without the flag.
+
+**m6d-w18's wave landed, 2026-11-23 (gate m6dw18g at e573c1a6 against main 5a8581d0: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83c-m83d): the class check holds the Microsoft member names too, so 406 of
+the suite's class specializations and 3,864 of the self-host's are held equal on layout, members, specials and both ABIs'
+symbols; and a covered class's held member body that reaches no `this` is typed from the read under the class's binding beside
+the replay and lowered from the read where typedApart holds them equal (52 suite / 72 self-host bodies); the replay still
+makes every class and runs for every member body, so nothing changes without the flag.
+
+**m6d-w19's wave landed, 2026-11-23 (gate m6dw19g at 255224fa against main f0c62d0e: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83e-m83f): a covered member body reaching `this` and its own class's
+members typed from the read beside the replay through one map from the read class to the program's (Typer::record) - 149
+suite / 337 self-host bodies; and a covered member body's frame steps logged at the class door (Parser::bodyFrames_), its
+frame, shell (`this` first) and made function held against the replay's (memberFrame) - self-host 338 of 338 equal, suite 148
+frames and 144 made of 149. The replay still runs for every member body, so nothing changes without the flag.
+
+**m6d-w20's wave landed, 2026-11-23 (gate m6dw20g at 2f226681 against main b45bd7a8: 40 passed, 0 failed, no row; the fixed
+point checked not owed; names.sh and overload.sh, which lane m83g ran on an earlier build, ran here on this tree).** M8.3 slice
+3b (M8-PLAN, m83g): the member bodies the checks find apart refused by name, and a covered class's held member bodies other
+than constructors and destructors made from the read with no replay under -templates=subst - 141 in the suite (139 without
+the probes), the self-host's 338 covered held equal under the check; the classes themselves are still the replay's, and
+nothing changes without the flag.
+
+**m6d-w21's wave landed, 2026-11-24 (gate m6dw21g at df038883 against main 762b9e0d: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 slice 3b (M8-PLAN, m83h): a data member named without `this->` read at its offset in its own
+class, so the refused bodies are covered again; and a covered class's constructors and destructors made from the read with no
+replay, with their Itanium C2/D2 aliases - 147 member bodies made with no replay in the suite (145 without the probes), the
+self-host's 338 covered held equal; the classes are still the replay's, and nothing changes without the flag.
+
+**m6d-w22's wave landed, 2026-11-24 (gate m6dw22g at 430b7118 against main a397bd63: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83i-m83j): the class skip's check (classSkip, readBodies_, classWhy) and the class
+door's decision before the replay (classBefore, classBeyond, laidFromRead), member typedefs and aliases kept by the read and
+held against the replay's (readTypedefs_, typedefsCarried); census only - nothing the program sees changes. The first run's
+one failure was names on Windows cut by the gate's time limit (no count line) while a lane ran names on the shared box; its
+verdict cleared, names alone on the same tree (`-k`): 963 passed, 0 failed.
+
+**m6d-w23's wave landed, 2026-11-24 (gate m6dw23g at 47f3be02 against main d361b85c: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83k): Parser::completeClass, the class-completion tail one function; the first class
+specializations made from the read with no replay under -templates=subst - 50 in the suite (47 without the probes), emitting
+what the replay emitted on the three targets the flag covers; the 158 initializer_list<X::Y> classes refused by name (their
+cause, Parser::localOf's cut at a '::', mended on m8-3l). Nothing changes without the flag.
+
+**m6d-w24's wave landed, 2026-11-24 (gate m6dw24g at 2a563298 against main 2a1242ac: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83l-m83m): Parser::localOf no longer cuts a tag at a '::' inside template arguments;
+the typedef classes made from the read; a type parameter bound to a class accepted at the class door. **Class specializations
+made with no replay: suite 393 of 2,184 (from 50), self-host 17,254 held equal under the check (from 0).** Nothing changes
+without the flag.
+
+**m6d-w25's wave landed, 2026-11-24 (gate m6dw25g at cd400ed5 against main c05b3ae9: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83n-m83o): the signature reason counted by kind and a template-id standing for a
+declared specialization; classes with written member functions and held bodies made from the read (membersFromRead), default
+arguments carried, a constexpr class body replayed by name. **Class specializations made with no replay: suite 668 of 2,184
+(from 393), self-host 27,684 held equal under the check (from 17,254).** Nothing changes without the flag.
+
+**m6d-w26's wave landed, 2026-11-24 (gate m6dw26g at 69f8394c against main 9afe7bc2: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83p): data members of class type made from the read; a conversion function named
+under the binding (memberName, Parser::conversionSpelling) for its declaration, symbol and held body's key. **Class
+specializations made with no replay: suite 735 of 2,184 (from 668), self-host 30,707 held equal under the check (from
+27,684).** Nothing changes without the flag.
+
+**m6d-w27's wave landed, 2026-11-24 (gate m6dw27g at 367583ab against main 78358d65: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83q, m83r): a member enumeration's data member refused by name; the template-ids a
+read clears kept (readIds_) and made before the class (idsBefore). **Class specializations made with no replay: suite 779 of
+2,184 (from 735), self-host 35,003 held equal under the check (from 30,707).** Nothing changes without the flag.
+
+**m6d-w28's wave landed, 2026-11-24 (gate m6dw28g at 2ba1e5ea against main efb44abd: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83s, m83t): a member type's class and a data member's class made before the class;
+a template with partial specializations taken by earlyArgs (the replay's match); the census names a member template first.
+**Class specializations made with no replay: suite 814 of 2,184 (from 779), self-host 35,154 held equal under the check (from
+35,003).** Nothing changes without the flag.
+
+**m6d-w29's wave landed, 2026-11-24 (gate m6dw29g at 56f4684b against main ccad35a5: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83u): member function templates in a class made from the read, declared by one
+path (Parser::memberTemplate) under the class's binding. **Class specializations made with no replay: suite 1,047 of 2,184
+(from 814), self-host 51,435 held equal under the check (from 35,154).** Nothing changes without the flag.
+
+**m6d-w30's wave landed, 2026-11-24 (gate m6dw30g at deca708c against main ae93b6a2: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83v): a typedef's X<$T0> made before the class, in typedef order ahead of the
+members. **Class specializations made with no replay: suite 1,147 of 2,184 (from 1,047), self-host 59,302 held equal under
+the check (from 51,435).** Nothing changes without the flag.
+
+**m6d-w31's wave landed, 2026-11-24 (gate m6dw31g at f7147112 against main a07d040e: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83w): pair<K,V> and pair<const K,V>, each naming the other, made inside the class
+at the member that names it (idsInside), where the replay makes it. **Class specializations made with no replay: suite 1,204
+of 2,184 (from 1,147), self-host 64,733 held equal under the check (from 59,302).** Nothing changes without the flag.
+
+**m6d-w32's wave landed, 2026-11-24 (gate m6dw32g at 3c321ecc against main 27a98d15: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83x, m83y): an id's id arguments made first (argsWanted); a class over plain bases
+made from the read; idsBefore names what stopped it; tests/open/partial-ctor-out-of-line records a refusal with no flag.
+**Class specializations made with no replay: suite 1,262 of 2,184 (from 1,204), self-host 65,332 held equal under the check
+(from 64,733).** Nothing changes without the flag.
+
+**m6d-w33's wave landed, 2026-11-24 (gate m6dw33g at 7f67e3a3 against main fe88fc77: 40 passed, 0 failed, no row, after two
+-k reruns - the first run failed 8 steps on the Linux disk at 71%, the landed gates' trees left there, removed; the fixed point
+checked not owed).** M8.3 (M8-PLAN, m83z): a signature id's arguments made first (argsWanted; earlyArgs counts ids already
+wanted). **Class specializations made with no replay: suite 1,272 of 2,184 (from 1,262), self-host 65,354 held equal under
+the check (from 65,332).** Nothing changes without the flag.
+
+**m6d-w34's wave landed, 2026-11-24 (gate m6dw34g at 6a11078c against main 4115dbc7: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83aa): a constructor made from the read records its members' constructors, held
+under -check=templates against the replay's (the check had not seen it); map and set made from the read. **Class
+specializations made with no replay: suite 1,301 of 2,184 (from 1,272), self-host 67,222 held equal under the check (from
+65,354).** Nothing changes without the flag.
+
+**m6d-w35's wave landed, 2026-11-24 (gate m6dw35g at 91284b8a against main eb0a2501: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ab, m83ac): a constructor made from the read lays the replay's guard for a member
+with a destructor; a type parameter bound to a reference in a class made from the read (two shapes refused by name). **Class
+specializations made with no replay: suite 1,320 of 2,184 (from 1,301), self-host 69,034 held equal under the check (from
+67,222).** Nothing changes without the flag.
+
+**m6d-w36's wave landed, 2026-11-24 (gate m6dw36g at 5a384fed against main 349d8c70: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ad): the parser's non-virtual base layout is one function (Parser::layBases),
+called by the parser and by a class made from the read; classLaid checks the data size and cl's zero-sized flags. **Class
+specializations made with no replay: suite 1,346 of 2,184 (from 1,320), self-host 71,081 held equal under the check (from
+69,034; of 74,390, the total re-counted by m83ae).** Nothing changes without the flag.
+
+**m6d-w37's wave landed, 2026-11-24 (gate m6dw37g at 5f9e6e9b against main 9171570c: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ae): __hash_node, a member pointing at its own class, made from the read; a class
+template-id a member already wants no longer refused. **Class specializations made with no replay: suite 1,360 of 2,184 (from
+1,346), self-host 71,987 of 74,390 held equal under the check (from 71,081).** Nothing changes without the flag.
+
+**m6d-w38's wave landed, 2026-11-24 (gate m6dw38g at 4b25614c against main b7b4b072: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83af): an argument that is a member type of a class already wanted taken by
+earlyArgs (unordered_map's pair<iterator, bool> insert). **Class specializations made with no replay: suite 1,368 of 2,184
+(from 1,360), self-host 72,046 of 74,390 held equal under the check (from 71,987).** Nothing changes without the flag.
+
+**m6d-w39's wave landed, 2026-11-24 (gate m6dw39g at 568951a3 against main 14a9399f: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ag): a non-type parameter named only in member bodies or as a plain [N] bound
+made from the read (Substituted carries the class's values). **Class specializations made with no replay: suite 1,436 of
+2,184 (from 1,368), self-host 72,046 of 74,390 held equal under the check (unchanged).** Nothing changes without the flag.
+
+**m6d-w40's wave landed, 2026-11-24 (gate m6dw40g at aed78fa9 against main 6b7f03d8: 40 passed, 0 failed, no row, after one
+-k rerun - the first run failed the 4 Windows idle steps on the shared Windows disk at 71%; our landed gates' trees removed,
+68.6%; the fixed point checked not owed).** The first wave of two lanes. M8.3 (M8-PLAN, m83ah, m83ai): -check=templates holds
+each covered body's constants against the replay's; static data members declared from the read (Parser::declareStaticMember).
+**Class specializations made with no replay: suite 1,484 of 2,184 (from 1,436), self-host 72,046 of 74,390 held equal under
+the check (each lane measured on its own tree; the merged tree not census-counted).** Nothing changes without the flag.

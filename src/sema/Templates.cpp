@@ -6,6 +6,7 @@
 #include "../parser/ParserInternal.h"
 #include "../Source.h"
 
+#include <cctype>
 #include <climits>
 #include <cstdlib>
 #include <algorithm>
@@ -365,6 +366,65 @@ const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
     return m != nullptr ? m : t;
 }
 
+// Slice 3g: the read laid `T a[N + 1]` with no bound; classShape folded it into `s.bounds`.
+const Type *Templates::dataUnder(const Substituted &s, const Member &m) const {
+    const std::map<std::string, long long>::const_iterator b = s.bounds.find(m.name);
+    if (b == s.bounds.end() || !m.type->isArray() || m.type->length() != -1) return substituted(s, m.type);
+    return p_.types_.arrayOf(substituted(s, m.type->pointee()), b->second);
+}
+
+// Slice 3g: a bound's tokens folded as int under the class's values - its non-type parameters, int literals, + - * / % and
+// parentheses (`level` 0 additive, 1 multiplicative, 2 unary); false at any other token or past int.
+static bool foldBound(const std::vector<Token> &k, std::size_t *t, std::size_t end, const std::vector<TemplateParam> &params,
+                      const std::vector<long long> &values, int level, long long *out) {
+    if (*t >= end) return false;
+    if (level == 2) {
+        const Token &x = k[*t];
+        ++*t;
+        if (x.is("-") || x.is("+")) { if (!foldBound(k, t, end, params, values, 2, out)) return false; *out = x.is("-") ? -*out : *out; return true; }
+        if (x.is("(")) return foldBound(k, t, end, params, values, 0, out) && *t < end && k[(*t)++].is(")");
+        if (x.kind == TokenKind::Num && !x.isFloat && !x.isChar && !x.suffixU && !x.suffixL && !x.suffixLL && x.value >= 0) { *out = x.value; return true; }
+        for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
+            if (params[q].type != nullptr && params[q].type->isInteger() && !params[q].name.empty() && x.text == params[q].name)
+                { *out = values[q]; return true; }
+        return false;
+    }
+    if (!foldBound(k, t, end, params, values, level + 1, out)) return false;
+    while (*t < end && (level == 0 ? k[*t].is("+") || k[*t].is("-") : k[*t].is("*") || k[*t].is("/") || k[*t].is("%"))) {
+        const std::string op = k[(*t)++].text;
+        long long b = 0;
+        if (!foldBound(k, t, end, params, values, level + 1, &b) || ((op == "/" || op == "%") && b == 0)) return false;
+        *out = op == "+" ? *out + b : op == "-" ? *out - b : op == "*" ? *out * b : op == "/" ? *out / b : *out % b;
+        if (*out < INT_MIN || *out > INT_MAX) return false;
+    }
+    return true;
+}
+
+// Slice 3h: the read's DepExpr of an argument (`X<N + 1>`) folded under `values` as foldBound folds a bound's tokens.
+static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long long *out) {
+    long long a = 0, b = 0;
+    if (e->op == DepExpr::Literal) return !e->floating && e->type != nullptr && e->type->kind() == Kind::Int && (*out = e->value) >= 0;
+    if (e->op == DepExpr::TemplateParam)
+        return e->index >= 0 && static_cast<std::size_t>(e->index) < values.size() && ((*out = values[static_cast<std::size_t>(e->index)]), true);
+    if (e->op != DepExpr::Operator || e->kids.empty() || e->kids.size() > 2 || !foldArg(e->kids[0], values, &a)) return false;
+    if (e->kids.size() == 1) return (e->code == "ng" || e->code == "ps") && ((*out = e->code == "ng" ? -a : a), true);
+    if (!foldArg(e->kids[1], values, &b) || ((e->code == "dv" || e->code == "rm") && (b <= 0 || a < 0))) return false;
+    *out = e->code == "pl" ? a + b : e->code == "mi" ? a - b : e->code == "ml" ? a * b : e->code == "dv" ? a / b : a % b;
+    return (e->code == "pl" || e->code == "mi" || e->code == "ml" || e->code == "dv" || e->code == "rm") && *out >= INT_MIN && *out <= INT_MAX;
+}
+
+// Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value, or (3h) its expression folded; a written
+// one (a read class's are its stand-ins), no.
+static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
+    long long v = 0;
+    if (!a->isType && !a->isPack && !a->isTemplate && a->expr != nullptr && a->dependentValue && foldArg(a->expr, s.values, &v) && v >= 0)
+        return a->expr = nullptr, a->dependentValue = false, a->value = v, true;
+    if (a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->dependentValue || !a->isParam) return false;
+    if (a->paramIndex < 0 || static_cast<std::size_t>(a->paramIndex) >= s.values.size()) return false;
+    a->isParam = false, a->value = s.values[static_cast<std::size_t>(a->paramIndex)];
+    return true;
+}
+
 // A specialization named over the parameters (`pair<const $T0,$T1>`) under `s`: the one the program declared by its key, or null.
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
     std::string name;
@@ -372,6 +432,7 @@ const Type *Templates::specializationUnder(const Substituted &s, const Type *o) 
     if (!readId(o, &name, &args)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
         if (args[k].isPack && !args[k].isTemplate && packUnder(s, &args[k])) continue;
+        if (!args[k].isType && argValued(s, &args[k])) continue;
         if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return nullptr;
         args[k].type = substituted(s, args[k].type);
     }
@@ -1641,6 +1702,9 @@ void Templates::memberFrame(const PendingBody &body, const Substituted &s, const
     const std::string symbol = p_.lookup_.functions_[body.which].symbol, stops = membersBuilt(body, symbol, &reads, &guards, s);
     const std::string built = stops.empty() ? builtApart(symbol, reads) : std::string();
     if (!built.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[body.start].pos) + ": " + built);
+    std::size_t root = p_.definedBodies_.size();
+    while (root-- > 0 && !(p_.syntaxFunctions_.count(p_.definedBodies_[root].v) && p_.syntaxFunctions_.at(p_.definedBodies_[root].v) == symbol)) {}
+    constantsHeld(symbol, root < p_.definedBodies_.size() ? p_.definedBodies_[root] : syntax::NodeId(), body.start);
     const std::vector<FrameEvent> read = stops.empty() ? guardedFrame(readFrames_[body.start], guards.size()) : readFrames_[body.start];
     if (read.empty() || replayed.empty()) { frameCensus_["member: no steps logged"]++; return; }
     if (wrapInherited(body)) { frameCensus_["member: replayed: a noexcept body wrapped by the calls of the bodies before it"]++; return; }
@@ -1761,6 +1825,56 @@ std::string Templates::madeApart(const Function &g, const Function &f) const {
     if (g.isNoexcept() != f.isNoexcept() || g.exceptionSpec() != f.exceptionSpec()) return "its exception specification";
     if (!f.synthesised().empty()) return "a synthesised function";
     return std::string();
+}
+
+// What a node folds to on the typed tree (Typer::typeNode): a sizeof's or a case's value, an enumerator's or a folded static
+// member's - under a binding, 2f's value first - and an array local's bound; `has` false where the node carries none.
+long long Templates::constantOf(const Bound *b, syntax::NodeId id, bool *has) const {
+    const Parser &p = p_;
+    *has = true;
+    if (b != nullptr && b->values.count(id.v) != 0) return static_cast<long long>(b->values.at(id.v)) - 2147483648LL;
+    const auto k = p.keywordValues_.find(id.v);
+    if (k != p.keywordValues_.end()) return k->second.first;
+    const auto c = p.caseFacts_.find(id.v);
+    if (c != p.caseFacts_.end() && !c->second.isDefault) return c->second.value;
+    const auto r = p.resolutions_.find(id.v);
+    if (r != p.resolutions_.end() && (r->second.what == Parser::Resolved::Enumerator || (r->second.what == Parser::Resolved::StaticMember && r->second.serial == 1)))
+        return r->second.value;
+    const auto l = p.declaredLocals_.find(id.v);
+    const Type *t = l != p.declaredLocals_.end() && l->second.type != nullptr ? l->second.type->unqualified() : nullptr;
+    if (t != nullptr && b != nullptr) t = substituted(b->s, t);
+    if (t != nullptr && t->isArray()) return t->length();
+    return *has = false, 0;
+}
+
+// Work (1): the two bodies walked together, node for node where their shapes agree; the first constant apart, by its text.
+std::string Templates::constantsApart(const std::string &symbol, syntax::NodeId read, syntax::NodeId replay) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const std::map<std::string, Bound>::const_iterator b = bound_.find(symbol);
+    std::vector<std::pair<syntax::NodeId, syntax::NodeId> > work(1, std::make_pair(read, replay));
+    while (!work.empty()) {
+        const syntax::NodeId a = work.back().first, y = work.back().second;
+        work.pop_back();
+        if (st.node(a).kind != st.node(y).kind || st.node(a).count != st.node(y).count) continue;     // a shape apart: the body check's
+        bool hasA = false, hasY = false;
+        const long long va = constantOf(b != bound_.end() ? &b->second : nullptr, a, &hasA), vy = constantOf(nullptr, y, &hasY);
+        if (hasA != hasY || va != vy)
+            return "a constant: '" + st.text(a) + "' " + (hasA ? std::to_string(va) : "none") + " for the replay's " + (hasY ? std::to_string(vy) : "none");
+        for (std::uint32_t c = 0; c < st.node(a).count; c++) work.push_back(std::make_pair(st.child(a, c), st.child(y, c)));
+    }
+    return std::string();
+}
+
+// The replay's body of `symbol` held against the read's: a difference fails the unit by name, as builtApart does.
+void Templates::constantsHeld(const std::string &symbol, syntax::NodeId replay, std::size_t start) {
+    const std::map<std::size_t, syntax::NodeId>::const_iterator read = readBody_.find(start);
+    if (read == readBody_.end() || !replay.valid() || p_.syntaxTree_.node(read->second).kind != p_.syntaxTree_.node(replay).kind) {
+        madeCensus_["constants: no body to hold"]++;
+        return;
+    }
+    const std::string apart = constantsApart(symbol, read->second, replay);
+    madeCensus_[apart.empty() ? "constants: equal" : "constants: differ: " + apart]++;
+    if (!apart.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[start].pos) + ": " + apart);
 }
 
 // Step 2's end: the function, its frame's alignment and the unit's records the replay's definition path leaves, made from the
@@ -2074,6 +2188,8 @@ void Templates::instantiatePending() {
                     if (bound != bound_.end()) replayCensus_[checkBodies_ ? skip : "replayed: " + skip]++;
                     p_.topLevel(*p_.current_);
                     p_.frameLog_ = logBack.was;
+                    if (bound != bound_.end() && checkBodies_)
+                        constantsHeld(sp.symbol, p_.definedBodies_.size() == rootsHad + 1 ? p_.definedBodies_.back() : syntax::NodeId(), sp.start);
                     if (bound != bound_.end()) {
                         int raised = 0;
                         std::vector<int> laid;
@@ -3363,6 +3479,7 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
             carried = !u->isFunction() && readIds_.count(u) == 0 && !(u->isStructOrUnion() && overParameters(u->tag()));
         }
         if (carried) continue;
+        if (q.type != nullptr && !q.isPack && argValued(s, &a)) continue;
         if (q.isPack || q.isTemplate || q.type != nullptr || !a.isType || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) return false;
         a.type = substituted(s, a.type);
         const Type *u = a.type;
@@ -3422,14 +3539,16 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
         const Type *had = p_.lookup_.findTypedef(tag);
         if (had != nullptr) { s.from.push_back(e), s.to.push_back(had); continue; }     // an id's argument, as the next one reads it
         std::vector<const Type *> types;
+        std::vector<long long> vals;     // a value argument's, as argValued gave it
         const TemplateDecl &decl = templates_.at(name);
         Packs packed(decl.params.size());     // a pack's members, with no type in the binding, as the parser binds a template-id's
         for (std::size_t k = 0; k < args.size(); k++) {
             types.push_back(args[k].isPack ? nullptr : args[k].type);
+            vals.push_back(args[k].isType || args[k].isPack ? 0 : args[k].value);
             if (args[k].isPack) packed[k] = PackMembers(args[k].pack), packed[k].values = args[k].packValues;
         }
         const Parser::Nesting deep(&p_, pos, "template instantiation");
-        s.from.push_back(e), s.to.push_back(makeClass(decl, tag, types, std::vector<long long>(types.size(), 0), args, packed, pos));
+        s.from.push_back(e), s.to.push_back(makeClass(decl, tag, types, vals, args, packed, pos));
         classCensus_["made before the class, as its replay makes it: a class template-id over its parameters"]++;
     }
     return std::string();
@@ -3494,6 +3613,97 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
     // keeps as the parameter (Type::boundParam) and substituted lays under `s`'s values; anywhere else it replays by name.
+    // Slice 3f: or in the primary's own id over its parameters in order (`V<N>`, `Box<T, N>`), the read class (readStands).
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator self = readMembers_.find(start);
+    const std::string readTag = self != readMembers_.end() ? self->second.first : std::string();
+    std::string ownKey = readTag.substr(0, readTag.find('<')) + "<";
+    for (std::size_t q = 0; q < params.size(); q++) ownKey += (q > 0 ? "," : "") + std::string(params[q].type != nullptr ? "$P" : "$T") + std::to_string(q);
+    const bool primary = readTag.find('<') != std::string::npos && readTag.compare(0, ownKey.size() + 6, ownKey + ">$read") == 0;
+    const std::size_t colons = ownKey.rfind("::", ownKey.find('<')), from = colons == std::string::npos ? 0 : colons + 2;
+    const std::string ownName = ownKey.substr(from, ownKey.find('<') - from);
+    const auto ownId = [&](std::size_t t) -> std::size_t {     // past the `>` of the own id at `t`, or `t`
+        if (!primary || p_.tokens_[t].text != ownName || t + 1 + 2 * params.size() >= p_.tokens_.size() || !p_.tokens_[t + 1].is("<")) return t;
+        for (std::size_t q = 0; q < params.size(); q++)
+            if (p_.tokens_[t + 2 + 2 * q].text != params[q].name || !p_.tokens_[t + 3 + 2 * q].is(q + 1 < params.size() ? "," : ">")) return t;
+        return t + 1 + 2 * params.size();
+    };
+    const auto idArg = [&](std::size_t t) {     // `N` a whole argument of a class template-id (`V<N>`, `Mx<M, N>`), made by its value
+        std::size_t lo = t, hi = t + 1, at = 0;     // 3h: or in one foldBound folds (`V<N + 1>`), which argValued folds as well
+        long long v = 0;
+        const auto stops = [&](std::size_t k) { return p_.tokens_[k].is(";") || p_.tokens_[k].is("{") || p_.tokens_[k].is("}"); };
+        for (int parens = 0; lo > start + 1 && !stops(lo - 1) && (parens > 0 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(","))); lo--)
+            parens += (p_.tokens_[lo - 1].is(")") ? 1 : 0) - (p_.tokens_[lo - 1].is("(") ? 1 : 0);
+        for (int parens = 0; hi < p_.tokens_.size() && !stops(hi) && (parens > 0 || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(","))); hi++)
+            parens += (p_.tokens_[hi].is("(") ? 1 : 0) - (p_.tokens_[hi].is(")") ? 1 : 0);
+        if (hi >= p_.tokens_.size() || lo <= start + 1 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(",")) || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(",")) ||
+            (hi != t + 1 || lo != t ? !foldBound(p_.tokens_, &(at = lo), hi, params, s->values, 0, &v) || at != hi || v < 0 : false))
+            return false;
+        for (std::size_t b = lo - 1, angles = 0; b > start; b--) {
+            const Token &x = p_.tokens_[b];
+            if (x.is(";") || x.is("{") || x.is("}") || x.is("(") || x.is(")") || x.is("=")) return false;
+            if (x.is(">")) angles++;
+            else if (x.is("<") && angles > 0) angles--;
+            else if (x.is("<")) {
+                const std::string &n = p_.tokens_[b - 1].text;
+                return !n.empty() && (std::isalpha(static_cast<unsigned char>(n[0])) || n[0] == '_') && n != "template" && n != "operator";
+            }
+        }
+        return false;
+    };
+    // Slice 3g: or in a data member's first bound (`T a[N + 1];`, in the class's own braces), folded into `s->bounds`.
+    const auto boundAt = [&](std::size_t t, std::size_t depth) {
+        std::size_t open = t, close = t, at = 0;
+        for (; open > start && !p_.tokens_[open].is("["); open--)
+            if (p_.tokens_[open].is(";") || p_.tokens_[open].is("{") || p_.tokens_[open].is("}") || p_.tokens_[open].is("]")) return false;
+        while (close + 1 < p_.tokens_.size() && !p_.tokens_[close].is("]") && !p_.tokens_[close].is(";")) close++;
+        long long v = 0;
+        if (depth != 1 || open <= start + 1 || !p_.tokens_[open].is("[") || !p_.tokens_[close].is("]") || p_.tokens_[open - 1].kind != TokenKind::Ident ||
+            !(p_.tokens_[close + 1].is(";") || p_.tokens_[close + 1].is(",")) || !foldBound(p_.tokens_, &(at = open + 1), close, params, s->values, 0, &v) ||
+            at != close || v <= 0)
+            return false;
+        for (std::size_t b = open - 1, parens = 0; b > start; b--) {     // a data member's declarator: inside no `(`, no typedef
+            const Token &x = p_.tokens_[b];
+            if (x.is(";") || x.is("{") || x.is("}")) break;
+            if (x.is("typedef") || x.is("static") || (x.is("(") && parens == 0)) return false;
+            parens += x.is(")"), parens -= x.is("(");
+        }
+        s->bounds[p_.tokens_[open - 1].text] = v;
+        return true;
+    };
+    // Slice 3i: or in a static data member's initialiser in the class's own braces (`static const T value = v;`), which
+    // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's.
+    const auto staticInit = [&](std::size_t t, std::size_t depth) {
+        bool equals = false;
+        for (int b = static_cast<int>(t), parens = 0, level = 0, colons = 0; depth == 1 && b > static_cast<int>(start); b--) {
+            const Token &x = p_.tokens_[static_cast<std::size_t>(b - 1)];
+            if (x.is(";") || x.is("{") || x.is("}") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            if (x.is(":") && (b < 2 || p_.tokens_[static_cast<std::size_t>(b - 2)].is("public") || p_.tokens_[static_cast<std::size_t>(b - 2)].is("private") ||
+                               p_.tokens_[static_cast<std::size_t>(b - 2)].is("protected")))
+                return false;
+            colons += x.is(":") ? 1 : x.is("?") && colons > 0 ? -1 : 0;     // a `:` no `?` before it matches is no conditional's
+            parens += x.is(")") ? 1 : x.is("(") ? -1 : 0;
+            if (equals && parens < level) return false;     // a parameter's default argument: `f(int a = N)`
+            if (!equals && x.is("=")) equals = true, level = parens;
+            if (x.is("static")) return equals && parens == level && colons == 0;
+        }
+        return false;
+    };
+    // Slice 3k: or in a `static_assert` in the class's own braces whose condition folds true under the values, as the replay finds.
+    const auto assertAt = [&](std::size_t t, std::size_t depth) {
+        std::size_t open = t;
+        while (depth == 1 && open > start && !p_.tokens_[open].is("static_assert"))
+            if (p_.tokens_[--open].is(";") || p_.tokens_[open].is("{") || p_.tokens_[open].is("}")) return false;
+        if (!p_.tokens_[open].is("static_assert") || !p_.tokens_[open + 1].is("(")) return false;
+        std::size_t comma = open + 2, at = open + 2;
+        for (int parens = 1; comma < p_.tokens_.size() && !(parens == 1 && p_.tokens_[comma].is(",")); comma++)
+            if (p_.tokens_[comma].is(";") || (parens += p_.tokens_[comma].is("(") ? 1 : p_.tokens_[comma].is(")") ? -1 : 0) == 0) return false;
+        long long a = 0, b = 0;
+        if (comma >= p_.tokens_.size() || t >= comma || !foldBound(p_.tokens_, &at, comma, params, s->values, 0, &a)) return false;
+        if (at == comma) return a != 0;
+        const std::string op = p_.tokens_[at++].text;
+        if (!foldBound(p_.tokens_, &at, comma, params, s->values, 0, &b) || at != comma) return false;
+        return op == "==" ? a == b : op == "!=" ? a != b : op == "<" ? a < b : op == ">" ? a > b : op == "<=" ? a <= b : op == ">=" && a >= b;
+    };
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
@@ -3503,9 +3713,12 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             }
         else if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
+        if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
+        if (depth == 1 && t < p_.tokens_.size() && p_.tokens_[t].is("static_assert") && !assertAt(t, depth)) return "replayed: a static_assert";
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
-                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0))
+                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
+                !boundAt(t, depth) && !staticInit(t, depth) && !assertAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
@@ -3521,7 +3734,17 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             return std::string("replayed: a base: ") + (over ? "a class template-id over its parameters" : b.type->polymorphic() ?
                    "a polymorphic class" : "a virtual base");
     }
-    if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
+    const std::map<const Type *, std::vector<Parser::BaseToLay> >::const_iterator keptBases = p_.readBases_.find(read);
+    if (read->dependentBase() && (keptBases == p_.readBases_.end() || !read->bases().empty()))
+        return "replayed: a base named through a parameter, which the read laid out as nothing";
+    for (std::size_t q = 0; read->dependentBase() && q < keptBases->second.size(); q++)
+        if (keptBases->second[q].type == nullptr || !readId(keptBases->second[q].type, nullptr, nullptr))
+            return "replayed: a base named through a parameter, which the read laid out as nothing";
+    for (std::size_t t = start, depth = 0; read->dependentBase() && t < p_.tokens_.size(); t++) {     // the read skipped each
+        if (depth == 1 && p_.tokens_[t].is("using")) return "replayed: a using-declaration beside a base over its parameters";
+        depth += p_.tokens_[t].is("{");
+        if (p_.tokens_[t].is("}") && --depth == 0) break;
+    }
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
@@ -3539,6 +3762,23 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     const std::string statics = staticShape(start, *s);
     if (!statics.empty()) return statics;
+    std::size_t baseIds = 0;     // slice 3j: `Q : V<I>`, its class made first, as the replay makes it reading the head
+    for (std::size_t q = 0; read->dependentBase() && q < keptBases->second.size(); q++) {
+        const Type *u = keptBases->second[q].type;
+        argsWanted(s, u, read, early, wanted, &baseIds);
+        const Type *real = carriedId(*s, u, early);
+        std::string name;
+        std::vector<TemplateArg> args;
+        if (real != nullptr && (real->kind() != Kind::Struct || !real->isComplete() || real->polymorphic() || real->hasVirtualBase() || real->isFinal()))
+            return "replayed: a base over its parameters: a polymorphic, final, incomplete or union class, or one of a virtual base";
+        if (real != nullptr && (p_.hasConstructors(real->tag()) || real->hasDestructor() || real->nonTrivialCopy() ||
+                                p_.lookup_.overloadsOf(real->tag() + "::operator=") != nullptr))     // the read's implicit members knew none
+            return "replayed: a base over its parameters with a constructor, a destructor or an assignment of its own";
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
+        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted))
+            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(baseIds++), u);
+        else return "replayed: a base: a class template-id over its parameters";
+    }
     // A data member's place in the body: its name in the class's own braces before `;`, `,`, `[` or `=`; 0 where none is.
     const auto memberAt = [&](const std::string &n) -> std::size_t {
         for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
@@ -3561,7 +3801,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     std::vector<std::size_t> dataAt;     // the data members that want ids, where the body declares them
     for (const Member &m : read->members()) {
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
-        const Type *t = substituted(*s, m.type), *e = t;
+        const Type *t = dataUnder(*s, m), *e = t;
         if (pointsAtOwn(m.type)) continue;     // `__hash_node *next`: a pointer, the made class once readStands maps it
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
@@ -3576,7 +3816,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
         std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
         std::vector<TemplateArg> args;
-        if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = substituted(*s, m.type);
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = dataUnder(*s, m);
         else if (over) {
             if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args, false, wanted))
                 return "replayed: a data member of a class the read named over its parameters";
@@ -3588,11 +3828,16 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             return "replayed: a data member of a member enumeration the read named over its parameters";
         if (!t->isComplete()) return "replayed: a data member of an incomplete type";
     }
+    for (const std::pair<const std::string, long long> &b : s->bounds) {     // each folded bound a data member's the read left open
+        bool open = false;
+        for (const Member &m : read->members()) open = open || (m.name == b.first && m.type->isArray() && m.type->length() == -1);
+        if (!open) return "replayed: a non-type parameter named outside its member bodies";
+    }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
-    const std::size_t dataIds = wanted != nullptr ? wanted->size() : 0;     // the replay makes them in the body's order, not data first
+    const std::size_t dataIds = wanted != nullptr ? wanted->size() - baseIds : 0;     // the replay makes them in the body's order, not data first
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
-    std::size_t first = 0;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
+    std::size_t first = baseIds;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
     for (std::size_t i = 0; tds != readTypedefs_.end() && i < tds->second.size(); i++) {
         if (cvOverReference(*s, tds->second[i].second)) return "replayed: a typedef's const over a parameter bound to a reference";
         const Type *e = substituted(*s, tds->second[i].second);
@@ -3664,22 +3909,35 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     return std::string();
 }
 
+// The made class's bases, laid by layBases as the parser lays them (classShape's: non-virtual, direct, of no vptr, so as written):
+// the read's, or (slice 3j) each base over the parameters the read kept (Parser::readBases_) under `s`.
+std::vector<Type::BaseSpec> Templates::basesUnder(const Type *read, const Substituted &s, BasesLaid *bases) const {
+    std::vector<Type::BaseSpec> out = read->bases();
+    std::vector<Parser::BaseToLay> order;
+    const std::map<const Type *, std::vector<Parser::BaseToLay> >::const_iterator over = p_.readBases_.find(read);
+    for (const Type::BaseSpec &b : out) order.push_back(Parser::BaseToLay{ b.type, b.access, static_cast<std::size_t>(b.written) });
+    for (std::size_t q = 0; out.empty() && read->dependentBase() && over != p_.readBases_.end() && q < over->second.size(); q++)
+        order.push_back(Parser::BaseToLay{ substituted(s, over->second[q].type), over->second[q].access, over->second[q].written });
+    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, bases);
+    for (std::size_t q = out.empty() ? 0 : order.size(); q < order.size(); q++)
+        out.push_back(Type::BaseSpec(order[q].type, bases->at[q], order[q].access, false, true, static_cast<int>(order[q].written)));
+    return out;
+}
+
 // The read class's data members under `s`, laid as the parser lays a class of no vptr or bit-field: its bases by layBases,
 // the parser's own path, then its own members from that cursor, past an empty subobject of their type on Itanium.
 void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const {
-    std::vector<Parser::BaseToLay> order;     // classShape's: non-virtual, direct, of no vptr, so laid as written
-    for (const Type::BaseSpec &b : read->bases()) order.push_back(Parser::BaseToLay{ b.type, b.access, static_cast<std::size_t>(b.written) });
     Parser::BasesLaid bases;
-    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, &bases);
+    basesUnder(read, s, &bases);
     long long cursor = (bases.bitCursor + 7) / 8;
     int widest = bases.widest;
-    const std::size_t own = bases.members.size();
+    const std::size_t own = read->bases().empty() ? 0 : bases.members.size();     // a base over the parameters: none in the read's
     laid->members.swap(bases.members);
     laid->empties.swap(bases.empties);
     laid->endsZero = bases.endsZero, laid->leadsZero = bases.leadsZero;
     for (std::size_t i = own; i < read->members().size(); i++) {
         const Member &m = read->members()[i];
-        const Type *t = substituted(s, m.type);
+        const Type *t = dataUnder(s, m);
         const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         const int a = slot->align(p_.target_);
         long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
@@ -3708,14 +3966,9 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     if (laid->members.empty() && cursor == 0 && bases.sizeFloor == 0) laid->size = 1, laid->align = 1;
 }
 
-// What a class made from the read cannot carry yet, by name: a pack, a typedef of its own class, a member initialiser, alignas, final.
+// What a class made from the read cannot carry yet, by name: a pack, a member initialiser, alignas, final.
 std::string Templates::fromReadWhyNot(std::size_t start) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
-    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
-        const Type *e = td.second;
-        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
-        if (e->unqualified() == readClass_.at(start)) return "replayed: a member typedef or alias naming its own class";
-    }
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
@@ -3754,16 +4007,17 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(tag + "::" + read->templateName(), type);
     type->setDeclaredClass(!partial && decl.classKey);
     type->setBeingDefined();
-    for (const Type::BaseSpec &b : read->bases()) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
+    Parser::BasesLaid laidBases;
+    for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
+    Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
+    readStands(start, type, &own);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
-        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
+        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(own, td.second));
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
     ClassLaidOut laid;
-    Substituted own = s;     // a pointer to the class itself is one to the class being made
-    readStands(start, type, &own);
     laidFromRead(read, own, &laid);
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
@@ -3943,9 +4197,11 @@ void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos
         if (specializationUnder(*ids, e) != nullptr || !earlyArgs(*ids, e, readClass_.at(start), &name, &args, true)) continue;
         std::vector<const Type *> binding;
         for (const TemplateArg &g : args) binding.push_back(g.type);
+        std::vector<long long> vals;     // a value argument's, as argValued gave it
+        for (const TemplateArg &g : args) vals.push_back(g.isType ? 0 : g.value);
         const TemplateDecl &decl = templates_.at(name);
         const Parser::Nesting deep(&p_, pos, "template instantiation");
-        const Type *made = makeClass(decl, specializationKey(name, args), binding, std::vector<long long>(binding.size(), 0), args, Packs(decl.params.size()), pos);
+        const Type *made = makeClass(decl, specializationKey(name, args), binding, vals, args, Packs(decl.params.size()), pos);
         classCensus_["made inside the class, as its replay makes it: its own template under other arguments"]++;
         ids->from.push_back(e), ids->to.push_back(made);
         s->from.insert(s->from.begin(), e), s->to.insert(s->to.begin(), made);
@@ -4062,9 +4318,11 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
 std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
     if (!made->isComplete()) return "differ: the replay's class is incomplete";
     if (made->hasVptr()) return "differ: the replay's class has a vptr";
-    if (made->bases().size() != read->bases().size()) return "differ: the number of bases";
+    Parser::BasesLaid laidBases;
+    const std::vector<Type::BaseSpec> mineBases = basesUnder(read, s, &laidBases);
+    if (made->bases().size() != mineBases.size()) return "differ: the number of bases";
     for (std::size_t i = 0; i < made->bases().size(); i++) {
-        const Type::BaseSpec &a = read->bases()[i], &b = made->bases()[i];
+        const Type::BaseSpec &a = mineBases[i], &b = made->bases()[i];
         if (a.type != b.type || a.offset != b.offset || a.access != b.access || a.isVirtual != b.isVirtual || a.direct != b.direct || a.written != b.written)
             return "differ: a base's class, offset or access";
     }
@@ -4178,8 +4436,7 @@ std::string Templates::classBeyond(std::size_t start) const {
                 angle += a.is("<") ? 1 : a.is(">") ? -1 : a.is(">>") ? -2 : 0;
                 if (angle <= 0) break;
             }
-        else if (k.is("static_assert")) return "replayed: a static_assert";
-    }
+    }     // a static_assert is classShape's: kept when its condition folds true under the values
     return std::string();
 }
 

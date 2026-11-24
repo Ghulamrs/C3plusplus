@@ -215,9 +215,11 @@ public:
     // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
     bool substitute_ = false;
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
-    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; Packs packs; };     // packs: by parameter, or none
+    // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs; };
     const Type *substituted(const Substituted &s, const Type *t) const;
     std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
+    const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
@@ -294,6 +296,7 @@ public:
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
+    std::vector<Type::BaseSpec> basesUnder(const Type *read, const Substituted &s, BasesLaid *bases) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,
@@ -337,6 +340,10 @@ public:
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
+    // A covered body's constants as the Typer reads them under `symbol`'s binding, against its replay's: apart fails the unit.
+    void constantsHeld(const std::string &symbol, syntax::NodeId replay, std::size_t start);
+    std::string constantsApart(const std::string &symbol, syntax::NodeId read, syntax::NodeId replay) const;
+    long long constantOf(const Bound *b, syntax::NodeId id, bool *has) const;
     bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr,
                            const std::vector<std::string> *guards = nullptr);
     std::map<std::size_t, std::pair<std::string, Substituted> > memberMade_;     // by start: a covered member body owed no replay, its symbol
