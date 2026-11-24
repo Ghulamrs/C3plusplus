@@ -5845,3 +5845,7 @@ the helper split was mended); g++ -Werror clean; Windows cl /W4 /WX clean (full,
 overload.sh 46/0; clang 19 and cxx3-msvc on the probe the same.
 **Next**: the suite's largest reason, "a non-type parameter named outside its member bodies" (lane m83ah's family), and the
 self-host's unordered_map left; the function door's `.bp` frame family; the replay's per-call `mayThrow_` (the user's call).
+Owed above, run after 1b153bea on its tree: identical with `-templates=subst` 0 differ on three targets (1970/3940/1970: every
+case and the probe among them); subst.sh on the final probe 0 failed (self 26 unread under 26, 3 shapes of 3); the probe right
+plain, under the flag, under the check (8 classes `equal`) and REF; static rc 0 on the final tree (comments 0); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag.
