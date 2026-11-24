@@ -5278,3 +5278,10 @@ earlyArgs (unordered_map's pair<iterator, bool> insert). **Class specializations
 point checked not owed).** M8.3 (M8-PLAN, m83ag): a non-type parameter named only in member bodies or as a plain [N] bound
 made from the read (Substituted carries the class's values). **Class specializations made with no replay: suite 1,436 of
 2,184 (from 1,368), self-host 72,046 of 74,390 held equal under the check (unchanged).** Nothing changes without the flag.
+
+**m6d-w40's wave landed, 2026-11-24 (gate m6dw40g at aed78fa9 against main 6b7f03d8: 40 passed, 0 failed, no row, after one
+-k rerun - the first run failed the 4 Windows idle steps on the shared Windows disk at 71%; our landed gates' trees removed,
+68.6%; the fixed point checked not owed).** The first wave of two lanes. M8.3 (M8-PLAN, m83ah, m83ai): -check=templates holds
+each covered body's constants against the replay's; static data members declared from the read (Parser::declareStaticMember).
+**Class specializations made with no replay: suite 1,484 of 2,184 (from 1,436), self-host 72,046 of 74,390 held equal under
+the check (each lane measured on its own tree; the merged tree not census-counted).** Nothing changes without the flag.
