@@ -3552,6 +3552,20 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         s->bounds[p_.tokens_[open - 1].text] = v;
         return true;
     };
+    // Slice 3i: or in a static data member's initialiser in the class's own braces (`static const T value = v;`), which
+    // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's.
+    const auto staticInit = [&](std::size_t t, std::size_t depth) {
+        bool equals = false;
+        for (int b = static_cast<int>(t), parens = 0, level = 0; depth == 1 && b > static_cast<int>(start); b--) {
+            const Token &x = p_.tokens_[static_cast<std::size_t>(b - 1)];
+            if (x.is(";") || x.is("{") || x.is("}") || x.is(":") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            parens += x.is(")") ? 1 : x.is("(") ? -1 : 0;
+            if (equals && parens < level) return false;     // a parameter's default argument: `f(int a = N)`
+            if (!equals && x.is("=")) equals = true, level = parens;
+            if (x.is("static")) return equals && parens == level;
+        }
+        return false;
+    };
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
@@ -3565,7 +3579,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
                 !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
-                !boundAt(t, depth))
+                !boundAt(t, depth) && !staticInit(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
@@ -3773,14 +3787,9 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     if (laid->members.empty() && cursor == 0 && bases.sizeFloor == 0) laid->size = 1, laid->align = 1;
 }
 
-// What a class made from the read cannot carry yet, by name: a pack, a typedef of its own class, a member initialiser, alignas, final.
+// What a class made from the read cannot carry yet, by name: a pack, a member initialiser, alignas, final.
 std::string Templates::fromReadWhyNot(std::size_t start) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
-    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
-        const Type *e = td.second;
-        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
-        if (e->unqualified() == readClass_.at(start)) return "replayed: a member typedef or alias naming its own class";
-    }
     const std::string &readTag = readMembers_.at(start).first;
     for (const Member &m : readClass_.at(start)->members())
         if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
@@ -3821,14 +3830,14 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     type->setBeingDefined();
     for (const Type::BaseSpec &b : read->bases()) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
+    Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
+    readStands(start, type, &own);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
-        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
+        p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(own, td.second));
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
     ClassLaidOut laid;
-    Substituted own = s;     // a pointer to the class itself is one to the class being made
-    readStands(start, type, &own);
     laidFromRead(read, own, &laid);
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
