@@ -5599,3 +5599,34 @@ Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clea
 18:42:45-18:46:26, ~3.7 min, and again 18:49-18:52 on the final tree; the first full build failed on `Packed`, fixed);
 names.sh 977/0 and the probe under its .nonames 0 failed; overload.sh 46/0.
 **Next**: the largest reasons, self-host under the check: a data member of a type the binding does not carry (906), a data member of a class the read named over its parameters (906), and a signature over a member type of another class over its parameters (906, before the replay) - one class template, by their equal counts; read which before choosing.
+
+**M8.3 slice 3b, a pointer to the class itself, and a table its signatures name, 2026-11-24 (lane m83ae, from ed7f2e8b).** The measure:
+class specializations made with no replay, suite 1,360 of 2,184 (1,346; the probe's 10), self-host 71,987 beside under the check
+(71,081). A debug build (boxkit/m83ae-Tdbg.cpp: each class's tag, reason and place under CXX1_TDBG) named the three 906s:
+`__hash_node<pair<const K,V>>` ("a data member of a type the binding does not carry": `__hash_node *next`, the read's pointer
+to its own class) and `unordered_map<K,V,...>` ("a data member of a class the read named over its parameters", `table t_`,
+after idsBefore stopped on "a member function's signature over ... a member type of another class over its parameters":
+`iterator erase(const_iterator)` over `typename table::const_iterator`, whose `table` the data member had already wanted but
+whose arguments earlyArgs asks carried). Now classShape passes a data member that points (through pointers and arrays) at the
+read class or the class readStands takes for it, and classFromRead lays the data members, and the door's classLaid holds
+them, under readStands's map, so the pointer is to the class being made, as the replay's is; a data member's or a signature's
+`X<$T0>` (or `X<$T0>::m`) already wanted is not wanted twice nor refused - idsBefore makes it where the data member placed it,
+and the second pass finds it carried. Not changed: the order of wanted ids, earlyArgs, a by-value member of the class itself
+(incomplete, refused by name). Probe `template-subst-selfnode` (Node's `next`, Table's `node *head_`, Map's `table t_`
+with `typename table::iterator` signatures; clang 2 4 60 / 1 97 1, cxx3-msvc the same, cxx3 the same plain, under the flag
+and under the check, all ten classes made from the read; a braced list in a held body first met the class-members door's owed
+"'' is full, and there are 2 more initialiser(s)", so the probe assigns). src 97,053 -> 97,068 (+15); no EXCLUSIONS line moved.
+Census: no check nonzero 353; check no class differ, nonzero 353; self-host nonzero 0; `__hash_node`'s 906 now equal. The self-host's classes still replayed, by held reason: a data member of a class the read named over its parameters 906 (unordered_map, now stopped before the replay on "a member function's signature over a class template-id over dependent arguments" - likely `pair<iterator, bool> insert`, over `typename table::iterator`: the next), a pack or template parameter 401, a non-type parameter 259, a type parameter bound to a class the read named over its parameters 252, a static data member 216, a base named through a parameter 215, bound to a specialization not completed 76, bound to a type no scalar, class, reference or array 49, a member enumeration's data member 25, the rest 4 (2,403 in all). The suite's 824 classes still replayed,
+by reason (the class door's held reason under the check): a non-type parameter 458, a static data member 183, a pack or template
+parameter 109, a type parameter bound to a class the read named over its parameters 46, a base named through a parameter 40,
+a type parameter bound to a type no scalar, class, reference or array 24; the rest 1 to 6 each.
+Gates (REF ed7f2e8b): identical 0 differ on four targets plain (1956/3912/1956/1956) and with `-templates=subst` on three
+(1956/3912/1956: every case and the probe among them); subst.sh 0 failed (its first run raced the probe's ship and met the
+braced list above; re-run on the final probe: run 1323/0 at -O0 and -O2, typed 970/0, ceiling 17 of 17), run.sh 1323/0, then
+run.sh under the flag 1323/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to
+date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX
+clean (full 19:21-19:25, ~3.8 min alone, then two deltas); names.sh 977/0 beside the probe, and the probe under its
+`.nonames` (x86_64-linux's C1/D1 of inline special members) 0 failed; overload.sh 46/0. A box defect: the first builds of
+REF and the debug tree passed build.sh's 540 s cap at 81 objects on a box at load 6 (a gate beside), and make resumed.
+**Next**: unordered_map's 906, stopped before the replay on a signature over a class template-id over dependent arguments
+(likely `pair<iterator, bool> insert`); then the suite's non-type parameters (458) and static data members (183).
