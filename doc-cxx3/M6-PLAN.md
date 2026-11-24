@@ -5273,3 +5273,8 @@ template-id a member already wants no longer refused. **Class specializations ma
 point checked not owed).** M8.3 (M8-PLAN, m83af): an argument that is a member type of a class already wanted taken by
 earlyArgs (unordered_map's pair<iterator, bool> insert). **Class specializations made with no replay: suite 1,368 of 2,184
 (from 1,360), self-host 72,046 of 74,390 held equal under the check (from 71,987).** Nothing changes without the flag.
+
+**m6d-w39's wave landed, 2026-11-24 (gate m6dw39g at 568951a3 against main 14a9399f: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ag): a non-type parameter named only in member bodies or as a plain [N] bound
+made from the read (Substituted carries the class's values). **Class specializations made with no replay: suite 1,436 of
+2,184 (from 1,368), self-host 72,046 of 74,390 held equal under the check (unchanged).** Nothing changes without the flag.
