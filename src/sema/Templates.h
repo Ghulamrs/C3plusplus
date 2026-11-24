@@ -204,6 +204,8 @@ public:
                               const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
     std::map<std::string, const Type *> readPattern_;
     std::vector<Type *> readShallow_;
+    struct ReadId { std::string name; std::vector<TemplateArg> args; };
+    std::map<const Type *, ReadId> readIds_;     // a shallow class the read's end cleared: its template-id, for the class door
     std::string readingTag_, readingRead_;      // the class door's class while its body is read: `C<$T0>` and its read's tag
     std::size_t readSerial_ = 0;
     bool classDoor_ = false;
@@ -254,7 +256,10 @@ public:
     std::map<std::size_t, const Type *> readClass_;
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                           const Substituted *early = nullptr) const;     // early: the template-ids carried before the replay
+                           const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr) const;     // early: ids carried before the replay
+    bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args) const;
+    bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
+    void idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, std::size_t pos);
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
@@ -281,7 +286,8 @@ public:
     std::string typedefsCarried(std::size_t start, const Substituted &s) const;
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
-    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s) const;
+    std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
+                            std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
