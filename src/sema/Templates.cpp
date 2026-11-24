@@ -429,7 +429,7 @@ static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
     std::string name;
     std::vector<TemplateArg> args;
-    if (!readId(o, &name, &args)) return nullptr;
+    if (!readId(o, &name, &args) || !templateUnder(s, &name)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
         if (args[k].isPack && !args[k].isTemplate && packUnder(s, &args[k])) continue;
         if (!args[k].isType && argValued(s, &args[k])) continue;
@@ -437,6 +437,18 @@ const Type *Templates::specializationUnder(const Substituted &s, const Type *o) 
         args[k].type = substituted(s, args[k].type);
     }
     return p_.lookup_.findTypedef(specializationKey(name, args));
+}
+
+// Slice 3m: a read id's template `$TT<i>` (`C<T>`, C a template template parameter) as the class template `s` binds C to, by
+// name, as bindTemplateParameters enters it; true for any other name, false where `s` binds C to nothing or to an alias.
+bool Templates::templateUnder(const Substituted &s, std::string *name) const {
+    int tt;
+    if (!ttRefName(*name, &tt)) return true;
+    for (std::size_t k = 0; k < s.from.size(); k++)
+        if (s.from[k] == p_.types_.templateParam(tt) && s.to[k]->isTemplateName() && !s.to[k]->isAliasTemplate() &&
+            p_.findTemplate(s.to[k]->templateName()) != templates_.end())
+            return *name = p_.findTemplate(s.to[k]->templateName())->first, true;
+    return false;
 }
 
 // A read's pack argument under `s`, as the replay's template-id lists it: `Ts...` the members `s` binds to Ts, each other
@@ -3456,7 +3468,7 @@ bool Templates::readId(const Type *e, std::string *name, std::vector<TemplateArg
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
                           const std::vector<const Type *> *pending) const {
-    if (!readId(e, name, args)) return false;
+    if (!readId(e, name, args) || !templateUnder(s, name)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
     if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
@@ -3606,9 +3618,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         std::size_t e = t + 1;
         while (e < p_.tokens_.size() && (p_.tokens_[e].is("&") || p_.tokens_[e].is("&&") || p_.tokens_[e].is("*"))) e++;
         // ... or in a template-id's arguments, `X<Ts...>`, whose read id specializationUnder and earlyArgs expand (packUnder).
-        const bool expanded = !open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1));
+        const bool expanded = (!open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1))) ||
+                              (t >= 3 && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") && p_.tokens_[t - 3].is("sizeof"));     // 3m: sizeof...(Ns)
         for (std::size_t q = 0; q < params.size(); q++)
-            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded))
+            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded) &&
+                !(params[q].isTemplate && depth == 1 && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("<") && !p_.tokens_[t - 1].is("typename")))     // 3m: `C<T>`
                 return "replayed: a pack or template parameter, bound by name";
     }
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
@@ -3750,6 +3764,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
+        if (params[q].isTemplate && binding[q] != nullptr && binding[q]->isTemplateName())     // 3m: C as its template, templateUnder's
+            s->from.push_back(p_.types_.templateParam(static_cast<int>(q))), s->to.push_back(binding[q]);
         if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
