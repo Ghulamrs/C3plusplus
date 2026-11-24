@@ -5405,3 +5405,37 @@ names.sh 971/0 with the probe's .nonames (the restored template-subst-datamember
 **Next**: name what `idsBefore` met when it made nothing (the first pass's reason, or `fromReadWhyNot`'s) in place of the
 second pass's "a data member", then the largest of those; then "a base" (2,373) and "a type parameter bound to a reference"
 (1,841); the partial's out-of-line constructor (tests/open/partial-ctor-out-of-line).
+
+## M8.3 slice 3b: a base the read laid as the program's own class, and the census naming what idsBefore met (lane m83y, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite **1,262 of 2,184** (1,220; the probe's 4), self-host
+**65,332 beside** under the check (64,984).
+
+**Commit 1**: (a) a class whose bases the read laid are the program's own classes - none virtual or reached through another,
+none a class template-id over the parameters, none polymorphic - and whose own data members name no parameter (`struct One :
+Tag`, `Two : Tag, Data`, `Pad : Tail` over a non-POD `Tail`) is laid by the read exactly as the replay lays it, so
+`laidFromRead` takes the read's layout whole (members with the bases' copied in, size, alignment, data size, the zero-sized
+flags, the empty subobjects but the read's own) and `classFromRead` adds the read's bases in their order before the members, as
+the replay's head does; `classLaid` holds the bases (class, offset, access, virtual, direct, place) and the data size against
+the replay's. A base beside a data member over the parameters is refused by name ("a base, beside a data member over the
+parameters", 1,631 self-host), and "a base" is named by kind (a class template-id over the parameters, a polymorphic class, a
+virtual base). A base `X<$T0>` is not here: the read leaves it out of its layout ("a base named through a parameter", 215).
+(b) `idsBefore` answers what stopped it - the first `classBefore`'s refusal (ids wanted) or `fromReadWhyNot`'s - and the census
+names that where the second `classBefore` (no ids wanted) refuses; the door decides as before. The self-host's 2,603 "a data
+member of a class the read named over its parameters" are gone from "before the replay", each under its own reason.
+Probe `template-subst-plainbase` (clang's 23 4 8 / 7.5 113 42 on Windows, cxx3-msvc the same; 4 classes made from the read,
+under the check class equal 4); its .nonames records x86_64-linux's C1 of `Pad<long long>`'s implicit constructor
+(template-subst-ownid's difference). src 96,823 -> 96,848 (+25, `Templates.cpp`, `Templates.h`); no EXCLUSIONS line moved.
+Census: no check 1,262 made, nonzero 353 (REF's count); under the check no class differ, self-host nonzero 0. The self-host's
+largest "before the replay" refusals now: a signature's class template-id the program had not declared 2,210, a type
+parameter bound to a reference 1,841, a base beside a data member over the parameters 1,631, a data member of a type the
+binding does not carry 906.
+Gates (the commit's tree, REF aec022e8): identical 0 differ on four targets plain (1944/3888/1944/1944) and with
+`-templates=subst` on three (1944/3888/1944: every case, the probe's plain bases among them); subst.sh 0 failed, then run.sh
+1317/0, then run.sh under the flag 1317/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static
+rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl
+/W4 /WX clean (full on the census half 15:14:25-15:18:13, ~3.8 min alone; delta 15:21:03-15:28:49, ~7.7 min, the box busy);
+names.sh 972/0 with the probe's .nonames; overload.sh 46/0; the probe on clang and cxx3-msvc the same.
+**Next**: a base beside a data member over the parameters (1,631: lay the members after the read's bases under the binding, the
+parser's base layout one path with the replay's); a base `X<$T0>` the read leaves out (215: made first, as idsBefore makes ids);
+the signature ids not declared (2,210) and a type parameter bound to a reference (1,841).

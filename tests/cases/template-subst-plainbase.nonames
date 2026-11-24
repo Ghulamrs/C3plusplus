@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of Pad<long long>'s implicit constructor, which calls Tail's out-of-line one, where cxx1 emits C1 and C2 - the difference implicit-move.nonames and template-subst-ownid.nonames record. Every other name agrees, and the other two targets agree on all.
