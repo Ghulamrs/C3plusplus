@@ -5263,3 +5263,8 @@ point checked not owed).** M8.3 (M8-PLAN, m83ad): the parser's non-virtual base 
 called by the parser and by a class made from the read; classLaid checks the data size and cl's zero-sized flags. **Class
 specializations made with no replay: suite 1,346 of 2,184 (from 1,320), self-host 71,081 held equal under the check (from
 69,034; of 74,390, the total re-counted by m83ae).** Nothing changes without the flag.
+
+**m6d-w37's wave landed, 2026-11-24 (gate m6dw37g at 5f9e6e9b against main 9171570c: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ae): __hash_node, a member pointing at its own class, made from the read; a class
+template-id a member already wants no longer refused. **Class specializations made with no replay: suite 1,360 of 2,184 (from
+1,346), self-host 71,987 of 74,390 held equal under the check (from 71,081).** Nothing changes without the flag.
