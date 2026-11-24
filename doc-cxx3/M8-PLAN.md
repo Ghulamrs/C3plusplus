@@ -5887,3 +5887,6 @@ clean (n1, n2); Windows cl /W4 /WX clean (n1 full 01:21:31-01:27:03, ~5.5 min; n
 overload.sh 46/0 on n1; clang 19 and cxx3-msvc on the probe the same.
 **Next**: a pack in a base, `: Base<Ts>...`, and a static data member over a pack (`Sum<Rest...>::value`, staticShape);
 a bound class passed to a base's reference parameter (dependentCall), not asked by the `.bp` refusal.
+Owed above, run after 506d9701 on its tree (n2): the suite census with no check 1,604 of 2,184 made with no replay (n1's),
+nonzero 353; under the check `equal` 1,795 (1,786), no class differ, nonzero 353, every frame `equal` (the function door's two
+`.bp` differs gone); "a pack or template parameter, bound by name" 50 left (80 before).
