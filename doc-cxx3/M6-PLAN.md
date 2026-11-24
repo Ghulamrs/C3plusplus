@@ -5233,3 +5233,9 @@ the check (from 51,435).** Nothing changes without the flag.
 point checked not owed).** M8.3 (M8-PLAN, m83w): pair<K,V> and pair<const K,V>, each naming the other, made inside the class
 at the member that names it (idsInside), where the replay makes it. **Class specializations made with no replay: suite 1,204
 of 2,184 (from 1,147), self-host 64,733 held equal under the check (from 59,302).** Nothing changes without the flag.
+
+**m6d-w32's wave landed, 2026-11-24 (gate m6dw32g at 3c321ecc against main 27a98d15: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83x, m83y): an id's id arguments made first (argsWanted); a class over plain bases
+made from the read; idsBefore names what stopped it; tests/open/partial-ctor-out-of-line records a refusal with no flag.
+**Class specializations made with no replay: suite 1,262 of 2,184 (from 1,204), self-host 65,332 held equal under the check
+(from 64,733).** Nothing changes without the flag.
