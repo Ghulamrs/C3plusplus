@@ -5212,3 +5212,9 @@ specializations made with no replay: suite 735 of 2,184 (from 668), self-host 30
 point checked not owed).** M8.3 (M8-PLAN, m83q, m83r): a member enumeration's data member refused by name; the template-ids a
 read clears kept (readIds_) and made before the class (idsBefore). **Class specializations made with no replay: suite 779 of
 2,184 (from 735), self-host 35,003 held equal under the check (from 30,707).** Nothing changes without the flag.
+
+**m6d-w28's wave landed, 2026-11-24 (gate m6dw28g at 2ba1e5ea against main efb44abd: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83s, m83t): a member type's class and a data member's class made before the class;
+a template with partial specializations taken by earlyArgs (the replay's match); the census names a member template first.
+**Class specializations made with no replay: suite 814 of 2,184 (from 779), self-host 35,154 held equal under the check (from
+35,003).** Nothing changes without the flag.
