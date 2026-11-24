@@ -3287,6 +3287,8 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
         while (u->unqualified() != u || u->isPointer() || u->isReference() || u->isArray())
             u = u->unqualified() != u ? u->unqualified() : u->isReference() ? u->referent() : u->pointee();
         if (pending != nullptr && std::find(pending->begin(), pending->end(), u) != pending->end()) continue;     // made before it
+        const Type *of = u->kind() == Kind::DependentMember ? u->pointee()->unqualified() : nullptr;     // `table::iterator`, table made first
+        if (of != nullptr && pending != nullptr && std::find(pending->begin(), pending->end(), of) != pending->end()) continue;
         if (p_.dependentType(a.type) || u->isFunction() || readIds_.count(u) != 0 || (u->isStructOrUnion() && u->tag().find('$') != std::string::npos)) return false;
     }
     return true;

@@ -5630,3 +5630,33 @@ clean (full 19:21-19:25, ~3.8 min alone, then two deltas); names.sh 977/0 beside
 REF and the debug tree passed build.sh's 540 s cap at 81 objects on a box at load 6 (a gate beside), and make resumed.
 **Next**: unordered_map's 906, stopped before the replay on a signature over a class template-id over dependent arguments
 (likely `pair<iterator, bool> insert`); then the suite's non-type parameters (458) and static data members (183).
+
+## M8.3 slice 3b: a signature's class template-id over a member type of a table made first, under -templates=subst (lane m83af, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,368 of 2,184 (1,360; the probe's 6, `map-move-only-mapped`'s
+1, `unordered-map`'s 1), self-host 72,046 beside under the check (71,987). A debug build (boxkit/m83ae-Tdbg.cpp's two lines)
+confirmed m83ae's guess: `unordered_map<string,unsigned,...>` stopped before the replay on "a member function's signature over a
+type the binding does not carry: a class template-id over dependent arguments" - `pair<iterator, bool> insert(const value_type &)`,
+whose `iterator` is `typename table::iterator` and whose `table` (`__hash_table<...>`) the typedef and the data member `t_` had
+already wanted. earlyArgs asked each argument carried; now an argument that is a member type of a class already wanted
+(`table::iterator`) is made after it, so idsBefore makes `pair<iterator, bool>` through makeClass behind the table, in the body's
+order, with the member found in the table it just made. Not changed: the order of wanted ids, a signature's id over an id not yet
+wanted (refused by name as before), makeClass. Probe `template-subst-pairiter` (`Set<K>` with `typedef Table<K> table`,
+`typename table::iterator` and `Pair<iterator, bool> insert`; clang 7 9 1 2 1 / x 1 on Windows, cxx3-msvc the same, cxx3 the same
+plain, under the flag and under the check; all six classes equal and made from the read, where REF made 4 and stopped Set<int> and
+Set<char> on that reason). src 97,068 -> 97,070 (+2); no EXCLUSIONS line moved.
+Census: no check nonzero 353; check no class differ, nonzero 353 (the frame and member `differ` lines are REF's, unchanged);
+self-host nonzero 0. unordered_map's 906 stops are 577 now: `unordered_map<unsigned,...>` in Parser.h (575, 594, 635 and
+beside) still stop on the same reason - its table not wanted ahead of the signature, or carried by the program before it (the
+debug build dbg2 over src/sema/Classes.cpp names them: the next). Self-host still replayed by held reason: a data member of a
+class the read named over its parameters 577, a pack or template parameter 401, a non-type parameter 259, a type parameter bound
+to a class the read named over its parameters 252, a static data member 216, a base named through a parameter 215, bound to a
+specialization not completed 76, bound to a type no scalar, class, reference or array 49, a member enumeration's data member 25.
+Gates (REF 0e429405): identical 0 differ on four targets plain (1958/3916/1958/1958) and with `-templates=subst` on three
+(1958/3916/1958: every case and the probe among them); subst.sh 0 failed, run.sh 1324/0, run.sh under the flag 1324/0; static
+rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and
+ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full 19:54-19:57, ~3.5 min alone);
+names.sh 979/0 with the probe; overload.sh 46/0.
+**Next**: the 577 `unordered_map<unsigned,...>` (dbg2 over Classes.cpp); then non-type parameters (suite 458, self-host 259):
+`Substituted` carrying the binding's values so `T a[N]` (an array whose boundParam is N) lays as `arrayOf(T, values[N])`,
+classShape's refusal at its first loop lifted for an int parameter, and the read's own `array<T, N>` ids keyed by value.
