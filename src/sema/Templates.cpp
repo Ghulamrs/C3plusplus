@@ -3178,7 +3178,9 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (substitute_ && !p_.patternUses_) {
         Substituted s;
         const std::string shape = classShape(start, useParams, useBinding, &s, &early);
-        std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), s, made) : shape;
+        Substituted laidAs = s;
+        readStands(start, made, &laidAs);
+        std::string held = shape.empty() && checkBodies_ ? classLaid(readClass_.at(start), laidAs, made) : shape;
         // Its member functions' symbols, the replay's for the read's: held under the check, kept for its bodies' records either way.
         const std::string members = held.empty() || held == "equal" ? classMembers(start, s, made, tag, fnFrom, &readSymbol_) : held;
         if (held == "equal") held = members;
@@ -3402,10 +3404,19 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         }
         return 0;
     };
+    // A pointer (at any depth, through arrays) to the read class itself, or to the class readStands takes for it.
+    const auto pointsAtOwn = [&](const Type *t) {
+        bool pointer = false;
+        for (t = t->unqualified(); t->isPointer() || t->isArray(); t = t->pointee()->unqualified()) pointer = pointer || t->isPointer();
+        Substituted own;
+        readStands(start, nullptr, &own);
+        return pointer && std::find(own.from.begin(), own.from.end(), t) != own.from.end();
+    };
     std::vector<std::size_t> dataAt;     // the data members that want ids, where the body declares them
     for (const Member &m : read->members()) {
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
         const Type *t = substituted(*s, m.type), *e = t;
+        if (pointsAtOwn(m.type)) continue;     // `__hash_node *next`: a pointer, the made class once readStands maps it
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
         if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
@@ -3413,6 +3424,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || u->tag().find('$') != std::string::npos);
         std::size_t back = wanted != nullptr ? wanted->size() : 0;
         const std::size_t had = back;
+        if (over && wanted != nullptr && std::find(wanted->begin(), wanted->end(), u) != wanted->end()) continue;
         if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
         if (wanted != nullptr && wanted->size() != had) dataAt.push_back(memberAt(m.name));     // where the replay makes them
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
@@ -3473,6 +3485,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             std::string name;
             std::vector<TemplateArg> args;
             const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
+            if (of != nullptr && wanted != nullptr && std::find(wanted->begin(), wanted->end(), of) != wanted->end()) continue;
             if (of != nullptr && wanted != nullptr && of != read && readId(of, nullptr, nullptr) && carriedId(*s, of, nullptr) == nullptr
                 && earlyArgs(*s, of, read, &name, &args)) {
                 if (!ahead && !behind) return "replayed: class template-ids made first for a data member and a member function's signature";
@@ -3602,7 +3615,9 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     ClassLaidOut laid;
-    laidFromRead(read, s, &laid);
+    Substituted own = s;     // a pointer to the class itself is one to the class being made
+    readStands(start, type, &own);
+    laidFromRead(read, own, &laid);
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
     const Type *outerCurrent = p_.currentClass_;
