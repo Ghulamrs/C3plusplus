@@ -5257,3 +5257,9 @@ point checked not owed).** M8.3 (M8-PLAN, m83ab, m83ac): a constructor made from
 with a destructor; a type parameter bound to a reference in a class made from the read (two shapes refused by name). **Class
 specializations made with no replay: suite 1,320 of 2,184 (from 1,301), self-host 69,034 held equal under the check (from
 67,222).** Nothing changes without the flag.
+
+**m6d-w36's wave landed, 2026-11-24 (gate m6dw36g at 5a384fed against main 349d8c70: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83ad): the parser's non-virtual base layout is one function (Parser::layBases),
+called by the parser and by a class made from the read; classLaid checks the data size and cl's zero-sized flags. **Class
+specializations made with no replay: suite 1,346 of 2,184 (from 1,320), self-host 71,081 held equal under the check (from
+69,034; of 74,390, the total re-counted by m83ae).** Nothing changes without the flag.
