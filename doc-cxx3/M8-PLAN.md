@@ -5660,3 +5660,29 @@ names.sh 979/0 with the probe; overload.sh 46/0.
 **Next**: the 577 `unordered_map<unsigned,...>` (dbg2 over Classes.cpp); then non-type parameters (suite 458, self-host 259):
 `Substituted` carrying the binding's values so `T a[N]` (an array whose boundParam is N) lays as `arrayOf(T, values[N])`,
 classShape's refusal at its first loop lifted for an int parameter, and the read's own `array<T, N>` ids keyed by value.
+
+## M8.3 slice 3e, first part: a class over a non-type parameter named in member bodies or as a bound `[N]`, under -templates=subst (lane m83ag, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,436 of 2,184 (1,368; the probe's 8), self-host 72,046
+beside under the check (72,046, unchanged: 245 of the self-host's 259 name the value outside member bodies, the other 14 stop on a later reason). classShape refused every non-type parameter at its first loop. Now it scans the class's own
+tokens (its head and body, a member function's body skipped to its `}`): a non-type parameter named nowhere else, or only as a
+bound `[N]`, is no refusal. The read keeps such a bound as the parameter (`Type::boundParam`, arraySuffix's pattern branch), so
+`Substituted` carries the class's values by index (makeClass's `useValues`, through idsBefore, classBefore and the two classShape
+calls) and `substituted` lays `T a[N]` (and `T m[R][C]`) as `arrayOf(T, values[N])`; the layout is laidFromRead's, held by
+classLaid. A member body holding a value-dependent name (`syntax::ValueDependent`) replays (memberShape: "a non-type parameter's
+value, which the read held as its stand-in"), under the real values as every replayed body does: without it a body typed from
+the read took N's stand-in 0 (the first build printed `0 1 0 1` for `15 4 8 3`, and -check=templates did not see it: it holds
+layouts, symbols and shapes, not a body's constants - owed). A class with a member template beside a non-type parameter replays
+(templatesHeld holds the read's stand-in class values against the real ones: 4 `differ`s in the first build). Not changed: a
+non-type parameter named anywhere else (a signature, a typedef, a base, `[N + 1]`, `X<N>`) replays by name; packs and template
+parameters; function templates' valueShape. Probe `template-subst-valueparam` (an int, a bool and an enumeration parameter named
+in bodies; `T items[N]`; `T m[R][C]`; clang 19 on Windows 15 4 8 3 / 1 2 4 / 33 79 4 / 4 9 16 / 6 5 12, cxx3-msvc the same,
+cxx3 the same plain, under the flag, under the check and REF; its 8 classes made from the read and `equal`).
+src 97,070 -> 97,097 (+27); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2062/2114/2811 -> 2064/2116/2813).
+Census: no check nonzero 353; check no class differ, nonzero 353 (the frame and function-door `differ` lines are REF's); self-host
+nonzero 0. The suite's non-type classes still replayed: named outside its member bodies 343 (of 458), a member template
+beside one 4; member bodies replayed for a value 50.
+Gates (REF cead7672): identical 0 differ on four targets plain (1960/3920/1960/1960) and with `-templates=subst` on three (1960/3920/1960: every case and the probe among them); subst.sh 0 failed, run.sh 1325/0, then run.sh under the flag 1325/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full 20:28-20:35, ~7 min with the box shared, then two deltas ~2 min each); names.sh 980/0 with the probe; overload.sh 46/0; the probe by clang 19 and cxx3-msvc on Windows the same.
+**Next**: the 343 - a non-type parameter in a signature, a typedef or a base (`X<N>` ids keyed by value, `[N + 1]` folded
+under the values; a bare `[N]` there is taken now through `substituted`, which no probe holds yet), and member bodies folded under the values (valueShape) rather than
+replayed; then the 577 `unordered_map<unsigned,...>` in Parser.h (not reached this hour).
