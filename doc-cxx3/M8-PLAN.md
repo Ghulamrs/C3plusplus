@@ -5370,3 +5370,38 @@ version 13:32:31-13:36:10, ~3.7 min alone; delta 13:55:04-13:57:39, ~2.6 min); n
 clang and cxx3-msvc the same.
 **Next**: the self-host's "a data member of a class the read named over its parameters" (2,606), then "a base" (2,373)
 and "a type parameter bound to a reference" (1,841); the partial's out-of-line member constructor refused "defined twice".
+
+## M8.3 slice 3b: a data member's class template-id over ids of the parameters, made before the class under -templates=subst (lane m83x, 2026-11-24)
+
+A data member or a member typedef whose class template-id takes, as arguments, other ids over the class's parameters
+(`Tree<Pair<K, V>, KeyOf<K, V> > tree_`, map's `__tree<value_type, __map_key<K, V, C> >`) was refused "a data member of a
+class the read named over its parameters": `earlyArgs` refuses an argument the read named over the parameters. Now
+`argsWanted` walks such an id's arguments innermost first, as the replay makes them reading the id: an argument the program
+carried is mapped under `s`, one `earlyArgs` takes is wanted ahead of the id (moved there when an earlier member wanted it
+behind), and `earlyArgs` takes an argument already wanted (`pending`); `idsBefore` maps each id it makes (or finds) under its
+`s`, so the next id reads its arguments as the made classes; every id is made through `makeClass`, the one path. Found on the
+way: a member typedef's id is made by the replay ahead of the data members' (m83v), so its arguments must be wanted ahead of
+it too - the first version made `Tree<Pair<int,char> >` before the typedef's `Tree<Pair<char,int> >` and identical under the
+flag differed on the probe in the order of the two `key` bodies. Probe `template-subst-nestedid` (`Map<K, V>` with
+`Tree<Pair<K, V>, KeyOf<K, V> > tree_` and `typedef Tree<Pair<V, K>, KeyOf<V, K> > back; back back_;`; clang's 35045 57067
+on Windows, cxx3-msvc the same; 14 classes made from the read, REF 12); its .nonames records x86_64-linux's C1 of `Map`'s
+constructor (template-subst-ownid's difference). Recorded, not fixed: `tests/open/partial-ctor-out-of-line` (clang ACCEPT
+1 2 30 4): a partial's constructor defined out of line beside the primary's is refused "defined twice" with no flag; alone,
+it is never emitted and the link fails. The measure: suite **1,220 of 2,184** (1,204; REF on this tree 1,216, the gain
+the probe's 2 Maps and nested-parse-state's 2), self-host **64,984 beside** under the check (64,733); its "a data member of a
+class the read named over its parameters" only 2,606 -> 2,603 - the self-host's are another shape (below). src 96,788 ->
+96,823 (+35, `Templates.cpp`, `Templates.h`); no EXCLUSIONS line moved. Census: no check nonzero 353 (REF's set); under the
+check no class differ, nonzero 353; self-host nonzero 0.
+Why the self-host's 2,603 stay: a debug build (boxkit/m83x-Tdbg.cpp: M83XDBG at the refusal, with `wanted`) over the
+self-host's sources printed nothing - the first `classBefore` (with `wanted`, in `idsBefore`) never refuses them for the data
+member; the reason is the second one's (no `wanted`), after `idsBefore` made nothing: the first pass refused for another
+reason, or passed and `fromReadWhyNot` stopped it. The census names the data member where that other reason holds.
+Gates (the commit's tree, REF 235c0262): identical 0 differ on four targets plain (1942/3884/1942/1942) and with
+`-templates=subst` on three (1942/3884/1942: every case, the probe's nested ids and the map cases among them); subst.sh 0
+failed, then run.sh 1316/0, then run.sh under the flag 1316/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and
+under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date);
+g++ -Werror clean; Windows cl /W4 /WX clean (full 14:25:16-14:29:01, ~3.75 min alone; delta 14:45:35-14:47:36, ~2 min);
+names.sh 971/0 with the probe's .nonames (the restored template-subst-datamember among them); overload.sh 46/0; the probe and template-subst-datamember on clang and cxx3-msvc the same. A slip on the way: the probe was first written over lane m83s's template-subst-datamember; restored from HEAD and the gates rerun whole on the fixed tree.
+**Next**: name what `idsBefore` met when it made nothing (the first pass's reason, or `fromReadWhyNot`'s) in place of the
+second pass's "a data member", then the largest of those; then "a base" (2,373) and "a type parameter bound to a reference"
+(1,841); the partial's out-of-line constructor (tests/open/partial-ctor-out-of-line).

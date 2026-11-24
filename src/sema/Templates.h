@@ -257,7 +257,9 @@ public:
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                            const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr) const;     // early: ids carried before the replay
-    bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself = false) const;
+    bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself = false,
+                   const std::vector<const Type *> *pending = nullptr) const;     // pending: ids wanted first, taken as arguments
+    void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
     void idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, std::size_t pos);
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
