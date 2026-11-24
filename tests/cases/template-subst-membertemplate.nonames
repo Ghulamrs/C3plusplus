@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of Rev's inline constructor and of its constructor template's specialization, where cxx1 emits C1 and C2 - the inline-constructor difference implicit-move.nonames records (a constructor template of a class template cannot be defined out of line here). Every other name agrees, and the other two targets agree on all.

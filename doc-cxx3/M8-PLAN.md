@@ -5279,3 +5279,37 @@ flag 1312/0; census no class differ in the cases or the self-host, nonzero 353 (
 ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
 raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta, alone, ~1 min, done 12:14:09), names.sh 967/0,
 overload.sh 46/0, the probe on clang and cxx3-msvc the same.
+
+## M8.3 slice 3b: a class with member function templates made from the read under -templates=subst (lane m83u, 2026-11-24)
+
+**Commit 1**: the class door takes a class whose body declares member function templates. The replay's class body declared
+each one in place (`template <class U> reverse_iterator(const reverse_iterator<U> &)`, `pair`'s converting constructor,
+`vector`'s range constructor); that block is now `Parser::memberTemplate`, the one path, and the body loop calls it. A class
+made from the read calls it too (`Templates::templatesFromRead`, from `classFromRead` before `completeClass`): at each of the
+read's member templates' `template` token, in the body's order (`templatesOf`, by `start`), with the access the read saw,
+the class's parameters bound by name, `instantiatingParams_`/`Binding_`/`Values_`/`Args_` and the class on the class stack as
+the replay's body has them - so its `TemplateDecl` (class binding, packs, pattern, `memberTemplates_` key) is the replay's,
+and a constructor template counts as a user-declared constructor before the implicit specials are decided, as in the body.
+`classBeyond` no longer refuses "a member template": it passes the template's parameter list (whose `class U` read as a
+nested class) and still refuses a `template <...> friend`. Under the check `classMembers` holds the read's member templates
+(kept under the read's tag) against the replay's (`templatesHeld`: count, place, name, kind, access, class parameters and
+binding under `s`); a pattern is not compared, since a member template's own parameters and the class's are both `$Tn` in
+the read's. Probe `template-subst-membertemplate` (`Rev<I>` with a converting constructor template, `Box<T>` with two member
+function templates; clang's 6 6 3 / 2 5 3 / 4.00 5.00 on Windows, cxx3-msvc the same); its .nonames records the C1 of the
+inline constructors on x86_64-linux (implicit-move.nonames's difference; a constructor template of a class template cannot
+be defined out of line here). The measure: suite **1,047 of 2,184** (814; 1,012 without the probes, 810; the probe's 4),
+self-host **51,435 beside** under the check (35,154). Census: no check 1,047 made, nonzero 353 (the same units as REF's);
+under the check no class differ in the cases or the self-host, self-host nonzero 0; the self-host's "before the replay"
+refusals now lead with a signature's class template-id the program had not declared 9,316, a data member's 2,606, a base
+2,373, its own template under other arguments 2,234 (`pair<const K, V>` naming `pair<K, V>`, work 2, not reached).
+src/: 96,654 -> 96,744 (+90: `Templates.cpp` +77, `Templates.h` +5, `ParserType.cpp` +7, `Parser.h` +1). EXCLUSIONS: 28
+`ParserType.cpp` citations re-pointed (the extracted block moved its three refusals and everything after it), no refusal moved.
+Gates (the commit's tree, REF cf66b74e): identical 0 differ on four targets plain (1936/3872/1936/1936) and with
+`-templates=subst` on three (1936/3872/1936: every case, the member-template classes among them); subst.sh 0 failed, then
+run.sh 1313/0, then run.sh under the flag 1313/0; census no class differ in the cases or the self-host (the frame and made
+differ lines are REF's own); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0
+(exclusions 0/0 after the re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror
+clean; Windows cl /W4 /WX clean (full, 12:30:49-12:34:50, ~4 min, the coordinator's gate jobs on the box), names.sh 967/1
+then the probe 0 failed with its .nonames, overload.sh 46/0, the probe on clang and cxx3-msvc the same.
+**Next**: the 9,316 signatures' class template-ids the program had not declared that the member-template classes now reach
+(which ids, and whether earlyArgs takes them); `pair<const K, V>` naming `pair<K, V>` (2,234).

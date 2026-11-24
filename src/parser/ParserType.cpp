@@ -46,6 +46,97 @@ const Type *Parser::memberTypeWalk(const Type *t) {
     return t;
 }
 
+// A member function template at `template` in the body of class `tag`: recorded under the binding its class is made under
+// (instantiatingParams_), for the replay and for a class made from the read alike (M8.3), the one path both declare it by.
+void Parser::memberTemplate(const std::string &tag, const std::string &local, Access access) {
+    TemplateDecl mt;
+    mt.isMember = true;
+    mt.start = at_;
+    at_++;
+    if (!peek().is("<"))
+        src_.fail(peek().pos, "explicit instantiation in a class is not "
+                              "supported yet");
+    templateParameters(mt.params);
+    refuseAfterPack(mt.params);
+    mt.afterParams = at_;
+    mt.pos = peek().pos;
+    if (peek().is("struct") || peek().is("class") || peek().is("union"))
+        src_.fail(peek().pos, "a member class template is not supported "
+                              "yet - only member function templates are");
+    // The member's name: the identifier at depth 0 immediately before
+    // the parameter list's '(' - the return type's own '<...>' is nested.
+    std::string mname;
+    int depth = 0;
+    for (std::size_t i = at_; i + 1 < tokens_.size(); i++) {
+        const Token &t = tokens_[i];
+        // **An operator's name is not one token**, and it is spelled
+        // before the parameter list rather than being an identifier.
+        if (depth == 0 && t.is("operator")) {
+            if (tokens_[i + 1].is("(") && i + 2 < tokens_.size() &&
+                tokens_[i + 2].is(")"))
+                mname = "operator()";
+            else if (tokens_[i + 1].is("[") && i + 2 < tokens_.size() &&
+                     tokens_[i + 2].is("]"))
+                mname = "operator[]";
+            else
+                mname = "operator" + tokens_[i + 1].text;
+            break;
+        }
+        if (depth == 0 && t.is("(")) break;
+        if (depth == 0 && t.is(";")) break;
+        if (t.is("<") || t.is("(") || t.is("[")) depth++;
+        else if (t.is(">") || t.is(")") || t.is("]")) depth--;
+        else if (depth == 0 && t.kind == TokenKind::Ident) mname = t.text;
+    }
+    if (mname.empty())
+        src_.fail(mt.pos, "a member function template needs a name");
+    // **A constructor template is named by the class's own name** - `template <size_t K>
+    // CMatrix<M, N>(const CVector<K> &)` - and keyed with the other constructors.
+    if (mname == local) {
+        if (tokens_[mt.afterParams].is("explicit")) { mt.isExplicit = true; mt.afterParams++; }   // replayed past
+        mt.isConstructor = true;
+        mname = localOf(tag);
+    }
+    mt.name = mname;
+    mt.ownerLocal = local;
+    mt.memberAccess = access;
+    mt.ownerTag = tag;
+    if (mt.ns.empty()) mt.ns = namespacePrefix();   // its signature's and defaults' names are read there
+    mt.ownerType = nullptr;    // filled at instantiation from the tag
+    // A member of a class template: capture the class's own parameters
+    // and this instantiation's binding, so both layers bind at replay.
+    mt.classParams = instantiatingParams_;
+    mt.classBinding = instantiatingBinding_;
+    mt.classValues = instantiatingValues_;
+    // The class's packs too, bound while its body is read - left out, `Args...` read empty, silently.
+    mt.classPacks.assign(mt.classParams.size(), PackMembers());
+    for (std::size_t i = 0; i < mt.classParams.size(); i++)
+        if (mt.classParams[i].isPack) {
+            auto bound = packs_.find(mt.classParams[i].name);
+            if (bound != packs_.end()) {
+                mt.classPacks[i] = PackMembers(bound->second.types);
+                mt.classPacks[i].values = bound->second.values;
+            }
+        }
+    at_ = mt.afterParams;
+    mt.defined = skipTemplatedDefinition();
+    if (!mt.defined && (!mt.classParams.empty() || mt.isConstructor))
+        src_.fail(mt.pos, std::string("a ") + (mt.isConstructor ? "constructor template" :
+                          "member function template of a class template") + " declared inside "
+                          "its class must be defined there too - an out-of-line one is not supported yet");
+    // Declared only: the definition at namespace scope fills it in, and lacks this `static`.
+    for (std::size_t i = mt.afterParams; !mt.defined && !tokens_[i].is("(") && !tokens_[i].is(";"); i++)
+        if (tokens_[i].is("static")) mt.staticMember = true;
+    if (!mt.defined) mt.declaredAt = mt.afterParams;
+    // The pattern Itanium spells, read once here under the class's binding: its own parameters stand for themselves (M8.2).
+    std::vector<const Type *> self(mt.params.size());
+    for (std::size_t i = 0; i < self.size(); i++) self[i] = types_.templateParam(static_cast<int>(i));
+    std::string patternName;
+    mt.pattern = readTemplateDeclaration(mt, self, std::vector<long long>(self.size(), 0), &patternName);
+    tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);
+}
+
+
 const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     const char *what = isClass ? "class" : (kind == Kind::Struct ? "struct" : "union");
     skipAttributes();
@@ -575,91 +666,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (peek().is("template")) {
             if (tag.empty())
                 src_.fail(peek().pos, "a member template needs a named class");
-            TemplateDecl mt;
-            mt.isMember = true;
-            mt.start = at_;
-            at_++;
-            if (!peek().is("<"))
-                src_.fail(peek().pos, "explicit instantiation in a class is not "
-                                      "supported yet");
-            templateParameters(mt.params);
-            refuseAfterPack(mt.params);
-            mt.afterParams = at_;
-            mt.pos = peek().pos;
-            if (peek().is("struct") || peek().is("class") || peek().is("union"))
-                src_.fail(peek().pos, "a member class template is not supported "
-                                      "yet - only member function templates are");
-            // The member's name: the identifier at depth 0 immediately before
-            // the parameter list's '(' - the return type's own '<...>' is nested.
-            std::string mname;
-            int depth = 0;
-            for (std::size_t i = at_; i + 1 < tokens_.size(); i++) {
-                const Token &t = tokens_[i];
-                // **An operator's name is not one token**, and it is spelled
-                // before the parameter list rather than being an identifier.
-                if (depth == 0 && t.is("operator")) {
-                    if (tokens_[i + 1].is("(") && i + 2 < tokens_.size() &&
-                        tokens_[i + 2].is(")"))
-                        mname = "operator()";
-                    else if (tokens_[i + 1].is("[") && i + 2 < tokens_.size() &&
-                             tokens_[i + 2].is("]"))
-                        mname = "operator[]";
-                    else
-                        mname = "operator" + tokens_[i + 1].text;
-                    break;
-                }
-                if (depth == 0 && t.is("(")) break;
-                if (depth == 0 && t.is(";")) break;
-                if (t.is("<") || t.is("(") || t.is("[")) depth++;
-                else if (t.is(">") || t.is(")") || t.is("]")) depth--;
-                else if (depth == 0 && t.kind == TokenKind::Ident) mname = t.text;
-            }
-            if (mname.empty())
-                src_.fail(mt.pos, "a member function template needs a name");
-            // **A constructor template is named by the class's own name** - `template <size_t K>
-            // CMatrix<M, N>(const CVector<K> &)` - and keyed with the other constructors.
-            if (mname == local) {
-                if (tokens_[mt.afterParams].is("explicit")) { mt.isExplicit = true; mt.afterParams++; }   // replayed past
-                mt.isConstructor = true;
-                mname = localOf(tag);
-            }
-            mt.name = mname;
-            mt.ownerLocal = local;
-            mt.memberAccess = access;
-            mt.ownerTag = tag;
-            if (mt.ns.empty()) mt.ns = namespacePrefix();   // its signature's and defaults' names are read there
-            mt.ownerType = nullptr;    // filled at instantiation from the tag
-            // A member of a class template: capture the class's own parameters
-            // and this instantiation's binding, so both layers bind at replay.
-            mt.classParams = instantiatingParams_;
-            mt.classBinding = instantiatingBinding_;
-            mt.classValues = instantiatingValues_;
-            // The class's packs too, bound while its body is read - left out, `Args...` read empty, silently.
-            mt.classPacks.assign(mt.classParams.size(), PackMembers());
-            for (std::size_t i = 0; i < mt.classParams.size(); i++)
-                if (mt.classParams[i].isPack) {
-                    auto bound = packs_.find(mt.classParams[i].name);
-                    if (bound != packs_.end()) {
-                        mt.classPacks[i] = PackMembers(bound->second.types);
-                        mt.classPacks[i].values = bound->second.values;
-                    }
-                }
-            at_ = mt.afterParams;
-            mt.defined = skipTemplatedDefinition();
-            if (!mt.defined && (!mt.classParams.empty() || mt.isConstructor))
-                src_.fail(mt.pos, std::string("a ") + (mt.isConstructor ? "constructor template" :
-                                  "member function template of a class template") + " declared inside "
-                                  "its class must be defined there too - an out-of-line one is not supported yet");
-            // Declared only: the definition at namespace scope fills it in, and lacks this `static`.
-            for (std::size_t i = mt.afterParams; !mt.defined && !tokens_[i].is("(") && !tokens_[i].is(";"); i++)
-                if (tokens_[i].is("static")) mt.staticMember = true;
-            if (!mt.defined) mt.declaredAt = mt.afterParams;
-            // The pattern Itanium spells, read once here under the class's binding: its own parameters stand for themselves (M8.2).
-            std::vector<const Type *> self(mt.params.size());
-            for (std::size_t i = 0; i < self.size(); i++) self[i] = types_.templateParam(static_cast<int>(i));
-            std::string patternName;
-            mt.pattern = readTemplateDeclaration(mt, self, std::vector<long long>(self.size(), 0), &patternName);
-            tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);
+            memberTemplate(tag, local, access);
             continue;
         }
 
