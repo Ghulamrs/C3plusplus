@@ -3280,6 +3280,26 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
     const std::size_t dataIds = wanted != nullptr ? wanted->size() : 0;     // the replay makes them in the body's order, not data first
+    const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
+    std::size_t first = 0;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
+    for (std::size_t i = 0; tds != readTypedefs_.end() && i < tds->second.size(); i++) {
+        const Type *e = substituted(*s, tds->second[i].second);
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        e = e->unqualified();
+        std::string name;
+        std::vector<TemplateArg> args;
+        const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
+        if (of != nullptr && wanted != nullptr && of != read && readId(of, nullptr, nullptr) && carriedId(*s, of, nullptr) == nullptr
+            && earlyArgs(*s, of, read, &name, &args)) {
+            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(first++), of);
+            continue;
+        }
+        const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
+        const Type *real = id ? carriedId(*s, e, early) : nullptr;
+        if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
+        else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args))
+            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(first++), e);
+    }
     for (const Signature &f : k->second.second) {
         std::vector<const Type *> types(1, f.returns);     // in the order the replay reads a declaration: its return type first
         types.insert(types.end(), f.params.begin(), f.params.end());
@@ -3661,19 +3681,12 @@ std::string Templates::classBefore(std::size_t start, const std::vector<Template
 
 // Step (2): each of the read's member typedefs and aliases names, under `s`, a type the binding carries; else why not.
 std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) const {
-    std::size_t first = 0;     // a typedef's `X<$T0>::m` wanted ahead of the members', as the replay reads the body
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
         const Type *e = substituted(s, td.second);
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
         e = e->unqualified();
-        std::string name;
-        std::vector<TemplateArg> args;
-        const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
-        if (of != nullptr && wanted != nullptr && of != readClass_.at(start) && readId(of, nullptr, nullptr) && carriedId(s, of, nullptr) == nullptr
-            && earlyArgs(s, of, readClass_.at(start), &name, &args)) {
-            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(first++), of);
-            continue;
-        }
+        const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : e;     // classShape wanted it first
+        if (wanted != nullptr && std::find(wanted->begin(), wanted->end(), of) != wanted->end()) continue;
         if (e != readClass_.at(start) && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
             return "replayed: a member typedef or alias over a type the binding does not carry";
     }

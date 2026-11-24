@@ -5313,3 +5313,32 @@ clean; Windows cl /W4 /WX clean (full, 12:30:49-12:34:50, ~4 min, the coordinato
 then the probe 0 failed with its .nonames, overload.sh 46/0, the probe on clang and cxx3-msvc the same.
 **Next**: the 9,316 signatures' class template-ids the program had not declared that the member-template classes now reach
 (which ids, and whether earlyArgs takes them); `pair<const K, V>` naming `pair<K, V>` (2,234).
+
+## M8.3 slice 3b: a member typedef's class template-id made before the class under -templates=subst (lane m83v, 2026-11-24)
+
+**Commit 1**: the 9,316 self-host classes refused as "a member function's signature ... a class template-id over its
+parameters the program had not declared" were, by a debug build over Templates.cpp, Parser.cpp and Lowering.cpp, three ids:
+`vector<$T0>`'s `initializer_list<$T0>` (316), `pair<$T0,$T1>`'s `pair<const $T0,$T1>` (259, its own template: work 2) and
+`__hash_table`'s `__hash_iterator<$T0, ...>` (78). The first was wanted by `classShape` and `earlyArgs` takes it; nothing made
+it because `typedefsCarried` then refused `typedef std::reverse_iterator<T *> reverse_iterator` - a class template-id over the
+parameters the program had not declared, which it did not want (only an `X<$T0>::m`) - so `classBefore` failed, `idsBefore`
+made nothing, and the second `classBefore` named the signature. A typedef's ids are now `classShape`'s, read in the
+typedefs' order ahead of the members' as the replay reads the body: `X<$T0>::m` (m83t's, moved from `typedefsCarried`) and
+`X<$T0>` itself, wanted when `earlyArgs` takes it and mapped under `s` once made (`carriedId`), so `classFromRead` declares
+the typedef as the made class; `typedefsCarried` passes what `classShape` wanted and refuses the rest as before. Probe
+`template-subst-typedefid` (`Vec<T>` with `typedef Rev<T *> reverse_iterator` and `assign(List<T>)`, neither declared
+before `Vec<int>`; clang's 3 15 6 / 3.75 2 on Windows, cxx3-msvc the same; 6 classes made from the read, 4 made before);
+its .nonames records x86_64-linux's C2-only constructors (implicit-move.nonames's difference). The measure: suite
+**1,147 of 2,184** (1,047; 1,106 without the probes, 1,012), self-host **59,302 beside** under the check (51,435); the
+self-host's "had not declared" 9,316 -> 3,175. src 96,744 -> 96,757 (+13, `Templates.cpp`); no EXCLUSIONS line moved.
+Census: no check 1,147 made, nonzero 353 (REF's units); under the check no class differ in the cases or the self-host (the
+frame and made differ lines are REF's own), self-host nonzero 0, "made before the class" 32,800. Gates (the commit's tree,
+REF aae2267c): identical 0 differ on four targets plain (1938/3876/1938/1938) and with `-templates=subst` on three
+(1938/3876/1938: every case, the probe's typedef ids among them); subst.sh 0 failed, then run.sh 1314/0, then run.sh under
+the flag 1314/0 (0 failed); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0
+(exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4
+/WX clean (delta, alone, 13:10:46-13:12:47, ~2 min); names.sh whole on aae2267c 968/0 (owed since m83u), on this tree
+969/0 with the probe's .nonames; overload.sh 46/0; the probe on clang and cxx3-msvc the same.
+**Next**: `pair<const K, V>` named by `pair<K, V>`'s converting constructor (259 of the three sources' 653; the self-host's
+3,175 "had not declared" left are it and `__hash_iterator<$T0, ...>` under `__hash_table`), then "its own template under
+other arguments" (2,234).
