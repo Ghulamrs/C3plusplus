@@ -257,7 +257,7 @@ public:
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                            const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr) const;     // early: ids carried before the replay
-    bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args) const;
+    bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself = false) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
     void idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, std::size_t pos);
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
@@ -297,7 +297,8 @@ public:
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
                            const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args);
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
-    void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies);
+    void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
+    void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`
     std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
     std::string memberName(const Signature &a, const std::string &readTag, const std::string &tag, const Substituted &s) const;
     std::string bodyKey(std::size_t start, const std::pair<PendingBody, std::string> &h, const std::string &tag, const Substituted &s) const;
