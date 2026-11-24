@@ -5223,3 +5223,8 @@ a template with partial specializations taken by earlyArgs (the replay's match);
 point checked not owed).** M8.3 (M8-PLAN, m83u): member function templates in a class made from the read, declared by one
 path (Parser::memberTemplate) under the class's binding. **Class specializations made with no replay: suite 1,047 of 2,184
 (from 814), self-host 51,435 held equal under the check (from 35,154).** Nothing changes without the flag.
+
+**m6d-w30's wave landed, 2026-11-24 (gate m6dw30g at deca708c against main ae93b6a2: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83v): a typedef's X<$T0> made before the class, in typedef order ahead of the
+members. **Class specializations made with no replay: suite 1,147 of 2,184 (from 1,047), self-host 59,302 held equal under
+the check (from 51,435).** Nothing changes without the flag.
