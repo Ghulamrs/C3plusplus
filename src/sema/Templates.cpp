@@ -3411,7 +3411,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
         const Type *u = e->unqualified();
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || u->tag().find('$') != std::string::npos);
-        if (!read->bases().empty() && (over || t != m.type)) return "replayed: a base, beside a data member over the parameters";
         std::size_t back = wanted != nullptr ? wanted->size() : 0;
         const std::size_t had = back;
         if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
@@ -3506,22 +3505,38 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     return std::string();
 }
 
-// The read class's data members under `s`, laid as the parser lays a class of no base, vptr or bit-field: step (1)'s layout.
+// The read class's data members under `s`, laid as the parser lays a class of no vptr or bit-field: its bases by layBases,
+// the parser's own path, then its own members from that cursor, past an empty subobject of their type on Itanium.
 void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const {
-    if (!read->bases().empty()) {     // classShape's: bases of the program's and members over no parameter, laid by the read as the replay
-        laid->members = read->members(), laid->totalBits = static_cast<long long>(read->dataSize()) * 8;
-        laid->size = read->size(p_.target_), laid->align = read->align(p_.target_);
-        laid->endsZero = read->endsWithZeroSized(), laid->leadsZero = read->leadsWithZeroSized();
-        for (const Type::EmptyAt &e : read->emptySubobjects()) if (e.type != read) laid->empties.push_back(e);
-        return;
-    }
-    long long cursor = 0;
-    int widest = 1;
-    for (const Member &m : read->members()) {
+    std::vector<Parser::BaseToLay> order;     // classShape's: non-virtual, direct, of no vptr, so laid as written
+    for (const Type::BaseSpec &b : read->bases()) order.push_back(Parser::BaseToLay{ b.type, b.access, static_cast<std::size_t>(b.written) });
+    Parser::BasesLaid bases;
+    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, &bases);
+    long long cursor = (bases.bitCursor + 7) / 8;
+    int widest = bases.widest;
+    const std::size_t own = bases.members.size();
+    laid->members.swap(bases.members);
+    laid->empties.swap(bases.empties);
+    laid->endsZero = bases.endsZero, laid->leadsZero = bases.leadsZero;
+    for (std::size_t i = own; i < read->members().size(); i++) {
+        const Member &m = read->members()[i];
         const Type *t = substituted(s, m.type);
         const Type *slot = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         const int a = slot->align(p_.target_);
-        const long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
+        long long at = read->kind() == Kind::Union ? 0 : (cursor + a - 1) / a * a;
+        const Type *element = slot;
+        long long count = 1;
+        while (element->isArray()) count *= element->length(), element = element->pointee();
+        if (element->unqualified()->isStructOrUnion()) {
+            laid->endsZero = element->unqualified()->endsWithZeroSized();
+            const int each = element->size(p_.target_);
+            for (bool clash = !p_.target_.microsoftNames() && read->kind() != Kind::Union; clash; ) {
+                clash = false;
+                for (long long k = 0; k < count && !clash; k++) clash = Parser::emptyClash(laid->empties, element, static_cast<int>(at + k * each));
+                if (clash) at += a;
+            }
+            for (long long k = 0; k < count; k++) Parser::addEmpties(laid->empties, element, static_cast<int>(at + k * each));
+        }
         cursor = std::max(cursor, at + slot->size(p_.target_));
         widest = std::max(widest, a);
         laid->members.push_back(m);
@@ -3529,8 +3544,9 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
         laid->members.back().offset = static_cast<int>(at);
     }
     laid->totalBits = cursor * 8;
-    laid->size = laid->members.empty() ? 1 : static_cast<int>((cursor + widest - 1) / widest * widest);
-    laid->align = laid->members.empty() ? 1 : widest;
+    laid->size = alignTo(static_cast<int>(std::max(cursor, bases.sizeFloor)), widest);
+    laid->align = widest;
+    if (laid->members.empty() && cursor == 0 && bases.sizeFloor == 0) laid->size = 1, laid->align = 1;
 }
 
 // What a class made from the read cannot carry yet, by name: a pack, a typedef of its own class, a member initialiser, alignas, final.
@@ -3761,10 +3777,13 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
         if (a.type != b.type || a.offset != b.offset || a.access != b.access || a.isVirtual != b.isVirtual || a.direct != b.direct || a.written != b.written)
             return "differ: a base's class, offset or access";
     }
-    if (!read->bases().empty() && read->dataSize() != made->dataSize()) return "differ: the data size";
     if (!made->staticMembers().empty()) return "differ: the replay's class has a static data member";
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
+    const bool noData = laid.members.empty() && laid.totalBits == 0;     // completeClass's data size and cl's flags from `laid`
+    if (made->dataSize() != (noData ? 0 : laid.size) && made->dataSize() != static_cast<int>((laid.totalBits + 7) / 8)) return "differ: the data size";
+    if (made->endsWithZeroSized() != (noData || laid.endsZero) || made->leadsWithZeroSized() != (noData || laid.leadsZero))
+        return "differ: a zero-sized subobject at an end";
     const std::vector<Member> &mine = laid.members;
     const int size = laid.size, align = laid.align;
     const std::vector<Member> &theirs = made->members();

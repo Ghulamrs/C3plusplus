@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of Pad<char>'s and PadC's implicit constructors, which call Tail's out-of-line one, where cxx1 emits C1 and C2 - the difference template-subst-plainbase.nonames records (PadC is no template: the replay and the read alike). Every other name agrees, and the other two targets agree on all.

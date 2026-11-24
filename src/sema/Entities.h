@@ -480,6 +480,17 @@ struct ClassLaidOut {
     std::vector<Type::EmptyAt> empties;
 };
 
+// The non-virtual bases as Parser::layBases lays them, in lay order: their members handed down, each one's offset, the
+// empty subobjects, and the cursor and flags the class's own members go on from.
+struct BasesLaid {
+    std::vector<Member> members;
+    std::vector<int> at;
+    std::vector<Type::EmptyAt> empties;
+    long long bitCursor = 0, sizeFloor = 0;
+    int widest = 1;
+    bool endsZero = false, leadsZero = false;
+};
+
 // A member function body written inside the class, held until the class closes.
 // `start` is the token the whole declaration begins at, so the replay re-reads the
 // return type and parameters too rather than trying to reconstruct them.
