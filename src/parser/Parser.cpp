@@ -726,6 +726,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         // **A friend is not a member, but it is still looked up in the
         // class.**
         pendingDefaults_.clear();
+        mayThrow_ = 0;      // [except.spec]/9 asks of this body alone, never of the one before it
         pendingNoexcept_ = false;
         pendingSpec_ = DynamicSpec();
         const bool scoped = mine[i].freeFunction && !mine[i].tag.empty();
