@@ -5465,3 +5465,44 @@ there. **Owed first**: a constructor made from the read records its members' con
 class was made before it; then n2's placement lands.
 Census: no check nonzero 353 (REF's count); under the check no class differ, self-host nonzero 0. Gates (the commit's tree, REF 7d47fbaf): identical 0 differ on four targets plain (1946/3892/1946/1946) and with `-templates=subst` on three (1946/3892/1946: every case, the probe's signature ids among them); subst.sh 0 failed, then run.sh 1318/0, then run.sh under the flag 1318/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta 16:11:01-16:17:43, ~6.7 min, the box shared; the base full 3.6 min alone); names.sh 973/0 (no .nonames); overload.sh 46/0; the probe on clang and cxx3-msvc the same.
 **Next**: a constructor made from the read records its members' constructors for a data member whose class was made before it (then `boxkit/m83z-n2.patch` makes `map` and the 2,478 from the read); a type parameter bound to a reference (1,841); a base beside a data member over the parameters (1,631); a data member of a type the binding does not carry (906).
+
+## M8.3 slice 3b: a constructor made from the read records its members' constructors, and `map` is made from the read under -templates=subst (lane m83aa, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,301 of 2,184 (1,272; the probe's 8, 1,293 otherwise),
+self-host 67,222 beside under the check (65,354); its 2,478 "class template-ids made first for a data member and a member function's signature" gone.
+
+**The check first.** Under `-check=templates` a covered member body is replayed beside its read (`memberFrame`); the replay's
+`constructMember` records what builds each class-typed member (`memberBuilt_`, `fn|m|0`), and nothing held the read's record
+against it - the read made none, so with no check `map() {}`'s `tree_` (a `__tree` made first, with a written default
+constructor) was "outside the SSA lowering: a member built by no constructor the parser recorded". Now `memberFrame` asks what
+the read records (`Templates::membersBuilt`) and holds it against the replay's records key for key (`builtApart`; a base's `^`,
+`~` and `$` keys are not compared); a difference prints "-check=templates failed: <where>: member 'm' built by a constructor the
+read records none of" and fails the unit (the driver's `templatesFailed`). With the read recording none (a stub build over n2,
+the tree as m83z left it) the check fails all nine units by name - the eight n2 broke (deque-both-ends, include-map-set,
+map-move-only-mapped, map-set-comparator, map-set-node-stability, member-template-body-unchosen, range-for-vector,
+return-self-referential) and the probe.
+**The cause mended, one path with the replay's.** `constructMember`'s three decisions are functions both paths call:
+`constructedClass` (the class whose constructor builds a member; none for a reference or a class with no constructor),
+`noteChosen` (the chosen constructor noted used, through `noteUsed`) and `keepMemberBuilt` (the record; two choices under one key
+none). A constructor made from the read (`madeMember`) records, in declaration order, each class-typed member the list leaves
+to its class's default constructor and notes it used, as the replay does reading the body. What the read cannot carry replays
+the body by name: a member in a union or an array or with an initialiser of its own; a default constructor taking defaults or
+not public; and a member whose class has a destructor - the replay's constructor guards it while the body runs (a slot and an
+LSDA), which the read's frame does not lay: with that member made from the read too, `identical.sh -templates=subst` differed on
+the nine (18 files: `map() {}` with no landing pad), so `map`'s and `set`'s constructors replay and the classes are made from the
+read. Then m83z's n2 (`boxkit/m83z-n2.patch`: a signature's ids placed ahead of or behind the data members' by where the body
+declares each) is applied.
+Probe `template-subst-memberctor` (`Map<K, V>`'s `Map() {}` leaving `Box<Pair<K, V> > box_` to `Box() : n(7)` - made from the
+read; `Guarded<K, V>`'s `Guarded() {}` beside `Held held_` with a destructor and the ledger - replayed by name; 15 111 3 and LEDGER
+0s plain, under the flag and the check; g++, clang on Windows and cxx3-msvc the same; 8 classes made from the read; REF e84c027f under the flag
+refuses it, `Map`'s constructor "outside the SSA lowering" - the fault was there before n2, with no signature id; `.nonames` for
+x86_64-linux's C1/D1 of the inline constructors and destructors). Found and owed: `Held<E>`'s `lfBuilt(this, "Held")` left the
+class-members door unread with "argument 2 of '' is '' and this is ''", a diagnostic with its names empty. src 96,850 -> 96,947
+(+97, n2's among them); four EXCLUSIONS citations re-pointed (ParserClass.cpp 2989 -> 3002, Templates.cpp 1981 -> 2031,
+2033 -> 2083, 2730 -> 2780).
+Census: no check nonzero 353 (n2 alone 361; the set n3's); under the check 0 failed, no class differ, nonzero 353, self-host
+nonzero 0, 0 failed. Gates (the commit's tree, REF e84c027f): identical 0 differ on four targets plain (1948/3896/1948/1948) and with `-templates=subst` on three (1948/3896/1948: every case, `map`, `set` and the probe among them); subst.sh 0 failed, then run.sh 1319/0, then run.sh under the flag 1319/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and
+under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++
+-Werror clean; Windows cl /W4 /WX clean (full 16:42:23-16:46:01, ~3.6 min alone; the final delta 16:58:55-17:06:31, ~7.6 min,
+the box shared); names.sh 974/0 and the final probe again (its .nonames), overload.sh 46/0.
+**Next**: the largest reasons now, self-host under the check: a type parameter bound to a reference (1,841); a base beside a data member over the parameters (1,631); a data member of a type the binding does not carry (906). Owed: a member with a destructor made from the read - its constructor's guard (the slot and the LSDA the replay lays), so `map()`'s and `set()`'s bodies need no replay; the class-members door's empty diagnostic above.

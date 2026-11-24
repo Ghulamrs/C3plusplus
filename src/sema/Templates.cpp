@@ -1453,6 +1453,7 @@ std::string Templates::bodiesReport() const {
                       " declared=" + std::to_string(signatureTally_[0]) + " signature=" + std::to_string(signatureTally_[1]) + "\n";
     for (std::set<std::uint32_t>::const_iterator i = bodyShapes_.begin(); i != bodyShapes_.end(); ++i)
         out += "-check=templates shape: " + p_.src_.where(*i) + "\n";
+    for (std::size_t i = 0; i < builtFailed_.size(); i++) out += "-check=templates failed: " + builtFailed_[i] + "\n";
     for (int door = 0; door < ReadDoors; door++) {
         long unread = 0;
         for (std::map<std::string, int>::const_iterator i = declUnread_[door].begin(); i != declUnread_[door].end(); ++i) unread += i->second;
@@ -1581,6 +1582,10 @@ void Templates::keepRead(std::size_t at, const Function &f) {
 
 // Slice 3b: a covered member body's frame laid from its read's steps, and the shell made from them, held against the replay's.
 void Templates::memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed) {
+    Built reads;     // the read's members' constructors against the replay's: apart fails the unit by name
+    const std::string symbol = p_.lookup_.functions_[body.which].symbol, stops = membersBuilt(body, symbol, &reads);
+    const std::string built = stops.empty() ? builtApart(symbol, reads) : std::string();
+    if (!built.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[body.start].pos) + ": " + built);
     const std::vector<FrameEvent> &read = readFrames_[body.start];
     if (read.empty() || replayed.empty()) { frameCensus_["member: no steps logged"]++; return; }
     int raised = 0;
@@ -1736,12 +1741,57 @@ bool Templates::madeMember(const PendingBody &body) {
     sp.symbol = p_.lookup_.functions_[body.which].symbol;
     const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
     std::string why;
-    if (madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
+    Built built;     // its members' constructors noted and recorded as the replay's constructMember does
+    why = membersBuilt(body, sp.symbol, &built);
+    for (std::size_t q = 0; why.empty() && q < built.size(); q++) {
+        p_.noteChosen(built[q].second.first);
+        p_.keepMemberBuilt(built[q].first, Parser::MemberBuilt{ built[q].second.first, built[q].second.second, false, false });
+    }
+    if (why.empty() && madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
         replayCensus_["member: substituted with no replay"]++;
         return true;
     }
     replayCensus_["member: replayed: " + why]++;
     return false;
+}
+
+// A constructor made from the read builds each class-typed member the list leaves as the replay's constructMember does: by its
+// class's default constructor - here one taking nothing, public; what is not that replays the body. Keyed as memberBuilt_.
+std::string Templates::membersBuilt(const PendingBody &body, const std::string &symbol, Built *out) const {
+    const Type *const cls = p_.lookup_.findTypedef(body.tag);
+    if (cls == nullptr || body.key != Parser::constructorKey(body.tag)) return std::string();
+    for (const Member &m : cls->members()) {
+        const Type *mc = m.declaredIn == nullptr ? p_.constructedClass(m) : nullptr;
+        if (mc == nullptr) continue;
+        if (cls->kind() == Kind::Union || m.anonUnion != nullptr || m.type->isArray() || p_.memberInit_.count(body.tag + "::" + m.name) != 0)
+            return "a class-typed member in a union or an array, or with an initialiser of its own";
+        const Signature *c = p_.classes_.defaultConstructorOf(mc);
+        if (c == nullptr || c->access != Access::Public || c->deleted || !c->params.empty())
+            return "a class-typed member whose default constructor takes defaults or is not public";
+        if (p_.destructorOf(mc) != nullptr) return "a class-typed member with a destructor, which the replay's constructor guards while its body runs";
+        const std::vector<const Type *> ps(1, p_.types_.pointerTo(mc));
+        out->push_back(std::make_pair(symbol + "|" + m.name + "|0", std::make_pair(c->symbol, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false))));
+    }
+    return std::string();
+}
+
+// The replay's records of what builds a body's members (not the keys of a base, `^`, `~` or `$`) held against the read's, one for one.
+std::string Templates::builtApart(const std::string &symbol, const Built &own) const {
+    const std::string head = symbol + "|";
+    std::size_t seen = 0;
+    for (std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.lower_bound(head);
+         i != p_.memberBuilt_.end() && i->first.compare(0, head.size(), head) == 0; ++i) {
+        const char c = i->first.size() > head.size() ? i->first[head.size()] : '^';
+        if (c == '^' || c == '~' || c == '$') continue;
+        const std::string member = i->first.substr(head.size(), i->first.rfind('|') - head.size());
+        std::size_t q = 0;
+        while (q < own.size() && own[q].first != i->first) q++;
+        if (q == own.size()) return "member '" + member + "' built by a constructor the read records none of";
+        if (own[q].second.first != i->second.symbol || own[q].second.second != i->second.signature || i->second.defaulted || i->second.zeroed)
+            return "member '" + member + "' built by a constructor other than the replay's";
+        seen++;
+    }
+    return seen == own.size() ? std::string() : "a member built by a constructor the replay records none of";
 }
 
 // A covered member's display name under its class's whole name; a constructor's or destructor's C2 or D2 alias on Itanium, as the
@@ -3295,6 +3345,18 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
         s->to.push_back(binding[q]);
     }
+    // A data member's place in the body: its name in the class's own braces before `;`, `,`, `[` or `=`; 0 where none is.
+    const auto memberAt = [&](const std::string &n) -> std::size_t {
+        for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
+            const Token &k = p_.tokens_[t], &next = p_.tokens_[t + 1];
+            braces += k.is("{"), parens += k.is("(");
+            if ((k.is("}") && --braces == 0) || (braces == 0 && k.is(";"))) break;
+            if (k.is(")") && parens > 0) parens--;
+            if (braces == 1 && parens == 0 && k.text == n && (next.is(";") || next.is(",") || next.is("[") || next.is("="))) return k.pos;
+        }
+        return 0;
+    };
+    std::vector<std::size_t> dataAt;     // the data members that want ids, where the body declares them
     for (const Member &m : read->members()) {
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
         const Type *t = substituted(*s, m.type), *e = t;
@@ -3304,7 +3366,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || u->tag().find('$') != std::string::npos);
         if (!read->bases().empty() && (over || t != m.type)) return "replayed: a base, beside a data member over the parameters";
         std::size_t back = wanted != nullptr ? wanted->size() : 0;
+        const std::size_t had = back;
         if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
+        if (wanted != nullptr && wanted->size() != had) dataAt.push_back(memberAt(m.name));     // where the replay makes them
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
         std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
         std::vector<TemplateArg> args;
@@ -3312,6 +3376,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         else if (over) {
             if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args, false, wanted))
                 return "replayed: a data member of a class the read named over its parameters";
+            if (wanted->size() == had) dataAt.push_back(memberAt(m.name));
             wanted->push_back(u);
             continue;
         }
@@ -3343,9 +3408,15 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted))
             wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(first++), e);
     }
+    // A signature declared before every data member wanting ids has its ids made ahead of theirs, one after them behind.
+    const bool placed = std::find(dataAt.begin(), dataAt.end(), std::size_t(0)) == dataAt.end();
+    const std::size_t dataLo = dataAt.empty() ? 0 : *std::min_element(dataAt.begin(), dataAt.end());
+    const std::size_t dataHi = dataAt.empty() ? 0 : *std::max_element(dataAt.begin(), dataAt.end());
+    std::size_t sigAt = first;
     for (const Signature &f : k->second.second) {
         std::vector<const Type *> types(1, f.returns);     // in the order the replay reads a declaration: its return type first
         types.insert(types.end(), f.params.begin(), f.params.end());
+        const bool ahead = dataIds != 0 && placed && f.pos < dataLo, behind = dataIds == 0 || (placed && f.pos > dataHi);
         for (const Type *t : types) {
             const Type *e = substituted(*s, t);
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
@@ -3356,15 +3427,19 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
             if (of != nullptr && wanted != nullptr && of != read && readId(of, nullptr, nullptr) && carriedId(*s, of, nullptr) == nullptr
                 && earlyArgs(*s, of, read, &name, &args)) {
-                if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
-                wanted->push_back(of);
+                if (!ahead && !behind) return "replayed: class template-ids made first for a data member and a member function's signature";
+                wanted->insert(ahead ? wanted->begin() + static_cast<std::ptrdiff_t>(sigAt++) : wanted->end(), of);
                 continue;
             }
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
-            std::size_t back = wanted != nullptr ? wanted->size() : 0;     // its arguments' ids first, as for a data member's
+            const std::size_t had = wanted != nullptr ? wanted->size() : 0;
+            std::size_t back = ahead ? sigAt : had;     // its arguments' ids first, as for a data member's
             if (id) argsWanted(s, e, read, early, wanted, &back);
+            if (ahead) sigAt = back;
+            if (!ahead && !behind && wanted != nullptr && wanted->size() != had)
+                return "replayed: class template-ids made first for a data member and a member function's signature";
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
@@ -3372,8 +3447,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             if (own) real = specializationUnder(*s, e);
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
             else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted)) {
-                if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
-                wanted->push_back(e);
+                if (!ahead && !behind) return "replayed: class template-ids made first for a data member and a member function's signature";
+                wanted->insert(ahead ? wanted->begin() + static_cast<std::ptrdiff_t>(sigAt++) : wanted->end(), e);
             }
             else if (e != read && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && e->tag().find('$') != std::string::npos)))
                 return "replayed: a member function's signature over a type the binding does not carry: " + uncarriedKind(e, read);

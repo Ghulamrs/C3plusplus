@@ -57,6 +57,7 @@ public:
     void checkTemplates() { tmpl_.checkBodies_ = true; }
     std::string templatesReport() const { return tmpl_.bodiesReport(); }
     std::string templatesBuiltReport() const { return tmpl_.builtReport(); }    // after the lowering: slice 2b's bodies
+    bool templatesFailed() const { return !tmpl_.builtFailed_.empty(); }     // -check=templates: members built apart
     // -check=fold (M6d S6): every integer constant asked folded twice, from the Ast and from the typed tree; differences fail.
     void checkFold() { constant_.checkFold_ = true; }
     std::string foldReport(int *differ) const { return constant_.foldReport(differ); }
@@ -2219,6 +2220,9 @@ private:
                            const Member &m, int thisSlot,
                            std::vector<ExprPtr> &args, std::size_t pos,
                            bool implicit);
+    const Type *constructedClass(const Member &m) const;     // the class whose constructor builds `m`, if any
+    void noteChosen(const std::string &symbol);             // a member's chosen constructor, noted used
+    void keepMemberBuilt(const std::string &key, const MemberBuilt &b);     // memberBuilt_, two choices under one key none
     // [dcl.fct.default]/4: the defaults have to be a suffix of the parameter list. Asked
     // by both parameter-list parsers - declarations and definitions - because a
     // definition may carry the defaults where the declaration did not.

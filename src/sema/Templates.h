@@ -327,6 +327,10 @@ public:
     bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr);
     std::map<std::size_t, std::pair<std::string, Substituted> > memberMade_;     // by start: a covered member body owed no replay, its symbol
     bool madeMember(const PendingBody &body);           // in replayInlineBodies, in place of its topLevel: false replays it
+    typedef std::vector<std::pair<std::string, std::pair<std::string, const Type *> > > Built;     // memberBuilt_ keys: constructor, type
+    std::string membersBuilt(const PendingBody &body, const std::string &symbol, Built *out) const;     // what the read builds members by
+    std::string builtApart(const std::string &symbol, const Built &own) const;
+    std::vector<std::string> builtFailed_;      // -check=templates: a covered body whose members' constructors differ, by place
     void memberNamed(const PendingBody &body, Function *g) const;     // its display name; a constructor's or destructor's alias
     std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
     std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
