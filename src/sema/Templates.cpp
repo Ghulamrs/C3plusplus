@@ -3558,8 +3558,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     std::string ownKey = readTag.substr(0, readTag.find('<')) + "<";
     for (std::size_t q = 0; q < params.size(); q++) ownKey += (q > 0 ? "," : "") + std::string(params[q].type != nullptr ? "$P" : "$T") + std::to_string(q);
     const bool primary = readTag.find('<') != std::string::npos && readTag.compare(0, ownKey.size() + 6, ownKey + ">$read") == 0;
-    const std::size_t colons = ownKey.rfind("::", ownKey.find('<')), from = colons == std::string::npos ? 0 : colons + 2;
-    const std::string ownName = ownKey.substr(from, ownKey.find('<') - from);
+    const std::size_t colons = ownKey.rfind("::", ownKey.find('<')), nameAt = colons == std::string::npos ? 0 : colons + 2;
+    const std::string ownName = ownKey.substr(nameAt, ownKey.find('<') - nameAt);
     const auto ownId = [&](std::size_t t) -> std::size_t {     // past the `>` of the own id at `t`, or `t`
         if (!primary || p_.tokens_[t].text != ownName || t + 1 + 2 * params.size() >= p_.tokens_.size() || !p_.tokens_[t + 1].is("<")) return t;
         for (std::size_t q = 0; q < params.size(); q++)
