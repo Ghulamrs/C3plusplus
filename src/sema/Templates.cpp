@@ -1162,11 +1162,11 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
     }
     if (wantsBody && why.empty() && !read.valid()) why = "the read made no function with a block";
     if (!why.empty()) {
-        // One reason for every name: what is quoted is taken out.
+        const std::string named = why;     // the place's note keeps the names; the census's one reason for every name takes them out
         for (std::size_t a = why.find('\''), b; a != std::string::npos && (b = why.find('\'', a + 1)) != std::string::npos; a = why.find('\'', a + 2))
             why.replace(a + 1, b - a - 1, "");
         declUnread_[door][why.substr(0, 100)]++;
-        p_.syntaxTree_.noteUnread(p_.tokens_[at < p_.tokens_.size() ? at : 0].pos, std::string(readDoorNames[door]) + ": " + why.substr(0, 100));
+        p_.syntaxTree_.noteUnread(p_.tokens_[at < p_.tokens_.size() ? at : 0].pos, std::string(readDoorNames[door]) + ": " + named.substr(0, 160));
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
@@ -1583,15 +1583,18 @@ void Templates::keepRead(std::size_t at, const Function &f) {
 // Slice 3b: a covered member body's frame laid from its read's steps, and the shell made from them, held against the replay's.
 void Templates::memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed) {
     Built reads;     // the read's members' constructors against the replay's: apart fails the unit by name
-    const std::string symbol = p_.lookup_.functions_[body.which].symbol, stops = membersBuilt(body, symbol, &reads);
+    std::vector<std::string> guards;     // and its guarded members' slots and pads against the replay's
+    const std::string symbol = p_.lookup_.functions_[body.which].symbol, stops = membersBuilt(body, symbol, &reads, &guards, s);
     const std::string built = stops.empty() ? builtApart(symbol, reads) : std::string();
     if (!built.empty()) builtFailed_.push_back(p_.src_.where(p_.tokens_[body.start].pos) + ": " + built);
-    const std::vector<FrameEvent> &read = readFrames_[body.start];
+    const std::vector<FrameEvent> read = stops.empty() ? guardedFrame(readFrames_[body.start], guards.size()) : readFrames_[body.start];
     if (read.empty() || replayed.empty()) { frameCensus_["member: no steps logged"]++; return; }
     int raised = 0;
     std::vector<int> laid;
     const std::string apart = layFrame(read, replayed, s, replayed.front().kind == 'z' ? replayed.front().align : 0, &raised, &laid);
     frameCensus_[apart.empty() ? "member: equal" : "member: differ: " + apart]++;
+    const std::string place = p_.src_.where(p_.tokens_[body.start].pos) + ": ";     // a guarded member's frame or pads apart fail it
+    if (!apart.empty() && stops.empty() && !guards.empty()) builtFailed_.push_back(place + "a guarded member's frame apart: " + apart);
     if (!apart.empty()) return;
     Specialization sp;
     sp.start = body.start;
@@ -1603,10 +1606,12 @@ void Templates::memberFrame(const PendingBody &body, const Substituted &s, const
     std::vector<Function> own;
     const std::string fromRead = madeFromRead(sp, s, read, laid, &own);
     memberNamed(body, &own.back());
+    if (stops.empty() && !guards.empty()) own.back().setHasLandingPads(true);
     const std::string shell = shellApart(own.back(), made[at]);
     shellCensus_[shell.empty() ? "member: equal" : "member: differ: " + shell]++;
     const std::string side = !shell.empty() ? "its shell" : !fromRead.empty() ? "replayed: " + fromRead : madeApart(own.back(), made[at]);
     madeCensus_[side.empty() ? "member: equal" : "member: differ: " + side]++;
+    if (side == "its landing pads" && stops.empty() && !guards.empty()) builtFailed_.push_back(place + "a guarded member's landing pads apart");
 }
 
 // **Step 2's shell**: a Function's records, made from the read's steps as laid - a parameter's and a
@@ -1705,15 +1710,19 @@ std::string Templates::madeApart(const Function &g, const Function &f) const {
 
 // Step 2's end: the function, its frame's alignment and the unit's records the replay's definition path leaves, made from the
 // read alone; false - and replayed - where the read leaves what the made function does not carry or a generator walks the Ast.
-bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member) {
+bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member,
+                                  const std::vector<std::string> *guards) {
     if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
     int raised = 0;
     std::vector<int> laid;
-    *why = layFrame(readFrames_[sp.start], std::vector<FrameEvent>(), s, startAlign, &raised, &laid);
+    const bool guarded = guards != nullptr && !guards->empty();
+    const std::vector<FrameEvent> frame = guarded ? guardedFrame(readFrames_[sp.start], guards->size()) : readFrames_[sp.start];
+    *why = layFrame(frame, std::vector<FrameEvent>(), s, startAlign, &raised, &laid);
     if (!why->empty()) return *why = "the frame: " + *why, false;
     std::vector<Function> own;
-    if (!(*why = madeFromRead(sp, s, readFrames_[sp.start], laid, &own)).empty()) return false;
+    if (!(*why = madeFromRead(sp, s, frame, laid, &own)).empty()) return false;
     if (member != nullptr) memberNamed(*member, &own.back());
+    if (guarded) own.back().setHasLandingPads(true);
     p_.current_->functions.push_back(std::move(own.back()));
     for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
         if (p_.lookup_.functions_[q].symbol == sp.symbol) p_.lookup_.functions_[q].defined = true;
@@ -1726,7 +1735,20 @@ bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s
          a != bound_.at(sp.symbol).assigns.end(); ++a)      // the operator= assignValue marks used
         for (std::size_t q = 0; q < p_.lookup_.functions_.size(); q++)
             if (p_.lookup_.functions_[q].symbol == a->second.first) { p_.noteUsed(q); break; }
+    for (std::size_t q = guarded ? guards->size() : 0; q-- > 0;) p_.noteChosen((*guards)[q]);     // the pads', last member first
     return true;
+}
+
+// A read-made constructor's frame with the slot each guarded member's pad takes on Itanium (wrapCleanups's exception pointer),
+// allocated as assemble does, after the body's steps and before the frame's size; Microsoft's funclets take none.
+std::vector<FrameEvent> Templates::guardedFrame(const std::vector<FrameEvent> &read, std::size_t guards) const {
+    std::vector<FrameEvent> out = read;
+    std::size_t end = out.size();
+    while (end-- > 0 && out[end].kind != 'e') {}
+    if (end >= out.size() || p_.target_.microsoftNames()) return out;
+    const FrameEvent slot = { 'a', p_.types_.pointerTo(p_.types_.get(Kind::Void)), 0, 0, 0, std::string(), false, 0 };
+    for (std::size_t q = 0; q < guards; q++) out.insert(out.begin() + static_cast<std::ptrdiff_t>(end), slot);
+    return out;
 }
 
 // Slice 3b, step 2: a covered member body owed no replay, made from its read where its replay would stand in the batch, so its
@@ -1742,12 +1764,13 @@ bool Templates::madeMember(const PendingBody &body) {
     const std::map<std::string, int>::const_iterator had = p_.frameAligns_.find(sp.symbol);
     std::string why;
     Built built;     // its members' constructors noted and recorded as the replay's constructMember does
-    why = membersBuilt(body, sp.symbol, &built);
+    std::vector<std::string> guards;
+    why = membersBuilt(body, sp.symbol, &built, &guards, s);
     for (std::size_t q = 0; why.empty() && q < built.size(); q++) {
         p_.noteChosen(built[q].second.first);
         p_.keepMemberBuilt(built[q].first, Parser::MemberBuilt{ built[q].second.first, built[q].second.second, false, false });
     }
-    if (why.empty() && madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body)) {
+    if (why.empty() && madeWithoutReplay(sp, s, p_.frameAlign_, had != p_.frameAligns_.end() ? had->second : 0, &why, &body, &guards)) {
         replayCensus_["member: substituted with no replay"]++;
         return true;
     }
@@ -1757,7 +1780,9 @@ bool Templates::madeMember(const PendingBody &body) {
 
 // A constructor made from the read builds each class-typed member the list leaves as the replay's constructMember does: by its
 // class's default constructor - here one taking nothing, public; what is not that replays the body. Keyed as memberBuilt_.
-std::string Templates::membersBuilt(const PendingBody &body, const std::string &symbol, Built *out) const {
+std::string Templates::membersBuilt(const PendingBody &body, const std::string &symbol, Built *out, std::vector<std::string> *guards,
+                                    const Substituted &s) const {
+    const Type *const read = !s.from.empty() && s.from.back()->isStructOrUnion() ? s.from.back() : nullptr;     // the class read
     const Type *const cls = p_.lookup_.findTypedef(body.tag);
     if (cls == nullptr || body.key != Parser::constructorKey(body.tag)) return std::string();
     for (const Member &m : cls->members()) {
@@ -1768,7 +1793,13 @@ std::string Templates::membersBuilt(const PendingBody &body, const std::string &
         const Signature *c = p_.classes_.defaultConstructorOf(mc);
         if (c == nullptr || c->access != Access::Public || c->deleted || !c->params.empty())
             return "a class-typed member whose default constructor takes defaults or is not public";
-        if (p_.destructorOf(mc) != nullptr) return "a class-typed member with a destructor, which the replay's constructor guards while its body runs";
+        // One with a destructor guards the rest as the replay's assemble does: its destructor is the pad's, public and not deleted -
+        // a slot the read lays itself where its class was no parameter's (its pads then replay the body: madeFromRead).
+        const Signature *d = p_.destructorOf(mc);
+        if (d != nullptr && (d->access != Access::Public || d->deleted || mc->hasVirtualBase()))
+            return "a class-typed member whose destructor is not public or destroys virtual bases";
+        const Member *had = read != nullptr ? read->findMember(m.name) : nullptr;
+        if (d != nullptr && (had == nullptr || !p_.memberHasDestructor(had->type))) guards->push_back(d->symbol);
         const std::vector<const Type *> ps(1, p_.types_.pointerTo(mc));
         out->push_back(std::make_pair(symbol + "|" + m.name + "|0", std::make_pair(c->symbol, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false))));
     }

@@ -5506,3 +5506,40 @@ under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 
 -Werror clean; Windows cl /W4 /WX clean (full 16:42:23-16:46:01, ~3.6 min alone; the final delta 16:58:55-17:06:31, ~7.6 min,
 the box shared); names.sh 974/0 and the final probe again (its .nonames), overload.sh 46/0.
 **Next**: the largest reasons now, self-host under the check: a type parameter bound to a reference (1,841); a base beside a data member over the parameters (1,631); a data member of a type the binding does not carry (906). Owed: a member with a destructor made from the read - its constructor's guard (the slot and the LSDA the replay lays), so `map()`'s and `set()`'s bodies need no replay; the class-members door's empty diagnostic above.
+
+## M8.3 slice 3b: a constructor made from the read guards a member whose class has a destructor, as the replay does, under -templates=subst (lane m83ab, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,308 of 2,184 (1,301; the probe's 7, 1,301 otherwise),
+self-host 67,222 beside under the check (67,222). This commit raises member bodies, not classes: a covered member body made
+with no replay, suite 475 (REF 447), its 19 "a class-typed member with a destructor, which the replay's constructor guards"
+gone - `map()`'s and `set()`'s constructors among them - and with them m83aa's 18 differing files under the flag.
+**What the replay lays and the read did not.** The replay's `assemble` puts each member whose class has a destructor under
+`guardSubobject`: on Itanium `wrapCleanups` allocates the exception pointer's slot (an `a` step, after the body's steps and
+before the frame's size) and both ABIs set the function's landing pads; the SSA lowering builds the guard itself from the
+member's type. A read over the parameters sees no destructor on `_Rb_tree<$K, ...>`, so its frame had neither. Now
+`membersBuilt` names each such member's destructor (public, not deleted, no virtual base, or the body replays by name);
+`guardedFrame` adds one slot per guard to the read's steps before its `e` (none on Microsoft), `madeWithoutReplay` lays that
+frame, marks the pads and notes the destructors used, last member first, as `assemble` does. A member whose class the read
+saw as no parameter's (a plain `Held`) is guarded by the read itself: its slot is in the read's frame already, and its
+pads replay the body (`madeFromRead`'s "an exception specification or landing pads"). Under `-check=templates` the guarded
+frame is held against the replay's step for step and the pads against its pads; either apart fails the unit by name ("a
+guarded member's frame apart", "... landing pads apart") - the first build counted `Held`'s slot twice and the check failed
+`template-subst-memberctor` by name. The class-members door's diagnostic: the census's key drops quoted names (one reason
+for every name); the place's own note (`-dump=syntax`'s unread) now keeps them.
+Probe `template-subst-guardedmember` (`Map<K, V>` with `Cell<K>` and `Tag<V>`, each with a destructor, left to their default
+constructors by `Map() {}` and `explicit Map(int t) { check(t); }`; a throw out of the body destroys both; `Guarded<K>` beside
+a plain `Held` with the ledger replays by name; clang 51 154 8 / caught 7 / 20 3 and LEDGER 0s, cxx3-msvc the same, cxx3 the
+same plain, under the flag and the check; `.nonames` for x86_64-linux's C1/D1). src 96,947 -> 96,981 (+34); three EXCLUSIONS
+citations re-pointed (Templates.cpp 2780 -> 2811, 2083 -> 2114, 2031 -> 2062).
+Census: no check nonzero 353 (the set before); under the check 0 failed, no class differ, nonzero 353; self-host nonzero 0,
+0 failed. Gates (REF 131f5c7f): identical 0 differ on four targets plain (1950/3900/1950/1950) and with `-templates=subst`
+on three (1950/3900/1950: every case, `map`, `set` and the probe among them); subst.sh 0 failed, then run.sh 1320/0, then
+run.sh under the flag 1320/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up
+to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag (the first build's
+`vector::insert(pos, n, v)` is not in the library's subset: a loop); g++ -Werror clean; Windows cl /W4 /WX clean (full
+~2.5 min alone; the final delta 17:50:43-17:54:42, ~4 min); names.sh 974/0, then the probe again under its .nonames 0 failed; overload.sh 46/0;
+the final build (n3: the loop alone) runs the probe the same and self-compiles rc 0; every other gate ran on n2.
+**Next**: the largest reasons, self-host under the check: a type parameter bound to a reference (1,841 - T bound to U & as
+M8.2's boundClass binds it, with substituted's collapse; refuse a data member the binding makes a reference); a base beside
+a data member over the parameters (1,631); a data member of a type the binding does not carry (906) and one of a class the read named over its parameters (906). Member bodies:
+"a 'meminit' in the body" (7,734) and "a call with a type-dependent argument" (7,576) lead.
