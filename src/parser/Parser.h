@@ -1134,6 +1134,7 @@ private:
     bool atTypeName() const;
     const Type *memberTypeWalk(const Type *t);
     const Type *structOrUnionSpecifier(Kind kind, bool isClass = false);
+    void memberTemplate(const std::string &tag, const std::string &local, Access access);     // at `template` in a class body
     typedef sema::ClassLaidOut ClassLaidOut;
     const Type *completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos);
     void checkAccessible(const Type *object, const Member &m, std::size_t pos) const;

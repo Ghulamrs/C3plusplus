@@ -291,7 +291,12 @@ public:
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
-                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies);
+                              const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,
+                              const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
+    std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
+    void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
+                           const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args);
+    std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies);
     std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
     std::string memberName(const Signature &a, const std::string &readTag, const std::string &tag, const Substituted &s) const;

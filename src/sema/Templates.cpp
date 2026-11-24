@@ -3086,7 +3086,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     if (fromRead.empty() && checkBodies_) fromRead = "beside: the replay the program's, under -check=templates";
     Substituted bound;
     if (fromRead.empty()) classShape(start, useParams, useBinding, &bound);
-    const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies)
+    const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies, useParams, useBinding, useValues)
                      : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
     if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
 
@@ -3367,7 +3367,8 @@ std::string Templates::fromReadWhyNot(std::size_t start) const {
 // completion tail (completeClass) over the read's members laid under the binding, in the scope a replay reads it in.
 const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
                                      const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos,
-                                     std::vector<Parser::PendingBody> *bodies) {
+                                     std::vector<Parser::PendingBody> *bodies,
+                                     const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values) {
     const Type *read = readClass_.at(start);
     const Kind kind = partial ? Kind::Struct : read->kind();
     Type *type = p_.types_.structType(kind, tag);
@@ -3394,6 +3395,9 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.heldForSpecialization_.clear();
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
+    p_.classStack_.push_back(type);     // the body's scope, as its member templates are declared in it
+    templatesFromRead(start, tag, decl, params, binding, values, args);
+    p_.classStack_.pop_back();
     const Type *made = p_.completeClass(type, tag, true, laid, pos);
     p_.namespaceStack_ = outerStack;
     p_.heldForSpecialization_.clear();
@@ -3452,6 +3456,72 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         bodies->back().tag = retagged(h.first.tag, r.first, tag);
         bodies->back().which = at.at(h.second);
     }
+}
+
+// The member templates the body of class `tag` declared at its own level, in the body's order (each one's `template`).
+std::vector<const TemplateDecl *> Templates::templatesOf(const std::string &tag) const {
+    std::vector<const TemplateDecl *> out;
+    for (std::map<std::string, std::vector<TemplateDecl> >::const_iterator m = memberTemplates_.lower_bound(tag + "::");
+         m != memberTemplates_.end() && m->first.compare(0, tag.size() + 2, tag + "::") == 0; ++m)
+        for (const TemplateDecl &t : m->second) if (t.ownerTag == tag) out.push_back(&t);
+    std::sort(out.begin(), out.end(), [](const TemplateDecl *a, const TemplateDecl *b) { return a->start < b->start; });
+    return out;
+}
+
+// Work (1): the read's member templates declared under `tag` by the class body's own path (Parser::memberTemplate), each at its
+// `template` in the body's order, under the binding the replay's body records (instantiatingParams_), the class's parameters bound.
+void Templates::templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
+                                  const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args) {
+    std::vector<std::pair<std::size_t, std::pair<std::string, Access> > > at;
+    for (const TemplateDecl *mt : templatesOf(readMembers_.at(start).first))
+        at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
+    if (at.empty()) return;
+    std::vector<Shadow> undo;
+    bindTemplateParameters(params, binding, values, Packs(params.size()), &undo);
+    const Parser::LocalsHidden hidden(&p_);
+    const std::size_t resume = p_.at_, angle = p_.angleSplit_;
+    const std::string inlineOwner = p_.inlineOwner_, outerNamespace = p_.instantiatingNamespace_;
+    const std::vector<TemplateArg> outerArgs = p_.instantiatingArgs_;
+    const auto outerParams = p_.instantiatingParams_;
+    const auto outerBinding = p_.instantiatingBinding_;
+    const auto outerValues = p_.instantiatingValues_;
+    p_.inlineOwner_.clear();
+    p_.instantiatingArgs_ = args;
+    p_.instantiatingNamespace_ = decl.ns;
+    p_.instantiatingParams_ = params;
+    p_.instantiatingBinding_ = binding;
+    p_.instantiatingValues_ = values;
+    for (const std::pair<std::size_t, std::pair<std::string, Access> > &a : at) {
+        p_.at_ = a.first;
+        p_.memberTemplate(tag, a.second.first, a.second.second);
+    }
+    p_.instantiatingArgs_ = outerArgs;
+    p_.instantiatingNamespace_ = outerNamespace;
+    p_.instantiatingParams_ = outerParams;
+    p_.instantiatingBinding_ = outerBinding;
+    p_.instantiatingValues_ = outerValues;
+    p_.inlineOwner_ = inlineOwner;
+    p_.angleSplit_ = angle;
+    p_.at_ = resume;
+    unbindTemplateParameters(undo);
+}
+
+// The read's member templates held against those declared under `tag`, each as the replay records it; empty when they agree.
+std::string Templates::templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const {
+    const std::vector<const TemplateDecl *> mine = templatesOf(readTag), theirs = templatesOf(tag);
+    if (mine.size() != theirs.size()) return "differ: the number of member templates";
+    for (std::size_t i = 0; i < mine.size(); i++) {
+        const TemplateDecl &a = *mine[i], &b = *theirs[i];
+        if (a.start != b.start || a.afterParams != b.afterParams || (a.isConstructor ? Parser::localOf(tag) : a.name) != b.name ||
+            a.isConstructor != b.isConstructor || a.isExplicit != b.isExplicit || a.staticMember != b.staticMember || a.defined != b.defined ||
+            a.memberAccess != b.memberAccess || a.params.size() != b.params.size())
+            return "differ: a member template's place, name or kind";
+        if (a.classParams.size() != b.classParams.size() || a.classBinding.size() != b.classBinding.size() || a.classValues != b.classValues)
+            return "differ: a member template's class parameters";
+        for (std::size_t k = 0; k < a.classBinding.size(); k++)
+            if (substituted(s, a.classBinding[k]) != b.classBinding[k]) return "differ: a member template's class binding";
+    }
+    return std::string();
 }
 
 // The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
@@ -3514,6 +3584,8 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             return "differ: a member function's default arguments or the scope they are read in";
         (*symbols)[a.symbol] = b.symbol;
     }
+    const std::string templates = templatesHeld(readTag, s, tag);
+    if (!templates.empty()) return templates;
     return "equal";
 }
 
@@ -3560,7 +3632,12 @@ std::string Templates::classBeyond(std::size_t start) const {
         else if (k.is("enum")) return "replayed: a member enumeration";
         else if (k.is("struct") || k.is("class") || k.is("union")) return "replayed: a nested or elaborated class";
         else if (k.is("friend")) return "replayed: a friend";
-        else if (k.is("template")) return "replayed: a member template";
+        else if (k.is("template"))     // a member function template: its parameter list passed, its body at depth 2
+            for (int angle = 0; t + 1 < p_.tokens_.size(); ) {
+                const Token &a = p_.tokens_[++t];
+                angle += a.is("<") ? 1 : a.is(">") ? -1 : a.is(">>") ? -2 : 0;
+                if (angle <= 0) break;
+            }
         else if (k.is("static_assert")) return "replayed: a static_assert";
     }
     return std::string();
@@ -3570,7 +3647,7 @@ std::string Templates::classBeyond(std::size_t start) const {
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
                                    Substituted *early, std::vector<const Type *> *wanted) const {
     Substituted &s = *early;
-    // The body's member beyond first: under a member template, the ids idsBefore would make are not made, so a signature's refusal hides it.
+    // The body's member beyond first: under one, the ids idsBefore would make are not made, so a signature's refusal hides it.
     const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), outside = classBeyond(start), beyond = outside.empty() ? shape : outside;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
