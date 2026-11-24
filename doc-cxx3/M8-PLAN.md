@@ -5710,3 +5710,27 @@ Gates (REF e6719501): identical 0 differ on four targets plain (1960/3920/1960/1
 **Next**: with the constants held, the suite's 343 non-type classes named outside member bodies (a signature, a typedef or a
 base: `X<N>` ids keyed by value, `[N + 1]` folded under the values), and member bodies with a value-dependent name folded under
 the values (valueShape, its `Bound::values` now held by this check) rather than replayed; then the 577 `unordered_map<unsigned,...>`.
+
+## M8.3 slice 3c, static data members: a class template's static data members declared from the read under the binding, under -templates=subst (lane m83ai, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,484 of 2,184 (1,436; the probe's 5), self-host 72,046
+beside under the check (72,046, unchanged: its 216 classes with a static data member now stop on another of the shape's reasons,
+asked after the binding now; the suite's pack or template parameter count rose 109 -> 136 the same way). classShape refused every read class with a static data member.
+Now it asks staticShape, after the binding is mapped: a static data member is declared from the read by staticsFromRead, which
+puts the parser at the member's declarator in the class's own braces (staticAt) under the bound parameters, in the class's scope
+and namespace, and calls `Parser::declareStaticMember` - the replay's own path, so its type is the read's under `substituted`,
+its symbol `staticMemberSymbol` on both ABIs, and a value written in the class (`static const int size = sizeof(T);`,
+`twice = size * 2`) is evaluated there as the replay evaluates it. Its out-of-line definition is instantiated on an evaluated
+use by `instantiatePending`'s `outOfLine` loop ([temp.inst]/3, `usedStaticMembers_`), unchanged and the same for both doors
+(the definition is the replay's, never a copy: its symbol and section as before). Still replayed, by name: a `constexpr` static data member,
+one whose type the binding does not carry or is a class the read named over its parameters (or the class itself), one whose
+initialiser names a template (a class made out of the body's order), one its braces do not declare by name; a member body
+naming a static member of its own class replays as before (memberShape). Under -check=templates, staticsHeld declares the
+read's members on a class of their own in the replay's class's scope and holds each one's name, type, access, symbol, value,
+`thread_local` and `volatile` against the replay's (classLaid no longer says "the replay's class has a static data member").
+Probe `template-subst-staticdata` (a counter, folded values over `sizeof(T)` and over another static, an array and a class-typed
+static defined out of line, a pointer; clang 19 on Windows 2 1 4 2 / 3 0 8 1 7 / 121 / 11 9 1, cxx3-msvc the same, cxx3 the same plain, under the flag, under the check and REF; its 5 classes made from the read and `equal`).
+src 97,097 -> 97,211 (+114); no EXCLUSIONS line moved.
+Census: no check nonzero 353; check `equal` 1,663, no class differ, nonzero 353 (the frame and function-door `differ` lines are REF's); self-host nonzero 0. Still replayed in the suite: a non-type parameter named outside its member bodies 347, a pack or template parameter 136, a type parameter bound to a class the read named over its parameters 46, a base through a parameter 40, bound to a type that is no scalar, class, reference or array 33, a constexpr static data member 1.
+Gates (REF e6719501): identical 0 differ on four targets plain (1962/3924/1962/1962) and with `-templates=subst` on three (1962/3924/1962: every case and the probe among them); subst.sh 0 failed, run.sh 1326/0, then run.sh under the flag 1326/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full 21:17-21:26, ~9 min with the box shared - at the wait's cap, the remote build linked; Templates.cpp alone again 9 min); names.sh 981/0 with the probe; overload.sh 46/0.
+**Next**: (2), not reached this hour: the next largest reason one fix covers is the self-host's 577 `unordered_map<unsigned,...>` (Parser.h), "a member function's signature over a class template-id over dependent arguments" (one shape, 577 classes); in the suite the non-type 347 are lane m83ah's, then a pack or template parameter bound by name 136.
