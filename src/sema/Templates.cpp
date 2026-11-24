@@ -3556,15 +3556,35 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's.
     const auto staticInit = [&](std::size_t t, std::size_t depth) {
         bool equals = false;
-        for (int b = static_cast<int>(t), parens = 0, level = 0; depth == 1 && b > static_cast<int>(start); b--) {
+        for (int b = static_cast<int>(t), parens = 0, level = 0, colons = 0; depth == 1 && b > static_cast<int>(start); b--) {
             const Token &x = p_.tokens_[static_cast<std::size_t>(b - 1)];
-            if (x.is(";") || x.is("{") || x.is("}") || x.is(":") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            if (x.is(";") || x.is("{") || x.is("}") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            if (x.is(":") && (b < 2 || p_.tokens_[static_cast<std::size_t>(b - 2)].is("public") || p_.tokens_[static_cast<std::size_t>(b - 2)].is("private") ||
+                               p_.tokens_[static_cast<std::size_t>(b - 2)].is("protected")))
+                return false;
+            colons += x.is(":") ? 1 : x.is("?") && colons > 0 ? -1 : 0;     // a `:` no `?` before it matches is no conditional's
             parens += x.is(")") ? 1 : x.is("(") ? -1 : 0;
             if (equals && parens < level) return false;     // a parameter's default argument: `f(int a = N)`
             if (!equals && x.is("=")) equals = true, level = parens;
-            if (x.is("static")) return equals && parens == level;
+            if (x.is("static")) return equals && parens == level && colons == 0;
         }
         return false;
+    };
+    // Slice 3k: or in a `static_assert` in the class's own braces whose condition folds true under the values, as the replay finds.
+    const auto assertAt = [&](std::size_t t, std::size_t depth) {
+        std::size_t open = t;
+        while (depth == 1 && open > start && !p_.tokens_[open].is("static_assert"))
+            if (p_.tokens_[--open].is(";") || p_.tokens_[open].is("{") || p_.tokens_[open].is("}")) return false;
+        if (!p_.tokens_[open].is("static_assert") || !p_.tokens_[open + 1].is("(")) return false;
+        std::size_t comma = open + 2, at = open + 2;
+        for (int parens = 1; comma < p_.tokens_.size() && !(parens == 1 && p_.tokens_[comma].is(",")); comma++)
+            if (p_.tokens_[comma].is(";") || (parens += p_.tokens_[comma].is("(") ? 1 : p_.tokens_[comma].is(")") ? -1 : 0) == 0) return false;
+        long long a = 0, b = 0;
+        if (comma >= p_.tokens_.size() || t >= comma || !foldBound(p_.tokens_, &at, comma, params, s->values, 0, &a)) return false;
+        if (at == comma) return a != 0;
+        const std::string op = p_.tokens_[at++].text;
+        if (!foldBound(p_.tokens_, &at, comma, params, s->values, 0, &b) || at != comma) return false;
+        return op == "==" ? a == b : op == "!=" ? a != b : op == "<" ? a < b : op == ">" ? a > b : op == "<=" ? a <= b : op == ">=" && a >= b;
     };
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
@@ -3576,10 +3596,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         else if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
         if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
+        if (depth == 1 && t < p_.tokens_.size() && p_.tokens_[t].is("static_assert") && !assertAt(t, depth)) return "replayed: a static_assert";
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
                 !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
-                !boundAt(t, depth) && !staticInit(t, depth))
+                !boundAt(t, depth) && !staticInit(t, depth) && !assertAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
@@ -4277,8 +4298,7 @@ std::string Templates::classBeyond(std::size_t start) const {
                 angle += a.is("<") ? 1 : a.is(">") ? -1 : a.is(">>") ? -2 : 0;
                 if (angle <= 0) break;
             }
-        else if (k.is("static_assert")) return "replayed: a static_assert";
-    }
+    }     // a static_assert is classShape's: kept when its condition folds true under the values
     return std::string();
 }
 
