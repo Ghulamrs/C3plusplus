@@ -3815,12 +3815,14 @@ std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *c
 // Work (1): what keeps a read static data member from being declared by staticsFromRead under `s`, by name; empty when nothing.
 std::string Templates::staticShape(std::size_t start, const Substituted &s) const {
     const Type *read = readClass_.at(start);
-    const auto names = [&](const std::string &n) {     // a template, whose use in an initialiser makes a class out of the body's order
+    const auto names = [&](const std::string &n) {     // a template, whose use in an initialiser makes a class where it is evaluated
         if (templates_.count(n) != 0) return true;
         for (std::map<std::string, TemplateDecl>::const_iterator i = templates_.begin(); i != templates_.end(); ++i)
             if (i->first.size() > n.size() + 2 && i->first.compare(i->first.size() - n.size() - 2, n.size() + 2, "::" + n) == 0) return true;
         return false;
     };
+    const std::size_t colon = read->templateName().rfind(':');
+    const std::string own = read->templateName().substr(colon == std::string::npos ? 0 : colon + 1);
     for (const Type::StaticMember &m : read->staticMembers()) {
         bool cx = false;
         std::size_t name = 0;
@@ -3833,12 +3835,27 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
         e = e->unqualified();
         if (e == read || overParameters(e->tag()) || readIds_.count(e) != 0)
             return "replayed: a static data member of a class the read named over its parameters";
-        for (std::size_t k = at, depth = 0; k < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{")); k++) {
+        bool named = false;
+        std::size_t k = at;
+        for (std::size_t depth = 0; k < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{")); k++) {
             const Token &w = p_.tokens_[k];
             depth += w.is("(") || w.is("{") || w.is("[");
             if ((w.is(")") || w.is("}") || w.is("]")) && depth > 0 && --depth == 0 && w.is("}")) break;
             if (depth == 0 && (w.is(";") || w.is(","))) break;
-            if (w.kind == TokenKind::Ident && names(w.text)) return "replayed: a static data member's initialiser naming a template";
+            named = named || (w.kind == TokenKind::Ident && names(w.text));
+        }
+        // Its ids are made where staticsFromRead evaluates it, after idsBefore's: the body's order while none is named after it.
+        for (std::size_t depth = 1, t = k + 1; named && t < p_.tokens_.size(); t++) {
+            const Token &w = p_.tokens_[t], &was = p_.tokens_[t - 1];
+            if (depth == 1 && w.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
+                for (std::size_t inner = 0; t < p_.tokens_.size(); t++) {     // a member function's body, replayed later by both doors
+                    inner += p_.tokens_[t].is("{");
+                    if (p_.tokens_[t].is("}") && --inner == 0) break;
+                }
+            else if (w.is("{")) depth++;
+            else if (w.is("}") && --depth == 0) break;
+            else if (w.kind == TokenKind::Ident && names(w.text) && !(w.text == own && t + 1 < p_.tokens_.size() && !p_.tokens_[t + 1].is("<")))     // its constructor
+                return "replayed: a static data member's initialiser naming a template, before another template named in its class";
         }
     }
     return std::string();
@@ -3852,7 +3869,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     const std::vector<Type::StaticMember> &statics = readClass_.at(start)->staticMembers();
     if (statics.empty()) return;
     std::vector<Shadow> undo;
-    bindTemplateParameters(params, binding, values, Packs(params.size()), &undo);
+    bindTemplateParameters(params, binding, values, s.packs.size() == params.size() ? s.packs : Packs(params.size()), &undo);
     const Parser::LocalsHidden hidden(&p_);
     const std::size_t resume = p_.at_, angle = p_.angleSplit_;
     std::vector<const Type *> outerClasses(1, scope);

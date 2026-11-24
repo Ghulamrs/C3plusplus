@@ -5890,3 +5890,33 @@ a bound class passed to a base's reference parameter (dependentCall), not asked 
 Owed above, run after 506d9701 on its tree (n2): the suite census with no check 1,604 of 2,184 made with no replay (n1's),
 nonzero 353; under the check `equal` 1,795 (1,786), no class differ, nonzero 353, every frame `equal` (the function door's two
 `.bp` differs gone); "a pack or template parameter, bound by name" 50 left (80 before).
+
+## M8.3 slice 3j: a static data member's initialiser naming a template, its ids made where the door evaluates it, under -templates=subst (lane m83av, 2026-11-25)
+
+**The measure**: class specializations made with no replay - suite 1,620 of 2,184 (1,604 at 9b3111da; the two probes' 16), self-host 73,449 of
+74,390 beside under the check (73,449, unchanged: no self-host class stopped on this reason at 9b3111da). staticShape refused every read static data member whose initialiser names a template
+(`1 + Count<Rest...>::value`, `2 * Size<T>::value`, `Same<T, int>::value`): the class that template-id names is made where
+the initialiser is evaluated, and the replay evaluates it at the declarator while it reads the body. The door evaluates it there
+too - staticsFromRead puts the parser at the declarator and calls `Parser::declareStaticMember` (slice 3c), so the id is made
+by the parser's own path (makeClass, never a copy) - after the ids idsBefore made before the class. The two orders are one
+while no template is named after the initialiser in the class's braces outside its member bodies (those are replayed later by
+both doors), the class's own name as its constructor aside; where one is, the class is still replayed, by name ("a static data
+member's initialiser naming a template, before another template named in its class"). staticsFromRead now binds the packs
+(`Sum<Rest...>` needs Rest as the binding holds it), as readClassBody binds them; it bound none before.
+Work (0), the REF census (9b3111da's build, under the check): `equal` 1,795, nonzero 353; the suite has no class that stopped on
+"a static data member's initialiser naming a template" at 9b3111da (the brief's 65 was counted before slices 3g-3i, whose
+classes now stop earlier, on a non-type parameter named outside its member bodies, m83au's) - the suite gains the probe's
+classes. On m83au's tree (ratio's static_asserts let through) the reason is 128: <ratio>'s `num` is followed by `den` and by `typedef ratio<num, den> type`, so ratio stays replayed by name; `__gcd`'s own initialiser has nothing after it and would pass once merged (owed: gated there). "A pack or template parameter, bound by name" is 50
+in 24 files: template template parameters (template-template-*), std::function (<functional>), the nontype-pack cases, the
+variadic and SSA pack cases, user-defined-literal; not reached this hour.
+Checked, as m83as left owed: a bound class passed to a base's reference or pointer parameter (`g(t)`, `h(&t)` with T bound
+to D whose B2 is at a nonzero offset, in a member body and a function template's): probe template-subst-baseref 2 20 102
+plain, under the flag and under the check, clang 19 and cxx3-msvc the same - the derived-to-base adjustment is right.
+Probe template-subst-staticid (Count over a type pack, Size, Twice, Same/IsInt, and Late, which names Size<T> after its static
+and stays replayed): 3 0 1 / 8 2 / 1 0 / 3 4 8 1, clang 19 on Windows and cxx3-msvc the same, cxx3 plain, under the flag,
+under the check and REF the same; under the check 15 classes `equal`, Late refused by the new reason.
+src 97,337 -> 97,354 (+17); no EXCLUSIONS line moved (0 stale).
+Gates (REF = 9b3111da's build): identical on n1 0 differ on four targets plain (1976/3952/1976/1976) and with -templates=subst on three (1976/3952/1976: every case, both probes among them); run.sh 1333/0 plain, then with CXX1 carrying -templates=subst 1333 pass, none fall back, 0 fail; subst.sh 0 failed; -check=templates over tests/cases `equal` 1,811 (1,795), no class differ, nonzero 353 (REF's), and the self-host nonzero 0, `equal` 73,982, frame differ 0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean, alone (full build 02:13:09-02:14:56, ~2 min); names.sh 988/0 (the two probes among them), overload.sh 46/0.
+**Next**: the pack family's 50 (template template parameters first: template-template-* are most of the files); a static
+data member's initialiser naming a template after another static's (staticsFromRead declares them in order, so the scan may
+step over another static's initialiser); sizeof...(Ts) in a static initialiser.
