@@ -214,8 +214,8 @@ public:
     std::string bodiesReport() const;
     // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
     bool substitute_ = false;
-    // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`.
-    struct Substituted { std::vector<const Type *> from, to; };
+    // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; };
     const Type *substituted(const Substituted &s, const Type *t) const;
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
@@ -261,7 +261,8 @@ public:
                    const std::vector<const Type *> *pending = nullptr) const;     // pending: ids wanted first, taken as arguments
     void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
-    std::string idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, std::size_t pos);     // what stopped it
+    std::string idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
+                          const std::vector<long long> &values, std::size_t pos);     // what stopped it
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
