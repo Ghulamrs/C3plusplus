@@ -5228,3 +5228,8 @@ path (Parser::memberTemplate) under the class's binding. **Class specializations
 point checked not owed).** M8.3 (M8-PLAN, m83v): a typedef's X<$T0> made before the class, in typedef order ahead of the
 members. **Class specializations made with no replay: suite 1,147 of 2,184 (from 1,047), self-host 59,302 held equal under
 the check (from 51,435).** Nothing changes without the flag.
+
+**m6d-w31's wave landed, 2026-11-24 (gate m6dw31g at f7147112 against main a07d040e: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83w): pair<K,V> and pair<const K,V>, each naming the other, made inside the class
+at the member that names it (idsInside), where the replay makes it. **Class specializations made with no replay: suite 1,204
+of 2,184 (from 1,147), self-host 64,733 held equal under the check (from 59,302).** Nothing changes without the flag.
