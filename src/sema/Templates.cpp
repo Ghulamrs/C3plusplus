@@ -3363,13 +3363,15 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
+            std::size_t back = wanted != nullptr ? wanted->size() : 0;     // its arguments' ids first, as for a data member's
+            if (id) argsWanted(s, e, read, early, wanted, &back);
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
             if (own && early == nullptr) continue;
             if (own) real = specializationUnder(*s, e);
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
-            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args)) {
+            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted)) {
                 if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
                 wanted->push_back(e);
             }

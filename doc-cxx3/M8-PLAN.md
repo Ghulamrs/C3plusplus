@@ -5439,3 +5439,29 @@ names.sh 972/0 with the probe's .nonames; overload.sh 46/0; the probe on clang a
 **Next**: a base beside a data member over the parameters (1,631: lay the members after the read's bases under the binding, the
 parser's base layout one path with the replay's); a base `X<$T0>` the read leaves out (215: made first, as idsBefore makes ids);
 the signature ids not declared (2,210) and a type parameter bound to a reference (1,841).
+
+## M8.3 slice 3b: a member function's signature over a class template-id whose arguments are ids of the parameters, made before the class under -templates=subst (lane m83z, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,272 of 2,184 (1,262; the probe's 10 among them), self-host
+65,354 beside under the check (65,332); the self-host's 2,210 "a signature's class template-id the program had not declared" are gone - 22 made, the rest now "class template-ids made first for a data member and a member function's signature" (2,478), the largest reason before the replay.
+
+**The finding** (a debug build, `boxkit/m83z-Tdbg.cpp`, over Templates.cpp, Parser.cpp and Lowering.cpp): every "a member function's
+signature over a type the binding does not carry: a class template-id over its parameters the program had not declared" there
+is `map`'s and `unordered_map`'s `initializer_list<value_type>` (123 and 65), whose argument `pair<const K, V>` a typedef wanted
+first: `earlyArgs` takes it once asked with the ids already wanted (pending), as a data member's id is asked.
+**Commit 1**: a signature's id has its arguments' ids wanted first (`argsWanted`, the data member's walk, innermost first) and
+`earlyArgs` asks it with the ids wanted before it; nothing else changes. Probe `template-subst-sigid` (`Holder<T>`'s
+`Wrap<Box<T> > wrapped()` and `Pair<Box<T>, Wrap<T> > paired(const Wrap<Box<T> > &)`, the program declaring none of them first;
+clang's 5 510 3 / 40 80 on Windows, cxx3-msvc the same; under the check 10 classes made from the read, class equal 10, 8 ids
+made first). `map` itself still replays: its data member `tree_` wants ids too, so "class template-ids made first for a data
+member and a member function's signature" refuses it as before. src 96,848 -> 96,850 (+2, `Templates.cpp`); no EXCLUSIONS line moved.
+**Tried and set aside** (`boxkit/m83z-n2.patch`): placing a signature's ids ahead of or behind the data members' by where the body
+declares each (the signature's `pos` against the member's name in the class's braces), so `map` is made from the read. The suite's
+count rose to 1,293, but with no check the census's nonzero rose 353 -> 361: `map() {}`'s `tree_` (a `__tree` made first, with a
+written default constructor) is "outside the SSA lowering: a member built by no constructor the parser recorded" once `map` is
+made from the read (deque-both-ends, include-map-set, map-move-only-mapped, map-set-comparator, map-set-node-stability,
+member-template-body-unchosen, range-for-vector, return-self-referential). The check did not see it: the replay is the program's
+there. **Owed first**: a constructor made from the read records its members' constructors (`memberBuilt_`) for a data member whose
+class was made before it; then n2's placement lands.
+Census: no check nonzero 353 (REF's count); under the check no class differ, self-host nonzero 0. Gates (the commit's tree, REF 7d47fbaf): identical 0 differ on four targets plain (1946/3892/1946/1946) and with `-templates=subst` on three (1946/3892/1946: every case, the probe's signature ids among them); subst.sh 0 failed, then run.sh 1318/0, then run.sh under the flag 1318/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta 16:11:01-16:17:43, ~6.7 min, the box shared; the base full 3.6 min alone); names.sh 973/0 (no .nonames); overload.sh 46/0; the probe on clang and cxx3-msvc the same.
+**Next**: a constructor made from the read records its members' constructors for a data member whose class was made before it (then `boxkit/m83z-n2.patch` makes `map` and the 2,478 from the read); a type parameter bound to a reference (1,841); a base beside a data member over the parameters (1,631); a data member of a type the binding does not carry (906).
