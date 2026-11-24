@@ -3570,7 +3570,8 @@ std::string Templates::classBeyond(std::size_t start) const {
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
                                    Substituted *early, std::vector<const Type *> *wanted) const {
     Substituted &s = *early;
-    const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), beyond = shape.empty() ? classBeyond(start) : shape;
+    // The body's member beyond first: under a member template, the ids idsBefore would make are not made, so a signature's refusal hides it.
+    const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), outside = classBeyond(start), beyond = outside.empty() ? shape : outside;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
     if (r == readBodies_.end() || readTypedefs_.count(start) == 0) return "replayed: no held member bodies kept from the read";

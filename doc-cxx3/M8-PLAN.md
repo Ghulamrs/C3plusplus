@@ -5263,3 +5263,19 @@ whose body holds `template <class U> reverse_iterator(const reverse_iterator<U> 
 is refused by `classBeyond`'s "a member template", so `idsBefore` makes nothing, and the second (no `wanted`) reports the
 signature's member type because `classShape` is asked before `classBeyond`. The census names the wrong reason (owed: the
 member template's reason first); the next step for these is a member template in a class made from the read.
+
+**Commit 2** (the census names the blocker): `classBefore` reports `classBeyond`'s refusal before the shape's. Under a member
+template the first `classBefore` (with `wanted`) is refused, `idsBefore` makes nothing, and the second then failed on a
+signature's id that only that refusal left unmade - so the census named an id, not the member template. Only the reason
+changes: every refusal of either starts "replayed:", so the door decides as before (identical 0 differ). Why it is needed
+for the next step: the measure's next classes are these. The self-host's "before the replay: replayed: a member template" is
+now **29,588** (`reverse_iterator<$T0>` 13,739 by its converting constructor template, `vector<$T0>`'s `initializer_list<$T0>`,
+`pair<$T0,$T1>`'s `template <class U1, class U2> pair(const pair<U1, U2> &)`), the cases' 540 (57); the signature lines of 13,739 and 9,289
+fall to 0 and 906 (its own template under other arguments, 2,234, is `pair<const K, V>` naming `pair<K, V>`). The measure unchanged: suite 814, self-host 35,154 beside. src/: `Templates.cpp` +1 (96,653 -> 96,654).
+EXCLUSIONS: no line moved.
+Gates (the commit's tree, REF d0a6d92b): identical 0 differ on four targets plain (1934/3868/1934/1934) and with
+`-templates=subst` on three (1934/3868/1934; commit 1's shapes); subst.sh 0 failed, then run.sh 1312/0, then run.sh under the
+flag 1312/0; census no class differ in the cases or the self-host, nonzero 353 (REF's) / 0; self-compile Templates.cpp and
+ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not
+raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (delta, alone, ~1 min, done 12:14:09), names.sh 967/0,
+overload.sh 46/0, the probe on clang and cxx3-msvc the same.
