@@ -5805,3 +5805,7 @@ plain and under the flag, Templates.cpp rc 1 on n2 (the loop above), re-run on n
 **Next**: the suite's 80 left name the pack in a template-id or a base; the largest reason in the suite census is "a
 non-type parameter named outside its member bodies" 350, and in the self-host "a type parameter bound to a class the read
 named over its parameters" 310.
+Owed above, run after the commit: on n3 (the commit's tree) the probe right plain, under the flag and the check (6 equal),
+static rc 0 (src 97,273), self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; subst.sh on the
+final probe 0 failed (cases 17 unread under 17, 53 shapes of 53; self 26 under 26); Windows names.sh 984/0 and overload.sh
+46/0 (the full runs on n2; the probe's final form 1/0 on n3); cl /W4 /WX clean on n3.
