@@ -5923,3 +5923,84 @@ Owed above, run after the commit: on n3 (the commit's tree) the probe right plai
 static rc 0 (src 97,273), self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; subst.sh on the
 final probe 0 failed (cases 17 unread under 17, 53 shapes of 53; self 26 under 26); Windows names.sh 984/0 and overload.sh
 46/0 (the full runs on n2; the probe's final form 1/0 on n3); cl /W4 /WX clean on n3.
+
+## M8.3 slice 3h: a type parameter bound to a lambda's closure type, and a noexcept body the replay wraps for the bodies before it, under -templates=subst (lane m83aq, 2026-11-25)
+
+Found by a debug build (boxkit/m83aq-Tdbg.cpp, cxx3-msvc `-arch x86_64-linux` on Windows): every class the census called "a type
+parameter bound to a class: one the read named over its parameters" was bound to a closure type - `main::$_0`, whose tag holds a
+`$` - in `is_same`, `__fn_callable`, `__fn_model`, `remove_reference`, `decay` over a lambda. The door's thirteen tests of a read
+id by a `$` in the tag now ask `overParameters`: a `$` that is no program closure's `$_N` or `$deduced_N` (a read's own closure,
+`$read$f::$_0`, is still over its parameters). No class is copied: the closure's class is the program's, bound as any class is.
+Work (0): std-function's one member frame `differ` ("the read's frame's size where the replay has a slot no local names") and
+thread-pool's under REF are one cause - `explicit operator bool() const noexcept` in `function` and `unique_lock`: the replay's
+`replayInlineBodies` clears `mayThrow_` once per call, not per body, so a call in a body replayed before it wraps a noexcept body
+for [except.spec]/9 (wrapUp's `.ex.ptr` slot) where the read, one body a call, does not. The read cannot know the replay's order:
+`wrapInherited` (asked at madeMember before every replayed body, `throwsBefore_`) replays such a body by name, and memberFrame
+names it ("member: replayed: a noexcept body wrapped by the calls of the bodies before it"). Not changed: the replay's wrap
+itself (clang wraps neither body; resetting `mayThrow_` per body changes emitted code against REF - owed, the user's call). The
+two function-door frame `differ`s m83ap names (template-subst-mcall `onBase`, template-subst-member `toBase`) are another cause:
+a derived-to-base conversion at a nonzero offset, whose `.bp` slot (ParserOverload.cpp, `off > 0`) the read over `const T &`
+cannot lay - owed.
+Probe `template-subst-closurearg` (Holder<F>, Model<F>, Same<A, B>, Unref<T &> over three closures; 107 1 / 17 1 / 42 4 13 / 1 0 /
+25, clang 19 on Windows and cxx3-msvc the same; its 8 classes `equal`; `.nonames`: the closure numbering lambda.nonames records).
+src 97,273 -> 97,294 (+21); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2085/2137/2834 -> 2096/2148/2845).
+The measure: class specializations made with no replay - suite 1,595 of 2,184 (1,548 on 7d70abef's build, counted now; the
+probe's 8, so 39 of the suite's own), self-host 73,446 of 74,390 beside under the check (72,963; the 310 "bound to a class the
+read named over its parameters" all gone, the reason no longer in either census).
+Work (0), counted on 7d70abef's build: suite no check 1,548, check `equal` 1,727, no class differ, nonzero 353, member frame
+`differ` 2 (std-function, thread-pool). On n1: check `equal` 1,786, no class differ, nonzero 353, member frame `differ` 0 (2
+named); self-host nonzero 0, `equal` 73,979, member frame `differ` 0 (39 named, the n2 census's 39 `differ`s); the function
+door's frame `differ` 2 (mcall, member: the `.bp` cause above, REF's).
+Gates (REF 684b39a6, n1): identical 0 differ on four targets plain (1970/3940/1970/1970); run.sh 1330/0, then under the flag
+1330/0; subst.sh on the first probe 1 failed (its `hold` template's brace list into a shallow `Holder<F>`, "'' is full": a
+function-door read's reason the ceiling does not record), the probe rewritten without it, re-run below; static rc 0
+(exclusions 0/0 after re-pointing, memory 89, ast-residue 2012/298 not raised, ide up to date; comments 0 after one group
+the helper split was mended); g++ -Werror clean; Windows cl /W4 /WX clean (full, 00:42-00:45, ~3 min); names.sh 985/0,
+overload.sh 46/0; clang 19 and cxx3-msvc on the probe the same.
+**Next**: the suite's largest reason, "a non-type parameter named outside its member bodies" (lane m83ah's family), and the
+self-host's unordered_map left; the function door's `.bp` frame family; the replay's per-call `mayThrow_` (the user's call).
+Owed above, run after 1b153bea on its tree: identical with `-templates=subst` 0 differ on three targets (1970/3940/1970: every
+case and the probe among them); subst.sh on the final probe 0 failed (self 26 unread under 26, 3 shapes of 3); the probe right
+plain, under the flag, under the check (8 classes `equal`) and REF; static rc 0 on the final tree (comments 0); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag.
+
+## M8.3 slice 3i: a pack named in a template-id, `X<Ts...>`, expanded under the binding, and the function door's `.bp` family replayed by name, under -templates=subst (lane m83as, 2026-11-25)
+
+Work (1): classShape refused any class naming a pack outside a parameter list's `(Args...)` ("a pack or template parameter,
+bound by name"). A pack written as a template-id's argument, `Count<Ts...>` or `Count<Rest...>`, now passes: `packUnder`
+expands the read id's pack argument (`expandsParam`, the parameter standing for itself) into the members `s.packs` binds, each
+other member substituted, as the parser lists a bound pack in a template-id; `specializationUnder` asks it, so the program's
+class is found by its key, and `earlyArgs` asks it for another template's pack parameter (its own template under a pack, as in
+`Tuple<Rest...>` inside Tuple, stays the replay's), so idsBefore makes an undeclared one first through makeClass, the pack bound
+as the parser binds one (no type in the binding, the members in `Packs`) - in the body's order, never a copy. A pack in a base,
+`: Base<Ts>...`, is unchanged (a base over the parameters is m83ar's). Work (2): the `.bp` family is replayed by name, not laid
+by the read: `boundMemberCall` refuses a member function a base at a nonzero offset declares ("... whose conversion the replay
+lays a slot for", template-subst-mcall's `onBase`), and substShape a reference or pointer local to such a base
+(template-subst-member's `toBase`, `const B1 &r = t`). Not changed: the replay's conversion; a bound class passed to a base's
+reference parameter (dependentCall's) is not asked - owed if a census shows it.
+Probe `template-subst-packid` (Holder<Ts...> with a Count<Ts...> member and a Count<Ts...> * signature, Pair<T, Rest...>, an
+empty Holder<>; 3 4 8 / 1 7 16 / 9 8, clang 19 on Windows and cxx3-msvc the same; under the check its 6 classes `equal`, 3 made
+before the class).
+src 97,294 -> 97,337 (+43); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2096/2148/2845 -> 2127/2179/2876).
+The measure: class specializations made with no replay - suite 1,604 of 2,184 (1,595 on cda107fb's build, counted now; the
+probe's 6, so 3 of the suite's own; counted on n1, which n2 differs from only in two range-for loops written as index loops),
+self-host 73,449 of 74,390 beside under the check (73,446; on n2). The function door: suite "substituted with no replay" 536 ->
+534 (onBase, toBase by name). Work (0): the REF census (no check) 1,595, nonzero 353; the brief's suite "pack or template
+parameter" family is mostly static data members over a pack (`Sum<Rest...>::value`) and member bodies, which this slice leaves.
+On n2's self-host: nonzero 0, `equal` 73,982 (73,979), frame `differ` 0 (39 named), function door frame all `equal`.
+n1's self-compile of Templates.cpp failed: a range-based `for` over `PackMembers` (begin/end of its base's type) is outside the
+SSA lowering - packUnder and the base scan were written as index loops (n2); self-compile of Templates.cpp and ParserType.cpp
+on n2 rc 0 plain and under the flag.
+tests/subst.sh: template-subst-mcall and template-subst-member's "replay (5): substituted with no replay" are 4 (the body now
+replayed by name), mcall's frame `differ` line is "frame (4): equal", and the two new reasons are recorded.
+Gates (REF = cda107fb's build): identical on n1 0 differ on four targets plain (1972/3944/1972/1972) and with -templates=subst
+on three (1972/3944/1972); on n2 x86_64-linux plain and flag 1972/0; run.sh on n1 1331/0 plain and with CXX1 carrying
+-templates=subst (1331 pass, none fall back to failing); subst.sh on n2 0 failed (run -O0/-O2 1331/0, typed 978/0); static
+rc 0 (exclusions 0/0 after re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror
+clean (n1, n2); Windows cl /W4 /WX clean (n1 full 01:21:31-01:27:03, ~5.5 min; n2 delta, built 01:54); names.sh 986/0 and
+overload.sh 46/0 on n1; clang 19 and cxx3-msvc on the probe the same.
+**Next**: a pack in a base, `: Base<Ts>...`, and a static data member over a pack (`Sum<Rest...>::value`, staticShape);
+a bound class passed to a base's reference parameter (dependentCall), not asked by the `.bp` refusal.
+Owed above, run after 506d9701 on its tree (n2): the suite census with no check 1,604 of 2,184 made with no replay (n1's),
+nonzero 353; under the check `equal` 1,795 (1,786), no class differ, nonzero 353, every frame `equal` (the function door's two
+`.bp` differs gone); "a pack or template parameter, bound by name" 50 left (80 before).

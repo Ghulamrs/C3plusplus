@@ -222,6 +222,7 @@ public:
     std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
+    bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
     std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;
@@ -332,6 +333,9 @@ public:
     std::map<std::size_t, std::size_t> readFnAt_;
     void keepRead(std::size_t at, const Function &f);
     void memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed);     // slice 3b: frame, shell
+    // A replayed body's start where the bodies replayed before it in one call had counted a call that may throw (mayThrow_).
+    std::set<std::size_t> throwsBefore_;
+    bool wrapInherited(const PendingBody &body) const;
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
