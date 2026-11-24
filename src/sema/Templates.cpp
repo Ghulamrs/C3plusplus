@@ -3713,7 +3713,17 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             return std::string("replayed: a base: ") + (over ? "a class template-id over its parameters" : b.type->polymorphic() ?
                    "a polymorphic class" : "a virtual base");
     }
-    if (read->dependentBase()) return "replayed: a base named through a parameter, which the read laid out as nothing";
+    const std::map<const Type *, std::vector<Parser::BaseToLay> >::const_iterator keptBases = p_.readBases_.find(read);
+    if (read->dependentBase() && (keptBases == p_.readBases_.end() || !read->bases().empty()))
+        return "replayed: a base named through a parameter, which the read laid out as nothing";
+    for (std::size_t q = 0; read->dependentBase() && q < keptBases->second.size(); q++)
+        if (keptBases->second[q].type == nullptr || !readId(keptBases->second[q].type, nullptr, nullptr))
+            return "replayed: a base named through a parameter, which the read laid out as nothing";
+    for (std::size_t t = start, depth = 0; read->dependentBase() && t < p_.tokens_.size(); t++) {     // the read skipped each
+        if (depth == 1 && p_.tokens_[t].is("using")) return "replayed: a using-declaration beside a base over its parameters";
+        depth += p_.tokens_[t].is("{");
+        if (p_.tokens_[t].is("}") && --depth == 0) break;
+    }
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
@@ -3731,6 +3741,23 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     const std::string statics = staticShape(start, *s);
     if (!statics.empty()) return statics;
+    std::size_t baseIds = 0;     // slice 3j: `Q : V<I>`, its class made first, as the replay makes it reading the head
+    for (std::size_t q = 0; read->dependentBase() && q < keptBases->second.size(); q++) {
+        const Type *u = keptBases->second[q].type;
+        argsWanted(s, u, read, early, wanted, &baseIds);
+        const Type *real = carriedId(*s, u, early);
+        std::string name;
+        std::vector<TemplateArg> args;
+        if (real != nullptr && (real->kind() != Kind::Struct || !real->isComplete() || real->polymorphic() || real->hasVirtualBase() || real->isFinal()))
+            return "replayed: a base over its parameters: a polymorphic, final, incomplete or union class, or one of a virtual base";
+        if (real != nullptr && (p_.hasConstructors(real->tag()) || real->hasDestructor() || real->nonTrivialCopy() ||
+                                p_.lookup_.overloadsOf(real->tag() + "::operator=") != nullptr))     // the read's implicit members knew none
+            return "replayed: a base over its parameters with a constructor, a destructor or an assignment of its own";
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
+        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted))
+            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(baseIds++), u);
+        else return "replayed: a base: a class template-id over its parameters";
+    }
     // A data member's place in the body: its name in the class's own braces before `;`, `,`, `[` or `=`; 0 where none is.
     const auto memberAt = [&](const std::string &n) -> std::size_t {
         for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
@@ -3787,9 +3814,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
     if (k == readMembers_.end()) return "replayed: no member functions kept from the read";
-    const std::size_t dataIds = wanted != nullptr ? wanted->size() : 0;     // the replay makes them in the body's order, not data first
+    const std::size_t dataIds = wanted != nullptr ? wanted->size() - baseIds : 0;     // the replay makes them in the body's order, not data first
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
-    std::size_t first = 0;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
+    std::size_t first = baseIds;     // a typedef's `X<$T0>` or `X<$T0>::m` wanted ahead of the members', as the replay reads the body
     for (std::size_t i = 0; tds != readTypedefs_.end() && i < tds->second.size(); i++) {
         if (cvOverReference(*s, tds->second[i].second)) return "replayed: a typedef's const over a parameter bound to a reference";
         const Type *e = substituted(*s, tds->second[i].second);
@@ -3861,16 +3888,29 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     return std::string();
 }
 
+// The made class's bases, laid by layBases as the parser lays them (classShape's: non-virtual, direct, of no vptr, so as written):
+// the read's, or (slice 3j) each base over the parameters the read kept (Parser::readBases_) under `s`.
+std::vector<Type::BaseSpec> Templates::basesUnder(const Type *read, const Substituted &s, BasesLaid *bases) const {
+    std::vector<Type::BaseSpec> out = read->bases();
+    std::vector<Parser::BaseToLay> order;
+    const std::map<const Type *, std::vector<Parser::BaseToLay> >::const_iterator over = p_.readBases_.find(read);
+    for (const Type::BaseSpec &b : out) order.push_back(Parser::BaseToLay{ b.type, b.access, static_cast<std::size_t>(b.written) });
+    for (std::size_t q = 0; out.empty() && read->dependentBase() && over != p_.readBases_.end() && q < over->second.size(); q++)
+        order.push_back(Parser::BaseToLay{ substituted(s, over->second[q].type), over->second[q].access, over->second[q].written });
+    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, bases);
+    for (std::size_t q = out.empty() ? 0 : order.size(); q < order.size(); q++)
+        out.push_back(Type::BaseSpec(order[q].type, bases->at[q], order[q].access, false, true, static_cast<int>(order[q].written)));
+    return out;
+}
+
 // The read class's data members under `s`, laid as the parser lays a class of no vptr or bit-field: its bases by layBases,
 // the parser's own path, then its own members from that cursor, past an empty subobject of their type on Itanium.
 void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const {
-    std::vector<Parser::BaseToLay> order;     // classShape's: non-virtual, direct, of no vptr, so laid as written
-    for (const Type::BaseSpec &b : read->bases()) order.push_back(Parser::BaseToLay{ b.type, b.access, static_cast<std::size_t>(b.written) });
     Parser::BasesLaid bases;
-    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, &bases);
+    basesUnder(read, s, &bases);
     long long cursor = (bases.bitCursor + 7) / 8;
     int widest = bases.widest;
-    const std::size_t own = bases.members.size();
+    const std::size_t own = read->bases().empty() ? 0 : bases.members.size();     // a base over the parameters: none in the read's
     laid->members.swap(bases.members);
     laid->empties.swap(bases.empties);
     laid->endsZero = bases.endsZero, laid->leadsZero = bases.leadsZero;
@@ -3946,7 +3986,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(tag + "::" + read->templateName(), type);
     type->setDeclaredClass(!partial && decl.classKey);
     type->setBeingDefined();
-    for (const Type::BaseSpec &b : read->bases()) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
+    Parser::BasesLaid laidBases;
+    for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
@@ -4239,9 +4280,11 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
 std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
     if (!made->isComplete()) return "differ: the replay's class is incomplete";
     if (made->hasVptr()) return "differ: the replay's class has a vptr";
-    if (made->bases().size() != read->bases().size()) return "differ: the number of bases";
+    Parser::BasesLaid laidBases;
+    const std::vector<Type::BaseSpec> mineBases = basesUnder(read, s, &laidBases);
+    if (made->bases().size() != mineBases.size()) return "differ: the number of bases";
     for (std::size_t i = 0; i < made->bases().size(); i++) {
-        const Type::BaseSpec &a = read->bases()[i], &b = made->bases()[i];
+        const Type::BaseSpec &a = mineBases[i], &b = made->bases()[i];
         if (a.type != b.type || a.offset != b.offset || a.access != b.access || a.isVirtual != b.isVirtual || a.direct != b.direct || a.written != b.written)
             return "differ: a base's class, offset or access";
     }

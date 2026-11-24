@@ -349,6 +349,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     struct WrittenBase { const Type *type; Access access; bool isVirtual; };
     std::vector<WrittenBase> written;
     bool dependentLaid = false, dependentBase = false;     // a class door's read: a dependent base or member, in no layout
+    if (readLayout_) readBases_.erase(type);
     if (peek().is(":")) {
         at_++;
         for (;;) {
@@ -380,7 +381,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // A read's `struct D : B<T>`, or `: C<int>` of a template template parameter: no class yet, so left out, its members not found.
             if (readLayout_ && b != nullptr && b->isSpecialization() && !b->isComplete() &&
                 (dependentArgs(b->templateArgs()) || b->templateName().compare(0, 3, "$TT") == 0)) {
-                dependentLaid = dependentBase = true;
+                dependentLaid = dependentBase = true;     // M8.3 slice 3j: kept by its type and access, for the class door
+                std::vector<BaseToLay> &kept = readBases_[type];
+                kept.push_back(BaseToLay{ isVirtualBase || b->templateName().compare(0, 3, "$TT") == 0 ? nullptr : b, how, written.size() + kept.size() });
                 if (!consume(",")) break;
                 continue;
             }

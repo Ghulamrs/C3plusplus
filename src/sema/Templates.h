@@ -296,6 +296,7 @@ public:
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
+    std::vector<Type::BaseSpec> basesUnder(const Type *read, const Substituted &s, BasesLaid *bases) const;
     std::string fromReadWhyNot(std::size_t start) const;     // step (1): what a class made from the read cannot carry yet, by name
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,

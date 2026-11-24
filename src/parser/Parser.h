@@ -1139,6 +1139,7 @@ private:
     typedef sema::ClassLaidOut ClassLaidOut;
     const Type *completeClass(Type *type, const std::string &tag, bool specialization, ClassLaidOut &laid, std::size_t pos);
     struct BaseToLay { const Type *type; Access access; std::size_t written; };     // `written`: its place in the base list
+    std::map<const Type *, std::vector<BaseToLay> > readBases_;     // a read's bases over its parameters, left out (null: one it cannot keep)
     typedef sema::BasesLaid BasesLaid;
     void layBases(const std::vector<BaseToLay> &order, const Type *primary, int pack, const std::string &tag, const char *what,
                   std::size_t pos, BasesLaid *out);
