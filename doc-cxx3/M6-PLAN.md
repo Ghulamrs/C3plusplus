@@ -5218,3 +5218,8 @@ point checked not owed).** M8.3 (M8-PLAN, m83s, m83t): a member type's class and
 a template with partial specializations taken by earlyArgs (the replay's match); the census names a member template first.
 **Class specializations made with no replay: suite 814 of 2,184 (from 779), self-host 35,154 held equal under the check (from
 35,003).** Nothing changes without the flag.
+
+**m6d-w29's wave landed, 2026-11-24 (gate m6dw29g at 56f4684b against main ccad35a5: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83u): member function templates in a class made from the read, declared by one
+path (Parser::memberTemplate) under the class's binding. **Class specializations made with no replay: suite 1,047 of 2,184
+(from 814), self-host 51,435 held equal under the check (from 35,154).** Nothing changes without the flag.
