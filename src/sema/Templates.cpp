@@ -3179,14 +3179,14 @@ bool Templates::readId(const Type *e, std::string *name, std::vector<TemplateArg
 
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
-bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args) const {
+bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself) const {
     if (!readId(e, name, args)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
-    if (d == templates_.end() || *name == read->templateName() || d->second.isAlias || d->second.ttParam >= 0) return false;
+    if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
     const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
-    std::vector<std::size_t> bodies(1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
-    for (std::size_t q = 0; q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
+    std::vector<std::size_t> bodies(itself ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
+    for (std::size_t q = 0; !itself && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
     for (const std::size_t from : bodies)
         for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
             if (p_.tokens_[t].text == own) return false;
@@ -3321,6 +3321,10 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (e->tag().find('$') != std::string::npos || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
+            const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
+            // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
+            if (own && early == nullptr) continue;
+            if (own) real = specializationUnder(*s, e);
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
             else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args)) {
                 if (dataIds != 0) return "replayed: class template-ids made first for a data member and a member function's signature";
@@ -3403,7 +3407,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
         p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(s, td.second));
     p_.lookup_.declareTypeName(tag, type);
-    membersFromRead(start, tag, s, type, bodies);
+    membersFromRead(start, tag, s, type, bodies, pos);
     ClassLaidOut laid;
     laidFromRead(read, s, &laid);
     std::vector<const Type *> outerClasses;
@@ -3447,14 +3451,40 @@ std::string Templates::bodyKey(std::size_t start, const std::pair<Parser::Pendin
     return key;
 }
 
+// Its own template under other arguments that member `a` names, made through makeClass where the replay makes it reading `a`;
+// asked under `ids` (classShape's map) and mapped ahead in `s`, where readStands may take a partial's `X<$T0>` for its own class.
+void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s) {
+    std::vector<const Type *> types(1, a.returns);
+    types.insert(types.end(), a.params.begin(), a.params.end());
+    for (const Type *t : types) {
+        const Type *e = substituted(*ids, t);
+        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+        e = e->unqualified();
+        std::string name;
+        std::vector<TemplateArg> args;
+        if (specializationUnder(*ids, e) != nullptr || !earlyArgs(*ids, e, readClass_.at(start), &name, &args, true)) continue;
+        std::vector<const Type *> binding;
+        for (const TemplateArg &g : args) binding.push_back(g.type);
+        const TemplateDecl &decl = templates_.at(name);
+        const Parser::Nesting deep(&p_, pos, "template instantiation");
+        const Type *made = makeClass(decl, specializationKey(name, args), binding, std::vector<long long>(binding.size(), 0), args, Packs(decl.params.size()), pos);
+        classCensus_["made inside the class, as its replay makes it: its own template under other arguments"]++;
+        ids->from.push_back(e), ids->to.push_back(made);
+        s->from.insert(s->from.begin(), e), s->to.insert(s->to.begin(), made);
+    }
+}
+
 // Step (1): the read's written member functions declared under the real tag where the replay's class body declares them, and
 // its held bodies keyed to them (classSkip's records); the implicit specials are completeClass's.
-void Templates::membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<Parser::PendingBody> *bodies) {
+void Templates::membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<Parser::PendingBody> *bodies,
+                                std::size_t pos) {
+    Substituted ids = s;
     readStands(start, made, &s);
     const std::pair<std::string, std::vector<Signature> > &r = readMembers_.at(start);
     std::map<std::string, std::size_t> at;     // the read's symbol, its function here
     for (const Signature &a : r.second) {
         if (a.implicit) continue;
+        idsInside(start, a, pos, &ids, &s);
         Signature f = a;
         f.name = memberName(a, r.first, tag, s);
         f.owner = tag;

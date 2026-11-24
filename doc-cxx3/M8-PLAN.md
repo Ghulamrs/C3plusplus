@@ -5342,3 +5342,31 @@ the flag 1314/0 (0 failed); self-compile Templates.cpp and ParserType.cpp rc 0 p
 **Next**: `pair<const K, V>` named by `pair<K, V>`'s converting constructor (259 of the three sources' 653; the self-host's
 3,175 "had not declared" left are it and `__hash_iterator<$T0, ...>` under `__hash_table`), then "its own template under
 other arguments" (2,234).
+
+## M8.3 slice 3b: its own template under other arguments, made inside the class under -templates=subst (lane m83w, 2026-11-24)
+
+**Commit 1**: `pair<K, V>`'s `pair(const pair<const K, V> &)` and its partial's `pair(const pair<K, V> &)` each name their
+own template under other arguments; the replay makes that class where it reads the member, inside the class it has begun
+(its tag declared, being defined), so the other one's body finds the first incomplete and does not make it again. Making it
+first (idsBefore) would reverse that order, so it is made where the replay makes it: `classShape` takes such an id before
+the replay when `earlyArgs` takes it (`itself`: the read's own template, no scan of its bodies) and maps the program's after
+it (`specializationUnder`); `membersFromRead` calls `idsInside` before declaring each member, which makes the id its
+signature names through `makeClass` (the one path) and maps it under `s`. Found on the way: `readStands` maps a partial's
+`pair<$T0,$T1>` to the partial itself, so `idsInside` asks under `classShape`'s map (`ids`) and puts its mapping ahead of
+readStands' in `s` (the first version declared `pair<const int,int>(const pair<const int,int> &)` and ten map cases failed
+under the flag). Probe `template-subst-ownid` (`Two<A, B>` and its partial `Two<const A, B>`, each made first; clang's
+7 34 7 / 56 11 on Windows, cxx3-msvc the same; 4 classes made from the read with no replay); its .nonames records
+x86_64-linux's C2-only constructors. Found and owed: a partial's member constructor defined out of line
+(`template <class A, class B> Two<const A, B>::Two(A x, B y)`) is refused "defined twice" with no flag, so the probe's
+partial defines its members inline. The measure: suite **1,204 of 2,184** (1,147; without the probes 1,159, 1,106),
+self-host **64,733 beside** under the check (59,302): its "had not declared" 3,175 and "its own template under other arguments" gone, the next largest reason "a data member of a class the read named over its parameters" (2,606). src 96,757 -> 96,788 (+31, `Templates.cpp`, `Templates.h`); no
+EXCLUSIONS line moved. Census: no check nonzero 353 (REF's set); under the check no class differ, nonzero 353.
+Gates (the commit's tree, REF 8746760f): identical 0 differ on four targets plain (1940/3880/1940/1940) and with
+`-templates=subst` on three (1940/3880/1940: every case, the probe's own-template ids and the map cases' `pair<const K, V>`
+among them); subst.sh 0 failed, then run.sh 1315/0, then run.sh under the flag 1315 passed, 0 failed (the classes not made from the read replayed, as the census counts them);
+self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0,
+memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean (full on the first
+version 13:32:31-13:36:10, ~3.7 min alone; delta 13:55:04-13:57:39, ~2.6 min); names.sh 970/0 with the probe's .nonames (a first run beside the probe's own, in one tree, said 820/0 and does not count); overload.sh 46/0; the probe on
+clang and cxx3-msvc the same.
+**Next**: the self-host's "a data member of a class the read named over its parameters" (2,606), then "a base" (2,373)
+and "a type parameter bound to a reference" (1,841); the partial's out-of-line member constructor refused "defined twice".
