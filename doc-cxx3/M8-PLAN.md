@@ -5789,6 +5789,216 @@ Census: no check nonzero 353; check `equal` 1,663, no class differ, nonzero 353 
 Gates (REF e6719501): identical 0 differ on four targets plain (1962/3924/1962/1962) and with `-templates=subst` on three (1962/3924/1962: every case and the probe among them); subst.sh 0 failed, run.sh 1326/0, then run.sh under the flag 1326/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full 21:17-21:26, ~9 min with the box shared - at the wait's cap, the remote build linked; Templates.cpp alone again 9 min); names.sh 981/0 with the probe; overload.sh 46/0.
 **Next**: (2), not reached this hour: the next largest reason one fix covers is the self-host's 577 `unordered_map<unsigned,...>` (Parser.h), "a member function's signature over a class template-id over dependent arguments" (one shape, 577 classes); in the suite the non-type 347 are lane m83ah's, then a pack or template parameter bound by name 136.
 
+## M8.3 slice 3d: a dependent member keyed by its owner, so two reads' `pair<table::iterator, bool>` are two pattern ids, under -templates=subst (lane m83ak, 2026-11-24)
+
+Found by three debug builds (boxkit/m83ak-dbgline.txt, m83ak-dbg2.sh, m83ak-dbg3.sh over Templates.cpp): the self-host's
+`unordered_map<unsigned,...>` of Parser.h stopped on `pair<table::iterator, bool> insert` because the `table` that
+`iterator`'s owner named was `unordered_set`'s (`__hash_table<$T0,$T0,__unordered_set_key<$T0>,...>`), not its own -
+keySpelling spelled every dependent member as `dependent member type`, so `pair<table::iterator, bool>` read in
+`<unordered_set>` and in `<unordered_map>` was one shallow class, and readIds_ kept the last read's arguments. Not the
+program's `pair<const unsigned,V>` (a map over the same arguments first, as members, at namespace scope: all `equal`).
+keySpelling now spells a dependent member as its owner's key and `::name`; a real specialization's key has none.
+Probe `template-subst-twotables` (two class templates each naming `Pair<iterator, bool>` over their own table's
+`table::iterator`; 7 9 1 2 0 by hand, cxx3 the same plain, under the flag and under the check; its 6 classes `equal`, REF 5
+and one stopped on "a class template-id over dependent arguments").
+src 97,211 -> 97,212 (+1); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2814, 2117, 2065).
+The measure: class specializations made with no replay - suite 1,502 of 2,184 (1,484; the probe's 6), self-host 72,623 of
+74,390 beside under the check (72,046: the 577 `unordered_map<unsigned,...>` of Parser.h).
+Census: no check nonzero 353; check `equal` 1,671, no class differ, nonzero 353; self-host nonzero 0, `equal` 73,095.
+Gates (REF a8dd1cd3): identical 0 differ on four targets plain (1966/3932/1966/1966) and with `-templates=subst` on three
+(1966/3932/1964); run.sh 1328/0, then run.sh under the flag 1328/0 (the two counted beyond the probe's: a set-aside probe rsync
+left in the box tree); subst.sh: its one failure is that set-aside probe's stale output in tests/out-subst (an unread reason of
+`G::get(...)`), removed after the run - owed: subst.sh once more on a clean tree (the wave gate); static rc 0 (exclusions 0/0
+after the re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and
+ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full ~3.5 min), names.sh 982/0
+with the probe, overload.sh 46/0, clang 19 and cxx3-msvc on the probe 7 9 1 2 0.
+**Next**: the suite's "a pack or template parameter, bound by name" (136), not reached this hour; the self-host's next
+largest after this: a pack or template parameter 401, non-type 259, bound to a class over its parameters 252.
+
+## M8.3 slice 3f: a class over a pack or a template template parameter it names in member bodies alone, under -templates=subst (lane m83am, 2026-11-24)
+
+classShape refused every class with a pack or a template template parameter ("a pack or template parameter, bound by
+name"). It now scans the class - a primary from its head, a partial from past its written arguments (which name the
+parameter: `is_function<R(A...)>`) - through its bases and body, a member function's body skipped as slice 3e skips it,
+and refuses by that name only a pack or template parameter named there; one named nowhere else is in the class's tag
+alone, so the class is made from the read like any other, and its member bodies, which instantiate's door refuses for any
+pack or template parameter, replay under the specialization's packs as before. The binding loop passes such a parameter.
+A parameter named in a signature, a data member, a base or a mem-initialiser still replays by name.
+Probe `template-subst-packparam` (Tagged<T, Ts...>, Traits<R(A...)>, Holder<template<class> class C, T>, Seq<int... Ns>,
+Maker<C> and Count<Ts...> naming theirs in a body, Call<Ts...> naming its pack in a data member `Tagged<int, Ts...>`; clang
+19 7 b 7 9 42 5 8 3 / 4 8 4 / 2 4, cxx3 the same plain, under the flag, under the check and cxx3-msvc on Windows; its 11
+classes `equal`, Call replayed). A first probe named the pack as `f(Ts... a)`: that member's read differs in shape from its
+replay under REF too (the function parameter pack family M8.1 records), and lifted subst.sh's class-members shape over 9.
+Work (0): tests/subst.sh on a fresh tree at 3a6be07b (its own exe): 0 failed.
+src 97,212 -> 97,233 (+21); no EXCLUSIONS line moved.
+The measure: class specializations made with no replay - suite 1,533 of 2,184 (1,502; the probe's 11, so 20 of the
+suite's own), self-host 72,623 of 74,390 beside under the check (72,623, unchanged: its 401 -
+`function<R(Args...)>`, `__fn_model<F, R, Args...>` - name the pack in a signature or a data member; `equal` 73,095, nonzero 0).
+Census: no check nonzero 353; check `equal` 1,711 (1,671; the first probe's 10), no class differ, nonzero 353; still in the
+suite "a pack or template parameter, bound by name" 102 (136): named in a signature, a data member, a base or an id.
+Gates (REF 3a6be07b, on the commit's build): identical 0 differ on four targets plain (1966/3932/1966/1966) and with
+`-templates=subst` on three (1966/3932/1966: every case and the probe among them); run.sh 1328/0, then run.sh under the flag
+1328/0; subst.sh on the first probe 1 failed (class-members shape 10 over 9, the `f(Ts... a)` above); the probe's bodies step
+now reads shape 0, so 9 again - the re-run of subst.sh was queued behind the box's other jobs at the hour (owed: the wave
+gate); static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (~5.5 min,
+box shared), names.sh 983/0, overload.sh 46/0.
+**Next**: the suite's other 102 of the reason name the pack in a signature (`f(Ts... a)`), a data member or a base: a pack
+expanded under the binding in the read's member signatures (substituted over `packExpansion`), which the self-host's 401
+(`function<R(Args...)>`, `__fn_model`) need as well; after it, the suite's non-type 350 (lane m83al's).
+Owed above, run after the commit on its tree (b3957edc, the probe naming its pack in a data member): subst.sh 0 failed.
+
+## M8.3 slice 3g: a pack expanded under the binding in a class's member signatures and data members, under -templates=subst (lane m83ao, 2026-11-25)
+
+classShape refused a class naming its pack anywhere but member bodies. A pack expanded in a parameter list - `R(Args...)`,
+`R (*call_)(void *, Args...)`, `R operator()(Args... a)`, `const Ts &...` - is now made from the read: `Substituted` carries
+the class's packs (makeClass's, a partial's chosen ones), and `paramsUnder` lays a read's `packExpansion` parameter as one
+parameter per member, as Parser::packParameter makes them for the replay (cv dropped); substituted's function types,
+membersFromRead's signatures and written parameters, classMembers and memberSymbol (both ABIs) go through it. The scan
+takes a pack name whose innermost bracket is `(` and which `...` follows (through `&`, `&&`, `*`), and skips a
+mem-initializer list as it skips the body; a pack in a template-id (`Tagged<int, Ts...>`), a base or a typedef still
+replays by name. templatesFromRead binds the class's packs for its member templates, and templatesHeld holds them
+(a pack's class binding is the class's own).
+Probe `template-subst-packsig` (Fn<R(Args...)> with a function-pointer member over the pack and a member taking one,
+Sink<Ts...> over `const Ts &...`, the empty pack; 7 7 100 / 2 0 3 / 2 2 / 0 0 / 1, clang 19 the same; 6 classes `equal`,
+REF replays all 6). A first probe gave its members function parameter packs (`f(Args... a)`): their declarations differ in
+shape from the replay under REF too (the declaration door's pack family), and lifted subst.sh's class-members shape to 11
+and partial-members to 2, so the probe carries the pack in function types alone.
+src 97,233 -> 97,273 (+40); 3 EXCLUSIONS citations re-pointed.
+The measure: class specializations made with no replay - suite 1,548 of 2,184 (1,533; measured 1,551 with the first
+probe's 9 classes, the final probe makes 6; 9 of the suite's own), self-host 72,963 of 74,390 beside under the check
+(72,623; the self-host's 401 "a pack or template parameter, bound by name" are all gone: 340 made from the read, the rest
+replayed for the next reason, "a type parameter bound to a class the read named over its parameters" 252 -> 310).
+Census (n2): no check nonzero 353; check `equal` 1,730 (1,711), no class differ, nonzero 353; the suite's reason 102 -> 80
+(left: a pack in a template-id, a base or a typedef); one new member `differ` in std-function, "the read's frame's size
+where the replay has a slot no local names" (the frame family thread-pool shows under REF), owed. Self-host census on n2
+nonzero 1: Templates.cpp itself, whose new range-for over a PackMembers is outside the SSA lowering ("a range-based for's
+begin or end taking another type"); n3 indexes it.
+Gates (REF 684b39a6, on n2; n3 differs by that loop and three citations): identical 0 differ on four targets plain
+(1968/3936/1968/1968) and three with `-templates=subst` (1968/3936/1968); run.sh 1329/0, then under the flag 1329/0;
+subst.sh 1 failed on the first probe (above), re-run on the final probe owed or below; static rc 0 (exclusions 0/0 after
+re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile ParserType.cpp rc 0
+plain and under the flag, Templates.cpp rc 1 on n2 (the loop above), re-run on n3 below; g++ -Werror clean; Windows cl
+/W4 /WX clean on n2 (~3.5 min) and n3 (~6 min, box shared); names.sh and overload.sh below.
+**Next**: the suite's 80 left name the pack in a template-id or a base; the largest reason in the suite census is "a
+non-type parameter named outside its member bodies" 350, and in the self-host "a type parameter bound to a class the read
+named over its parameters" 310.
+Owed above, run after the commit: on n3 (the commit's tree) the probe right plain, under the flag and the check (6 equal),
+static rc 0 (src 97,273), self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; subst.sh on the
+final probe 0 failed (cases 17 unread under 17, 53 shapes of 53; self 26 under 26); Windows names.sh 984/0 and overload.sh
+46/0 (the full runs on n2; the probe's final form 1/0 on n3); cl /W4 /WX clean on n3.
+
+## M8.3 slice 3h: a type parameter bound to a lambda's closure type, and a noexcept body the replay wraps for the bodies before it, under -templates=subst (lane m83aq, 2026-11-25)
+
+Found by a debug build (boxkit/m83aq-Tdbg.cpp, cxx3-msvc `-arch x86_64-linux` on Windows): every class the census called "a type
+parameter bound to a class: one the read named over its parameters" was bound to a closure type - `main::$_0`, whose tag holds a
+`$` - in `is_same`, `__fn_callable`, `__fn_model`, `remove_reference`, `decay` over a lambda. The door's thirteen tests of a read
+id by a `$` in the tag now ask `overParameters`: a `$` that is no program closure's `$_N` or `$deduced_N` (a read's own closure,
+`$read$f::$_0`, is still over its parameters). No class is copied: the closure's class is the program's, bound as any class is.
+Work (0): std-function's one member frame `differ` ("the read's frame's size where the replay has a slot no local names") and
+thread-pool's under REF are one cause - `explicit operator bool() const noexcept` in `function` and `unique_lock`: the replay's
+`replayInlineBodies` clears `mayThrow_` once per call, not per body, so a call in a body replayed before it wraps a noexcept body
+for [except.spec]/9 (wrapUp's `.ex.ptr` slot) where the read, one body a call, does not. The read cannot know the replay's order:
+`wrapInherited` (asked at madeMember before every replayed body, `throwsBefore_`) replays such a body by name, and memberFrame
+names it ("member: replayed: a noexcept body wrapped by the calls of the bodies before it"). Not changed: the replay's wrap
+itself (clang wraps neither body; resetting `mayThrow_` per body changes emitted code against REF - owed, the user's call). The
+two function-door frame `differ`s m83ap names (template-subst-mcall `onBase`, template-subst-member `toBase`) are another cause:
+a derived-to-base conversion at a nonzero offset, whose `.bp` slot (ParserOverload.cpp, `off > 0`) the read over `const T &`
+cannot lay - owed.
+Probe `template-subst-closurearg` (Holder<F>, Model<F>, Same<A, B>, Unref<T &> over three closures; 107 1 / 17 1 / 42 4 13 / 1 0 /
+25, clang 19 on Windows and cxx3-msvc the same; its 8 classes `equal`; `.nonames`: the closure numbering lambda.nonames records).
+src 97,273 -> 97,294 (+21); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2085/2137/2834 -> 2096/2148/2845).
+The measure: class specializations made with no replay - suite 1,595 of 2,184 (1,548 on 7d70abef's build, counted now; the
+probe's 8, so 39 of the suite's own), self-host 73,446 of 74,390 beside under the check (72,963; the 310 "bound to a class the
+read named over its parameters" all gone, the reason no longer in either census).
+Work (0), counted on 7d70abef's build: suite no check 1,548, check `equal` 1,727, no class differ, nonzero 353, member frame
+`differ` 2 (std-function, thread-pool). On n1: check `equal` 1,786, no class differ, nonzero 353, member frame `differ` 0 (2
+named); self-host nonzero 0, `equal` 73,979, member frame `differ` 0 (39 named, the n2 census's 39 `differ`s); the function
+door's frame `differ` 2 (mcall, member: the `.bp` cause above, REF's).
+Gates (REF 684b39a6, n1): identical 0 differ on four targets plain (1970/3940/1970/1970); run.sh 1330/0, then under the flag
+1330/0; subst.sh on the first probe 1 failed (its `hold` template's brace list into a shallow `Holder<F>`, "'' is full": a
+function-door read's reason the ceiling does not record), the probe rewritten without it, re-run below; static rc 0
+(exclusions 0/0 after re-pointing, memory 89, ast-residue 2012/298 not raised, ide up to date; comments 0 after one group
+the helper split was mended); g++ -Werror clean; Windows cl /W4 /WX clean (full, 00:42-00:45, ~3 min); names.sh 985/0,
+overload.sh 46/0; clang 19 and cxx3-msvc on the probe the same.
+**Next**: the suite's largest reason, "a non-type parameter named outside its member bodies" (lane m83ah's family), and the
+self-host's unordered_map left; the function door's `.bp` frame family; the replay's per-call `mayThrow_` (the user's call).
+Owed above, run after 1b153bea on its tree: identical with `-templates=subst` 0 differ on three targets (1970/3940/1970: every
+case and the probe among them); subst.sh on the final probe 0 failed (self 26 unread under 26, 3 shapes of 3); the probe right
+plain, under the flag, under the check (8 classes `equal`) and REF; static rc 0 on the final tree (comments 0); self-compile
+Templates.cpp and ParserType.cpp rc 0 plain and under the flag.
+
+## M8.3 slice 3i: a pack named in a template-id, `X<Ts...>`, expanded under the binding, and the function door's `.bp` family replayed by name, under -templates=subst (lane m83as, 2026-11-25)
+
+Work (1): classShape refused any class naming a pack outside a parameter list's `(Args...)` ("a pack or template parameter,
+bound by name"). A pack written as a template-id's argument, `Count<Ts...>` or `Count<Rest...>`, now passes: `packUnder`
+expands the read id's pack argument (`expandsParam`, the parameter standing for itself) into the members `s.packs` binds, each
+other member substituted, as the parser lists a bound pack in a template-id; `specializationUnder` asks it, so the program's
+class is found by its key, and `earlyArgs` asks it for another template's pack parameter (its own template under a pack, as in
+`Tuple<Rest...>` inside Tuple, stays the replay's), so idsBefore makes an undeclared one first through makeClass, the pack bound
+as the parser binds one (no type in the binding, the members in `Packs`) - in the body's order, never a copy. A pack in a base,
+`: Base<Ts>...`, is unchanged (a base over the parameters is m83ar's). Work (2): the `.bp` family is replayed by name, not laid
+by the read: `boundMemberCall` refuses a member function a base at a nonzero offset declares ("... whose conversion the replay
+lays a slot for", template-subst-mcall's `onBase`), and substShape a reference or pointer local to such a base
+(template-subst-member's `toBase`, `const B1 &r = t`). Not changed: the replay's conversion; a bound class passed to a base's
+reference parameter (dependentCall's) is not asked - owed if a census shows it.
+Probe `template-subst-packid` (Holder<Ts...> with a Count<Ts...> member and a Count<Ts...> * signature, Pair<T, Rest...>, an
+empty Holder<>; 3 4 8 / 1 7 16 / 9 8, clang 19 on Windows and cxx3-msvc the same; under the check its 6 classes `equal`, 3 made
+before the class).
+src 97,294 -> 97,337 (+43); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2096/2148/2845 -> 2127/2179/2876).
+The measure: class specializations made with no replay - suite 1,604 of 2,184 (1,595 on cda107fb's build, counted now; the
+probe's 6, so 3 of the suite's own; counted on n1, which n2 differs from only in two range-for loops written as index loops),
+self-host 73,449 of 74,390 beside under the check (73,446; on n2). The function door: suite "substituted with no replay" 536 ->
+534 (onBase, toBase by name). Work (0): the REF census (no check) 1,595, nonzero 353; the brief's suite "pack or template
+parameter" family is mostly static data members over a pack (`Sum<Rest...>::value`) and member bodies, which this slice leaves.
+On n2's self-host: nonzero 0, `equal` 73,982 (73,979), frame `differ` 0 (39 named), function door frame all `equal`.
+n1's self-compile of Templates.cpp failed: a range-based `for` over `PackMembers` (begin/end of its base's type) is outside the
+SSA lowering - packUnder and the base scan were written as index loops (n2); self-compile of Templates.cpp and ParserType.cpp
+on n2 rc 0 plain and under the flag.
+tests/subst.sh: template-subst-mcall and template-subst-member's "replay (5): substituted with no replay" are 4 (the body now
+replayed by name), mcall's frame `differ` line is "frame (4): equal", and the two new reasons are recorded.
+Gates (REF = cda107fb's build): identical on n1 0 differ on four targets plain (1972/3944/1972/1972) and with -templates=subst
+on three (1972/3944/1972); on n2 x86_64-linux plain and flag 1972/0; run.sh on n1 1331/0 plain and with CXX1 carrying
+-templates=subst (1331 pass, none fall back to failing); subst.sh on n2 0 failed (run -O0/-O2 1331/0, typed 978/0); static
+rc 0 (exclusions 0/0 after re-pointing, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror
+clean (n1, n2); Windows cl /W4 /WX clean (n1 full 01:21:31-01:27:03, ~5.5 min; n2 delta, built 01:54); names.sh 986/0 and
+overload.sh 46/0 on n1; clang 19 and cxx3-msvc on the probe the same.
+**Next**: a pack in a base, `: Base<Ts>...`, and a static data member over a pack (`Sum<Rest...>::value`, staticShape);
+a bound class passed to a base's reference parameter (dependentCall), not asked by the `.bp` refusal.
+Owed above, run after 506d9701 on its tree (n2): the suite census with no check 1,604 of 2,184 made with no replay (n1's),
+nonzero 353; under the check `equal` 1,795 (1,786), no class differ, nonzero 353, every frame `equal` (the function door's two
+`.bp` differs gone); "a pack or template parameter, bound by name" 50 left (80 before).
+
+## M8.3 slice 3j: a static data member's initialiser naming a template, its ids made where the door evaluates it, under -templates=subst (lane m83av, 2026-11-25)
+
+**The measure**: class specializations made with no replay - suite 1,620 of 2,184 (1,604 at 9b3111da; the two probes' 16), self-host 73,449 of
+74,390 beside under the check (73,449, unchanged: no self-host class stopped on this reason at 9b3111da). staticShape refused every read static data member whose initialiser names a template
+(`1 + Count<Rest...>::value`, `2 * Size<T>::value`, `Same<T, int>::value`): the class that template-id names is made where
+the initialiser is evaluated, and the replay evaluates it at the declarator while it reads the body. The door evaluates it there
+too - staticsFromRead puts the parser at the declarator and calls `Parser::declareStaticMember` (slice 3c), so the id is made
+by the parser's own path (makeClass, never a copy) - after the ids idsBefore made before the class. The two orders are one
+while no template is named after the initialiser in the class's braces outside its member bodies (those are replayed later by
+both doors), the class's own name as its constructor aside; where one is, the class is still replayed, by name ("a static data
+member's initialiser naming a template, before another template named in its class"). staticsFromRead now binds the packs
+(`Sum<Rest...>` needs Rest as the binding holds it), as readClassBody binds them; it bound none before.
+Work (0), the REF census (9b3111da's build, under the check): `equal` 1,795, nonzero 353; the suite has no class that stopped on
+"a static data member's initialiser naming a template" at 9b3111da (the brief's 65 was counted before slices 3g-3i, whose
+classes now stop earlier, on a non-type parameter named outside its member bodies, m83au's) - the suite gains the probe's
+classes. On m83au's tree (ratio's static_asserts let through) the reason is 128: <ratio>'s `num` is followed by `den` and by `typedef ratio<num, den> type`, so ratio stays replayed by name; `__gcd`'s own initialiser has nothing after it and would pass once merged (owed: gated there). "A pack or template parameter, bound by name" is 50
+in 24 files: template template parameters (template-template-*), std::function (<functional>), the nontype-pack cases, the
+variadic and SSA pack cases, user-defined-literal; not reached this hour.
+Checked, as m83as left owed: a bound class passed to a base's reference or pointer parameter (`g(t)`, `h(&t)` with T bound
+to D whose B2 is at a nonzero offset, in a member body and a function template's): probe template-subst-baseref 2 20 102
+plain, under the flag and under the check, clang 19 and cxx3-msvc the same - the derived-to-base adjustment is right.
+Probe template-subst-staticid (Count over a type pack, Size, Twice, Same/IsInt, and Late, which names Size<T> after its static
+and stays replayed): 3 0 1 / 8 2 / 1 0 / 3 4 8 1, clang 19 on Windows and cxx3-msvc the same, cxx3 plain, under the flag,
+under the check and REF the same; under the check 15 classes `equal`, Late refused by the new reason.
+src 97,337 -> 97,354 (+17); no EXCLUSIONS line moved (0 stale).
+Gates (REF = 9b3111da's build): identical on n1 0 differ on four targets plain (1976/3952/1976/1976) and with -templates=subst on three (1976/3952/1976: every case, both probes among them); run.sh 1333/0 plain, then with CXX1 carrying -templates=subst 1333 pass, none fall back, 0 fail; subst.sh 0 failed; -check=templates over tests/cases `equal` 1,811 (1,795), no class differ, nonzero 353 (REF's), and the self-host nonzero 0, `equal` 73,982, frame differ 0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl /W4 /WX clean, alone (full build 02:13:09-02:14:56, ~2 min); names.sh 988/0 (the two probes among them), overload.sh 46/0.
+**Next**: the pack family's 50 (template template parameters first: template-template-* are most of the files); a static
+data member's initialiser naming a template after another static's (staticsFromRead declares them in order, so the scan may
+step over another static's initialiser); sizeof...(Ts) in a static initialiser.
+
 ## M8.3 slice 3i: a class whose static data member's initialiser names a non-type parameter, and a member typedef of its own class, under -templates=subst (lane m83ap, 2026-11-25)
 
 The branch first merges main (b4781f0c, 5a550bb2): this work needs slice 3c's staticShape, staticsFromRead and staticsHeld (lane m83ai), which 96d07af4 lacked; only this file conflicted. The merge is REF for every gate below; its census is the base: 1,507 of 2,184.

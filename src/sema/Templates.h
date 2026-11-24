@@ -215,12 +215,14 @@ public:
     // M8.2 (off by default): -templates=subst or CXX1_TEMPLATE_SUBST.
     bool substitute_ = false;
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
-    // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name.
-    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; };
+    // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs; };
     const Type *substituted(const Substituted &s, const Type *t) const;
+    std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
+    bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
     std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;
@@ -264,7 +266,7 @@ public:
     void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
     std::string idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                          const std::vector<long long> &values, std::size_t pos);     // what stopped it
+                          const std::vector<long long> &values, std::size_t pos, const Packs &packs = Packs());     // what stopped it
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
     std::map<std::size_t, std::pair<std::string, std::vector<Signature> > > readMembers_;
@@ -307,7 +309,8 @@ public:
                             const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
-                           const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args);
+                           const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
+                           const Packs &packs);
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
     void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`
@@ -331,6 +334,9 @@ public:
     std::map<std::size_t, std::size_t> readFnAt_;
     void keepRead(std::size_t at, const Function &f);
     void memberFrame(const PendingBody &body, const Substituted &s, const std::vector<FrameEvent> &replayed);     // slice 3b: frame, shell
+    // A replayed body's start where the bodies replayed before it in one call had counted a call that may throw (mayThrow_).
+    std::set<std::size_t> throwsBefore_;
+    bool wrapInherited(const PendingBody &body) const;
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
