@@ -5686,3 +5686,27 @@ Gates (REF cead7672): identical 0 differ on four targets plain (1960/3920/1960/1
 **Next**: the 343 - a non-type parameter in a signature, a typedef or a base (`X<N>` ids keyed by value, `[N + 1]` folded
 under the values; a bare `[N]` there is taken now through `substituted`, which no probe holds yet), and member bodies folded under the values (valueShape) rather than
 replayed; then the 577 `unordered_map<unsigned,...>` in Parser.h (not reached this hour).
+
+## M8.3: -check=templates holds a made body's constants against its replay's (lane m83ah, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,436 of 2,184 (1,436, unchanged), self-host 72,046 beside
+under the check (72,046, unchanged). Not a raise: the oracle the next one needs. m83ag's first build typed member bodies from
+the read with N's stand-in 0 and printed `0 1 0 1` for `15 4 8 3`, and the check passed it: it held frames, shells, symbols and
+layouts, not what a body folds. Now `constantsHeld`, after every covered body's replay under -check=templates (the member path in
+memberFrame, the function path beside layFrame), walks the read's `function` node and the replay's root together, node for node
+where kind and arity agree (a shape apart is the body check's), and holds each node's constant as the Typer reads it under the
+binding (`constantOf`): 2f's `Bound::values` first, then a sizeof's or alignof's (`keywordValues_`), a case label's, an
+enumerator's or a folded static member's value, and an array local's bound under the binding; the first difference fails the
+unit by name (`-check=templates failed: <place>: a constant: 'N' 0 for the replay's 3`) and is counted `made (n): constants:
+differ: ...`, the rest `constants: equal`. Shown on m83ag's mistake re-created (memberShape's value-dependent replay taken out,
+a throwaway build): under the flag the probe printed `0 1 0 1 / 2 2 4 / 33 79 4 / 0 9 16 / 0 5 12`, and the check failed the
+unit, rc 1, on seven bodies of `template-subst-valueparam` (`N` 0 for 3, 2 and 4; `B` 0 for 1; `C` 0 for 3); the real build
+holds the probe right four ways, rc 0 under the check. Not changed: what is made from the read, the census of classes, members
+replayed for a value (memberShape).
+src 97,097 -> 97,156 (+59); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2064/2116/2813 -> 2119/2171/2868).
+Census: no check 1332 units, nonzero 353, classes made with no replay 1,436 (unchanged); check nonzero 353, no class differ,
+`constants: equal` 1,130 bodies, 0 differ, 0 units failed; self-host nonzero 0, `constants: equal` 11,621, 0 failed.
+Gates (REF e6719501): identical 0 differ on four targets plain (1960/3920/1960/1960) and with `-templates=subst` on three (1960/3920/1960); subst.sh 0 failed, run.sh 1325/0, then run.sh under the flag 1325/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; g++ -Werror clean; Windows cl /W4 /WX clean (full, 21:12-21:14, ~2 min); names.sh 980/0; overload.sh 46/0; the probe by clang 19 and cxx3-msvc on Windows the same.
+**Next**: with the constants held, the suite's 343 non-type classes named outside member bodies (a signature, a typedef or a
+base: `X<N>` ids keyed by value, `[N + 1]` folded under the values), and member bodies with a value-dependent name folded under
+the values (valueShape, its `Bound::values` now held by this check) rather than replayed; then the 577 `unordered_map<unsigned,...>`.
