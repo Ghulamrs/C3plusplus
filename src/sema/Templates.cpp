@@ -3586,15 +3586,21 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (!foldBound(p_.tokens_, &at, comma, params, s->values, 0, &b) || at != comma) return false;
         return op == "==" ? a == b : op == "!=" ? a != b : op == "<" ? a < b : op == ">" ? a > b : op == "<=" ? a <= b : op == ">=" && a >= b;
     };
-    for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
+    // Slice 3l: or in a member template's declaration, which templatesFromRead reads at its `template` under the values.
+    std::vector<std::size_t> heads;
+    for (const TemplateDecl *mt : templatesOf(readTag)) heads.push_back(mt->start);
+    for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
+        if (depth == 1 && std::find(heads.begin(), heads.end(), t) != heads.end()) head = 1;
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
-            for (std::size_t inner = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
+            for (std::size_t inner = head = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
                 inner += p_.tokens_[t].is("{");
                 if (p_.tokens_[t].is("}") && --inner == 0) break;
             }
         else if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
+        if (t < p_.tokens_.size() && depth == 1 && (p_.tokens_[t].is(";") || p_.tokens_[t].is("}"))) head = 0;
+        if (head != 0) continue;
         if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
         if (depth == 1 && t < p_.tokens_.size() && p_.tokens_[t].is("static_assert") && !assertAt(t, depth)) return "replayed: a static_assert";
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
@@ -3603,9 +3609,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
                 !boundAt(t, depth) && !staticInit(t, depth) && !assertAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
-    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
-    for (std::size_t q = 0; q < params.size() && mine != readMembers_.end(); q++)     // templatesHeld holds their class values
-        if (params[q].type != nullptr && !templatesOf(mine->second.first).empty()) return "replayed: a member template beside a non-type parameter";
     const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
     if (r == readClass_.end()) return "replayed: no class read at the declaration";
     const Type *read = r->second;
@@ -4165,10 +4168,15 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
             a.isConstructor != b.isConstructor || a.isExplicit != b.isExplicit || a.staticMember != b.staticMember || a.defined != b.defined ||
             a.memberAccess != b.memberAccess || a.params.size() != b.params.size())
             return "differ: a member template's place, name or kind";
-        if (a.classParams.size() != b.classParams.size() || a.classBinding.size() != b.classBinding.size() || a.classValues != b.classValues)
+        if (a.classParams.size() != b.classParams.size() || a.classBinding.size() != b.classBinding.size() ||
+            (s.values.empty() ? a.classValues : s.values) != b.classValues)     // the read's are stand-ins; `s` carries the binding's
             return "differ: a member template's class parameters";
-        for (std::size_t k = 0; k < a.classBinding.size(); k++)
-            if (substituted(s, a.classBinding[k]) != b.classBinding[k]) return "differ: a member template's class binding";
+        for (std::size_t k = 0; k < a.classBinding.size(); k++) {
+            const bool value = k < a.classParams.size() && a.classParams[k].type != nullptr && a.classBinding[k] != nullptr &&
+                               a.classBinding[k]->kind() == Kind::TemplateParam;     // the read's pattern for N, its value held above
+            if (value ? b.classBinding[k] != nullptr && b.classBinding[k]->kind() == Kind::TemplateParam : substituted(s, a.classBinding[k]) != b.classBinding[k])
+                return "differ: a member template's class binding";
+        }
     }
     return std::string();
 }
