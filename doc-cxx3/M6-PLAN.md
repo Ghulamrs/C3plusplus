@@ -5207,3 +5207,8 @@ point checked not owed).** M8.3 (M8-PLAN, m83p): data members of class type made
 under the binding (memberName, Parser::conversionSpelling) for its declaration, symbol and held body's key. **Class
 specializations made with no replay: suite 735 of 2,184 (from 668), self-host 30,707 held equal under the check (from
 27,684).** Nothing changes without the flag.
+
+**m6d-w27's wave landed, 2026-11-24 (gate m6dw27g at 367583ab against main 78358d65: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** M8.3 (M8-PLAN, m83q, m83r): a member enumeration's data member refused by name; the template-ids a
+read clears kept (readIds_) and made before the class (idsBefore). **Class specializations made with no replay: suite 779 of
+2,184 (from 735), self-host 35,003 held equal under the check (from 30,707).** Nothing changes without the flag.
