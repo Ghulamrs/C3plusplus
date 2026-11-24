@@ -6,6 +6,7 @@
 #include "../parser/ParserInternal.h"
 #include "../Source.h"
 
+#include <cctype>
 #include <climits>
 #include <cstdlib>
 #include <algorithm>
@@ -344,12 +345,22 @@ const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
     return m != nullptr ? m : t;
 }
 
+// Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value; a written one (a read class's are its
+// stand-ins) or an expression, no.
+static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
+    if (a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->dependentValue || !a->isParam) return false;
+    if (a->paramIndex < 0 || static_cast<std::size_t>(a->paramIndex) >= s.values.size()) return false;
+    a->isParam = false, a->value = s.values[static_cast<std::size_t>(a->paramIndex)];
+    return true;
+}
+
 // A specialization named over the parameters (`pair<const $T0,$T1>`) under `s`: the one the program declared by its key, or null.
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
     std::string name;
     std::vector<TemplateArg> args;
     if (!readId(o, &name, &args)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
+        if (!args[k].isType && argValued(s, &args[k])) continue;
         if (!args[k].isType || args[k].isPack || args[k].isTemplate || args[k].expr != nullptr || args[k].isParam) return nullptr;
         args[k].type = substituted(s, args[k].type);
     }
@@ -3341,6 +3352,7 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
     for (std::size_t k = 0; k < args->size(); k++) {
         TemplateArg &a = (*args)[k];
         const TemplateParam &q = d->second.params[k];
+        if (q.type != nullptr && !q.isPack && argValued(s, &a)) continue;
         if (q.isPack || q.isTemplate || q.type != nullptr || !a.isType || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) return false;
         a.type = substituted(s, a.type);
         const Type *u = a.type;
@@ -3400,10 +3412,11 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
         const Type *had = p_.lookup_.findTypedef(tag);
         if (had != nullptr) { s.from.push_back(e), s.to.push_back(had); continue; }     // an id's argument, as the next one reads it
         std::vector<const Type *> types;
-        for (const TemplateArg &a : args) types.push_back(a.type);
+        std::vector<long long> vals;     // a value argument's, as argValued gave it
+        for (const TemplateArg &a : args) types.push_back(a.type), vals.push_back(a.isType ? 0 : a.value);
         const TemplateDecl &decl = templates_.at(name);
         const Parser::Nesting deep(&p_, pos, "template instantiation");
-        s.from.push_back(e), s.to.push_back(makeClass(decl, tag, types, std::vector<long long>(types.size(), 0), args, Packs(decl.params.size()), pos));
+        s.from.push_back(e), s.to.push_back(makeClass(decl, tag, types, vals, args, Packs(decl.params.size()), pos));
         classCensus_["made before the class, as its replay makes it: a class template-id over its parameters"]++;
     }
     return std::string();
@@ -3431,6 +3444,34 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (params[q].isPack || params[q].isTemplate) return "replayed: a pack or template parameter, bound by name";
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
     // keeps as the parameter (Type::boundParam) and substituted lays under `s`'s values; anywhere else it replays by name.
+    // Slice 3f: or in the primary's own id over its parameters in order (`V<N>`, `Box<T, N>`), the read class (readStands).
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator self = readMembers_.find(start);
+    const std::string readTag = self != readMembers_.end() ? self->second.first : std::string();
+    std::string ownKey = readTag.substr(0, readTag.find('<')) + "<";
+    for (std::size_t q = 0; q < params.size(); q++) ownKey += (q > 0 ? "," : "") + std::string(params[q].type != nullptr ? "$P" : "$T") + std::to_string(q);
+    const bool primary = readTag.find('<') != std::string::npos && readTag.compare(0, ownKey.size() + 6, ownKey + ">$read") == 0;
+    const std::size_t colons = ownKey.rfind("::", ownKey.find('<')), from = colons == std::string::npos ? 0 : colons + 2;
+    const std::string ownName = ownKey.substr(from, ownKey.find('<') - from);
+    const auto ownId = [&](std::size_t t) -> std::size_t {     // past the `>` of the own id at `t`, or `t`
+        if (!primary || p_.tokens_[t].text != ownName || t + 1 + 2 * params.size() >= p_.tokens_.size() || !p_.tokens_[t + 1].is("<")) return t;
+        for (std::size_t q = 0; q < params.size(); q++)
+            if (p_.tokens_[t + 2 + 2 * q].text != params[q].name || !p_.tokens_[t + 3 + 2 * q].is(q + 1 < params.size() ? "," : ">")) return t;
+        return t + 1 + 2 * params.size();
+    };
+    const auto idArg = [&](std::size_t t) {     // `N` a whole argument of a class template-id (`V<N>`, `Mx<M, N>`), made by its value
+        if (t + 1 >= p_.tokens_.size() || !(p_.tokens_[t - 1].is("<") || p_.tokens_[t - 1].is(",")) || !(p_.tokens_[t + 1].is(">") || p_.tokens_[t + 1].is(","))) return false;
+        for (std::size_t b = t - 1, angles = 0; b > start; b--) {
+            const Token &x = p_.tokens_[b];
+            if (x.is(";") || x.is("{") || x.is("}") || x.is("(") || x.is(")") || x.is("=")) return false;
+            if (x.is(">")) angles++;
+            else if (x.is("<") && angles > 0) angles--;
+            else if (x.is("<")) {
+                const std::string &n = p_.tokens_[b - 1].text;
+                return !n.empty() && (std::isalpha(static_cast<unsigned char>(n[0])) || n[0] == '_') && n != "template" && n != "operator";
+            }
+        }
+        return false;
+    };
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
@@ -3440,9 +3481,10 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             }
         else if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
+        if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
-                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0))
+                !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
@@ -3755,9 +3797,11 @@ void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos
         if (specializationUnder(*ids, e) != nullptr || !earlyArgs(*ids, e, readClass_.at(start), &name, &args, true)) continue;
         std::vector<const Type *> binding;
         for (const TemplateArg &g : args) binding.push_back(g.type);
+        std::vector<long long> vals;     // a value argument's, as argValued gave it
+        for (const TemplateArg &g : args) vals.push_back(g.isType ? 0 : g.value);
         const TemplateDecl &decl = templates_.at(name);
         const Parser::Nesting deep(&p_, pos, "template instantiation");
-        const Type *made = makeClass(decl, specializationKey(name, args), binding, std::vector<long long>(binding.size(), 0), args, Packs(decl.params.size()), pos);
+        const Type *made = makeClass(decl, specializationKey(name, args), binding, vals, args, Packs(decl.params.size()), pos);
         classCensus_["made inside the class, as its replay makes it: its own template under other arguments"]++;
         ids->from.push_back(e), ids->to.push_back(made);
         s->from.insert(s->from.begin(), e), s->to.insert(s->to.begin(), made);

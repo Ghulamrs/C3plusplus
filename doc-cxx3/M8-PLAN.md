@@ -5710,3 +5710,26 @@ Gates (REF e6719501): identical 0 differ on four targets plain (1960/3920/1960/1
 **Next**: with the constants held, the suite's 343 non-type classes named outside member bodies (a signature, a typedef or a
 base: `X<N>` ids keyed by value, `[N + 1]` folded under the values), and member bodies with a value-dependent name folded under
 the values (valueShape, its `Bound::values` now held by this check) rather than replayed; then the 577 `unordered_map<unsigned,...>`.
+
+## M8.3 slice 3f: a class over a non-type parameter named in its own id or as another template's id argument, under -templates=subst (lane m83aj, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite 1,445 of 2,184 (1,436; the probes' 6, 3 more), self-host 72,055 beside under the check
+(72,055). classShape's scan, which refused a non-type parameter named anywhere outside member bodies but a bound `[N]`, now takes
+it in two more places. (a) The primary's own id over its parameters in order (`V<N> &fill`, `V<N> twice()`, `const V<N> &`;
+`Box<T, N> &set`), matched against the read's own key (`V<$P0>`): the read class itself, which readStands maps to the class
+made. (b) A whole argument of another class template-id (`V<N> r[M]`, `const V<N> &row`): `argValued` gives the class's `$P<i>`
+its value under `s` in `specializationUnder` and `earlyArgs` (which refused every non-type parameter), and idsBefore and
+idsInside make such an id under those values (both passed zeros). A written value is still refused: a read class's own
+arguments are its stand-ins (`array<$T0,$P1>$read` carries `0` for N) - the build that took them made `V<0>` and
+`array<int,0>` inside the class (4 units failed under the flag, not under the check, which replays beside) - and the build that
+took them off read classes alone left one class differ in thread-pool (its census before the replay and after it apart: a
+member typedef over a type the binding does not carry); refused, both are gone. An expression argument (`V<N + 1>`) replays.
+Probes template-subst-ownvalueid (clang `6 12 0 12 / 5 16`; its first form, an out-of-line constructor `V<N>::V(int)`, met on
+x86_64-linux the C1-beside-C2 difference names.sh records elsewhere, so it is `fill`) and template-subst-valueid
+(`12 6 24 / 9 x 20`), right plain, under the flag, under the check and by REF.
+src 97,156 -> 97,200 (+44); 3 EXCLUSIONS citations re-pointed (Templates.cpp 2119/2171/2868 -> 2130/2182/2879).
+Census (n3, and n4 for the refused written values, the commit's semantics; n5's own census was still running at the hour): no check 1,334 units, nonzero 353 (the same set), classes 1,445; check nonzero 353, `constants: equal` 1,135, 0 units failed, no class differ (n4); self-host (n3) nonzero 0, no class differ, `constants: equal` 11,621, its class lines equal to m83ah's (72,055 unchanged: the self-host's 259 name the value in bases and expressions).
+Gates (REF f1ca11db), on n5 (the commit's build): subst.sh 0 failed, run.sh 1327/0, then run.sh under the flag 1327/0; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); Windows cl /W4 /WX clean (full, ~3 min); on n3 (n5 less the written values): identical 0 differ on four targets plain (1964/3928/1964/1964), with `-templates=subst` x86_64-linux 1964/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; Windows names.sh 981/1 (the probe's first form, C1 beside C2 on x86_64-linux), overload.sh 46/0, both probes by clang 19 and cxx3-msvc the same. Owed to the wave gate: n5's identicals, its census and self-host census, names.sh and overload.sh on n5 (running at the hour).
+**Next**: a non-type parameter in a base (`Q : V<I>`, refused as a base over its parameters) and in a typedef's or a bound's
+expression (`[N + 1]`, `X<N + 1>`, folded under the values), member bodies folded under the values (valueShape) rather than
+replayed; then the 577 `unordered_map<unsigned,...>`.
