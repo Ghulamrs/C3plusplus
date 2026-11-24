@@ -324,11 +324,14 @@ public:
     std::map<std::string, int> madeCensus_;
     std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
     std::string madeApart(const Function &g, const Function &f) const;
-    bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr);
+    bool madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member = nullptr,
+                           const std::vector<std::string> *guards = nullptr);
     std::map<std::size_t, std::pair<std::string, Substituted> > memberMade_;     // by start: a covered member body owed no replay, its symbol
     bool madeMember(const PendingBody &body);           // in replayInlineBodies, in place of its topLevel: false replays it
     typedef std::vector<std::pair<std::string, std::pair<std::string, const Type *> > > Built;     // memberBuilt_ keys: constructor, type
-    std::string membersBuilt(const PendingBody &body, const std::string &symbol, Built *out) const;     // what the read builds members by
+    std::string membersBuilt(const PendingBody &body, const std::string &symbol, Built *out, std::vector<std::string> *guards,
+                             const Substituted &s) const;     // what the read builds members by
+    std::vector<FrameEvent> guardedFrame(const std::vector<FrameEvent> &read, std::size_t guards) const;     // with the guards' slots
     std::string builtApart(const std::string &symbol, const Built &own) const;
     std::vector<std::string> builtFailed_;      // -check=templates: a covered body whose members' constructors differ, by place
     void memberNamed(const PendingBody &body, Function *g) const;     // its display name; a constructor's or destructor's alias

@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of the inline constructors and destructors of Map, Cell, Tag and Guarded, class template members of vague linkage, where cxx1 emits C1 and C2 (D1 and D2) - the difference implicit-move.nonames and template-subst-memberctor.nonames record. Every other name agrees, and the other two targets agree on all.

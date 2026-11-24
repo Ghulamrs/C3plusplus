@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of the constructors of Iter and Box, class template members of vague linkage, where cxx1 emits C1 and C2 - the difference template-subst-guardedmember.nonames and template-subst-memberctor.nonames record. Every other name agrees, and the other two targets agree on all.
