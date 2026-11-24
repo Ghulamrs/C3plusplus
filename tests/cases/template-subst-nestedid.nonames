@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of Map's constructor, a class template member of vague linkage defined out of line, where cxx1 emits C1 and C2 - the difference implicit-move.nonames and template-subst-ownid.nonames record. Every other name agrees, and the other two targets agree on all.

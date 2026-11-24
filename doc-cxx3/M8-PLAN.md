@@ -5370,3 +5370,72 @@ version 13:32:31-13:36:10, ~3.7 min alone; delta 13:55:04-13:57:39, ~2.6 min); n
 clang and cxx3-msvc the same.
 **Next**: the self-host's "a data member of a class the read named over its parameters" (2,606), then "a base" (2,373)
 and "a type parameter bound to a reference" (1,841); the partial's out-of-line member constructor refused "defined twice".
+
+## M8.3 slice 3b: a data member's class template-id over ids of the parameters, made before the class under -templates=subst (lane m83x, 2026-11-24)
+
+A data member or a member typedef whose class template-id takes, as arguments, other ids over the class's parameters
+(`Tree<Pair<K, V>, KeyOf<K, V> > tree_`, map's `__tree<value_type, __map_key<K, V, C> >`) was refused "a data member of a
+class the read named over its parameters": `earlyArgs` refuses an argument the read named over the parameters. Now
+`argsWanted` walks such an id's arguments innermost first, as the replay makes them reading the id: an argument the program
+carried is mapped under `s`, one `earlyArgs` takes is wanted ahead of the id (moved there when an earlier member wanted it
+behind), and `earlyArgs` takes an argument already wanted (`pending`); `idsBefore` maps each id it makes (or finds) under its
+`s`, so the next id reads its arguments as the made classes; every id is made through `makeClass`, the one path. Found on the
+way: a member typedef's id is made by the replay ahead of the data members' (m83v), so its arguments must be wanted ahead of
+it too - the first version made `Tree<Pair<int,char> >` before the typedef's `Tree<Pair<char,int> >` and identical under the
+flag differed on the probe in the order of the two `key` bodies. Probe `template-subst-nestedid` (`Map<K, V>` with
+`Tree<Pair<K, V>, KeyOf<K, V> > tree_` and `typedef Tree<Pair<V, K>, KeyOf<V, K> > back; back back_;`; clang's 35045 57067
+on Windows, cxx3-msvc the same; 14 classes made from the read, REF 12); its .nonames records x86_64-linux's C1 of `Map`'s
+constructor (template-subst-ownid's difference). Recorded, not fixed: `tests/open/partial-ctor-out-of-line` (clang ACCEPT
+1 2 30 4): a partial's constructor defined out of line beside the primary's is refused "defined twice" with no flag; alone,
+it is never emitted and the link fails. The measure: suite **1,220 of 2,184** (1,204; REF on this tree 1,216, the gain
+the probe's 2 Maps and nested-parse-state's 2), self-host **64,984 beside** under the check (64,733); its "a data member of a
+class the read named over its parameters" only 2,606 -> 2,603 - the self-host's are another shape (below). src 96,788 ->
+96,823 (+35, `Templates.cpp`, `Templates.h`); no EXCLUSIONS line moved. Census: no check nonzero 353 (REF's set); under the
+check no class differ, nonzero 353; self-host nonzero 0.
+Why the self-host's 2,603 stay: a debug build (boxkit/m83x-Tdbg.cpp: M83XDBG at the refusal, with `wanted`) over the
+self-host's sources printed nothing - the first `classBefore` (with `wanted`, in `idsBefore`) never refuses them for the data
+member; the reason is the second one's (no `wanted`), after `idsBefore` made nothing: the first pass refused for another
+reason, or passed and `fromReadWhyNot` stopped it. The census names the data member where that other reason holds.
+Gates (the commit's tree, REF 235c0262): identical 0 differ on four targets plain (1942/3884/1942/1942) and with
+`-templates=subst` on three (1942/3884/1942: every case, the probe's nested ids and the map cases among them); subst.sh 0
+failed, then run.sh 1316/0, then run.sh under the flag 1316/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and
+under the flag; static rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date);
+g++ -Werror clean; Windows cl /W4 /WX clean (full 14:25:16-14:29:01, ~3.75 min alone; delta 14:45:35-14:47:36, ~2 min);
+names.sh 971/0 with the probe's .nonames (the restored template-subst-datamember among them); overload.sh 46/0; the probe and template-subst-datamember on clang and cxx3-msvc the same. A slip on the way: the probe was first written over lane m83s's template-subst-datamember; restored from HEAD and the gates rerun whole on the fixed tree.
+**Next**: name what `idsBefore` met when it made nothing (the first pass's reason, or `fromReadWhyNot`'s) in place of the
+second pass's "a data member", then the largest of those; then "a base" (2,373) and "a type parameter bound to a reference"
+(1,841); the partial's out-of-line constructor (tests/open/partial-ctor-out-of-line).
+
+## M8.3 slice 3b: a base the read laid as the program's own class, and the census naming what idsBefore met (lane m83y, 2026-11-24)
+
+**The measure**: class specializations made with no replay - suite **1,262 of 2,184** (1,220; the probe's 4), self-host
+**65,332 beside** under the check (64,984).
+
+**Commit 1**: (a) a class whose bases the read laid are the program's own classes - none virtual or reached through another,
+none a class template-id over the parameters, none polymorphic - and whose own data members name no parameter (`struct One :
+Tag`, `Two : Tag, Data`, `Pad : Tail` over a non-POD `Tail`) is laid by the read exactly as the replay lays it, so
+`laidFromRead` takes the read's layout whole (members with the bases' copied in, size, alignment, data size, the zero-sized
+flags, the empty subobjects but the read's own) and `classFromRead` adds the read's bases in their order before the members, as
+the replay's head does; `classLaid` holds the bases (class, offset, access, virtual, direct, place) and the data size against
+the replay's. A base beside a data member over the parameters is refused by name ("a base, beside a data member over the
+parameters", 1,631 self-host), and "a base" is named by kind (a class template-id over the parameters, a polymorphic class, a
+virtual base). A base `X<$T0>` is not here: the read leaves it out of its layout ("a base named through a parameter", 215).
+(b) `idsBefore` answers what stopped it - the first `classBefore`'s refusal (ids wanted) or `fromReadWhyNot`'s - and the census
+names that where the second `classBefore` (no ids wanted) refuses; the door decides as before. The self-host's 2,603 "a data
+member of a class the read named over its parameters" are gone from "before the replay", each under its own reason.
+Probe `template-subst-plainbase` (clang's 23 4 8 / 7.5 113 42 on Windows, cxx3-msvc the same; 4 classes made from the read,
+under the check class equal 4); its .nonames records x86_64-linux's C1 of `Pad<long long>`'s implicit constructor
+(template-subst-ownid's difference). src 96,823 -> 96,848 (+25, `Templates.cpp`, `Templates.h`); no EXCLUSIONS line moved.
+Census: no check 1,262 made, nonzero 353 (REF's count); under the check no class differ, self-host nonzero 0. The self-host's
+largest "before the replay" refusals now: a signature's class template-id the program had not declared 2,210, a type
+parameter bound to a reference 1,841, a base beside a data member over the parameters 1,631, a data member of a type the
+binding does not carry 906.
+Gates (the commit's tree, REF aec022e8): identical 0 differ on four targets plain (1944/3888/1944/1944) and with
+`-templates=subst` on three (1944/3888/1944: every case, the probe's plain bases among them); subst.sh 0 failed, then run.sh
+1317/0, then run.sh under the flag 1317/0; self-compile Templates.cpp and ParserType.cpp rc 0 plain and under the flag; static
+rc 0 (exclusions 0/0, comments 0, memory 89, ast-residue 2012/298 not raised, ide up to date); g++ -Werror clean; Windows cl
+/W4 /WX clean (full on the census half 15:14:25-15:18:13, ~3.8 min alone; delta 15:21:03-15:28:49, ~7.7 min, the box busy);
+names.sh 972/0 with the probe's .nonames; overload.sh 46/0; the probe on clang and cxx3-msvc the same.
+**Next**: a base beside a data member over the parameters (1,631: lay the members after the read's bases under the binding, the
+parser's base layout one path with the replay's); a base `X<$T0>` the read leaves out (215: made first, as idsBefore makes ids);
+the signature ids not declared (2,210) and a type parameter bound to a reference (1,841).
