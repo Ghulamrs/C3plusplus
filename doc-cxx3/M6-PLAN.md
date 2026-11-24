@@ -5285,3 +5285,10 @@ made from the read (Substituted carries the class's values). **Class specializat
 each covered body's constants against the replay's; static data members declared from the read (Parser::declareStaticMember).
 **Class specializations made with no replay: suite 1,484 of 2,184 (from 1,436), self-host 72,046 of 74,390 held equal under
 the check (each lane measured on its own tree; the merged tree not census-counted).** Nothing changes without the flag.
+
+**m6d-w41's wave landed, 2026-11-25 (gate m6dw41g at adee391d against main b4781f0c: 40 passed, 0 failed, no row; the fixed
+point checked not owed).** Two lanes. M8.3 (M8-PLAN, m83aj, m83ak): a non-type parameter in the class's own id and as a whole
+argument of another id; a dependent member keyed by its owner (two tables' pair<table::iterator, bool> had been one class),
+the 577 unordered_map<unsigned,...> of Parser.h made. **Class specializations made with no replay: suite about 1,511 of 2,184
+(m83aj +9, m83ak +18 over the base; not census-counted merged), self-host 72,632 of 74,390 held equal under the check.**
+Nothing changes without the flag.
