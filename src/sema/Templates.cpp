@@ -4227,7 +4227,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
-        if (ownTypedefAt(start, td.first) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(own, td.second));
+        if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(own, td.second));
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
@@ -4386,19 +4386,20 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
                                 const Type *scope, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
                                 const std::vector<long long> &values) {
     const std::vector<Type::StaticMember> &statics = readClass_.at(start)->staticMembers();
-    std::vector<std::size_t> typedefs;     // ownTypedefAt's, after the statics; held apart under the check (`owner` no `scope`)
+    std::vector<std::size_t> typedefs;     // typedefByPath's, among the statics; held apart under the check (`owner` no `scope`)
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
-        if (ownTypedefAt(start, td.first) != 0) typedefs.push_back(ownTypedefAt(start, td.first));
+        if (typedefByPath(start, s, td) != 0) typedefs.push_back(typedefByPath(start, s, td));
     bool other = false;
     const std::vector<std::size_t> enums = memberEnums(start, &other);     // slice 3m: read in the body's order among the statics
     if (statics.empty() && typedefs.empty() && enums.empty()) return;
-    std::vector<std::pair<std::size_t, std::size_t> > order;     // each one's token, and its static's index (statics.size(): an enum)
+    std::vector<std::pair<std::size_t, std::size_t> > order;     // each one's token, its static's index (statics.size(): an enum, + 1 a typedef)
     for (std::size_t i = 0; i < statics.size(); i++) {
         bool cx = false;
         std::size_t name = 0;
         order.push_back(std::make_pair(staticAt(start, statics[i].name, &cx, &name), i));
     }
     for (const std::size_t e : enums) order.push_back(std::make_pair(e, statics.size()));
+    for (const std::size_t t : typedefs) order.push_back(std::make_pair(t, statics.size() + 1));
     std::sort(order.begin(), order.end());
     const Type *enumScope = owner == scope || enums.empty() ? scope : p_.types_.structType(Kind::Struct, tag + "::$held");
     std::vector<Shadow> undo;
@@ -4412,6 +4413,13 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
     for (const std::pair<std::size_t, std::size_t> &o : order) {
+        if (o.second == statics.size() + 1) {
+            p_.at_ = o.first;
+            Parser::StorageClass storage = Parser::StorageNone;
+            const Parser::Declared td = p_.declarator(p_.specifiers(&storage));
+            p_.lookup_.declareTypeName(tag + (owner == scope ? "::" : "::$held::") + td.name, td.type);
+            continue;
+        }
         if (o.second == statics.size()) {     // `enum { ... }` as the class body reads it, its enumerators `tag::a` (`tag::$held::a`)
             Parser::StorageClass storage = Parser::StorageNone;
             if (enumScope != scope) p_.classStack_.push_back(enumScope), p_.currentClass_ = scope;     // its names found in `scope`
@@ -4425,12 +4433,6 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         std::size_t name = 0;
         p_.at_ = staticAt(start, m.name, &cx, &name);
         p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substituted(s, m.type), name), m.access, m.isVolatile, m.isThreadLocal, false);
-    }
-    for (const std::size_t t : typedefs) {
-        p_.at_ = t;
-        Parser::StorageClass storage = Parser::StorageNone;
-        const Parser::Declared td = p_.declarator(p_.specifiers(&storage));
-        p_.lookup_.declareTypeName(tag + (owner == scope ? "::" : "::$held::") + td.name, td.type);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
@@ -4472,8 +4474,8 @@ std::string Templates::staticsHeld(std::size_t start, const TemplateDecl &decl, 
             return "differ: a static data member's value, thread_local or volatile";
     }
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
-        if (ownTypedefAt(start, td.first) != 0 && p_.lookup_.findTypedef(tag + "::$held::" + td.first) != p_.lookup_.findTypedef(tag + "::" + td.first))
-            return "differ: a member typedef of its own template over its static data members";
+        if (typedefByPath(start, s, td) != 0 && p_.lookup_.findTypedef(tag + "::$held::" + td.first) != p_.lookup_.findTypedef(tag + "::" + td.first))
+            return "differ: a member typedef read by the class body's path";
     return "equal";
 }
 
@@ -4810,17 +4812,46 @@ std::string Templates::classBefore(std::size_t start, const std::vector<Template
 
 // Step (2): each of the read's member typedefs and aliases names, under `s`, a type the binding carries; else why not.
 std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) const {
-    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start)) {
-        if (ownTypedefAt(start, td.first) != 0) continue;     // read by staticsFromRead
-        const Type *e = substituted(s, td.second);
-        while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
-        e = e->unqualified();
-        const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : e;     // classShape wanted it first
-        if (wanted != nullptr && std::find(wanted->begin(), wanted->end(), of) != wanted->end()) continue;
-        if (e != readClass_.at(start) && (p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && overParameters(e->tag()))))
+    for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
+        if (!typedefCarried(start, s, td.second, wanted) && typedefByPath(start, s, td) == 0)     // else read by staticsFromRead
             return "replayed: a member typedef or alias over a type the binding does not carry";
-    }
     return std::string();
+}
+
+// One read typedef's type under `s`: one the binding carries, or one whose class classShape wanted made first.
+bool Templates::typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const {
+    const Type *e = substituted(s, read);
+    while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+    e = e->unqualified();
+    const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : e;
+    if (wanted != nullptr && std::find(wanted->begin(), wanted->end(), of) != wanted->end()) return true;
+    return e == readClass_.at(start) || !(p_.dependentType(e) || readIds_.count(e) != 0 || (e->isStructOrUnion() && overParameters(e->tag())));
+}
+
+// Slice 3u: a typedef staticsFromRead reads by the class body's path, as the replay reads it: ownTypedefAt's, or, in a class of no
+// written member function, one `s`'s binding alone does not carry written `typedef ... n;` with one declarator; else 0.
+std::size_t Templates::typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const {
+    const std::size_t own = ownTypedefAt(start, td.first);
+    Substituted bare;     // the same answer at the door, in staticsFromRead and in the skip, whatever ids each one's `s` maps
+    bare.values = s.values, bare.packs = s.packs, bare.templates = s.templates;
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator m = readMembers_.find(start);
+    if (own != 0 || typedefCarried(start, bare, td.second, nullptr) || m == readMembers_.end() || !templatesOf(m->second.first).empty()) return own;
+    for (const Signature &f : m->second.second)
+        if (!f.implicit) return 0;
+    for (std::size_t t = start, braces = 0; t + 1 < p_.tokens_.size(); t++) {
+        braces += p_.tokens_[t].is("{");
+        if (p_.tokens_[t].is("}") && --braces == 0) break;
+        if (braces != 1 || !p_.tokens_[t].is("typedef")) continue;
+        std::size_t e = t + 1;
+        bool one = true;
+        for (int angles = 0; e < p_.tokens_.size() && !p_.tokens_[e].is(";"); e++) {
+            const Token &k = p_.tokens_[e];
+            angles += k.is("<") ? 1 : k.is(">") ? -1 : k.is(">>") ? -2 : 0;
+            one = one && !k.is("(") && !k.is("{") && !(angles == 0 && k.is(","));
+        }
+        if (one && e < p_.tokens_.size() && p_.tokens_[e - 1].text == td.first) return t;
+    }
+    return 0;
 }
 
 // Step 4's shape: a covered class made from the read lacks what its body declares beyond data members and member functions,
@@ -4848,7 +4879,7 @@ std::string Templates::classSkip(std::size_t start, const std::string &tag, cons
     const std::vector<std::pair<std::string, const Type *> > &mine = readTypedefs_.at(start), theirs = memberTypedefs(tag, name, typedefsFrom);
     if (mine.size() != theirs.size()) return "differ: the number of member typedefs and aliases";
     for (std::size_t i = 0; i < mine.size(); i++)
-        if (mine[i].first != theirs[i].first || (ownTypedefAt(start, mine[i].first) == 0 && substituted(coveredClass_.at(tag), mine[i].second) != theirs[i].second))
+        if (mine[i].first != theirs[i].first || (typedefByPath(start, coveredClass_.at(tag), mine[i]) == 0 && substituted(coveredClass_.at(tag), mine[i].second) != theirs[i].second))
             return "differ: a member typedef's or alias's name or type";
     return mine.empty() ? "made from the read: data members, member functions and held bodies alone"
                         : "made from the read: member typedefs or aliases beside them";
