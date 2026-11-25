@@ -3,3 +3,34 @@
 # x86_64-linux, x86_64-windows (both spellings), arm64-darwin; <level> 0, 1 or 2. identical, identlnx, identwin,
 # identa64 and emit pass only when the outputs that differ from the wave's base (-w) are exactly these rows; cycles
 # lets a WORSE row through only for a case named here at tms6747 2. A wave empties this file when it lands.
+noexcept-terminates-callee x86_64-linux 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-terminates-callee x86_64-linux 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates x86_64-linux 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates x86_64-linux 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function x86_64-linux 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function x86_64-linux 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function-ledger x86_64-linux 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function-ledger x86_64-linux 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool x86_64-linux 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool x86_64-linux 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-terminates-callee arm64-darwin 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-terminates-callee arm64-darwin 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates arm64-darwin 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates arm64-darwin 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function arm64-darwin 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function arm64-darwin 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function-ledger arm64-darwin 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function-ledger arm64-darwin 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool arm64-darwin 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool arm64-darwin 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-terminates-callee tms6747 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-terminates-callee tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates tms6747 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+noexcept-callee-search-terminates tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function tms6747 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool tms6747 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-pool tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-sleep-yield tms6747 0 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+thread-sleep-yield tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
+std-function-ledger tms6747 2 mayThrow_ cleared per body and per definition (7b64f102): a noexcept function calling nothing that throws loses REF's terminate wrapper, as clang
