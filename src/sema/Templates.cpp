@@ -3529,6 +3529,7 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
         for (const Type *m : a.pack) { TemplateArg one; one.type = m; flat.push_back(one); }
     }
     std::size_t k = 0;
+    bool open = false;     // 3v: an argument still an id over the parameters (`C<C<T> >`'s inner), which earlyArgs finds pending
     std::vector<const Type *> binding(d.params.size(), nullptr);
     std::vector<long long> values(d.params.size(), 0);
     for (std::size_t q = 0; q < d.params.size(); q++) {
@@ -3541,13 +3542,16 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
         }
         if (!p.isPack && k < flat.size()) a = flat[k++];
         else if (!p.isPack) {
-            if (!p_.defaultTemplateArgument(d, q, &binding, &values) || binding[q] == nullptr) return false;
+            if (open || !p_.defaultTemplateArgument(d, q, &binding, &values) || binding[q] == nullptr) return false;
             a.isType = p.type == nullptr, a.isTemplate = p.isTemplate, a.type = binding[q], a.value = values[q];
         }
         if (!a.isPack && (a.isTemplate != p.isTemplate || a.isType != (p.type == nullptr) || a.isParam || a.expr != nullptr || a.dependentValue))
             return false;
         binding[q] = a.isPack || a.isTemplate || !a.isType ? a.type : substituted(s, a.type), values[q] = a.isType ? 0 : a.value;
-        if (!a.isPack && !a.isTemplate && (binding[q] == nullptr || p_.dependentType(binding[q]))) return false;
+        const bool id = a.isType && binding[q] != nullptr && binding[q]->isStructOrUnion() && readId(binding[q], nullptr, nullptr) &&
+                        overParameters(binding[q]->tag());
+        open = open || (id && p_.dependentType(binding[q]));
+        if (!a.isPack && !a.isTemplate && (binding[q] == nullptr || (p_.dependentType(binding[q]) && !id))) return false;
         out.push_back(a);
     }
     if (k != flat.size()) return false;
@@ -3898,7 +3902,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     if (!read->isStructOrUnion() || !read->isComplete()) return "replayed: the read made no complete class";
     for (const Type::BaseSpec &b : read->bases()) {     // one the read laid as the program's own class, by kind for the census
         const bool over = overParameters(b.type->tag()) || readIds_.count(b.type) != 0;     // slice 3o: one over them, mapped below
-        if (b.isVirtual || !b.direct || (!over && (b.type->polymorphic() || b.type->hasVirtualBase())))
+        const bool first = &b == &read->bases()[0] && b.written == 0 && b.type->polymorphic() && !b.type->hasVirtualBase();     // 3v: its table seeded
+        if (b.isVirtual || !b.direct || (!over && !first && (b.type->polymorphic() || b.type->hasVirtualBase())))
             return std::string("replayed: a base: ") + (over ? "a class template-id over its parameters" : b.type->polymorphic() ?
                    "a polymorphic class" : "a virtual base");
     }
@@ -3913,7 +3918,20 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         depth += p_.tokens_[t].is("{");
         if (p_.tokens_[t].is("}") && --depth == 0) break;
     }
-    if (read->hasVptr()) return "replayed: a virtual function";
+    if (read->hasVptr()) {     // slice 3v: a polymorphic first base's table, each read virtual an override in a slot of it
+        const std::map<std::string, std::vector<VSlot> > &tables = p_.classes_.vtables_;
+        const std::map<std::string, std::vector<VSlot> >::const_iterator mine = tables.find(readTag),
+            theirs = read->bases().empty() || !read->bases()[0].type->polymorphic() ? tables.end() : tables.find(read->bases()[0].type->tag());
+        if (read->hasVirtualBase() || self == readMembers_.end() || mine == tables.end() || theirs == tables.end() || mine->second.size() != theirs->second.size())
+            return "replayed: a virtual function";
+        for (std::size_t i = 0; i < mine->second.size(); i++)
+            if (mine->second[i].pure && !theirs->second[i].pure) return "replayed: a virtual function";
+        for (const Signature &f : self->second.second) {     // one the binding may make an override, which the read did not
+            if (!f.implicit && f.name[0] == '~') return "replayed: a written destructor beside a polymorphic base";
+            for (const VSlot &v : theirs->second)
+                if (!f.isVirtual && !f.implicit && v.name == f.name) return "replayed: a member function a base's virtual of its name may take";
+        }
+    }
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
         std::map<std::string, TemplateDecl>::const_iterator tt = params[q].isTemplate && !params[q].isPack && binding[q] != nullptr &&
             binding[q]->isTemplateName() ? p_.findTemplate(binding[q]->templateName()) : templates_.end();     // 3s: a class template, keyed by its name
@@ -4103,16 +4121,16 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     return std::string();
 }
 
-// The made class's bases, laid by layBases as the parser lays them (classShape's: non-virtual, direct, of no vptr, so as written):
-// the read's, or (slice 3j) each base over the parameters the read kept (Parser::readBases_) under `s`.
-std::vector<Type::BaseSpec> Templates::basesUnder(const Type *read, const Substituted &s, BasesLaid *bases) const {
+// The made class's bases, laid by layBases as the parser lays them (classShape's: non-virtual, direct, a vptr only the first's):
+// the read's, or (slice 3j) each base over the parameters the read kept (Parser::readBases_) under `s`; `seed` takes its table.
+std::vector<Type::BaseSpec> Templates::basesUnder(const Type *read, const Substituted &s, BasesLaid *bases, const std::string &seed) const {
     std::vector<Type::BaseSpec> out = read->bases();
     std::vector<Parser::BaseToLay> order;
     const std::map<const Type *, std::vector<Parser::BaseToLay> >::const_iterator over = p_.readBases_.find(read);
     for (const Type::BaseSpec &b : out) order.push_back(Parser::BaseToLay{ substituted(s, b.type), b.access, static_cast<std::size_t>(b.written) });
     for (std::size_t q = 0; out.empty() && read->dependentBase() && over != p_.readBases_.end() && q < over->second.size(); q++)
         order.push_back(Parser::BaseToLay{ substituted(s, over->second[q].type), over->second[q].access, over->second[q].written });
-    p_.layBases(order, nullptr, 0, read->tag(), "struct", 0, bases);
+    p_.layBases(order, nullptr, 0, seed, "struct", 0, bases);
     for (std::size_t q = 0; q < out.size(); q++) out[q].type = order[q].type, out[q].offset = bases->at[q];     // slice 3o: one over them
     for (std::size_t q = out.empty() ? 0 : order.size(); q < order.size(); q++)
         out.push_back(Type::BaseSpec(order[q].type, bases->at[q], order[q].access, false, true, static_cast<int>(order[q].written)));
@@ -4221,7 +4239,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
         if (p_.memberInitCopy_.count(readTag + "::" + m.name) != 0) p_.memberInitCopy_.insert(tag + "::" + m.name);
     }
     Parser::BasesLaid laidBases;
-    for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
+    for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases, tag)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
+    if (read->polymorphic()) type->setPolymorphic(true);     // slice 3v: a polymorphic base's, as the parser's class tail says
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
@@ -4546,6 +4565,11 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         at[a.symbol] = p_.lookup_.functions_.size();
         p_.lookup_.functionIndex_[key].push_back(p_.lookup_.functions_.size());
         p_.lookup_.functions_.push_back(f);
+        if (!f.isVirtual) continue;
+        const std::vector<VSlot> &readSlots = p_.classes_.vtables_[r.first];     // slice 3v: the slot the read's override took,
+        std::vector<VSlot> &slots = p_.classes_.vtables_[tag];                     // in the table layBases seeded from the base
+        for (std::size_t i = 0; i < readSlots.size() && i < slots.size(); i++)
+            if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
         bodies->push_back(h.first);
@@ -4640,7 +4664,7 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
 // The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
 std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
     if (!made->isComplete()) return "differ: the replay's class is incomplete";
-    if (made->hasVptr()) return "differ: the replay's class has a vptr";
+    if (made->hasVptr() && (made->bases().empty() || !made->bases()[0].type->polymorphic())) return "differ: the replay's class has a vptr of its own";
     Parser::BasesLaid laidBases;
     const std::vector<Type::BaseSpec> mineBases = basesUnder(read, s, &laidBases);
     if (made->bases().size() != mineBases.size()) return "differ: the number of bases";
@@ -4708,9 +4732,30 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
             return "differ: a member function's default arguments or the scope they are read in";
         (*symbols)[a.symbol] = b.symbol;
     }
+    const std::string table = vtableHeld(readTag, tag, *symbols);
+    if (!table.empty()) return table;
     const std::string templates = templatesHeld(readTag, s, tag);
     if (!templates.empty()) return templates;
     return "equal";
+}
+
+// Slice 3v: `tag`'s table held against the read's - each slot's name, purity and finality, its function the read's under `symbols`,
+// a destructor's slot the class's own (registerDestructor's), an inherited entry the same; empty when they agree.
+std::string Templates::vtableHeld(const std::string &readTag, const std::string &tag, const std::map<std::string, std::string> &symbols) const {
+    const std::map<std::string, std::vector<VSlot> > &tables = p_.classes_.vtables_;
+    const std::map<std::string, std::vector<VSlot> >::const_iterator mine = tables.find(readTag), theirs = tables.find(tag);
+    const std::size_t n = mine == tables.end() ? 0 : mine->second.size();
+    if (n != (theirs == tables.end() ? 0 : theirs->second.size())) return "differ: the number of vtable slots";
+    const Signature *dtor = n == 0 ? nullptr : p_.destructorOf(p_.lookup_.findTypedef(tag));
+    for (std::size_t i = 0; i < n; i++) {
+        const VSlot &a = mine->second[i], &b = theirs->second[i];
+        const std::map<std::string, std::string>::const_iterator to = symbols.find(a.symbol);
+        const bool deleting = a.name == "~$deleting" || (a.name == "~" && p_.target_.microsoftNames());
+        const std::string want = to != symbols.end() ? to->second : deleting ? p_.linkage_.deletingDestructorSymbol(tag)
+                               : a.name == "~" && dtor != nullptr ? dtor->symbol : a.symbol;
+        if (a.name != b.name || a.pure != b.pure || a.isFinal != b.isFinal || want != b.symbol) return "differ: a vtable slot: " + b.name;
+    }
+    return std::string();
 }
 
 // A read member function's name for the real tag from its signature under `s`, as the parser and Classes spell it on each ABI.
@@ -4728,7 +4773,7 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
             const std::vector<const Type *> keptWritten = p_.writtenParams_, keptFor = p_.writtenFor_;
             p_.writtenParams_ = paramsUnder(s, a.written);
             p_.writtenFor_ = a.written.empty() ? std::vector<const Type *>() : params;
-            const char code = a.implicit ? 'Q' : a.isVirtual ? 'U' : a.access == Access::Public ? 'Q' : a.access == Access::Protected ? 'I' : 'A';
+            const char code = a.isVirtual ? 'U' : a.implicit ? 'Q' : a.access == Access::Public ? 'Q' : a.access == Access::Protected ? 'I' : 'A';
             if (name == tag) microsoftConstructorName(tag, cls, p_.linkage_.manglingType(fn), code, &symbol, &why);
             else if (name[0] == '~') symbol = microsoftDestructorName(tag, cls, code);
             else if (a.implicit && name == "operator=") microsoftCopyAssignName(tag, cls, fn, 'Q', &symbol, &why);
