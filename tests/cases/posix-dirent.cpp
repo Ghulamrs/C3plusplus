@@ -34,7 +34,9 @@ int main() {
     for (int i = 0; i < 3; i++) { std::snprintf(file, sizeof file, "%s/f%d.txt", dir, i); unlink(file); }
     std::snprintf(file, sizeof file, "%s/sub", dir);
     rmdir(file);
+    const int removed = rmdir(dir) == 0;
+    const int missing = opendir(dir) == nullptr;
     std::printf("made %d files %d dirs %d dots %d closed %d removed %d missing %d\n", made, files, dirs, dots, closed,
-                rmdir(dir) == 0, opendir(dir) == nullptr);
+                removed, missing);
     return 0;
 }
