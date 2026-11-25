@@ -3609,6 +3609,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     std::vector<char> open;     // the brackets around a token: a pack expanded in a parameter list, `R(Args...)`, is paramsUnder's
     std::vector<std::size_t> sized;
+    bool ttNamed = false;     // 3s: a template template parameter named as an id, held apart from a member template below
     for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is(":") && (was.is(")") || was.is("noexcept")))     // a mem-initializer list, replayed with its body
@@ -3639,6 +3640,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
                              p_.tokens_[t - 3].is("sizeof") && p_.tokens_[t + 1].is(")");
         // Slice 3s: a template template parameter's id, `C<T>`, which the read lays over `$TT<i>` and idUnder names as bound.
         const bool ttId = t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("<") && !(t > 0 && p_.tokens_[t - 1].is("::"));
+        for (std::size_t q = 0; q < params.size(); q++) ttNamed = ttNamed || (params[q].isTemplate && ttId && n.text == params[q].name);
         for (std::size_t q = 0; q < params.size(); q++)
             if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded) &&
                 !(params[q].isTemplate && !params[q].isPack && ttId)) {
@@ -3779,6 +3781,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
     for (std::size_t q = 0; q < params.size() && mine != readMembers_.end(); q++)     // templatesHeld holds their class values
         if (params[q].type != nullptr && !templatesOf(mine->second.first).empty()) return "replayed: a member template beside a non-type parameter";
+    if (ttNamed && mine != readMembers_.end() && !templatesOf(mine->second.first).empty()) return "replayed: a member template beside a template template parameter";
     const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
     if (r == readClass_.end()) return "replayed: no class read at the declaration";
     const Type *read = r->second;
