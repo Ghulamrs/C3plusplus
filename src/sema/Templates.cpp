@@ -3520,6 +3520,7 @@ void Templates::argsWanted(Substituted *s, const Type *e, const Type *read, cons
         const Type *u = a.type;
         while (u->unqualified() != u || u->isPointer() || u->isReference() || u->isArray())
             u = u->unqualified() != u ? u->unqualified() : u->isReference() ? u->referent() : u->pointee();
+        if (u->kind() == Kind::DependentMember) u = u->pointee()->unqualified();     // slice 3o: `remove_cv<T>::type`, its class first
         if (u == read || !u->isStructOrUnion() || substituted(*s, u) != u || !readId(u, nullptr, nullptr)
             || (readIds_.count(u) == 0 && !overParameters(u->tag()))) continue;
         argsWanted(s, u, read, early, wanted, at);
