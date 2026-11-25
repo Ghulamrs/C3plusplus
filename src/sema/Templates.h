@@ -310,6 +310,8 @@ public:
                               const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const;     // a static member's declarator
     std::size_t ownTypedefAt(std::size_t start, const std::string &n) const;     // `typedef X<num, den> n;`, X its own template
+    bool typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const;
+    std::size_t typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const;     // slice 3u
     std::string staticShape(std::size_t start, const Substituted &s) const;     // what keeps the read's static data members from the read
     void staticsFromRead(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, Type *owner, const Type *scope,
                          const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
