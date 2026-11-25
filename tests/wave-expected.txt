@@ -246,3 +246,15 @@ template-nontype-numeric x86_64-windows 2 cerr tied to cout (cppp4 b85b6c98): os
 windows-unwind-api x86_64-windows 0 new case (cppp5): the base has no <eh.h> or windows.h unwind API
 windows-unwind-api x86_64-windows 1 new case (cppp5): the base has no <eh.h> or windows.h unwind API
 windows-unwind-api x86_64-windows 2 new case (cppp5): the base has no <eh.h> or windows.h unwind API
+conditional-const-apart-overload tms6747 0 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload tms6747 1 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload tms6747 2 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-linux 0 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-linux 1 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-linux 2 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-windows 0 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-windows 1 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload x86_64-windows 2 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload arm64-darwin 0 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload arm64-darwin 1 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
+conditional-const-apart-overload arm64-darwin 2 new case (w46fix 947308e8): the base refuses c ? a : ca between class lvalues apart in const
