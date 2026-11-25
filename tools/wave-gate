@@ -35,7 +35,7 @@
 # tools/c6747/release-check-box.py on the Windows box (N5). ssa1/ssa2: tests/ssa.sh at SSA_LEVEL 1, 2; run2: run.sh -O2.
 # subst: tests/subst.sh, -templates=subst against off (R109). declines: tools/c6x-declines --check, the count only down (R108, Q5). asm<L>: tests/asm6x.sh at -O<L>, -O1 included. selfc: stage 0 compiles every
 # src/*.cpp. run1/winpass1: the x86 cases at -O1. cdb wants the LINK a winpass builds (winout-tools).
-# **sim: tests/tms6747.sh -O2 with SIM=1** (asm6x, lnk6x, TI's runtime, sim6747), the six shards, in every wave gate -
+# **sim: tests/tms6747.sh -O2 with SIM=1** (asm6x, lnk6x, sim6747; RTS6x on Linux, TI's rts6740 on Windows), the six shards, in every wave gate -
 # the user's decision on the M6c review's Q4, 2026-11-15: the Linux time is accepted.
 # **names, overload, winstruct: tests/names.sh, overload.sh and win-structure.sh on the Windows box** in every wave
 # gate, with its clang 19.1.5 - the user's decision on Q9, 2026-11-15: the Windows box is their standing home,
@@ -106,19 +106,20 @@ fi
 if [ "${1:-}" = --box ]; then
     B=$2; N=$3; shift 3
     if [ "$B" = windows ]; then T=$(pwd); V=$T/../$N-verdicts.txt; LOG=$T/../$N; X=${WAVEGATE_TI6X:-/c/Users/GRA/work/ti6x}
-        export CXX1=./cxx3-msvc.exe JOBS=${WINLANES:-10} TIRTS=${WAVEGATE_TIRTS:-/c/ti/c6747-lib}
+        export CXX1=./cxx3-msvc.exe JOBS=${WINLANES:-10} TIRTS=${WAVEGATE_TIRTS:-/c/ti/c6747-lib} RTSLIB=rts6740_elf_eh.lib
         job() { c=$1; shift; timeout "$c" "$@"; }                                # the caller pins the affinity
         # python3 on this box is the Store's stub (asm6x.sh's 837 failures in r6w's run): a shim to the real one first
         PY=${WAVEGATE_PYTHON:-/c/Program Files/Python312/python.exe}; mkdir -p "$T/../$N-py3"
         [ -x "$T/../$N-py3/python3" ] || { printf '#!/bin/sh\nexec "%s" "$@"\n' "$PY" > "$T/../$N-py3/p.$$"; chmod +x "$T/../$N-py3/p.$$"; mv "$T/../$N-py3/p.$$" "$T/../$N-py3/python3"; }; PATH=$T/../$N-py3:$PATH
     else T=$HOME/$N; V=$HOME/$N-verdicts.txt; LOG=$HOME/$N; X=$HOME/ti6x
-        export TMPDIR=$T/tmp TIRTS=$HOME/c6747-lib
+        # TI's own tools and rts6740 are the Windows box's alone (the user, 2026-11-25): Linux links with RTS6x
+        export TMPDIR=$T/tmp TIRTS=$X/RTS6x/build RTSLIB=rts6x.lib
         [ -x "$HOME/slot" ] || { printf '%s\n' "$SLOT" > "$HOME/slot.$$" && chmod +x "$HOME/slot.$$" && mv "$HOME/slot.$$" "$HOME/slot"; }
         job() { c=$1; shift; "$HOME/slot" timeout "$c" "$@"; }       # one box job: either slot, then the cap
     fi
     export PATH=$X/ASM6x/build:$X/LNK6x/build:$X/VM6747:$X/SIM6747:$PATH SIM6747=$X/SIM6747/sim6747.exe \
         VM=$X/VM6747/vm6747.exe ASM6X=$X/ASM6x/build/asm6x.exe LNK6X=$X/LNK6x/build/lnk6x.exe \
-        RTSLIB=rts6740_elf_eh.lib C6XDIFF=$X/ASM6x/tests/c6xdiff.py
+        C6XDIFF=$X/ASM6x/tests/c6xdiff.py
     # the user's disk limit: a PASS written while the box is above 70% is a FAIL
     verdict() { u=$(df -P . | awk 'NR == 2 { sub("%", "", $5); print $5 }'); set -- "$1" "$2" "$3"
         [ "$2" = PASS ] && [ "${u:-0}" -gt 70 ] && set -- "$1" FAIL "disk $u% on this box, over 70%; $3"
