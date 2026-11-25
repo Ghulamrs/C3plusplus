@@ -299,6 +299,7 @@ public:
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::vector<std::size_t> memberEnums(std::size_t start, bool *other) const;     // the unnamed `enum { ... };` staticsFromRead reads
+    std::vector<std::pair<std::size_t, std::size_t> > nestedByPath(std::size_t start) const;     // slice 3v: `struct N { ... };`, read by path
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
@@ -314,7 +315,8 @@ public:
     std::size_t typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const;     // slice 3u
     std::string staticShape(std::size_t start, const Substituted &s) const;     // what keeps the read's static data members from the read
     void staticsFromRead(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, Type *owner, const Type *scope,
-                         const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
+                         const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                         std::vector<PendingBody> *bodies = nullptr);     // with bodies, nestedByPath's classes too
     std::string staticsHeld(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, const Type *made,
                             const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
