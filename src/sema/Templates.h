@@ -293,6 +293,7 @@ public:
     std::string typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted = nullptr) const;
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
+    std::vector<std::size_t> memberEnums(std::size_t start, bool *other) const;     // the unnamed `enum { ... };` staticsFromRead reads
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
