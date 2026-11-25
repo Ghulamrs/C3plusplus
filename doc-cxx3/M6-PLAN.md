@@ -5378,3 +5378,16 @@ by cxx3-msvc -O1 against cl /O1, `--compile6 --obj` at -O0/-O1/-O2): 9 of 981 fi
 `floatName` copies a double into `unsigned long[2]` and spells `fconst_` labels from 8 bytes past it, so those labels
 differ between any two Linux builds - counted apart above. **Owed**: lib's `<eh.h>`, windows.h's unwind API and
 `<intrin.h>` for runtime/cppparse_rt.cpp; the Linux-only `immediate does not fit` difference (a 64-bit `long` path in cppparse, compiled by cxx3 for x86_64-linux).
+
+**m6d-w46's wave landed, 2026-11-26 (gate m6dw46h at 8c542242 against main f4a36769: 40 passed, 0 failed, 255 rows - the
+cerr tie's 11 stream cases, cppp2's const-apart conditional (plain-class-values, ssa-conditional-const-class) and 9 new
+cases, at -O0, -O1 and -O2 on four targets; the rows emptied here; the fixed point checked not owed).** m8-3bf (M8.3 slices 3p
+and 3q: a type parameter bound to void, a function type or an uncompleted specialization; a member initialiser naming no
+parameter) and GRIDE's cppparse line (cppp-fix..cppp-fix4: the 5 sources refused, the const-apart class conditional, cerr
+tied to cout, lib's <dirent.h>, <eh.h>, <intrin.h> and windows.h's unwind API). The first gate, m6dw46g, failed 37/3: cxx3
+refused 3 of its own 102 sources - cppp2 had taught the lowering that a class conditional apart in const is a const lvalue
+while the parser's [expr.cond]/3 rule still left classes out, so overload resolution picked the && overloads; w46-fix
+(ParserOperator.cpp) removed that condition, case conditional-const-apart-overload. **Class specializations made with no
+replay: suite 2,325 of 2,462, self-host 75,272 of 75,319 (m8-3bf's tree).** cppparse built by cxx3: 47 of 47 sources, links,
+--compile6 equal to the g++ build's but for cppparse's own undefined behaviour; its runtime owes _AddressOfReturnAddress
+and pointers to volatile. Nothing changes without the flag but the rows.
