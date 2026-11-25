@@ -3832,11 +3832,17 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         readStands(start, nullptr, &own);
         return pointer && std::find(own.from.begin(), own.from.end(), t) != own.from.end();
     };
+    const auto ownEnum = [&](const Type *u) {     // slice 3r: a named member enumeration of its own, readStands maps it
+        Substituted mapped;
+        readStands(start, nullptr, &mapped);
+        return std::find(mapped.from.begin(), mapped.from.end(), u) != mapped.from.end();
+    };
     std::vector<std::size_t> dataAt;     // the data members that want ids, where the body declares them
     for (const Member &m : read->members()) {
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
         const Type *t = dataUnder(*s, m), *e = t;
         if (pointsAtOwn(m.type)) continue;     // `__hash_node *next`: a pointer, the made class once readStands maps it
+        if (ownEnum(m.type->unqualified())) continue;     // slice 3r: `Kind kind`, likewise
         if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
         if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
@@ -4070,8 +4076,10 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
+    Substituted laidAs = s;     // slice 3r: its named member enumerations declared now
+    readStands(start, type, &laidAs);
     ClassLaidOut laid;
-    laidFromRead(read, own, &laid);
+    laidFromRead(read, laidAs, &laid);
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
     const Type *outerCurrent = p_.currentClass_;
@@ -4291,7 +4299,12 @@ std::string Templates::staticsHeld(std::size_t start, const TemplateDecl &decl, 
         const std::unordered_map<std::string, std::size_t>::const_iterator r =
             p_.lookup_.enumIndex_.find(tag + "::" + e.name.substr(std::min(held.size(), e.name.size())));
         if (r == p_.lookup_.enumIndex_.end()) return "differ: a member enumerator the replay does not declare";
-        if (p_.lookup_.enums_[r->second].value != e.value || p_.lookup_.enums_[r->second].type != e.type ||
+        const Type *type = e.type;     // slice 3r: a named one's `tag::$held::E` stands for the replay's `tag::E`, of its kind
+        if (type != nullptr && type->isEnumeration() && type->tag().compare(0, held.size(), held) == 0) {
+            const Type *theirs = p_.lookup_.findTypedef(p_.tagKey("enum", tag + "::" + type->tag().substr(held.size())));
+            if (theirs != nullptr && theirs->kind() == type->kind() && theirs->isScopedEnumeration() == type->isScopedEnumeration()) type = theirs;
+        }
+        if (p_.lookup_.enums_[r->second].value != e.value || p_.lookup_.enums_[r->second].type != type ||
             p_.lookup_.enums_[r->second].valueDependent != e.valueDependent)
             return "differ: a member enumerator's value or type";
     }
@@ -4566,8 +4579,13 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
 // What a class body declares at its own level beyond data members and member functions, by name; empty when nothing.
 std::string Templates::classBeyond(std::size_t start) const {
     bool other = false;
-    memberEnums(start, &other);
-    if (other) return "replayed: a member enumeration with a name, a base or a declarator";
+    const std::vector<std::size_t> enums = memberEnums(start, &other);
+    if (other) return "replayed: a member enumeration with a base or a declarator, or a named one not ended by its braces";
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
+    bool written = own == readMembers_.end() || !templatesOf(own->second.first).empty();     // slice 3r: a named one's type, mapped late
+    for (std::size_t f = 0; own != readMembers_.end() && f < own->second.second.size(); f++) written = written || !own->second.second[f].implicit;
+    for (const std::size_t e : enums)
+        if (written && p_.tokens_[e + 1].kind == TokenKind::Ident) return "replayed: a member enumeration with a name, beside a member function";
     std::size_t t = start;
     while (t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";")) t++;
     for (int depth = 0; t < p_.tokens_.size(); t++) {
@@ -4590,7 +4608,7 @@ std::string Templates::classBeyond(std::size_t start) const {
     return std::string();
 }
 
-// Slice 3m: each unnamed `enum { a = 15, b = is_same<T, int>::value };` in the class's own braces, by its `enum` token, which
+// Slice 3m: each `enum { a = 15, b = is_same<T, int>::value };` (3r: or `enum E { ... };`) in the class's braces, by its `enum`, which
 // staticsFromRead reads as the replay does; `*other` where any other member enumeration is written (3n: a template named too).
 std::vector<std::size_t> Templates::memberEnums(std::size_t start, bool *other) const {
     std::vector<std::size_t> at;
@@ -4602,10 +4620,11 @@ std::vector<std::size_t> Templates::memberEnums(std::size_t start, bool *other) 
         if (k.is("{") || k.is("(") || k.is("[")) depth++;
         else if ((k.is("}") || k.is(")") || k.is("]")) && --depth == 0) break;
         if (depth != 1 || !k.is("enum")) continue;
-        std::size_t close = t + 2;
+        const bool named = p_.tokens_[t + 1].kind == TokenKind::Ident && p_.tokens_[t + 2].is("{");     // slice 3r: `enum Kind { ... };`
+        std::size_t close = t + (named ? 3 : 2);
         while (close + 1 < p_.tokens_.size() && !p_.tokens_[close].is("}") && !p_.tokens_[close].is("{") && !p_.tokens_[close].is(";"))
             close++;
-        if ((was.is(";") || was.is("{") || was.is("}") || was.is(":")) && p_.tokens_[t + 1].is("{") && p_.tokens_[close].is("}") &&
+        if ((was.is(";") || was.is("{") || was.is("}") || was.is(":")) && (named || p_.tokens_[t + 1].is("{")) && p_.tokens_[close].is("}") &&
             p_.tokens_[close + 1].is(";"))
             at.push_back(t);
         else *other = true;
@@ -4683,7 +4702,7 @@ std::vector<std::pair<std::string, const Type *> > Templates::memberTypedefs(con
         if (key.compare(0, owner.size() + 2, owner + "::") != 0) continue;
         const std::string own = key.substr(owner.size() + 2);
         const Type *t = p_.lookup_.typedefs_[i].type;
-        if (own == injected || own.find("::") != std::string::npos || (t->isStructOrUnion() && t->tag() == key)) continue;
+        if (own == injected || own.find("::") != std::string::npos || ((t->isStructOrUnion() || t->isEnumeration()) && t->tag() == key)) continue;
         out.push_back(std::make_pair(own, t));
     }
     return out;
@@ -4751,6 +4770,18 @@ void Templates::readStands(std::size_t start, const Type *made, Substituted *s) 
     if (apart != nullptr && apart != readClass_.at(start) && apart->isStructOrUnion()) s->from.push_back(apart), s->to.push_back(made);
     s->from.push_back(readClass_.at(start));
     s->to.push_back(made);
+    bool apartEnum = false;     // slice 3r: each named member enumeration the made class's, once staticsFromRead declared it
+    for (const std::size_t e : memberEnums(start, &apartEnum)) {
+        const Type *mine = nullptr;     // the read's, by a data member of it
+        const std::string end = "::" + p_.tokens_[e + 1].text;
+        for (const Member &m : readClass_.at(start)->members()) {
+            const Type *u = m.type->unqualified();
+            if (p_.tokens_[e + 1].kind == TokenKind::Ident && u->isEnumeration() && u->tag().size() > end.size() &&
+                u->tag().compare(u->tag().size() - end.size(), end.size(), end) == 0) mine = u;
+        }
+        const Type *theirs = made == nullptr || mine == nullptr ? nullptr : p_.lookup_.findTypedef(p_.tagKey("enum", made->tag() + "::" + p_.tokens_[e + 1].text));
+        if (mine != nullptr && (made == nullptr || theirs != nullptr)) s->from.push_back(mine), s->to.push_back(theirs);
+    }
 }
 
 // A specialization or a class nested in one the map does not carry (`Tree<$T0>::It`; `inner<int>` read inside `outer`'s read).
