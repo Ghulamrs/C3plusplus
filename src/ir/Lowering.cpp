@@ -3960,7 +3960,7 @@ void Lowering::declaration(sema::TypedId id) {
             sema::Resolution conv;     // [dcl.init.ref]/5.1.2: a class bound by its `operator int &()` names the lvalue that answers
             const bool byConversion = convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
                                       !T(conv.type).returns()->isRValueReference() && classObjectNode(init);
-            const bool armed = !byConversion && !isLvalueNode(init) && !constApartClasses(bare) && classConditionalNode(bare);
+            const bool armed = !byConversion && !isLvalueNode(init) && classConditionalNode(bare);
             const bool called = !armed && !destroyedTemporary(init) && !destroyedResult(init);
             if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
             Val b = byConversion ? convertedObject(classObject(init), conv, true) : armed ? extendedConditional(bare)
@@ -4301,7 +4301,7 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     case syntax::Kind::Conditional:
         return count(id) == 3 && isLvalueNode(child(id, 1)) && isLvalueNode(child(id, 2)) &&
                tree_.node(child(id, 1)).type != nullptr && (tree_.node(child(id, 1)).type == tree_.node(child(id, 2)).type ||
-                                                            constApartScalars(id));
+                                                            constApartScalars(id) || constApartClasses(id));
     case syntax::Kind::Call: {
         if (baseAssignNode(id)) return true;
         const sema::Resolution &r = tree_.resolution(id);
@@ -4404,7 +4404,7 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         return Val(a.v, tid(to));
     }
     case syntax::Kind::Conditional: {
-        if (!isLvalueNode(id) && !constApartClasses(id)) outside("a conditional that is no lvalue");
+        if (!isLvalueNode(id)) outside("a conditional that is no lvalue");
         const Val c = truth(expr(child(id, 0)));
         const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
         condbr(c.v, a, b);
@@ -5479,7 +5479,7 @@ bool Lowering::constApartScalars(sema::TypedId id) const {
     return x.type != nullptr && y.type != nullptr && x.type != y.type && x.type->unqualified() == y.type->unqualified() && scalar(*x.type);
 }
 
-// [expr.cond]/3: two class lvalues of one type but for const are an lvalue of the const type, where one is asked for.
+// [expr.cond]/3: two class lvalues of one type but for const are an lvalue of the const type - no copy is made.
 bool Lowering::constApartClasses(sema::TypedId id) const {
     if (count(id) != 3 || !isLvalueNode(child(id, 1)) || !isLvalueNode(child(id, 2))) return false;
     const sema::TypedNode &x = tree_.node(child(id, 1)), &y = tree_.node(child(id, 2));
