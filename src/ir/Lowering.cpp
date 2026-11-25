@@ -1884,6 +1884,26 @@ Lowering::Val Lowering::extendedResult(sema::TypedId id) {
     return Val(slot, tid(t));
 }
 
+// And for a class conditional, `const T &r = c ? T() : t;` ([expr.cond]/6): each arm's object under its flag, its full
+// expression left open into the scope, as a range-based for's range is - so long as it builds nothing but the arms.
+Lowering::Val Lowering::extendedConditional(sema::TypedId id) {
+    const std::size_t scope = live_.size();
+    openFull();
+    const Val o = conditionalObject(id);
+    if (!(live_.size() == scope && !T(o.type).hasDestructor()) && !armsOnly(scope, T(o.type)))
+        outside("a reference bound to a conditional that builds more than its arms");
+    full_.pop_back();
+    return o;
+}
+
+// Whether what was built since `scope` is a class conditional's two arms alone: each of class `cls`, under its flag.
+bool Lowering::armsOnly(std::size_t scope, const Type &cls) const {
+    bool arms = live_.size() == scope + 2;
+    for (std::size_t k = scope; arms && k < live_.size(); k++)
+        arms = T(live_[k].cls).unqualified() == cls.unqualified() && live_[k].built.valid() && !live_[k].when.valid();
+    return arms;
+}
+
 // [expr.type.conv] into a slot of this frame: `P()` zeroed ([dcl.init]/8), `P(o)` o's bytes, a class with constructors built
 // by the one the parser chose - with a destructor, alive to its full expression's end ([class.temporary]/3), which
 // destroys it, as its cleanup does. The slot's address is the temporary's value.
@@ -3396,7 +3416,7 @@ void Lowering::returnDestroyed(sema::TypedId value) {
     }
     if (handlerDepth_ == 0) {
         for (std::size_t k = live_.size(); k-- > liveFloor_; )
-            if (live_[k].slot.v != kept.v) destroy(live_[k]);
+            if (live_[k].slot.v != kept.v) destroyWhen(live_[k]);
     }
     const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, at0));
     if (handlerDepth_ == 0) { br(returnBlock_, std::vector<ValueId>(1, result(c))); return; }
@@ -3726,9 +3746,7 @@ void Lowering::rangeForStmt(sema::TypedId id) {
         // Or, the range a conditional ([expr.cond]/6), each arm's one object of that class under the arm's flag.
         sema::TypedId bare = range;
         while (syn(bare).kind == syntax::Kind::Paren && count(bare) == 1) bare = child(bare, 0);
-        bool arms = classConditionalNode(bare) && live_.size() == scope + 2;
-        for (std::size_t k = scope; arms && k < live_.size(); k++)
-            arms = T(live_[k].cls).unqualified() == &rc && live_[k].built.valid() && !live_[k].when.valid();
+        const bool arms = classConditionalNode(bare) && armsOnly(scope, rc);
         if (temporary && !arms && !(live_.size() == scope ? !rc.hasDestructor() :
                            live_.size() == scope + 1 && T(live_.back().cls).unqualified() == &rc && !live_.back().built.valid() && !live_.back().when.valid()))
             outside("a range-based for whose range's full expression builds more than its range");
@@ -3935,13 +3953,16 @@ void Lowering::declaration(sema::TypedId id) {
             if (v.count != first + 1) outside("a reference of " + std::to_string(v.count) + " parts");
             if (boundLocal(child(var, first), t, slot)) continue;
             const sema::TypedId init = child(var, first);
-            const bool called = !destroyedTemporary(init) && !destroyedResult(init);
-            if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
+            sema::TypedId bare = init;
+            while (syn(bare).kind == syntax::Kind::Paren && count(bare) == 1) bare = child(bare, 0);
             sema::Resolution conv;     // [dcl.init.ref]/5.1.2: a class bound by its `operator int &()` names the lvalue that answers
             const bool byConversion = convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
                                       !T(conv.type).returns()->isRValueReference() && classObjectNode(init);
-            Val b = byConversion ? convertedObject(classObject(init), conv, true) : destroyedTemporary(init) ? extendedTemporary(init)
-                  : destroyedResult(init) ? extendedResult(init) : lvalue(init);
+            const bool armed = !byConversion && !isLvalueNode(init) && classConditionalNode(bare);
+            const bool called = !armed && !destroyedTemporary(init) && !destroyedResult(init);
+            if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
+            Val b = byConversion ? convertedObject(classObject(init), conv, true) : armed ? extendedConditional(bare)
+                  : destroyedTemporary(init) ? extendedTemporary(init) : destroyedResult(init) ? extendedResult(init) : lvalue(init);
             if (called) closeFull();
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
@@ -7431,11 +7452,11 @@ void Lowering::leaveCatches(std::size_t n, std::size_t mark) {
     std::size_t upper = live_.size();
     for (std::size_t h = 0; h < n; h++) {
         const std::size_t from = handlerLive_[handlerLive_.size() - 1 - h];
-        for (std::size_t k = upper; k-- > from; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+        for (std::size_t k = upper; k-- > from; ) if (live_[k].slot.v != elidedSlot_.v) destroyWhen(live_[k]);
         endCatches(1);
         upper = from;
     }
-    for (std::size_t k = upper; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+    for (std::size_t k = upper; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroyWhen(live_[k]);
 }
 
 // **A `try` and its handlers, as the parser writes them for the Itanium ABI**: the body's calls unwind to one pad, whose
