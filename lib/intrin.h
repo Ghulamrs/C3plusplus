@@ -5,6 +5,8 @@
 // an inline function that takes a slim reader/writer lock around the
 // read-modify-write, as <windows.h>'s InterlockedIncrement family does (its
 // comment says what that is atomic against: the other operations of one unit).
+// The SDK's parameter is `long volatile *`, which this compiler refuses by name
+// (a pointer to a volatile type); it is `long *`, as <windows.h>'s family is.
 //
 // `_AddressOfReturnAddress` and `_ReturnAddress` are not declared: they read the
 // caller's frame, which only the compiler can give, and this one does not yet -
@@ -33,33 +35,33 @@ void AcquireSRWLockExclusive(PSRWLOCK lock);
 void ReleaseSRWLockExclusive(PSRWLOCK lock);
 
 static SRWLOCK __cxx1_intrinsic_lock;
-static inline long _InterlockedIncrement(long volatile *p) {
+static inline long _InterlockedIncrement(long *p) {
     AcquireSRWLockExclusive(&__cxx1_intrinsic_lock);
     long now = ++*p;
     ReleaseSRWLockExclusive(&__cxx1_intrinsic_lock);
     return now;
 }
-static inline long _InterlockedDecrement(long volatile *p) {
+static inline long _InterlockedDecrement(long *p) {
     AcquireSRWLockExclusive(&__cxx1_intrinsic_lock);
     long now = --*p;
     ReleaseSRWLockExclusive(&__cxx1_intrinsic_lock);
     return now;
 }
-static inline long _InterlockedExchange(long volatile *p, long value) {
+static inline long _InterlockedExchange(long *p, long value) {
     AcquireSRWLockExclusive(&__cxx1_intrinsic_lock);
     long was = *p;
     *p = value;
     ReleaseSRWLockExclusive(&__cxx1_intrinsic_lock);
     return was;
 }
-static inline long _InterlockedExchangeAdd(long volatile *p, long value) {
+static inline long _InterlockedExchangeAdd(long *p, long value) {
     AcquireSRWLockExclusive(&__cxx1_intrinsic_lock);
     long was = *p;
     *p = was + value;
     ReleaseSRWLockExclusive(&__cxx1_intrinsic_lock);
     return was;
 }
-static inline long _InterlockedCompareExchange(long volatile *p, long value, long comparand) {
+static inline long _InterlockedCompareExchange(long *p, long value, long comparand) {
     AcquireSRWLockExclusive(&__cxx1_intrinsic_lock);
     long was = *p;
     if (was == comparand) *p = value;
