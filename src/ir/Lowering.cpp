@@ -5656,6 +5656,8 @@ Lowering::Val Lowering::toBase(Val v, TypeId to, bool cast) {
         basePaths(base, from, 0, found, offset);
         offset = -offset;
     }
+    // [expr.cast]/4: classes neither derived from the other - a C-style cast is then a reinterpret_cast, the same address.
+    if (found == 0 && cast) return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
     if (found != 1) outside("a conversion of a pointer to a class to one that is not its base");
     if (offset == 0) return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
     const Val nonNull = truth(v);

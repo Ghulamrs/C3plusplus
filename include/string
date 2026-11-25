@@ -69,6 +69,9 @@ class basic_string {
 public:
     typedef std::size_t size_type;
     typedef C value_type;
+    typedef std::ptrdiff_t difference_type;
+    typedef C *pointer;
+    typedef const C *const_pointer;
     // [basic.string]: the iterators are pointers here, as vector's are.
     typedef C *iterator;
     typedef const C *const_iterator;

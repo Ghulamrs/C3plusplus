@@ -71,6 +71,20 @@ In find(In from, In to, const T &want) {
     return from;
 }
 
+template <class In1, class In2>
+bool equal(In1 from, In1 to, In2 with) {
+    for (; from != to; ++from, ++with)
+        if (!(*from == *with)) return false;
+    return true;
+}
+
+template <class In1, class In2, class Same>
+bool equal(In1 from, In1 to, In2 with, Same same) {
+    for (; from != to; ++from, ++with)
+        if (!same(*from, *with)) return false;
+    return true;
+}
+
 template <class In, class T>
 std::size_t count(In from, In to, const T &want) {
     std::size_t seen = 0;
