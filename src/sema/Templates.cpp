@@ -2026,6 +2026,15 @@ std::string Templates::builtReport() const {
         out += "-check=templates built (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = replayCensus_.begin(); i != replayCensus_.end(); ++i)
         out += "-check=templates replay (" + std::to_string(i->second) + "): " + i->first + "\n";
+    // The measure: a line a class specialization, then the sum - made + replayed = total, each tag once.
+    long made = 0;
+    for (std::map<std::string, std::string>::const_iterator i = specializationCensus_.begin(); i != specializationCensus_.end(); ++i) {
+        out += "-check=templates specialization: " + i->second + " | " + i->first + "\n";
+        made += i->second.compare(0, 4, "made") == 0 ? 1 : 0;
+    }
+    const long total = static_cast<long>(specializationCensus_.size());
+    out += "-check=templates specializations: total=" + std::to_string(total) + " made=" + std::to_string(made) + " replayed=" +
+           std::to_string(total - made) + " again=" + std::to_string(specializationAgain_) + "\n";
     return out;
 }
 
@@ -3353,6 +3362,13 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies, useParams, useBinding, useValues)
                      : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
     if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
+    // The measure: one verdict a tag - step (1)'s, else classBefore's or idsBefore's reason, as "before the replay" says it.
+    const std::string verdict = fromRead.empty() ? std::string("made from the read with no replay")
+                              : fromRead.compare(0, 7, "beside:") == 0 ? std::string("made from the read, the replay beside under -check=templates")
+                              : fromRead != "-" ? "replayed: " + fromRead
+                              : !substitute_ || p_.patternUses_ ? std::string("replayed: not under -templates=subst")
+                              : "replayed: " + (met.empty() ? before : met);
+    if (!specializationCensus_.insert(std::make_pair(tag, verdict)).second) specializationAgain_++;
 
     if (!made->isStructOrUnion())
         p_.src_.fail(pos, "'" + decl.name + "' is not a class template");

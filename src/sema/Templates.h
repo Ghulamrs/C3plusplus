@@ -358,6 +358,9 @@ public:
     std::vector<std::string> builtFailed_;      // -check=templates: a covered body whose members' constructors differ, by place
     void memberNamed(const PendingBody &body, Function *g) const;     // its display name; a constructor's or destructor's alias
     std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
+    // The measure (M8.3): each class specialization the unit makes, once by its tag - made from the read or replayed, and why.
+    std::map<std::string, std::string> specializationCensus_;
+    int specializationAgain_ = 0;                               // a tag makeClass met again: counted once, and said
     std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
     std::string builtReport() const;
 
