@@ -294,6 +294,7 @@ public:
     std::string typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted = nullptr) const;
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
+    std::vector<std::size_t> memberEnums(std::size_t start, bool *other) const;     // the unnamed `enum { ... };` staticsFromRead reads
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr) const;
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
@@ -358,6 +359,9 @@ public:
     std::vector<std::string> builtFailed_;      // -check=templates: a covered body whose members' constructors differ, by place
     void memberNamed(const PendingBody &body, Function *g) const;     // its display name; a constructor's or destructor's alias
     std::map<std::string, int> replayCensus_;                   // a covered body: with no replay, beside one, replayed by reason
+    // The measure (M8.3): each class specialization the unit makes, once by its tag - made from the read or replayed, and why.
+    std::map<std::string, std::string> specializationCensus_;
+    int specializationAgain_ = 0;                               // a tag makeClass met again: counted once, and said
     std::set<std::string> unreplayed_;                          // by symbol: typed from its read, which is its root
     std::string builtReport() const;
 
