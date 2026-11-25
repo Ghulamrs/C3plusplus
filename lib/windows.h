@@ -165,11 +165,110 @@ typedef struct _WIN32_FIND_DATAA {
     CHAR cAlternateFileName[14];
 } WIN32_FIND_DATAA, *LPWIN32_FIND_DATAA;
 
-// One pointer, zero when free; SRWLOCK_INIT is that zero.
+// One pointer, zero when free; SRWLOCK_INIT is that zero. <intrin.h> defines it too.
+#ifndef _CXX1_RTL_SRWLOCK
+#define _CXX1_RTL_SRWLOCK
 typedef struct _RTL_SRWLOCK {
     PVOID Ptr;
 } SRWLOCK, *PSRWLOCK;
+#endif
 #define SRWLOCK_INIT {0}
+
+// The unwind API (winnt.h, x64), added 2026-11-25 for cppparse's runtime: a
+// thread's registers, a function's table entry, one frame unwound by it.
+typedef unsigned long long DWORD64, *PDWORD64;
+
+//  0 Low  8 High - 16 bytes, aligned to 16 (DECLSPEC_ALIGN(16) in the SDK).
+typedef struct _M128A {
+    alignas(16) ULONGLONG Low;
+    LONGLONG High;
+} M128A, *PM128A;
+
+// excpt.h's answers of an exception routine.
+typedef enum _EXCEPTION_DISPOSITION {
+    ExceptionContinueExecution,
+    ExceptionContinueSearch,
+    ExceptionNestedException,
+    ExceptionCollidedUnwind
+} EXCEPTION_DISPOSITION;
+
+//  0 ExceptionCode  4 ExceptionFlags  8 ExceptionRecord  16 ExceptionAddress
+// 24 NumberParameters  32 ExceptionInformation[15] - 152 bytes.
+typedef struct _EXCEPTION_RECORD {
+    DWORD ExceptionCode;
+    DWORD ExceptionFlags;
+    struct _EXCEPTION_RECORD *ExceptionRecord;
+    PVOID ExceptionAddress;
+    DWORD NumberParameters;
+    ULONG_PTR ExceptionInformation[15];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+
+//  0 P1Home..P6Home  48 ContextFlags  52 MxCsr  56 SegCs..SegSs  68 EFlags  72 Dr0..Dr7
+// 120 Rax..R15  248 Rip  256 the FltSave union (Header, Legacy, Xmm0..Xmm15 and 96 bytes)
+// 768 VectorRegister[26]  1184 VectorControl..LastExceptionFromRip - 1232 bytes, aligned to 16.
+typedef struct _CONTEXT {
+    DWORD64 P1Home, P2Home, P3Home, P4Home, P5Home, P6Home;
+    DWORD ContextFlags;
+    DWORD MxCsr;
+    WORD SegCs, SegDs, SegEs, SegFs, SegGs, SegSs;
+    DWORD EFlags;
+    DWORD64 Dr0, Dr1, Dr2, Dr3, Dr6, Dr7;
+    DWORD64 Rax, Rcx, Rdx, Rbx, Rsp, Rbp, Rsi, Rdi;
+    DWORD64 R8, R9, R10, R11, R12, R13, R14, R15;
+    DWORD64 Rip;
+    M128A Header[2];
+    M128A Legacy[8];
+    M128A Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7;
+    M128A Xmm8, Xmm9, Xmm10, Xmm11, Xmm12, Xmm13, Xmm14, Xmm15;
+    BYTE FltSaveRest[96];
+    M128A VectorRegister[26];
+    DWORD64 VectorControl;
+    DWORD64 DebugControl;
+    DWORD64 LastBranchToRip;
+    DWORD64 LastBranchFromRip;
+    DWORD64 LastExceptionToRip;
+    DWORD64 LastExceptionFromRip;
+} CONTEXT, *PCONTEXT;
+
+//  0 BeginAddress  4 EndAddress  8 UnwindData - 12 bytes, offsets in the image.
+typedef struct _RUNTIME_FUNCTION {
+    DWORD BeginAddress;
+    DWORD EndAddress;
+    DWORD UnwindData;
+} RUNTIME_FUNCTION, *PRUNTIME_FUNCTION;
+
+typedef EXCEPTION_DISPOSITION (*PEXCEPTION_ROUTINE)(struct _EXCEPTION_RECORD *record, PVOID establisherFrame,
+                                                    struct _CONTEXT *context, PVOID dispatcherContext);
+
+//  0 ControlPc  8 ImageBase  16 FunctionEntry  24 EstablisherFrame  32 TargetIp
+// 40 ContextRecord  48 LanguageHandler  56 HandlerData  64 HistoryTable  72 ScopeIndex  76 Fill0 - 80 bytes.
+typedef struct _DISPATCHER_CONTEXT {
+    DWORD64 ControlPc;
+    DWORD64 ImageBase;
+    PRUNTIME_FUNCTION FunctionEntry;
+    DWORD64 EstablisherFrame;
+    DWORD64 TargetIp;
+    PCONTEXT ContextRecord;
+    PEXCEPTION_ROUTINE LanguageHandler;
+    PVOID HandlerData;
+    struct _UNWIND_HISTORY_TABLE *HistoryTable;
+    DWORD ScopeIndex;
+    DWORD Fill0;
+} DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
+
+#define UNW_FLAG_NHANDLER 0x0
+#define UNW_FLAG_EHANDLER 0x1
+#define UNW_FLAG_UHANDLER 0x2
+#define UNW_FLAG_CHAININFO 0x4
+
+void RtlCaptureContext(PCONTEXT context);
+PRUNTIME_FUNCTION RtlLookupFunctionEntry(DWORD64 controlPc, PDWORD64 imageBase,
+                                         struct _UNWIND_HISTORY_TABLE *historyTable);
+PEXCEPTION_ROUTINE RtlVirtualUnwind(DWORD handlerType, DWORD64 imageBase, DWORD64 controlPc,
+                                    PRUNTIME_FUNCTION functionEntry, PCONTEXT context, PVOID *handlerData,
+                                    PDWORD64 establisherFrame, struct _KNONVOLATILE_CONTEXT_POINTERS *contextPointers);
+void RtlRestoreContext(PCONTEXT context, struct _EXCEPTION_RECORD *exceptionRecord);
+BOOL SwitchToThread(void);
 
 HANDLE CreateThread(LPSECURITY_ATTRIBUTES attributes, SIZE_T stackSize, LPTHREAD_START_ROUTINE start,
                     LPVOID parameter, DWORD flags, LPDWORD threadId);

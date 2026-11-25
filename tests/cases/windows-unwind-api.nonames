@@ -1,0 +1,1 @@
+x86_64-windows  the SDK declares the Rtl functions NTSYSAPI, __declspec(dllimport), so clang calls them through __imp_ pointers; lib/windows.h declares them plainly and the call reaches kernel32's thunk. Every name the program defines agrees.

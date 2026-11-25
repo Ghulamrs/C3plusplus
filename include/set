@@ -29,6 +29,11 @@ public:
     typedef C key_compare;
     typedef T value_type;
     typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
+    typedef const T &reference;
+    typedef const T &const_reference;
+    typedef const T *pointer;
+    typedef const T *const_pointer;
     typedef __tree_const_iterator<T> iterator;
     typedef __tree_const_iterator<T> const_iterator;
     typedef std::reverse_iterator<const_iterator> reverse_iterator;

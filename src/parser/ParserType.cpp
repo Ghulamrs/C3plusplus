@@ -2167,13 +2167,13 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         if (consume("static"))  { *storage = StorageStatic; continue; }
         if (consume("extern"))  { *storage = StorageExtern; continue; }
         // [dcl.stc]/4: `thread_local`, beside `static` or `extern` or alone. The C6000 has no
-        // thread storage at all - cl6x 8.2.2 knows no such word - so it is refused there by name.
-        if (peek().is("thread_local")) {
+        // thread storage at all - cl6x 8.2.2 knows no such word - so it is refused there by name; Microsoft's `__declspec(thread)`.
+        if (peek().is("thread_local") || atDeclspecThread()) {
             if (!target_.hasThreadStorage())
                 src_.fail(peek().pos, "'thread_local' is not supported yet on " + std::string(target_.name()) +
                                       ": TI's cl6x has no thread-local storage, and a program for the "
                                       "C6000 is one thread");
-            at_++;
+            at_ += peek().is("thread_local") ? 1 : 4;
             quals->isThreadLocal = true;
             continue;
         }

@@ -820,21 +820,19 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                            "caller's object, and that may not pick an explicit constructor even where the "
                            "copy is elided");
     }
-    // The named return value is in the caller's storage already, and is not destroyed here.
-    if (const Unary *u = dynamic_cast<const Unary *>(value.get()))
-        if (u->op() == '*')
-            if (const Var *v = dynamic_cast<const Var *>(&u->operand()))
-                if (v->isLocal() && v->offset() == sretSlot_) { *named = true; pendingReturnBuilt_.form = 1; return value; }
     {
         Expr *operand = value.get();
         bool viaDeref = false;
         if (Unary *u = dynamic_cast<Unary *>(operand))
             if (u->op() == '*') { operand = const_cast<Expr *>(&u->operand()); viaDeref = true; }
-        if (const Var *v = dynamic_cast<const Var *>(operand))
+        if (const Var *v = dynamic_cast<const Var *>(operand)) {
+            // The named return value is in the caller's storage already, and is not destroyed here.
+            if (viaDeref && v->isLocal() && v->offset() == sretSlot_) { *named = true; pendingReturnBuilt_.form = 1; return value; }
             if (v->isLocal())
                 if (const Local *l = lookup_.findLocal(v->name()))
                     if (viaDeref ? (l->isParameter && l->byValueByAddress) : !l->type->isReference())
                         value->setXvalue();
+        }
     }
     // **The object made only to be returned is made where it goes** - [class.copy]/31's elision, as clang takes it.
     // `return f();` hands f this function's own hidden pointer; `return T(...);` points T's constructor at it.

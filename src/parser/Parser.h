@@ -1525,6 +1525,8 @@ private:
                          bool viaWrapper, bool external, bool defines, std::size_t pos);
     // `thread_local` written where only a variable may carry it - clang's words.
     void refuseThreadLocalHere(bool written, std::size_t pos);
+    // Microsoft's `__declspec(thread)`, which is `thread_local` where names are Microsoft's.
+    bool atDeclspecThread();
     // Everything below runs inside the init function's frame. The state
     // struct is what every other re-entry door saves, and this is one more.
     FunctionState enterInitFunction();

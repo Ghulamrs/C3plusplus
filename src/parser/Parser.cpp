@@ -940,6 +940,11 @@ void Parser::refuseThreadLocalHere(bool written, std::size_t pos) {
     if (written) src_.fail(pos, "'thread_local' is only allowed on variable declarations");
 }
 
+bool Parser::atDeclspecThread() {
+    return target_.microsoftNames() && peek().is("__declspec") && peekAt(1).is("(") && peekAt(2).is("thread") &&
+           peekAt(3).is(")");
+}
+
 void Parser::noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const std::string &name,
                              bool viaWrapper, bool external, bool defines, std::size_t pos) {
     if (prior && g.isThreadLocal != threadLocal)

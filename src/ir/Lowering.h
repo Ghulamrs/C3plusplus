@@ -463,6 +463,9 @@ private:
     Val temporary(sema::TypedId id);
     Val extendedTemporary(sema::TypedId id);
     Val extendedResult(sema::TypedId id);
+    Val extendedConditional(sema::TypedId id);
+    bool armsOnly(std::size_t scope, const Type &cls) const;
+    void keepFull(bool object);
     bool heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from,
                    sema::TypedId defaults = sema::TypedId());

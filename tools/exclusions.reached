@@ -289,7 +289,7 @@ not reached	a range-based for whose begin and end differ in type
 not reached	a range-based for whose begin or end is not a direct call
 not reached	a range-based for whose braced range builds more than its elements
 not reached	a range-based for whose iterator's '*' gives no reference or scalar
-not reached	a range-based for whose range's full expression builds more than its range
+not reached	a full expression kept to its scope that builds more than its object
 not reached	a range-based for's begin or end of another shape
 not reached	a range-based for's begin or end taking another type
 not reached	a range-based for's iterator call of another shape

@@ -5329,3 +5329,52 @@ specialization, made + replayed = total - and slice 3n. wave-gate: TI's own tool
 user, 2026-11-25) - Linux's tms and sim shards link RTS6x and passed 470 of 470; the box side refuses an empty, dotted or
 nested run name before build's rm -rf. **Class specializations made with no replay (exact census): suite 2,290 of 2,466;
 self-host about 75,000 of 75,319 (m8-3bb's tree).** Nothing changes without the flag.
+
+**cppp1, 2026-11-25 (branch cppp-fix from main aacb72c9; a coding lane, the next wave gates it): GRIDE's cppparse whole
+again - the 5 sources main's cxx3 refused.** **cppparse sources compiled: 47 of 47 on Linux (from 42)**, linked, `--help`
+runs; Windows below. Each fault has its case (clang's output on Windows over cxx3's own library; posix-dirent's from g++ on
+Linux, which has no clang): (1) `std::equal`, both forms (`include/algorithm`); (2) the container typedefs of
+[container.requirements] - difference_type, reference, const_reference, pointer, const_pointer - for vector, basic_string,
+deque, map and set (`algorithm-equal-container-types`); (3) `lib/dirent.h`, opendir/readdir/closedir and struct dirent as
+measured (glibc 280 bytes, d_name at 19; macOS 1048, at 21), refused by name on Windows and the C6000 (`posix-dirent`); on
+Windows `lib/sys/stat.h`'s `(struct _stat64i32 *)buf` was right - a C-style cast between unrelated classes is a
+reinterpret_cast ([expr.cast]/4) - so Lowering::toBase lowers it as the same address (`cast-unrelated-class-pointer`);
+(4) a call completed by defaults whose function returns a reference: useReference's `*` hid the call from
+Parser::withDefaults, which now looks through it - the one path every default takes (`default-argument-reference-result`);
+(5) `const T &r = c ? T() : t;`: Lowering::extendedConditional builds the arms under their flags and leaves the full
+expression open into the scope (keepFull, the one refusal it shares with the range-based for's range - the reason renamed,
+outside() sites 554 as before); and a jump out of a scope (leaveCatches, msLeave, a returned class) destroyed a flagged
+object whether it was built or not - destroyWhen now, as a scope's end always did - which the ledger found on
+`reference-to-class-conditional`. identical.sh at -O0 on the four targets against aacb72c9: 4,970 compared, the only
+differences the five new cases (refused by the base); run.sh's one wrong answer on the way (`ssa-census-last-bodies`, two
+lvalues apart in const) fixed in 29a7497b. src/ 97,472 -> 97,503 lines, include/ 6,279 -> 6,314, lib/ 2,331 -> 2,384.
+**Windows: 47 of 47 too, linked by LINK with the CRT, `--help` runs** (cxx3-msvc at 22581e14; cl /W4 /WX clean, 3.5 minutes
+alone). **What the cxx3-built cppparse prints, against a g++ build of the same sources on Linux** (no clang++ there), over
+cppparse's own 47: `--stdout --no-compile` and `--health` the same in all 47; **`--compile6` not** - 99 of 267 files at -O0,
+103 at -O1 and -O2, first in analyzer/Ast.cpp's Ast6.asm: no `EXTERN` line at all (X86.cpp's loop over m_externs, a
+std::set<std::string>, filled under a Lock by useExtern), and in sample.cpp's a function label written over garbage bytes
+(`Ytotal_...` for `shapes__total_...`), the same with -j 1. **Owed, a wrong answer of cxx3 with no root yet.** So the Windows
+round trip stops twice: cxx3-msvc cannot compile runtime/cppparse_rt.cpp (`<eh.h>`, then windows.h's unwind API and
+`<intrin.h>`, which lib/ lacks), and with a cl-built runtime the cxx3-built cppparse's COFF writer refuses sample6.asm.
+
+**cppp2, 2026-11-25 (branch cppp-fix2 from cppp-fix 30a8b90e; a coding lane, the next wave gates it): cppparse's
+`--compile6` wrong answer, rooted.** **The measure, `--compile6` output files that differ between the cxx3-built (-O1) and
+the g++-built cppparse on Linux: 70 / 74 / 74 of 267 at -O0 / -O1 / -O2 raw, 23 / 37 / 39 without the map's timestamp and the `fconst_` labels below**; Ast6.asm and sample6.asm are right now; **what is left is a second fault, not rooted**: the cxx3-built cppparse's maps (and CxxParser, Sema, SemaExpr, IrGen's .asm and -ir6/-asm6 text) report `immediate does not fit in 32 bits: -1` where the g++ build does not, and 3 out.txt interleave stdout and stderr in another order (cppp1: 99 / 103 / 103). **The root**: object bisection - g++'s 47 objects
+over cxx3's own library (`-nostdinc++ -isystem include`, which g++ compiles and which writes what the libstdc++ build
+writes), with halves of cxx3's objects linked in - named backend/X86.o in seven links. `X86Module::codeFor` writes
+`X86Function fn(*this, any ? folded : f, stats);`, an `IrFunction` lvalue against a `const IrFunction &`: a const lvalue
+([expr.cond]/3), which `Lowering::isLvalueNode` said only of scalars apart in const - so the class arms were copied to a
+temporary the declaration's end destroyed, X86Function kept a reference to it, and every function was emitted from freed
+strings (no EXTERN, no string or float constants, labels over malloc's free-list bytes). **Fix (5710a57d)**:
+isLvalueNode's conditional takes `constApartClasses`; the two callers that asked it beside isLvalueNode ask isLvalueNode
+alone. src/ 97,503 -> 97,503 lines. Case `conditional-const-apart-argument` (clang 19's output on Windows; ledger 0).
+**Gates on 65f2a3a4's code**: run.sh 1,340 passed, 0 failed; subst.sh 0 failed; identical.sh -O0 on four targets against
+30a8b90e: 4,975 compared, 15 differ = the new case, plain-class-values and ssa-conditional-const-class on 5 spellings
+each (the latter two copy a const-apart class conditional straight from the arm taken, the frame's 32-byte temporary
+gone; both print their .expected); names.sh 995 passed, 0 failed, overload.sh 46/0 (Windows); cl /W4 /WX clean, 3.5
+minutes alone; self-compile of Lowering.cpp rc 0; exclusions 554/554, comment cap 0, memory gate rc 0; ast-residue's
+node-casts 141 -> 143 and node-refs 298 -> 300 fail on the base 30a8b90e as well (not this lane's). **Windows** (cppparse
+by cxx3-msvc -O1 against cl /O1, `--compile6 --obj` at -O0/-O1/-O2): 9 of 981 files differ, all out.txt of the three sources that include `<windows.h>` at three levels - the same two lines with stdout and stderr in the other order; every .asm, .obj and text output the same, the maps the same but the timestamp. **Not cxx3's**: on LP64 cppparse's
+`floatName` copies a double into `unsigned long[2]` and spells `fconst_` labels from 8 bytes past it, so those labels
+differ between any two Linux builds - counted apart above. **Owed**: lib's `<eh.h>`, windows.h's unwind API and
+`<intrin.h>` for runtime/cppparse_rt.cpp; the Linux-only `immediate does not fit` difference (a 64-bit `long` path in cppparse, compiled by cxx3 for x86_64-linux).

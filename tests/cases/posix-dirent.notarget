@@ -1,0 +1,2 @@
+x86_64-windows  <dirent.h> is POSIX's: Windows has <io.h>'s _findfirst instead, and lib/ refuses these by name there.
+tms6747  POSIX headers: the C6000 has none, and lib/ refuses them by name there.

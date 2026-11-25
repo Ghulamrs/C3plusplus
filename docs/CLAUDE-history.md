@@ -15439,3 +15439,126 @@ The same round made the refusals of valid C++11 a printed number of every `make 
 `arm64`, only down - since M5.3 arm64 has no walker, so every outside() reason is a compile error there too), and
 how many owed reasons a case reaches, read from `tools/exclusions.reached` (measured by
 `tools/windows/lowering-why.py` and `lowering-why-match.py`, the commit in its first line).
+
+## A class lvalue and a const one of its class are an lvalue conditional, and cppparse's back end, 2026-11-25
+
+cppparse built by cxx3 wrote `--compile6` output unlike a g++ build's (99 of 267 files at -O0): Ast6.asm with no
+`EXTERN` line and function labels over garbage bytes. **Object bisection found it** - g++'s 47 objects over cxx3's own
+library (`-nostdinc++ -isystem include`, which g++ compiles), with halves of cxx3's objects linked in: seven links named
+backend/X86.o alone. Its `X86Module::codeFor` writes `X86Function fn(*this, any ? folded : f, stats);` - `folded` an
+`IrFunction`, `f` a `const IrFunction &` - and `X86Function` keeps the reference. [expr.cond]/3 makes that conditional a
+const lvalue; `Lowering::isLvalueNode` said so only for scalars apart in const (`constApartScalars`), so the class arms
+were copied into a temporary the declaration's end destroyed, and every function was emitted from freed strings.
+- **The fix is the fact in one place**: isLvalueNode's conditional takes `constApartClasses` too; the two callers that
+  asked it beside isLvalueNode (a reference local's binding, `lvalue`'s refusal) ask isLvalueNode alone. src/ 97,503
+  -> 97,503 lines. Case `conditional-const-apart-argument`: a reference parameter, a by-value one, a reference local and
+  a copy, with the ledger at 0.
+- **What must not change**: `lvalue`'s conditional still meets the arms at the const type (`withConst`); a prvalue arm
+  still makes the conditional a prvalue (classConditionalNode).
+- **Not cxx3's**: on LP64 cppparse's `floatName` copies a double's 8 bytes into `unsigned long[2]` (16) and spells the
+  label from both - stack bytes past the double - so `fconst_` labels differ between any two Linux builds. The comparison
+  is counted raw and without those labels and the map's timestamp.
+
+## cppparse's second difference is cppparse's own argument order, and the residue put back, 2026-11-25
+
+**The residue first.** 2b409c94 taught `Parser::withDefaults` to look through useReference's `*` over a call (two
+`dynamic_cast`s, two node pointers), and `tools/ast-residue --check` failed from then on: node-casts 141 -> 143,
+node-refs 298 -> 300, with no mark. Nothing was raised: `Parser::buildReturned` walked `value` through its `*` twice -
+once for the named return value in the caller's slot, once for the xvalue rule - and now walks it once and asks both
+questions of the one `Var`. Same order, same early return. node-casts 141, node-refs 298, rc 0. src/ 97,503 -> 97,501.
+
+**The second difference** (Linux only, 23/37/39 of 267 files at -O0/-O1/-O2 left by cppp2): the "immediate does not fit
+in 32 bits" lines are in both builds' maps - cppparse's own note - and differ only in the line they cite. What moved the
+lines is CxxParser's, Sema's, SemaExpr's and IrGen's IR: cxx3's cppparse writes `t = cmp ne v, #0` before the `condbr`
+of a condition that declares a variable (`if (const DeclaratorPart *fp = d->functionPart())`), g++'s branches on the
+pointer itself (`test r8d, r8d`, its low half). The source is two lines of cppparse's IrGen.cpp, `declLoop` and `stmt`'s `if`:
+`int c = toBool(conditionDecl(s->decl, t, line), t, line);` - conditionDecl sets `t`, and the same call reads it.
+[expr.call]/8 leaves the order unspecified; g++ reads `t` first (still 0, so toBool returns the value unconverted),
+cxx3 and cl read it after the call (cppparse's own comment at `callArguments` names this very expression as cl's
+order). So cxx3's answer is the one cppparse means, g++'s is the wrong one, and there is no case to write: a case may
+not mutate among a call's arguments. The measure was taken again over a copy of cppparse with the two sites sequenced
+(`int c = conditionDecl(...); c = toBool(c, t, line);`, boxkit/cppp3-cmp.sh): at -O0, 9 files differ of the 46
+sources compared before the Linux box stopped taking the key at 07:48 (6 maps, 3 out.txt), every .asm and IR text the
+same; -O1 and -O2 ran but were not read (`~/cppp3cmp`, `~/cppp3-cmp-fO*.txt` on the box).
+- **What is left is not this order**: the maps cite the in-memory assembler's "immediate does not fit" lines 1 to 11
+  lower in the cxx3 build (IrGen6.map says 2772; the `mov` is at 2773 in the .asm, as g++'s map says). Coff.cpp's own
+  line loop, built both ways over cxx3's library (boxkit/cppp3-lines.cpp), counts 2773 in both, so the miscount is later
+  in the assembler's line bookkeeping - not rooted. The 3 out.txt interleave stdout and stderr in another order, as on
+  Windows.
+- **cppp2's fix at every level** (30a8b90e's Lowering.cpp against this tree): plain-class-values,
+  ssa-conditional-const-class and conditional-const-apart-argument differ at -O0, -O1 and -O2 on all five spellings.
+- **What must not change**: cxx3's order of a call's arguments; cppparse (read only here) is the project's to mend.
+
+## cppparse's last differences: cerr untied in cxx3's library, and cppparse's 16-byte read of a double, 2026-11-25
+
+**The measure again** (48d39f43, Linux, the patched copy of cppparse with IrGen.cpp's two `toBool(conditionDecl(d, t,
+line), t, line)` sequenced, boxkit/cppp4-chg.sh): --compile6 of the 47 sources by the cxx3-built cppparse (-O1) against the
+g++/libstdc++ one, 267 files a level - raw 60/60/60, without the map's timestamp and the `fconst_` lines 9/20/22 at
+-O0/-O1/-O2. What is left is two things, and neither is cxx3's code generation:
+- **The three out.txt** (main, Parallel, PathUtil at every level) are cxx3's library. `<ostream>`'s `target()` gave
+  `cerr` stderr and never flushed stdout first, so a redirected `cout`'s buffered lines landed after later `cerr` ones.
+  [narrow.stream.objects]/4 ties `cerr` to `cout`; libstdc++, the MSVC STL and so cl's cppparse keep program order.
+  Now `which_` 2 flushes stdout before it answers stderr, and `clog` is `which_` 3, stderr with no tie as C++11 has it.
+  Case cerr-tied-to-cout (.nonames, .nocl: a library-header case); its .expected is clang 19 -std=c++14 over the MSVC
+  STL (-std=c++11 cannot read it), clang 19 over this library and g++ -std=c++11 alike. src/ 97,501 -> 97,501; include/
+  ostream 310 -> 312.
+- **The maps and the -O1/-O2 .asm** are cppparse's undefined behaviour. `isPositiveZero` and `floatName` (backend/X86.cpp)
+  `memcpy` 16 bytes from an 8-byte double into `unsigned long[2]`, and on LP64 the second word is stack bytes: a +0.0 is
+  an `xorps` or a `movsd` of a constant by chance (every .asm line that differs is one of the two), and two zeros may get
+  one label or two. One `fconst_` data line fewer near the top of IrGen6.asm (boxkit/cppp4-probe2.sh: 254,296 lines in the
+  build over cxx3's library, 254,297 in g++'s) moves every later line, so every error the in-memory assembler cites is
+  1 lower (1 to 11 elsewhere: the count of those lines). The comparison's `-I fconst_` hid that line from the .asm diff,
+  not from the map. Object bisection said the same: the cxx3-built objects mixed into g++'s over cxx3's library change
+  nothing (cxs = ghs on IrGen.cpp); the stack beneath the double is the library's. Coff.cpp's line loop counts right in
+  every build (boxkit/cppp4-probe.sh). cppparse is the project's to mend; nothing here.
+- **What must not change**: `clog` untied; `cout`'s own writes unflushed (a flush per write is the tie's cost to `cerr`
+  alone).
+- **Every output that moved** (identical.sh, 48d39f43 against this tree, four targets, five spellings, -O0/-O1/-O2: 14,940
+  compared, 180 differ): 12 cases x 15 - cerr-tied-to-cout (new), fstream-string-name, include-streams, iomanip-setfill,
+  library-cppparse-pieces, library-self-compile-pieces-2 and -3, stream-base-manipulators, stream-char-types,
+  stream-long-long, stream-number-stops, template-nontype-numeric: `ostream::target`'s two new branches and `clog`'s
+  initialiser (2 -> 3). run.sh 1,341 passed, 0 failed; subst.sh 0 failed; names.sh 995 passed and 1 failed - the new
+  case, whose .nonames was then written (1 passed alone); overload.sh 46 agreed; cl /W4 /WX clean, 225 s alone.
+- **After the fix** (boxkit/cppp4-new.sh, cppp4-clean.sh): the case prints out of order by 48d39f43 (two, four 4, one...)
+  and in order by this tree and by g++; the three out.txt by this tree's cppparse, and by g++'s over this library, equal
+  g++/libstdc++'s at all three levels (over the old library they differ). The measure is 6/17/19 without the out.txt, and
+  0/0/0 once each .asm line naming `fconst_` or an `xorps` and each map's "line N" is set aside (6 maps at -O0; 7 .asm and
+  10 maps at -O1; 7 and 12 at -O2). cppp2's two cases against main e4ad10fd: plain-class-values and
+  ssa-conditional-const-class differ at -O0, -O1 and -O2 on all five spellings (boxkit/cppp4-main.sh; the branch is 23
+  commits behind main, so the lines count more than cppp2's fix).
+
+## cppparse's runtime by cxx3-msvc: what lib/ lacked, and the two things only the compiler can give, 2026-11-25
+
+Lane cppp5 (branch cppp-fix4 from 2e8e575d). The round trip (boxkit/cppp5-win.cmd): (a) `runtime/cppparse_rt.cpp` by
+cxx3-msvc -c, (b) sample.cpp by the cxx3-built cppparse `--compile6 --obj`, (c) linked with that runtime, (d) run, its
+output byte for byte the cl-built round trip's.
+
+- **What lib/ lacked, now written**: `<eh.h>` (`terminate`, `set_terminate`, `__uncaught_exception` - C linkage, as
+  vcruntime's eh.h and corecrt_terminate.h have them), `<intrin.h>` (`_InterlockedIncrement`, `Decrement`, `Exchange`,
+  `ExchangeAdd`, `CompareExchange` as inline functions over an SRW lock, the way `<windows.h>`'s family already was), and
+  `<windows.h>`'s unwind API: `DWORD64`, `M128A`, `EXCEPTION_DISPOSITION`, `EXCEPTION_RECORD`, `CONTEXT` (1,232 bytes, its
+  FltSave union written as its Xmm form plus 96 bytes), `RUNTIME_FUNCTION`, `DISPATCHER_CONTEXT`, `PEXCEPTION_ROUTINE`,
+  `UNW_FLAG_*`, `RtlCaptureContext`, `RtlLookupFunctionEntry`, `RtlVirtualUnwind`, `RtlRestoreContext`, `SwitchToThread`,
+  each checked against SDK 10.0.26100's winnt.h on the box. `__declspec(thread)` is `thread_local` where names are
+  Microsoft's (Parser::atDeclspecThread, beside `thread_local` in the specifier loop); any other `__declspec` is the
+  identifier it was. Case windows-unwind-api: the layouts as static_asserts, a captured context's Rip inside its own
+  table entry, the interlocked answers, a `__declspec(thread)` int, `set_terminate` round trip - clang 19
+  `-std=c++11 -pedantic-errors` over the real SDK and cxx3-msvc print the same (.nonames/.nocl: the SDK's Rtl functions
+  are dllimport, so clang's calls go through `__imp_`).
+- **What the runtime needs that cxx3 does not give** - (a) still fails, at the first of two: `_AddressOfReturnAddress()`
+  (line 514, cl's intrinsic for the slot holding the return address; `<intrin.h>` does not declare it, so the error is
+  "'_AddressOfReturnAddress' was not declared"), then `long volatile*` and `unsigned char volatile*` (lines 582-616),
+  refused by name: "a pointer or reference to a 'volatile' type is not supported yet" (ParserType.cpp). `<intrin.h>`
+  takes `long *` for that reason, as `<windows.h>`'s family does.
+- **With both replaced in a copy** (boxkit/cppp5-rtd.cpp: `~(DWORD64)0` for the frame mark, the five `volatile*` dropped)
+  cxx3-msvc compiles it, and (b), (c), (d) pass for the cxx3-built and the cl-built cppparse alike, with that runtime or
+  cl's: every sample.exe exits 0 and prints what cl's round trip prints (nothing - sample.cpp answers by its exit code),
+  and the two cppparse builds write the same sample6.obj (fc /b). **The round trip needs `--msvc-mangling`**: without it
+  sample6.obj wants `g_rtti_type_info_vftable` and no link of it succeeds, cl's control included; the project's own tests
+  pass the flag (sandbox/scripts/lib.ps1), and boxkit/cppp-win.cmd did not.
+- src/ 97,501 -> 97,508; include/ 6,316 -> 6,316; lib/ 2,384 -> 2,592 (windows.h 251 -> 350, eh.h 33 new, intrin.h 76
+  new). cl /W4 /WX clean, 136 s alone; g++ -Werror 0 warnings.
+- **Gate** (Linux, REF 2e8e575d): identical.sh four targets, five spellings, -O0/-O1/-O2: 14,955 compared, 6 differ -
+  the new case on x86_64-windows's two spellings at three levels (REF has no `<eh.h>`); nothing else moved. run.sh 1,341
+  passed, 0 failed; names.sh 997 passed once the case's .nonames named its target; overload.sh 46 agreed; exclusions rc 0
+  (554/554), comment cap 0 over, memory gate rc 0, ast-residue rc 0; Parser.cpp and ParserType.cpp self-compile rc 0.

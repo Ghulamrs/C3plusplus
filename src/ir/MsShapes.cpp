@@ -30,7 +30,7 @@ FuncId Builder::atexitHelper(const FunctionFacts &facts, std::size_t index) {
 // left the same way, and the last exit destroys down to `mark` and branches on.
 void Lowering::msLeave(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args, std::size_t upper) {
     const std::size_t own = handlerLive_.back();
-    for (std::size_t k = upper; k-- > own; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+    for (std::size_t k = upper; k-- > own; ) if (live_[k].slot.v != elidedSlot_.v) destroyWhen(live_[k]);
     const std::pair<BlockId, BlockId> h = msHandlers_.back();
     const BlockId was = funclet_;
     funclet_ = h.second;
@@ -49,7 +49,7 @@ void Lowering::msLeave(std::size_t n, std::size_t mark, BlockId target, const st
     const BlockId back = cur_;
     place(exit);
     if (n == 1) {
-        for (std::size_t k = own; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+        for (std::size_t k = own; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroyWhen(live_[k]);
         br(target, params);
     } else {
         handlerLive_.pop_back();
