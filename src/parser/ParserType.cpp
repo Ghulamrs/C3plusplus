@@ -383,7 +383,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 (dependentArgs(b->templateArgs()) || b->templateName().compare(0, 3, "$TT") == 0)) {
                 dependentLaid = dependentBase = true;     // M8.3 slice 3j: kept by its type and access, for the class door
                 std::vector<BaseToLay> &kept = readBases_[type];
-                kept.push_back(BaseToLay{ isVirtualBase || b->templateName().compare(0, 3, "$TT") == 0 ? nullptr : b, how, written.size() + kept.size() });
+                kept.push_back(BaseToLay{ isVirtualBase ? nullptr : b, how, written.size() + kept.size() });     // 3u: `$TT<i><int>` kept too
                 if (!consume(",")) break;
                 continue;
             }

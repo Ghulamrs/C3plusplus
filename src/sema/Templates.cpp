@@ -3716,7 +3716,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     std::vector<char> open;     // the brackets around a token: a pack expanded in a parameter list, `R(Args...)`, is paramsUnder's
     std::vector<std::size_t> sized;
-    bool ttNamed = false;     // 3s: a template template parameter named as an id, held apart from a member template below
     for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is(":") && (was.is(")") || was.is("noexcept")))     // a mem-initializer list, replayed with its body
@@ -3750,7 +3749,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         // Slice 3t: or an id's whole argument, `Holder<C, int>`, which idUnder names as bound too (templateArgUnder).
         ttId = ttId || (!open.empty() && open.back() == '<' && t + 1 < p_.tokens_.size() && (p_.tokens_[t - 1].is("<") || p_.tokens_[t - 1].is(",")) &&
                         (p_.tokens_[t + 1].is(",") || p_.tokens_[t + 1].is(">") || p_.tokens_[t + 1].is(">>")));
-        for (std::size_t q = 0; q < params.size(); q++) ttNamed = ttNamed || (params[q].isTemplate && ttId && n.text == params[q].name);
         for (std::size_t q = 0; q < params.size(); q++)
             if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded) &&
                 !(params[q].isTemplate && !params[q].isPack && ttId)) {
@@ -3894,7 +3892,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
                 return "replayed: a non-type parameter named outside its member bodies";
     }
     if (!sized.empty()) return "replayed: a pack or template parameter, bound by name";     // one the second scan did not reach
-    if (ttNamed && self != readMembers_.end() && !templatesOf(readTag).empty()) return "replayed: a member template beside a template template parameter";
     const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
     if (r == readClass_.end()) return "replayed: no class read at the declaration";
     const Type *read = r->second;
@@ -3931,7 +3928,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const bool pending = to->kind() == Kind::Struct && !to->isComplete();     // completed where a member needs it, as the replay does
         if (to->isStructOrUnion() && ((!cls.empty() && !pending) || overParameters(to->tag())))
             return "replayed: a type parameter bound to " + ref + "a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
-        if (!to->isScalar() && !to->isStructOrUnion() && !to->isVoid() && !to->isFunction())     // void and `R(A)` substitute as written
+        const Type *element = to;     // void, `R(A)` and (3u) an array of scalars, `const char [7]`, substitute as written
+        while (element->isArray()) element = element->pointee()->unqualified();
+        if (!to->isScalar() && !to->isStructOrUnion() && !to->isVoid() && !to->isFunction() && !(to->isArray() && element->isScalar()))
             return std::string("replayed: a type parameter bound to ") + ref + (to->isReference() ? "a reference" :
                    to->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
@@ -4622,6 +4621,11 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
             const bool value = k < a.classParams.size() && a.classParams[k].type != nullptr && a.classBinding[k] != nullptr &&
                                a.classBinding[k]->kind() == Kind::TemplateParam;     // the read's pattern for N, its value held above
             if (k < b.classParams.size() && b.classParams[k].isPack) continue;
+            const std::map<int, std::string>::const_iterator tt = s.templates.find(static_cast<int>(k));     // a template template one's
+            if (k < a.classParams.size() && a.classParams[k].isTemplate && tt != s.templates.end()) {
+                if (p_.templateNameTypeOf(templates_.at(tt->second)) != b.classBinding[k]) return "differ: a member template's class binding";
+                continue;
+            }
             if (value ? b.classBinding[k] != nullptr && b.classBinding[k]->kind() == Kind::TemplateParam : substituted(s, a.classBinding[k]) != b.classBinding[k])
                 return "differ: a member template's class binding";
         }
