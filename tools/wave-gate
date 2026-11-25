@@ -105,6 +105,8 @@ fi
 # ---- a box's side: sh wave-gate --box linux|windows <name> <step>...  (Windows: Git's bash, in the built tree)
 if [ "${1:-}" = --box ]; then
     B=$2; N=$3; shift 3
+    # `build` runs rm -rf "$HOME/$N": an empty, dotted or nested name would reach the home directory (2026-11-25)
+    case "$N" in ''|.*|*/*|*' '*|'~'*) echo "wave-gate: refused the run name '$N'"; exit 2;; esac
     if [ "$B" = windows ]; then T=$(pwd); V=$T/../$N-verdicts.txt; LOG=$T/../$N; X=${WAVEGATE_TI6X:-/c/Users/GRA/work/ti6x}
         export CXX1=./cxx3-msvc.exe JOBS=${WINLANES:-10} TIRTS=${WAVEGATE_TIRTS:-/c/ti/c6747-lib} RTSLIB=rts6740_elf_eh.lib
         job() { c=$1; shift; timeout "$c" "$@"; }                                # the caller pins the affinity
