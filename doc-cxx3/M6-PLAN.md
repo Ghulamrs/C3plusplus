@@ -5301,3 +5301,12 @@ the base). M8.3: a data member's bound over the values folded; V<N + 1> keyed by
 member's initialiser; a member typedef naming its own class; a pack named in member bodies or its tag, and expanded in member
 signatures and data members. **Class specializations made with no replay: suite about 1,720 of 2,184 (m8-3ap 1,705 and
 m8-3ao's pack classes; not counted merged), self-host about 73,400 of 74,390.** Nothing changes without the flag.
+
+**m6d-w43's wave landed, 2026-11-25 (gate m6dw43g at 992c0de2 against main aacb72c9: 40 passed, 0 failed, no row, after
+three -k reruns - the Windows box went down at 02:56 mid-gate, then names timed out once on the busy box; the fixed point
+checked not owed).** Two lanes' lines (m8-3as: m83aq, m83as; m8-3ar), merged by hand: values and packs kept together in
+specializationUnder, earlyArgs and idsBefore; m8-3ar's 'keptBases' typo in two census strings restored to 'over'; built and
+censused on Linux before the gate (353 nonzero, as the base). M8.3: lambda closure tags no longer read ids; a pack in a
+template-id expanded; the noexcept and .bp frame families replayed by name; a base over the parameters (Q : V<I>) made from
+the read. **Class specializations made with no replay: suite about 1,740 of 2,184 (m8-3ar 1,724, m8-3as 1,604 on its own
+base; not counted merged), self-host about 73,450 of 74,390.** Nothing changes without the flag.
