@@ -15557,4 +15557,8 @@ output byte for byte the cl-built round trip's.
   sample6.obj wants `g_rtti_type_info_vftable` and no link of it succeeds, cl's control included; the project's own tests
   pass the flag (sandbox/scripts/lib.ps1), and boxkit/cppp-win.cmd did not.
 - src/ 97,501 -> 97,508; include/ 6,316 -> 6,316; lib/ 2,384 -> 2,592 (windows.h 251 -> 350, eh.h 33 new, intrin.h 76
-  new). cl /W4 /WX clean, 136 s alone.
+  new). cl /W4 /WX clean, 136 s alone; g++ -Werror 0 warnings.
+- **Gate** (Linux, REF 2e8e575d): identical.sh four targets, five spellings, -O0/-O1/-O2: 14,955 compared, 6 differ -
+  the new case on x86_64-windows's two spellings at three levels (REF has no `<eh.h>`); nothing else moved. run.sh 1,341
+  passed, 0 failed; names.sh 997 passed once the case's .nonames named its target; overload.sh 46 agreed; exclusions rc 0
+  (554/554), comment cap 0 over, memory gate rc 0, ast-residue rc 0; Parser.cpp and ParserType.cpp self-compile rc 0.
