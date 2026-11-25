@@ -1890,9 +1890,7 @@ Lowering::Val Lowering::extendedConditional(sema::TypedId id) {
     const std::size_t scope = live_.size();
     openFull();
     const Val o = conditionalObject(id);
-    if (!(live_.size() == scope && !T(o.type).hasDestructor()) && !armsOnly(scope, T(o.type)))
-        outside("a reference bound to a conditional that builds more than its arms");
-    full_.pop_back();
+    keepFull((live_.size() == scope && !T(o.type).hasDestructor()) || armsOnly(scope, T(o.type)));
     return o;
 }
 
@@ -1902,6 +1900,12 @@ bool Lowering::armsOnly(std::size_t scope, const Type &cls) const {
     for (std::size_t k = scope; arms && k < live_.size(); k++)
         arms = T(live_[k].cls).unqualified() == cls.unqualified() && live_[k].built.valid() && !live_[k].when.valid();
     return arms;
+}
+
+// The innermost full expression left open into its scope, whose end destroys what it built - only `object`'s own.
+void Lowering::keepFull(bool object) {
+    if (!object) outside("a full expression kept to its scope that builds more than its object");
+    full_.pop_back();
 }
 
 // [expr.type.conv] into a slot of this frame: `P()` zeroed ([dcl.init]/8), `P(o)` o's bytes, a class with constructors built
@@ -3747,10 +3751,8 @@ void Lowering::rangeForStmt(sema::TypedId id) {
         sema::TypedId bare = range;
         while (syn(bare).kind == syntax::Kind::Paren && count(bare) == 1) bare = child(bare, 0);
         const bool arms = classConditionalNode(bare) && armsOnly(scope, rc);
-        if (temporary && !arms && !(live_.size() == scope ? !rc.hasDestructor() :
-                           live_.size() == scope + 1 && T(live_.back().cls).unqualified() == &rc && !live_.back().built.valid() && !live_.back().when.valid()))
-            outside("a range-based for whose range's full expression builds more than its range");
-        if (temporary) full_.pop_back();
+        if (temporary) keepFull(arms || (live_.size() == scope ? !rc.hasDestructor() :
+                           live_.size() == scope + 1 && T(live_.back().cls).unqualified() == &rc && !live_.back().built.valid() && !live_.back().when.valid()));
         if (classIter) {
             first = iteratorCall(rb, std::vector<Val>(1, object), iter);
             past = iteratorCall(re, std::vector<Val>(1, object), iter).v;

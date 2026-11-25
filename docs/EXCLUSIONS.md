@@ -853,7 +853,7 @@ a range-based for whose begin and end differ in type
 a range-based for whose begin or end is not a direct call
 a range-based for whose braced range builds more than its elements
 a range-based for whose iterator's '*' gives no reference or scalar
-a range-based for whose range's full expression builds more than its range
+a full expression kept to its scope that builds more than its object
 a range-based for's begin or end of another shape
 a range-based for's begin or end taking another type
 a range-based for's iterator call of another shape
