@@ -219,6 +219,8 @@ public:
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
                          std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed
+    bool listUnder(const Substituted &s, const TemplateDecl &d, std::vector<TemplateArg> *args) const;     // its list laid by `d`'s
+    std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     const Type *substituted(const Substituted &s, const Type *t) const;
     std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too

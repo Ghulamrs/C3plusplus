@@ -1,6 +1,7 @@
 // M8.3 slice 3s: a class over a template template parameter named as an id, `C<T>`, made from the read under -templates=subst -
 // the stand-in `$TT<i>` named as the bound template in a data member, a signature, a typedef and a dependent member's class (TypedO's
-// too); Pass (the parameter as an argument), Holder<Alias, int> (an alias) and Derived (a base the read lays as nothing) stay replayed.
+// too) and (slice 3t) Holder<Alias, int>, an alias; Pass (the parameter as an argument) and Derived (a base the read lays as nothing)
+// stay replayed.
 extern "C" int printf(const char *, ...);
 
 template <class T> struct Box { T v; };
