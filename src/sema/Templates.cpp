@@ -3785,9 +3785,10 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (u == nullptr) return "replayed: a type parameter bound to no type";
         const Type *to = u->isReference() ? u->referent()->unqualified() : u;     // `T` bound to `U &`: substituted collapses
         const std::string cls = to->isStructOrUnion() ? boundClass(*to) : std::string(), ref = u->isReference() ? "a reference to " : "";
-        if (to->isStructOrUnion() && (!cls.empty() || overParameters(to->tag())))
+        const bool pending = to->kind() == Kind::Struct && !to->isComplete();     // completed where a member needs it, as the replay does
+        if (to->isStructOrUnion() && ((!cls.empty() && !pending) || overParameters(to->tag())))
             return "replayed: a type parameter bound to " + ref + "a class: " + (cls.empty() ? std::string("one the read named over its parameters") : cls);
-        if (!to->isScalar() && !to->isStructOrUnion())
+        if (!to->isScalar() && !to->isStructOrUnion() && !to->isVoid() && !to->isFunction())     // void and `R(A)` substitute as written
             return std::string("replayed: a type parameter bound to ") + ref + (to->isReference() ? "a reference" :
                    to->isArray() ? "an array" : "a type that is no scalar, class, reference or array");
         s->from.push_back(p_.types_.templateParam(static_cast<int>(q)));
