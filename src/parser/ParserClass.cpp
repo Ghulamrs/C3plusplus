@@ -922,7 +922,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
             ? microsoftConstructorName(cls, lookup_.findTypedef(cls), linkage_.manglingType(fn),
                                        code, &out, &why)
             : itaniumConstructorName(cls, lookup_.findTypedef(cls), fn, true, &out, &why);
-    if (!ok && patternBody_) out = "$pattern$" + cls + "::" + cls + "$" + fn->describe();      // read, never emitted
+    if (!ok && patternBody_) out = sema::Linkage::patternSymbol(cls + "::" + cls, fn);      // read, never emitted
     else if (!ok)
         src_.fail(pos, "'" + cls + "::" + cls + "' cannot be given a name the "
                        "linker can hold: " + why);

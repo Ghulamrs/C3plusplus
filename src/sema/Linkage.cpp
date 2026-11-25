@@ -37,6 +37,12 @@ std::string Linkage::functionSymbol(const std::string &name, const Type *returns
     return out;
 }
 
+// `erase(iterator)` and `erase(const_iterator)` described alike ("dependent member type"), so one read name stood for both.
+std::string Linkage::patternSymbol(const std::string &key, const Type *fn, bool constThis, RefQual ref) {
+    return "$pattern$" + key + "$" + TypeTable::patternKey(fn) + fn->refQualifierSpelling() + (constThis ? " const" : "") +
+           (ref == RefQual::LValue ? " &" : ref == RefQual::RValue ? " &&" : "");
+}
+
 std::string Linkage::deletingDestructorSymbol(const std::string &cls) {
     return p_.target_.microsoftNames()
          ? microsoftDeletingDestructorName(cls, p_.lookup_.findTypedef(cls))
@@ -113,7 +119,7 @@ std::string Linkage::memberSymbol(const std::string &cls, const std::string &nam
                    : itaniumMemberName(cls, p_.lookup_.findTypedef(cls), name, fn, constThis,
                                        refThis, &out, &why));
     // Read, never emitted (a read's class over `$T0` has no Microsoft name): one name per signature, never a second.
-    if (!ok && p_.patternBody_) return "$pattern$" + cls + "::" + name + "$" + fn->describe() + (constThis ? " const" : "");
+    if (!ok && p_.patternBody_) return patternSymbol(cls + "::" + name, fn, constThis, refThis);
     if (!ok)
         p_.src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
                        "linker can hold: " + why);
