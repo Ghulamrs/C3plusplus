@@ -3960,7 +3960,7 @@ void Lowering::declaration(sema::TypedId id) {
             sema::Resolution conv;     // [dcl.init.ref]/5.1.2: a class bound by its `operator int &()` names the lvalue that answers
             const bool byConversion = convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
                                       !T(conv.type).returns()->isRValueReference() && classObjectNode(init);
-            const bool armed = !byConversion && !isLvalueNode(init) && classConditionalNode(bare);
+            const bool armed = !byConversion && !isLvalueNode(init) && !constApartClasses(bare) && classConditionalNode(bare);
             const bool called = !armed && !destroyedTemporary(init) && !destroyedResult(init);
             if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
             Val b = byConversion ? convertedObject(classObject(init), conv, true) : armed ? extendedConditional(bare)
