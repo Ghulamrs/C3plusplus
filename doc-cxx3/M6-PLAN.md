@@ -5320,3 +5320,11 @@ object whether it was built or not - destroyWhen now, as a scope's end always di
 `reference-to-class-conditional`. identical.sh at -O0 on the four targets against aacb72c9: 4,970 compared, the only
 differences the five new cases (refused by the base); run.sh's one wrong answer on the way (`ssa-census-last-bodies`, two
 lvalues apart in const) fixed in 29a7497b. src/ 97,472 -> 97,503 lines, include/ 6,279 -> 6,314, lib/ 2,331 -> 2,384.
+**Windows: 47 of 47 too, linked by LINK with the CRT, `--help` runs** (cxx3-msvc at 22581e14; cl /W4 /WX clean, 3.5 minutes
+alone). **What the cxx3-built cppparse prints, against a g++ build of the same sources on Linux** (no clang++ there), over
+cppparse's own 47: `--stdout --no-compile` and `--health` the same in all 47; **`--compile6` not** - 99 of 267 files at -O0,
+103 at -O1 and -O2, first in analyzer/Ast.cpp's Ast6.asm: no `EXTERN` line at all (X86.cpp's loop over m_externs, a
+std::set<std::string>, filled under a Lock by useExtern), and in sample.cpp's a function label written over garbage bytes
+(`Ytotal_...` for `shapes__total_...`), the same with -j 1. **Owed, a wrong answer of cxx3 with no root yet.** So the Windows
+round trip stops twice: cxx3-msvc cannot compile runtime/cppparse_rt.cpp (`<eh.h>`, then windows.h's unwind API and
+`<intrin.h>`, which lib/ lacks), and with a cl-built runtime the cxx3-built cppparse's COFF writer refuses sample6.asm.
