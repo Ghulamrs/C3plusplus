@@ -1,0 +1,13 @@
+f(const T &) 1
+f(const T &) 3
+copy-assigned 1
+copy-assigned 1
+put(const T &)
+11111
+f(const T &) 3
+f(const T &) 1
+copy-assigned 3
+copy-assigned 3
+put(const T &)
+11133
+LEDGER built=7 gone=7 live=0 double=0 phantom=0 over=0 lost=0

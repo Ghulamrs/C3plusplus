@@ -15562,3 +15562,34 @@ output byte for byte the cl-built round trip's.
   the new case on x86_64-windows's two spellings at three levels (REF has no `<eh.h>`); nothing else moved. run.sh 1,341
   passed, 0 failed; names.sh 997 passed once the case's .nonames named its target; overload.sh 46 agreed; exclusions rc 0
   (554/554), comment cap 0 over, memory gate rc 0, ast-residue rc 0; Parser.cpp and ParserType.cpp self-compile rc 0.
+
+## A class lvalue and a const one of its class are a const lvalue to overload resolution too, 2026-11-26
+
+Gate m6dw46g (wave m6d-w46) found stage 0 compiling 99 of cxx3's 102 sources and the tms6747 census at outside=3:
+C6xPipe.cpp:150 `nv = cst0 ? v0 : symbol`, ParserTopLevel.cpp:179 `push_back(resolved.empty() ? opened : resolved)`
+and Templates.cpp:3365 `early.packs = partial ? usePacks : packs`, each "a reference that can write bound to a const"
+(Lowering.cpp's declaration and argument sites). **The root was two typings of one conditional**: cppp2's 5710a57d
+taught `Lowering::isLvalueNode` that a T lvalue and a const T lvalue make a const T lvalue ([expr.cond]/3), but the
+parser's own rule for that shape (ParserOperator.cpp, "two lvalues differing only in const") excluded classes, so a
+class pair fell to the class path - a copy, an xvalue - and overload resolution picked `push_back(T &&)` and the move
+assignment; the lowering was then handed a `T &&` to bind to what it knew was a const lvalue. The REF (f56da482)
+refuses the new case and the three sources with that message; clang picks `f(const T &)` and the copy assignment.
+- **The fix is the parser's rule taking classes** (`!ta->isStructOrUnion()` dropped): the pair goes the [expr.cond]/4
+  lvalue path, `*(c ? &a : &b)` of the const type, and resolution sees a const lvalue. Sema's Typing still types the
+  node unqualified - the lowering asks constApartClasses for the const, and -check=typed compares records, not types.
+  src/ 97,864 -> 97,864 lines.
+- **Case `conditional-const-apart-overload`**: f(const T &)/f(T &&), a copy and a move assignment, a member
+  put(const T &)/put(T &&) and a reference local, called with `c ? a : ct` both ways; clang 19 on the Windows box, the
+  ledger 0. cxx3 right on x86_64-linux -O0/-O2 and x86_64-windows masm and gnu at -O0/-O2.
+- **What must not change**: a class prvalue arm beside a const one still makes a const prvalue (`constAnswer`, the
+  class path); scalars keep the rule as it was.
+- **Measured** (lane w46fix, Linux REF f56da482): stage 0 compiles 102 of 102 sources (tools/self-host, 99 s) and
+  self-compile.cmd 102 of 102 on Windows; the tms6747 -O2 census outside=0, other failures 27 - main's numbers exactly
+  (ParserTopLevel.cpp and Templates.cpp, refused before, now meet the C6000 selector's stack-argument limit as on main).
+  identical.sh, four targets and both Windows spellings at -O0/-O1/-O2: 15,180 compared, 15 differ, all the new case
+  (the REF refuses it) - no existing case had picked `T &&` for this shape. run.sh 1,356 passed, 0 failed; subst.sh 0
+  failed; names.sh 1,011 passed, the new case failing until (alone, then
+  1 passed) its `f` was made external and `~Box` written out of line (clang drops the unused static `f(T &&)` and the implicit destructor);
+  overload.sh 46 agreed; static gates rc 0 (exclusions, comment cap 0 over, memory gate lower, ast-residue, ide).
+  g++ -Werror 0 warnings; cl /W4 /WX clean, about 10.5 minutes on the shared box - past the 9-minute cap, a defect of
+  the box's load, not retried.
