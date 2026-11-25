@@ -4240,7 +4240,8 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     }
     Parser::BasesLaid laidBases;
     for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases, tag)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
-    if (read->polymorphic()) type->setPolymorphic(true);     // slice 3v: a polymorphic base's, as the parser's class tail says
+    if (read->polymorphic()) type->setPolymorphic(true);     // slice 3v: a polymorphic base's, as the parser's class tail says,
+    type->setPrimaryBase(read->primaryBase());                 // and Itanium's primary base, the one the read's body chose
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
@@ -4668,6 +4669,7 @@ std::string Templates::classLaid(const Type *read, const Substituted &s, const T
     Parser::BasesLaid laidBases;
     const std::vector<Type::BaseSpec> mineBases = basesUnder(read, s, &laidBases);
     if (made->bases().size() != mineBases.size()) return "differ: the number of bases";
+    if (made->primaryBase() != read->primaryBase() || made->polymorphic() != read->polymorphic()) return "differ: the primary base or polymorphism";
     for (std::size_t i = 0; i < made->bases().size(); i++) {
         const Type::BaseSpec &a = mineBases[i], &b = made->bases()[i];
         if (a.type != b.type || a.offset != b.offset || a.access != b.access || a.isVirtual != b.isVirtual || a.direct != b.direct || a.written != b.written)
