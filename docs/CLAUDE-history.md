@@ -15439,3 +15439,22 @@ The same round made the refusals of valid C++11 a printed number of every `make 
 `arm64`, only down - since M5.3 arm64 has no walker, so every outside() reason is a compile error there too), and
 how many owed reasons a case reaches, read from `tools/exclusions.reached` (measured by
 `tools/windows/lowering-why.py` and `lowering-why-match.py`, the commit in its first line).
+
+## A class lvalue and a const one of its class are an lvalue conditional, and cppparse's back end, 2026-11-25
+
+cppparse built by cxx3 wrote `--compile6` output unlike a g++ build's (99 of 267 files at -O0): Ast6.asm with no
+`EXTERN` line and function labels over garbage bytes. **Object bisection found it** - g++'s 47 objects over cxx3's own
+library (`-nostdinc++ -isystem include`, which g++ compiles), with halves of cxx3's objects linked in: seven links named
+backend/X86.o alone. Its `X86Module::codeFor` writes `X86Function fn(*this, any ? folded : f, stats);` - `folded` an
+`IrFunction`, `f` a `const IrFunction &` - and `X86Function` keeps the reference. [expr.cond]/3 makes that conditional a
+const lvalue; `Lowering::isLvalueNode` said so only for scalars apart in const (`constApartScalars`), so the class arms
+were copied into a temporary the declaration's end destroyed, and every function was emitted from freed strings.
+- **The fix is the fact in one place**: isLvalueNode's conditional takes `constApartClasses` too; the two callers that
+  asked it beside isLvalueNode (a reference local's binding, `lvalue`'s refusal) ask isLvalueNode alone. src/ 97,503
+  -> 97,503 lines. Case `conditional-const-apart-argument`: a reference parameter, a by-value one, a reference local and
+  a copy, with the ledger at 0.
+- **What must not change**: `lvalue`'s conditional still meets the arms at the const type (`withConst`); a prvalue arm
+  still makes the conditional a prvalue (classConditionalNode).
+- **Not cxx3's**: on LP64 cppparse's `floatName` copies a double's 8 bytes into `unsigned long[2]` (16) and spells the
+  label from both - stack bytes past the double - so `fconst_` labels differ between any two Linux builds. The comparison
+  is counted raw and without those labels and the map's timestamp.
