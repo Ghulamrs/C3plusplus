@@ -5301,3 +5301,22 @@ the base). M8.3: a data member's bound over the values folded; V<N + 1> keyed by
 member's initialiser; a member typedef naming its own class; a pack named in member bodies or its tag, and expanded in member
 signatures and data members. **Class specializations made with no replay: suite about 1,720 of 2,184 (m8-3ap 1,705 and
 m8-3ao's pack classes; not counted merged), self-host about 73,400 of 74,390.** Nothing changes without the flag.
+
+**cppp1, 2026-11-25 (branch cppp-fix from main aacb72c9; a coding lane, the next wave gates it): GRIDE's cppparse whole
+again - the 5 sources main's cxx3 refused.** **cppparse sources compiled: 47 of 47 on Linux (from 42)**, linked, `--help`
+runs; Windows below. Each fault has its case (clang's output on Windows over cxx3's own library; posix-dirent's from g++ on
+Linux, which has no clang): (1) `std::equal`, both forms (`include/algorithm`); (2) the container typedefs of
+[container.requirements] - difference_type, reference, const_reference, pointer, const_pointer - for vector, basic_string,
+deque, map and set (`algorithm-equal-container-types`); (3) `lib/dirent.h`, opendir/readdir/closedir and struct dirent as
+measured (glibc 280 bytes, d_name at 19; macOS 1048, at 21), refused by name on Windows and the C6000 (`posix-dirent`); on
+Windows `lib/sys/stat.h`'s `(struct _stat64i32 *)buf` was right - a C-style cast between unrelated classes is a
+reinterpret_cast ([expr.cast]/4) - so Lowering::toBase lowers it as the same address (`cast-unrelated-class-pointer`);
+(4) a call completed by defaults whose function returns a reference: useReference's `*` hid the call from
+Parser::withDefaults, which now looks through it - the one path every default takes (`default-argument-reference-result`);
+(5) `const T &r = c ? T() : t;`: Lowering::extendedConditional builds the arms under their flags and leaves the full
+expression open into the scope (keepFull, the one refusal it shares with the range-based for's range - the reason renamed,
+outside() sites 554 as before); and a jump out of a scope (leaveCatches, msLeave, a returned class) destroyed a flagged
+object whether it was built or not - destroyWhen now, as a scope's end always did - which the ledger found on
+`reference-to-class-conditional`. identical.sh at -O0 on the four targets against aacb72c9: 4,970 compared, the only
+differences the five new cases (refused by the base); run.sh's one wrong answer on the way (`ssa-census-last-bodies`, two
+lvalues apart in const) fixed in 29a7497b. src/ 97,472 -> 97,503 lines, include/ 6,279 -> 6,314, lib/ 2,331 -> 2,384.
