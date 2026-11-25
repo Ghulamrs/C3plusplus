@@ -3355,7 +3355,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class the door takes made from the read, its written members and held bodies too; the replay beside under the check.
-    std::string fromRead = before.compare(0, 18, "made from the read") == 0 ? fromReadWhyNot(start) : "-";
+    std::string fromRead = before.compare(0, 18, "made from the read") == 0 ? fromReadWhyNot(start, useParams) : "-";
     if (fromRead.empty() && checkBodies_) fromRead = "beside: the replay the program's, under -check=templates";
     Substituted bound;
     bound.values = useValues, bound.packs = early.packs;
@@ -3546,7 +3546,7 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
     s.values = values, s.packs = packs;
     std::vector<const Type *> wanted;
     const std::string first = classBefore(start, params, binding, &s, &wanted);
-    const std::string why = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start);
+    const std::string why = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start, params);
     if (!why.empty() || wanted.empty()) return why;
     for (const Type *e : wanted) {
         std::string name;
@@ -4002,12 +4002,23 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     if (laid->members.empty() && cursor == 0 && bases.sizeFloor == 0) laid->size = 1, laid->align = 1;
 }
 
-// What a class made from the read cannot carry yet, by name: a pack, a member initialiser, alignas, final.
-std::string Templates::fromReadWhyNot(std::size_t start) const {
+// What a class made from the read cannot carry yet, by name: a pack, a member initialiser over a parameter, alignas, final.
+std::string Templates::fromReadWhyNot(std::size_t start, const std::vector<TemplateParam> &params) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
     const std::string &readTag = readMembers_.at(start).first;
-    for (const Member &m : readClass_.at(start)->members())
-        if (p_.memberInit_.count(readTag + "::" + m.name) != 0) return "replayed: a member initialiser";
+    for (const Member &m : readClass_.at(start)->members()) {     // slice 3q: one naming no parameter, read where the replay's is
+        const std::map<std::string, std::size_t>::const_iterator init = p_.memberInit_.find(readTag + "::" + m.name);
+        if (init == p_.memberInit_.end()) continue;
+        if (p_.hasConstructors(readTag)) return "replayed: a member initialiser beside a written constructor";
+        for (std::size_t t = init->second, depth = 0; t < p_.tokens_.size(); t++) {
+            const Token &k = p_.tokens_[t];
+            if (depth == 0 && (k.is(";") || k.is(","))) break;
+            if (k.is("(") || k.is("[") || k.is("{")) depth++;
+            else if ((k.is(")") || k.is("]") || k.is("}")) && depth-- == 0) break;
+            for (const TemplateParam &q : params)
+                if (!q.name.empty() && k.text == q.name) return "replayed: a member initialiser naming a template parameter";
+        }
+    }
     // A defaulted special is kept by the read's tag; each held body is a written member's.
     if (p_.defaulted_.count(readTag) != 0) return "replayed: a defaulted special member";
     std::map<std::string, bool> written;
@@ -4043,6 +4054,12 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     p_.lookup_.declareTypeName(tag + "::" + read->templateName(), type);
     type->setDeclaredClass(!partial && decl.classKey);
     type->setBeingDefined();
+    const std::string &readTag = readMembers_.at(start).first;
+    for (const Member &m : read->members()) {     // slice 3q: its initialiser's tokens, read where the replay records them
+        const std::map<std::string, std::size_t>::const_iterator init = p_.memberInit_.find(readTag + "::" + m.name);
+        if (init != p_.memberInit_.end()) p_.memberInit_[tag + "::" + m.name] = init->second;
+        if (p_.memberInitCopy_.count(readTag + "::" + m.name) != 0) p_.memberInitCopy_.insert(tag + "::" + m.name);
+    }
     Parser::BasesLaid laidBases;
     for (const Type::BaseSpec &b : basesUnder(read, s, &laidBases)) type->addBase(b.type, b.offset, b.access, b.isVirtual, b.direct, b.written);
     p_.lookup_.declareTypeName(p_.tagKey(kind == Kind::Union ? "union" : "struct", tag), type);
