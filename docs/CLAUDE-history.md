@@ -15517,4 +15517,12 @@ g++/libstdc++ one, 267 files a level - raw 60/60/60, without the map's timestamp
   compared, 180 differ): 12 cases x 15 - cerr-tied-to-cout (new), fstream-string-name, include-streams, iomanip-setfill,
   library-cppparse-pieces, library-self-compile-pieces-2 and -3, stream-base-manipulators, stream-char-types,
   stream-long-long, stream-number-stops, template-nontype-numeric: `ostream::target`'s two new branches and `clog`'s
-  initialiser (2 -> 3). run.sh 1,341 passed, 0 failed; names.sh 996 passed; overload.sh 46 agreed.
+  initialiser (2 -> 3). run.sh 1,341 passed, 0 failed; subst.sh 0 failed; names.sh 995 passed and 1 failed - the new
+  case, whose .nonames was then written (1 passed alone); overload.sh 46 agreed; cl /W4 /WX clean, 225 s alone.
+- **After the fix** (boxkit/cppp4-new.sh, cppp4-clean.sh): the case prints out of order by 48d39f43 (two, four 4, one...)
+  and in order by this tree and by g++; the three out.txt by this tree's cppparse, and by g++'s over this library, equal
+  g++/libstdc++'s at all three levels (over the old library they differ). The measure is 6/17/19 without the out.txt, and
+  0/0/0 once each .asm line naming `fconst_` or an `xorps` and each map's "line N" is set aside (6 maps at -O0; 7 .asm and
+  10 maps at -O1; 7 and 12 at -O2). cppp2's two cases against main e4ad10fd: plain-class-values and
+  ssa-conditional-const-class differ at -O0, -O1 and -O2 on all five spellings (boxkit/cppp4-main.sh; the branch is 23
+  commits behind main, so the lines count more than cppp2's fix).
