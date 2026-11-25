@@ -3600,6 +3600,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         }
     }
     std::vector<char> open;     // the brackets around a token: a pack expanded in a parameter list, `R(Args...)`, is paramsUnder's
+    std::vector<std::size_t> sized;
     for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && k.is(":") && (was.is(")") || was.is("noexcept")))     // a mem-initializer list, replayed with its body
@@ -3619,14 +3620,20 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Token &n = p_.tokens_[t];
         if (t > 0 && p_.tokens_[t - 1].is("operator") && !n.is("(")) continue;     // `operator<`, `operator>>`: no bracket
         if (n.is("(") || n.is("<")) open.push_back(n.text[0]);
-        for (int pops = n.is(")") || n.is(">") ? 1 : n.is(">>") ? 2 : 0; pops > 0 && !open.empty(); pops--) open.pop_back();
+        for (int pops = n.is(")") || n.is(">") ? 1 : n.is(">>") ? 2 : 0; pops > 0 && !open.empty() && (n.is(")") || open.back() == '<'); pops--)
+            open.pop_back();     // 3q: a `>` inside parentheses compares, `Max<(N > M ? N : M), Rest...>`
         std::size_t e = t + 1;
         while (e < p_.tokens_.size() && (p_.tokens_[e].is("&") || p_.tokens_[e].is("&&") || p_.tokens_[e].is("*"))) e++;
         // ... or in a template-id's arguments, `X<Ts...>`, whose read id specializationUnder and earlyArgs expand (packUnder).
         const bool expanded = !open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1));
+        // Slice 3q: or counted, `sizeof...(Ts)`, where the second scan finds a static's initialiser staticsFromRead reads bound.
+        const bool counted = t > start + 2 && t + 1 < p_.tokens_.size() && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") &&
+                             p_.tokens_[t - 3].is("sizeof") && p_.tokens_[t + 1].is(")");
         for (std::size_t q = 0; q < params.size(); q++)
-            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded))
-                return "replayed: a pack or template parameter, bound by name";
+            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded)) {
+                if (!(params[q].isPack && counted)) return "replayed: a pack or template parameter, bound by name";
+                sized.push_back(t);
+            }
     }
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
     // keeps as the parameter (Type::boundParam) and substituted lays under `s`'s values; anywhere else it replays by name.
@@ -3745,6 +3752,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         else if (k.is("}") && --depth == 0) break;
         if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
         if (depth == 1 && t < p_.tokens_.size() && p_.tokens_[t].is("static_assert") && !assertAt(t, depth)) return "replayed: a static_assert";
+        if (std::find(sized.begin(), sized.end(), t) != sized.end() && !staticInit(t, depth) && !(bare && inEnum(t)))
+            return "replayed: a pack or template parameter, bound by name";
+        sized.erase(std::remove(sized.begin(), sized.end(), t), sized.end());
         if (bare && t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size() && inEnum(t); q++)
             if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name) return "replayed: a member enumeration naming a template parameter";
@@ -3754,6 +3764,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
                 !boundAt(t, depth) && !staticInit(t, depth) && !assertAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
+    if (!sized.empty()) return "replayed: a pack or template parameter, bound by name";     // one the second scan did not reach
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
     for (std::size_t q = 0; q < params.size() && mine != readMembers_.end(); q++)     // templatesHeld holds their class values
         if (params[q].type != nullptr && !templatesOf(mine->second.first).empty()) return "replayed: a member template beside a non-type parameter";
