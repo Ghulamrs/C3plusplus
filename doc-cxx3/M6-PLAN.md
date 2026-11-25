@@ -5328,3 +5328,25 @@ std::set<std::string>, filled under a Lock by useExtern), and in sample.cpp's a 
 (`Ytotal_...` for `shapes__total_...`), the same with -j 1. **Owed, a wrong answer of cxx3 with no root yet.** So the Windows
 round trip stops twice: cxx3-msvc cannot compile runtime/cppparse_rt.cpp (`<eh.h>`, then windows.h's unwind API and
 `<intrin.h>`, which lib/ lacks), and with a cl-built runtime the cxx3-built cppparse's COFF writer refuses sample6.asm.
+
+**cppp2, 2026-11-25 (branch cppp-fix2 from cppp-fix 30a8b90e; a coding lane, the next wave gates it): cppparse's
+`--compile6` wrong answer, rooted.** **The measure, `--compile6` output files that differ between the cxx3-built (-O1) and
+the g++-built cppparse on Linux: 70 / 74 / 74 of 267 at -O0 / -O1 / -O2 raw, 23 / 37 / 39 without the map's timestamp and the `fconst_` labels below**; Ast6.asm and sample6.asm are right now; **what is left is a second fault, not rooted**: the cxx3-built cppparse's maps (and CxxParser, Sema, SemaExpr, IrGen's .asm and -ir6/-asm6 text) report `immediate does not fit in 32 bits: -1` where the g++ build does not, and 3 out.txt interleave stdout and stderr in another order (cppp1: 99 / 103 / 103). **The root**: object bisection - g++'s 47 objects
+over cxx3's own library (`-nostdinc++ -isystem include`, which g++ compiles and which writes what the libstdc++ build
+writes), with halves of cxx3's objects linked in - named backend/X86.o in seven links. `X86Module::codeFor` writes
+`X86Function fn(*this, any ? folded : f, stats);`, an `IrFunction` lvalue against a `const IrFunction &`: a const lvalue
+([expr.cond]/3), which `Lowering::isLvalueNode` said only of scalars apart in const - so the class arms were copied to a
+temporary the declaration's end destroyed, X86Function kept a reference to it, and every function was emitted from freed
+strings (no EXTERN, no string or float constants, labels over malloc's free-list bytes). **Fix (5710a57d)**:
+isLvalueNode's conditional takes `constApartClasses`; the two callers that asked it beside isLvalueNode ask isLvalueNode
+alone. src/ 97,503 -> 97,503 lines. Case `conditional-const-apart-argument` (clang 19's output on Windows; ledger 0).
+**Gates on 65f2a3a4's code**: run.sh 1,340 passed, 0 failed; subst.sh 0 failed; identical.sh -O0 on four targets against
+30a8b90e: 4,975 compared, 15 differ = the new case, plain-class-values and ssa-conditional-const-class on 5 spellings
+each (the latter two copy a const-apart class conditional straight from the arm taken, the frame's 32-byte temporary
+gone; both print their .expected); names.sh 995 passed, 0 failed, overload.sh 46/0 (Windows); cl /W4 /WX clean, 3.5
+minutes alone; self-compile of Lowering.cpp rc 0; exclusions 554/554, comment cap 0, memory gate rc 0; ast-residue's
+node-casts 141 -> 143 and node-refs 298 -> 300 fail on the base 30a8b90e as well (not this lane's). **Windows** (cppparse
+by cxx3-msvc -O1 against cl /O1, `--compile6 --obj` at -O0/-O1/-O2): 9 of 981 files differ, all out.txt of the three sources that include `<windows.h>` at three levels - the same two lines with stdout and stderr in the other order; every .asm, .obj and text output the same, the maps the same but the timestamp. **Not cxx3's**: on LP64 cppparse's
+`floatName` copies a double into `unsigned long[2]` and spells `fconst_` labels from 8 bytes past it, so those labels
+differ between any two Linux builds - counted apart above. **Owed**: lib's `<eh.h>`, windows.h's unwind API and
+`<intrin.h>` for runtime/cppparse_rt.cpp; the Linux-only `immediate does not fit` difference (a 64-bit `long` path in cppparse, compiled by cxx3 for x86_64-linux).
