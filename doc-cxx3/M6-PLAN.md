@@ -5310,3 +5310,14 @@ censused on Linux before the gate (353 nonzero, as the base). M8.3: lambda closu
 template-id expanded; the noexcept and .bp frame families replayed by name; a base over the parameters (Q : V<I>) made from
 the read. **Class specializations made with no replay: suite about 1,740 of 2,184 (m8-3ar 1,724, m8-3as 1,604 on its own
 base; not counted merged), self-host about 73,450 of 74,390.** Nothing changes without the flag.
+
+**m6d-w44's wave landed, 2026-11-25 (gate m6dw44h at e8e260e6 against main 95643f0e: 40 passed, 0 failed, 47 rows - the
+mayThrow_ fix's outputs, 5 cases (6 on tms6747) at -O0, -O1 and -O2 on x86_64-linux, arm64-darwin and tms6747, none on
+x86_64-windows; m6dw44g had failed on the 16 -O1 rows the lane had not measured, and a row added after a run fails
+`baselines`, so the wave was regated whole; the rows emptied here; the fixed point checked not owed).** Two lanes' lines
+merged by hand (m8-3az: m83aw, m83az over m8-3ax2's first half; m8-3ax2: m83av, m83au, m83ax, m83ay). M8.3: a static
+member whose initialiser names a template; ratio made from the read; a non-type parameter in a member template's
+declaration; a template template parameter's class made first; the mayThrow_ replay defect fixed (a noexcept function
+calling nothing that throws is wrapped no more, as clang). **Class specializations made with no replay: suite about 2,040
+of 2,184 and self-host about 74,380 by the old counts (the exact census of m83bb, not in this wave, counts every
+specialization once: on its tree suite 2,207 of 2,422, self-host 74,887 of 75,319).** Nothing changes without the flag.
