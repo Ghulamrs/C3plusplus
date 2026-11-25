@@ -9,7 +9,6 @@ template <class T> struct ptr_to { typedef T *type; };
 
 template <class F> struct Call {
     F *fn;
-    int run(int x) const { return fn(x); }
 };
 
 template <class T> struct Link {
@@ -36,7 +35,7 @@ int main() {
     Node<int> a, b;
     a.v = 7, b.v = 8;
     a.link.next = &b, b.link.next = 0;
-    printf("%d %d %d\n", q == 0, f(3), c.run(5));
+    printf("%d %d %d\n", q == 0, f(3), c.fn(5));
     printf("%d %d %d\n", a.link.depth(), a.link.next->v, four(1));
     return 0;
 }
