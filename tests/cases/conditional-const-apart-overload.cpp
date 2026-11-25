@@ -8,10 +8,11 @@ T::T(T &&o) : v(o.v) { lfBuilt(this, "T"); printf("move-built\n"); }
 T::~T() { lfGone(this, "T"); v = -1; }
 T &T::operator=(const T &o) { v = o.v; printf("copy-assigned %d\n", v); return *this; }
 T &T::operator=(T &&o) { v = o.v; printf("move-assigned %d\n", v); return *this; }
-static int f(const T &t) { printf("f(const T &) %d\n", t.v); return 1; }
-static int f(T &&t) { printf("f(T &&) %d\n", t.v); return 2; }
-struct Box { T held; Box(); void put(const T &t); void put(T &&t); };
+int f(const T &t) { printf("f(const T &) %d\n", t.v); return 1; }
+int f(T &&t) { printf("f(T &&) %d\n", t.v); return 2; }
+struct Box { T held; Box(); ~Box(); void put(const T &t); void put(T &&t); };
 Box::Box() : held(0) {}
+Box::~Box() {}
 void Box::put(const T &t) { held = t; printf("put(const T &)\n"); }
 void Box::put(T &&t) { held = static_cast<T &&>(t); printf("put(T &&)\n"); }
 static int run(bool c, const T &ct) {
