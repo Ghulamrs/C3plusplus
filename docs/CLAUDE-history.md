@@ -15458,3 +15458,63 @@ were copied into a temporary the declaration's end destroyed, and every function
 - **Not cxx3's**: on LP64 cppparse's `floatName` copies a double's 8 bytes into `unsigned long[2]` (16) and spells the
   label from both - stack bytes past the double - so `fconst_` labels differ between any two Linux builds. The comparison
   is counted raw and without those labels and the map's timestamp.
+
+## cppparse's second difference is cppparse's own argument order, and the residue put back, 2026-11-25
+
+**The residue first.** 2b409c94 taught `Parser::withDefaults` to look through useReference's `*` over a call (two
+`dynamic_cast`s, two node pointers), and `tools/ast-residue --check` failed from then on: node-casts 141 -> 143,
+node-refs 298 -> 300, with no mark. Nothing was raised: `Parser::buildReturned` walked `value` through its `*` twice -
+once for the named return value in the caller's slot, once for the xvalue rule - and now walks it once and asks both
+questions of the one `Var`. Same order, same early return. node-casts 141, node-refs 298, rc 0. src/ 97,503 -> 97,501.
+
+**The second difference** (Linux only, 23/37/39 of 267 files at -O0/-O1/-O2 left by cppp2): the "immediate does not fit
+in 32 bits" lines are in both builds' maps - cppparse's own note - and differ only in the line they cite. What moved the
+lines is CxxParser's, Sema's, SemaExpr's and IrGen's IR: cxx3's cppparse writes `t = cmp ne v, #0` before the `condbr`
+of a condition that declares a variable (`if (const DeclaratorPart *fp = d->functionPart())`), g++'s branches on the
+pointer itself (`test r8d, r8d`, its low half). The source is two lines of cppparse's IrGen.cpp, `declLoop` and `stmt`'s `if`:
+`int c = toBool(conditionDecl(s->decl, t, line), t, line);` - conditionDecl sets `t`, and the same call reads it.
+[expr.call]/8 leaves the order unspecified; g++ reads `t` first (still 0, so toBool returns the value unconverted),
+cxx3 and cl read it after the call (cppparse's own comment at `callArguments` names this very expression as cl's
+order). So cxx3's answer is the one cppparse means, g++'s is the wrong one, and there is no case to write: a case may
+not mutate among a call's arguments. The measure was taken again over a copy of cppparse with the two sites sequenced
+(`int c = conditionDecl(...); c = toBool(c, t, line);`, boxkit/cppp3-cmp.sh): at -O0, 9 files differ of the 46
+sources compared before the Linux box stopped taking the key at 07:48 (6 maps, 3 out.txt), every .asm and IR text the
+same; -O1 and -O2 ran but were not read (`~/cppp3cmp`, `~/cppp3-cmp-fO*.txt` on the box).
+- **What is left is not this order**: the maps cite the in-memory assembler's "immediate does not fit" lines 1 to 11
+  lower in the cxx3 build (IrGen6.map says 2772; the `mov` is at 2773 in the .asm, as g++'s map says). Coff.cpp's own
+  line loop, built both ways over cxx3's library (boxkit/cppp3-lines.cpp), counts 2773 in both, so the miscount is later
+  in the assembler's line bookkeeping - not rooted. The 3 out.txt interleave stdout and stderr in another order, as on
+  Windows.
+- **cppp2's fix at every level** (30a8b90e's Lowering.cpp against this tree): plain-class-values,
+  ssa-conditional-const-class and conditional-const-apart-argument differ at -O0, -O1 and -O2 on all five spellings.
+- **What must not change**: cxx3's order of a call's arguments; cppparse (read only here) is the project's to mend.
+
+## cppparse's last differences: cerr untied in cxx3's library, and cppparse's 16-byte read of a double, 2026-11-25
+
+**The measure again** (48d39f43, Linux, the patched copy of cppparse with IrGen.cpp's two `toBool(conditionDecl(d, t,
+line), t, line)` sequenced, boxkit/cppp4-chg.sh): --compile6 of the 47 sources by the cxx3-built cppparse (-O1) against the
+g++/libstdc++ one, 267 files a level - raw 60/60/60, without the map's timestamp and the `fconst_` lines 9/20/22 at
+-O0/-O1/-O2. What is left is two things, and neither is cxx3's code generation:
+- **The three out.txt** (main, Parallel, PathUtil at every level) are cxx3's library. `<ostream>`'s `target()` gave
+  `cerr` stderr and never flushed stdout first, so a redirected `cout`'s buffered lines landed after later `cerr` ones.
+  [narrow.stream.objects]/4 ties `cerr` to `cout`; libstdc++, the MSVC STL and so cl's cppparse keep program order.
+  Now `which_` 2 flushes stdout before it answers stderr, and `clog` is `which_` 3, stderr with no tie as C++11 has it.
+  Case cerr-tied-to-cout (.nonames, .nocl: a library-header case); its .expected is clang 19 -std=c++14 over the MSVC
+  STL (-std=c++11 cannot read it), clang 19 over this library and g++ -std=c++11 alike. src/ 97,501 -> 97,501; include/
+  ostream 310 -> 312.
+- **The maps and the -O1/-O2 .asm** are cppparse's undefined behaviour. `isPositiveZero` and `floatName` (backend/X86.cpp)
+  `memcpy` 16 bytes from an 8-byte double into `unsigned long[2]`, and on LP64 the second word is stack bytes: a +0.0 is
+  an `xorps` or a `movsd` of a constant by chance (every .asm line that differs is one of the two), and two zeros may get
+  one label or two. One `fconst_` data line fewer near the top of IrGen6.asm (boxkit/cppp4-probe2.sh: 254,296 lines in the
+  build over cxx3's library, 254,297 in g++'s) moves every later line, so every error the in-memory assembler cites is
+  1 lower (1 to 11 elsewhere: the count of those lines). The comparison's `-I fconst_` hid that line from the .asm diff,
+  not from the map. Object bisection said the same: the cxx3-built objects mixed into g++'s over cxx3's library change
+  nothing (cxs = ghs on IrGen.cpp); the stack beneath the double is the library's. Coff.cpp's line loop counts right in
+  every build (boxkit/cppp4-probe.sh). cppparse is the project's to mend; nothing here.
+- **What must not change**: `clog` untied; `cout`'s own writes unflushed (a flush per write is the tie's cost to `cerr`
+  alone).
+- **Every output that moved** (identical.sh, 48d39f43 against this tree, four targets, five spellings, -O0/-O1/-O2: 14,940
+  compared, 180 differ): 12 cases x 15 - cerr-tied-to-cout (new), fstream-string-name, include-streams, iomanip-setfill,
+  library-cppparse-pieces, library-self-compile-pieces-2 and -3, stream-base-manipulators, stream-char-types,
+  stream-long-long, stream-number-stops, template-nontype-numeric: `ostream::target`'s two new branches and `clog`'s
+  initialiser (2 -> 3). run.sh 1,341 passed, 0 failed; names.sh 996 passed; overload.sh 46 agreed.
