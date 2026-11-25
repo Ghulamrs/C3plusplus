@@ -29,7 +29,7 @@ namespace std {
 class ostream {
 public:
     // Which file this writes to. `fp_` is what an fstream opens; `which_` is 1
-    // for stdout and 2 for stderr, and is how the standard streams name a
+    // for stdout, 2 for stderr tied to cout, 3 for stderr; it is how they name a
     // `FILE *` that is not a constant and so cannot be a static initialiser.
     FILE *fp_;
     int which_;
@@ -79,12 +79,14 @@ public:
     // **A file stream that is not open writes nowhere**, and getting this
     // wrong is worse than it sounds: falling through to `stdout` meant an
     // `ofstream` whose `fopen` failed quietly printed the program's file to
-    // the console. `which_` is what tells the two apart - 1 and 2 are the
+    // the console. `which_` is what tells the two apart - 1 to 3 are the
     // standard streams, 0 is a file, and a file with no `FILE *` is shut.
     FILE *target() {
         if (fp_ != 0) return fp_;
         if (which_ == 1) return stdout;
-        if (which_ == 2) return stderr;
+        // cerr is tied to cout ([narrow.stream.objects]/4): what cout holds goes out before cerr writes
+        if (which_ == 2) { std::fflush(stdout); return stderr; }
+        if (which_ == 3) return stderr;
         return 0;
     }
 
