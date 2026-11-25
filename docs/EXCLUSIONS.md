@@ -335,11 +335,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1713`
+  `src/parser/ParserExprNew.cpp:1711`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1650`
+  `src/parser/ParserExprNew.cpp:1648`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1683`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1681`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -356,10 +356,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1106`, `src/parser/ParserExprNew.cpp:1103`
+  every target. `src/parser/ParserExprNew.cpp:1104`, `src/parser/ParserExprNew.cpp:1101`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1205`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1203`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1711`
 - **throwing a pointer to a function** - it has no `type_info`; the message
