@@ -15526,3 +15526,35 @@ g++/libstdc++ one, 267 files a level - raw 60/60/60, without the map's timestamp
   10 maps at -O1; 7 and 12 at -O2). cppp2's two cases against main e4ad10fd: plain-class-values and
   ssa-conditional-const-class differ at -O0, -O1 and -O2 on all five spellings (boxkit/cppp4-main.sh; the branch is 23
   commits behind main, so the lines count more than cppp2's fix).
+
+## cppparse's runtime by cxx3-msvc: what lib/ lacked, and the two things only the compiler can give, 2026-11-25
+
+Lane cppp5 (branch cppp-fix4 from 2e8e575d). The round trip (boxkit/cppp5-win.cmd): (a) `runtime/cppparse_rt.cpp` by
+cxx3-msvc -c, (b) sample.cpp by the cxx3-built cppparse `--compile6 --obj`, (c) linked with that runtime, (d) run, its
+output byte for byte the cl-built round trip's.
+
+- **What lib/ lacked, now written**: `<eh.h>` (`terminate`, `set_terminate`, `__uncaught_exception` - C linkage, as
+  vcruntime's eh.h and corecrt_terminate.h have them), `<intrin.h>` (`_InterlockedIncrement`, `Decrement`, `Exchange`,
+  `ExchangeAdd`, `CompareExchange` as inline functions over an SRW lock, the way `<windows.h>`'s family already was), and
+  `<windows.h>`'s unwind API: `DWORD64`, `M128A`, `EXCEPTION_DISPOSITION`, `EXCEPTION_RECORD`, `CONTEXT` (1,232 bytes, its
+  FltSave union written as its Xmm form plus 96 bytes), `RUNTIME_FUNCTION`, `DISPATCHER_CONTEXT`, `PEXCEPTION_ROUTINE`,
+  `UNW_FLAG_*`, `RtlCaptureContext`, `RtlLookupFunctionEntry`, `RtlVirtualUnwind`, `RtlRestoreContext`, `SwitchToThread`,
+  each checked against SDK 10.0.26100's winnt.h on the box. `__declspec(thread)` is `thread_local` where names are
+  Microsoft's (Parser::atDeclspecThread, beside `thread_local` in the specifier loop); any other `__declspec` is the
+  identifier it was. Case windows-unwind-api: the layouts as static_asserts, a captured context's Rip inside its own
+  table entry, the interlocked answers, a `__declspec(thread)` int, `set_terminate` round trip - clang 19
+  `-std=c++11 -pedantic-errors` over the real SDK and cxx3-msvc print the same (.nonames/.nocl: the SDK's Rtl functions
+  are dllimport, so clang's calls go through `__imp_`).
+- **What the runtime needs that cxx3 does not give** - (a) still fails, at the first of two: `_AddressOfReturnAddress()`
+  (line 514, cl's intrinsic for the slot holding the return address; `<intrin.h>` does not declare it, so the error is
+  "'_AddressOfReturnAddress' was not declared"), then `long volatile*` and `unsigned char volatile*` (lines 582-616),
+  refused by name: "a pointer or reference to a 'volatile' type is not supported yet" (ParserType.cpp). `<intrin.h>`
+  takes `long *` for that reason, as `<windows.h>`'s family does.
+- **With both replaced in a copy** (boxkit/cppp5-rtd.cpp: `~(DWORD64)0` for the frame mark, the five `volatile*` dropped)
+  cxx3-msvc compiles it, and (b), (c), (d) pass for the cxx3-built and the cl-built cppparse alike, with that runtime or
+  cl's: every sample.exe exits 0 and prints what cl's round trip prints (nothing - sample.cpp answers by its exit code),
+  and the two cppparse builds write the same sample6.obj (fc /b). **The round trip needs `--msvc-mangling`**: without it
+  sample6.obj wants `g_rtti_type_info_vftable` and no link of it succeeds, cl's control included; the project's own tests
+  pass the flag (sandbox/scripts/lib.ps1), and boxkit/cppp-win.cmd did not.
+- src/ 97,501 -> 97,508; include/ 6,316 -> 6,316; lib/ 2,384 -> 2,592 (windows.h 251 -> 350, eh.h 33 new, intrin.h 76
+  new). cl /W4 /WX clean, 136 s alone.
