@@ -22,6 +22,8 @@ class Linkage {
 public:
     explicit Linkage(Parser &p) : p_(p) {}
 
+    // A read's member, never emitted (its class over `$T0` has no Microsoft name): one name per signature, by patternKey.
+    static std::string patternSymbol(const std::string &key, const Type *fn, bool constThis = false, RefQual ref = RefQual::None);
     std::string deletingDestructorSymbol(const std::string &cls);
     // The name a base subobject's constructor is called by: Itanium's C2
     // rather than the C1 the signature carries, and on Windows the one name

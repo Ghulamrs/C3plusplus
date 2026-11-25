@@ -20,7 +20,7 @@ namespace { struct Keyed { std::string &ref, saved; Keyed(std::string &r, const 
 
 // A read's class over `$T0` has no Microsoft name: read, never emitted, a special member is named by its signature.
 static bool readName(bool read, const std::string &tag, const Type *fn, std::string *out) {
-    if (read) *out = "$pattern$" + tag + "$" + fn->describe();
+    if (read) *out = Linkage::patternSymbol(tag, fn);
     return read;
 }
 

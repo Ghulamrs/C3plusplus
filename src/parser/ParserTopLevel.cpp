@@ -1017,7 +1017,7 @@ void Parser::topLevel(Program &program) {
                 else
                     ok = itaniumMemberTemplateName(d.qualifier, memberOf, d.name,
                           patternFn, memberTemplateArgs_, constThis, refThis, &sym, &why);
-                if (!ok && patternBody_) sym = "$pattern$" + key + "$" + fnType->describe();      // read, never emitted
+                if (!ok && patternBody_) sym = sema::Linkage::patternSymbol(key, fnType, constThis, refThis);      // read, never emitted
                 else if (!ok)
                     src_.fail(d.pos, "'" + key + "' cannot be given a name the "
                                      "linker can hold: " + why);
