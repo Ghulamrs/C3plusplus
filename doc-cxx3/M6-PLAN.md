@@ -5321,3 +5321,11 @@ declaration; a template template parameter's class made first; the mayThrow_ rep
 calling nothing that throws is wrapped no more, as clang). **Class specializations made with no replay: suite about 2,040
 of 2,184 and self-host about 74,380 by the old counts (the exact census of m83bb, not in this wave, counts every
 specialization once: on its tree suite 2,207 of 2,422, self-host 74,887 of 75,319).** Nothing changes without the flag.
+
+**m6d-w45's wave landed, 2026-11-25 (gate m6dw45h at 509cdee1 against main e4ad10fd: 40 passed, 0 failed, no rows; the
+fixed point checked not owed; regated whole after the Linux box's home was emptied at 07:48 and rebuilt).** m8-3bb merged
+by hand (classShape's loop: 3l's heads kept, 3n's enums and bare before it). M8.3: the exact census - one line per
+specialization, made + replayed = total - and slice 3n. wave-gate: TI's own tools and rts6740 on the Windows box only (the
+user, 2026-11-25) - Linux's tms and sim shards link RTS6x and passed 470 of 470; the box side refuses an empty, dotted or
+nested run name before build's rm -rf. **Class specializations made with no replay (exact census): suite 2,290 of 2,466;
+self-host about 75,000 of 75,319 (m8-3bb's tree).** Nothing changes without the flag.
