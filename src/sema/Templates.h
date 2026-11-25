@@ -223,6 +223,7 @@ public:
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
+    bool templateUnder(const Substituted &s, std::string *name) const;     // `$TT<i>` as the template `s` binds parameter i to
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
     std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;

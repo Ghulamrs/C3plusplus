@@ -429,7 +429,7 @@ static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
     std::string name;
     std::vector<TemplateArg> args;
-    if (!readId(o, &name, &args)) return nullptr;
+    if (!readId(o, &name, &args) || !templateUnder(s, &name)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
         if (!args[k].isType && argValued(s, &args[k])) continue;
         if (args[k].isPack && !args[k].isTemplate && packUnder(s, &args[k])) continue;
@@ -437,6 +437,18 @@ const Type *Templates::specializationUnder(const Substituted &s, const Type *o) 
         args[k].type = substituted(s, args[k].type);
     }
     return p_.lookup_.findTypedef(specializationKey(name, args));
+}
+
+// Slice 3m: a read id's template `$TT<i>` (`C<T>`, C a template template parameter) as the class template `s` binds C to, by
+// name, as bindTemplateParameters enters it; true for any other name, false where `s` binds C to nothing or to an alias.
+bool Templates::templateUnder(const Substituted &s, std::string *name) const {
+    int tt;
+    if (!ttRefName(*name, &tt)) return true;
+    for (std::size_t k = 0; k < s.from.size(); k++)
+        if (s.from[k] == p_.types_.templateParam(tt) && s.to[k]->isTemplateName() && !s.to[k]->isAliasTemplate() &&
+            p_.findTemplate(s.to[k]->templateName()) != templates_.end())
+            return *name = p_.findTemplate(s.to[k]->templateName())->first, true;
+    return false;
 }
 
 // A read's pack argument under `s`, as the replay's template-id lists it: `Ts...` the members `s` binds to Ts, each other
@@ -3456,7 +3468,7 @@ bool Templates::readId(const Type *e, std::string *name, std::vector<TemplateArg
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
                           const std::vector<const Type *> *pending) const {
-    if (!readId(e, name, args)) return false;
+    if (!readId(e, name, args) || !templateUnder(s, name)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
     if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
@@ -3606,9 +3618,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         std::size_t e = t + 1;
         while (e < p_.tokens_.size() && (p_.tokens_[e].is("&") || p_.tokens_[e].is("&&") || p_.tokens_[e].is("*"))) e++;
         // ... or in a template-id's arguments, `X<Ts...>`, whose read id specializationUnder and earlyArgs expand (packUnder).
-        const bool expanded = !open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1));
+        const bool expanded = (!open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1))) ||
+                              (t >= 3 && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") && p_.tokens_[t - 3].is("sizeof"));     // 3m: sizeof...(Ns)
         for (std::size_t q = 0; q < params.size(); q++)
-            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded))
+            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded) &&
+                !(params[q].isTemplate && depth == 1 && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("<") && !p_.tokens_[t - 1].is("typename")))     // 3m: `C<T>`
                 return "replayed: a pack or template parameter, bound by name";
     }
     // Slice 3e: a non-type parameter named in member bodies, replayed under the real values, or as a bound `[N]`, which the read
@@ -3674,35 +3688,59 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's.
     const auto staticInit = [&](std::size_t t, std::size_t depth) {
         bool equals = false;
-        for (int b = static_cast<int>(t), parens = 0, level = 0; depth == 1 && b > static_cast<int>(start); b--) {
+        for (int b = static_cast<int>(t), parens = 0, level = 0, colons = 0; depth == 1 && b > static_cast<int>(start); b--) {
             const Token &x = p_.tokens_[static_cast<std::size_t>(b - 1)];
-            if (x.is(";") || x.is("{") || x.is("}") || x.is(":") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            if (x.is(";") || x.is("{") || x.is("}") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
+            if (x.is(":") && (b < 2 || p_.tokens_[static_cast<std::size_t>(b - 2)].is("public") || p_.tokens_[static_cast<std::size_t>(b - 2)].is("private") ||
+                               p_.tokens_[static_cast<std::size_t>(b - 2)].is("protected")))
+                return false;
+            colons += x.is(":") ? 1 : x.is("?") && colons > 0 ? -1 : 0;     // a `:` no `?` before it matches is no conditional's
             parens += x.is(")") ? 1 : x.is("(") ? -1 : 0;
             if (equals && parens < level) return false;     // a parameter's default argument: `f(int a = N)`
             if (!equals && x.is("=")) equals = true, level = parens;
-            if (x.is("static")) return equals && parens == level;
+            if (x.is("static")) return equals && parens == level && colons == 0;
         }
         return false;
     };
-    for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
+    // Slice 3k: or in a `static_assert` in the class's own braces whose condition folds true under the values, as the replay finds.
+    const auto assertAt = [&](std::size_t t, std::size_t depth) {
+        std::size_t open = t;
+        while (depth == 1 && open > start && !p_.tokens_[open].is("static_assert"))
+            if (p_.tokens_[--open].is(";") || p_.tokens_[open].is("{") || p_.tokens_[open].is("}")) return false;
+        if (!p_.tokens_[open].is("static_assert") || !p_.tokens_[open + 1].is("(")) return false;
+        std::size_t comma = open + 2, at = open + 2;
+        for (int parens = 1; comma < p_.tokens_.size() && !(parens == 1 && p_.tokens_[comma].is(",")); comma++)
+            if (p_.tokens_[comma].is(";") || (parens += p_.tokens_[comma].is("(") ? 1 : p_.tokens_[comma].is(")") ? -1 : 0) == 0) return false;
+        long long a = 0, b = 0;
+        if (comma >= p_.tokens_.size() || t >= comma || !foldBound(p_.tokens_, &at, comma, params, s->values, 0, &a)) return false;
+        if (at == comma) return a != 0;
+        const std::string op = p_.tokens_[at++].text;
+        if (!foldBound(p_.tokens_, &at, comma, params, s->values, 0, &b) || at != comma) return false;
+        return op == "==" ? a == b : op == "!=" ? a != b : op == "<" ? a < b : op == ">" ? a > b : op == "<=" ? a <= b : op == ">=" && a >= b;
+    };
+    // Slice 3l: or in a member template's declaration, which templatesFromRead reads at its `template` under the values.
+    std::vector<std::size_t> heads;
+    for (const TemplateDecl *mt : templatesOf(readTag)) heads.push_back(mt->start);
+    for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
+        if (depth == 1 && std::find(heads.begin(), heads.end(), t) != heads.end()) head = 1;
         if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
-            for (std::size_t inner = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
+            for (std::size_t inner = head = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
                 inner += p_.tokens_[t].is("{");
                 if (p_.tokens_[t].is("}") && --inner == 0) break;
             }
         else if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
+        if (t < p_.tokens_.size() && depth == 1 && (p_.tokens_[t].is(";") || p_.tokens_[t].is("}"))) head = 0;
+        if (head != 0) continue;
         if (t < p_.tokens_.size() && ownId(t) != t) { t = ownId(t); continue; }
+        if (depth == 1 && t < p_.tokens_.size() && p_.tokens_[t].is("static_assert") && !assertAt(t, depth)) return "replayed: a static_assert";
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
                 !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
-                !boundAt(t, depth) && !staticInit(t, depth))
+                !boundAt(t, depth) && !staticInit(t, depth) && !assertAt(t, depth))
                 return "replayed: a non-type parameter named outside its member bodies";
     }
-    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator mine = readMembers_.find(start);
-    for (std::size_t q = 0; q < params.size() && mine != readMembers_.end(); q++)     // templatesHeld holds their class values
-        if (params[q].type != nullptr && !templatesOf(mine->second.first).empty()) return "replayed: a member template beside a non-type parameter";
     const std::map<std::size_t, const Type *>::const_iterator r = readClass_.find(start);
     if (r == readClass_.end()) return "replayed: no class read at the declaration";
     const Type *read = r->second;
@@ -3726,6 +3764,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
+        if (params[q].isTemplate && binding[q] != nullptr && binding[q]->isTemplateName())     // 3m: C as its template, templateUnder's
+            s->from.push_back(p_.types_.templateParam(static_cast<int>(q))), s->to.push_back(binding[q]);
         if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
@@ -4048,12 +4088,14 @@ std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *c
 // Work (1): what keeps a read static data member from being declared by staticsFromRead under `s`, by name; empty when nothing.
 std::string Templates::staticShape(std::size_t start, const Substituted &s) const {
     const Type *read = readClass_.at(start);
-    const auto names = [&](const std::string &n) {     // a template, whose use in an initialiser makes a class out of the body's order
+    const auto names = [&](const std::string &n) {     // a template, whose use in an initialiser makes a class where it is evaluated
         if (templates_.count(n) != 0) return true;
         for (std::map<std::string, TemplateDecl>::const_iterator i = templates_.begin(); i != templates_.end(); ++i)
             if (i->first.size() > n.size() + 2 && i->first.compare(i->first.size() - n.size() - 2, n.size() + 2, "::" + n) == 0) return true;
         return false;
     };
+    const std::size_t colon = read->templateName().rfind(':');
+    const std::string own = read->templateName().substr(colon == std::string::npos ? 0 : colon + 1);
     for (const Type::StaticMember &m : read->staticMembers()) {
         bool cx = false;
         std::size_t name = 0;
@@ -4066,12 +4108,27 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
         e = e->unqualified();
         if (e == read || overParameters(e->tag()) || readIds_.count(e) != 0)
             return "replayed: a static data member of a class the read named over its parameters";
-        for (std::size_t k = at, depth = 0; k < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{")); k++) {
+        bool named = false;
+        std::size_t k = at;
+        for (std::size_t depth = 0; k < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{")); k++) {
             const Token &w = p_.tokens_[k];
             depth += w.is("(") || w.is("{") || w.is("[");
             if ((w.is(")") || w.is("}") || w.is("]")) && depth > 0 && --depth == 0 && w.is("}")) break;
             if (depth == 0 && (w.is(";") || w.is(","))) break;
-            if (w.kind == TokenKind::Ident && names(w.text)) return "replayed: a static data member's initialiser naming a template";
+            named = named || (w.kind == TokenKind::Ident && names(w.text));
+        }
+        // Its ids are made where staticsFromRead evaluates it, after idsBefore's: the body's order while none is named after it.
+        for (std::size_t depth = 1, t = k + 1; named && t < p_.tokens_.size(); t++) {
+            const Token &w = p_.tokens_[t], &was = p_.tokens_[t - 1];
+            if (depth == 1 && w.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
+                for (std::size_t inner = 0; t < p_.tokens_.size(); t++) {     // a member function's body, replayed later by both doors
+                    inner += p_.tokens_[t].is("{");
+                    if (p_.tokens_[t].is("}") && --inner == 0) break;
+                }
+            else if (w.is("{")) depth++;
+            else if (w.is("}") && --depth == 0) break;
+            else if (w.kind == TokenKind::Ident && names(w.text) && !(w.text == own && t + 1 < p_.tokens_.size() && !p_.tokens_[t + 1].is("<")))     // its constructor
+                return "replayed: a static data member's initialiser naming a template, before another template named in its class";
         }
     }
     return std::string();
@@ -4085,7 +4142,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     const std::vector<Type::StaticMember> &statics = readClass_.at(start)->staticMembers();
     if (statics.empty()) return;
     std::vector<Shadow> undo;
-    bindTemplateParameters(params, binding, values, Packs(params.size()), &undo);
+    bindTemplateParameters(params, binding, values, s.packs.size() == params.size() ? s.packs : Packs(params.size()), &undo);
     const Parser::LocalsHidden hidden(&p_);
     const std::size_t resume = p_.at_, angle = p_.angleSplit_;
     std::vector<const Type *> outerClasses(1, scope);
@@ -4263,11 +4320,16 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
             a.isConstructor != b.isConstructor || a.isExplicit != b.isExplicit || a.staticMember != b.staticMember || a.defined != b.defined ||
             a.memberAccess != b.memberAccess || a.params.size() != b.params.size())
             return "differ: a member template's place, name or kind";
-        if (a.classParams.size() != b.classParams.size() || a.classBinding.size() != b.classBinding.size() || a.classValues != b.classValues)
+        if (a.classParams.size() != b.classParams.size() || a.classBinding.size() != b.classBinding.size() ||
+            (s.values.empty() ? a.classValues : s.values) != b.classValues)     // the read's are stand-ins; `s` carries the binding's
             return "differ: a member template's class parameters";
-        for (std::size_t k = 0; k < a.classBinding.size(); k++)     // a pack's is the class's own binding, its members below
-            if (!(k < b.classParams.size() && b.classParams[k].isPack) && substituted(s, a.classBinding[k]) != b.classBinding[k])
+        for (std::size_t k = 0; k < a.classBinding.size(); k++) {     // a pack's is the class's own binding, its members below
+            const bool value = k < a.classParams.size() && a.classParams[k].type != nullptr && a.classBinding[k] != nullptr &&
+                               a.classBinding[k]->kind() == Kind::TemplateParam;     // the read's pattern for N, its value held above
+            if (k < b.classParams.size() && b.classParams[k].isPack) continue;
+            if (value ? b.classBinding[k] != nullptr && b.classBinding[k]->kind() == Kind::TemplateParam : substituted(s, a.classBinding[k]) != b.classBinding[k])
                 return "differ: a member template's class binding";
+        }
         for (std::size_t k = 0; k < b.classPacks.size() && k < b.classParams.size(); k++)     // what templatesFromRead binds
             if (b.classParams[k].isPack && (k >= s.packs.size() || static_cast<const std::vector<const Type *> &>(s.packs[k]) !=
                 static_cast<const std::vector<const Type *> &>(b.classPacks[k]) || s.packs[k].values != b.classPacks[k].values))
@@ -4398,8 +4460,7 @@ std::string Templates::classBeyond(std::size_t start) const {
                 angle += a.is("<") ? 1 : a.is(">") ? -1 : a.is(">>") ? -2 : 0;
                 if (angle <= 0) break;
             }
-        else if (k.is("static_assert")) return "replayed: a static_assert";
-    }
+    }     // a static_assert is classShape's: kept when its condition folds true under the values
     return std::string();
 }
 
