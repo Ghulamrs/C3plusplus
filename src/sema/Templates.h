@@ -216,7 +216,9 @@ public:
     bool substitute_ = false;
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
-    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs; };
+    struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
+                         std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
+    bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed
     const Type *substituted(const Substituted &s, const Type *t) const;
     std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too

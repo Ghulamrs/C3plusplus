@@ -429,7 +429,7 @@ static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
 const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
     std::string name;
     std::vector<TemplateArg> args;
-    if (!readId(o, &name, &args)) return nullptr;
+    if (!idUnder(s, o, &name, &args)) return nullptr;
     for (std::size_t k = 0; k < args.size(); k++) {
         if (args[k].isPack && !args[k].isTemplate && packUnder(s, &args[k])) continue;
         if (!args[k].isType && argValued(s, &args[k])) continue;
@@ -3468,11 +3468,19 @@ bool Templates::readId(const Type *e, std::string *name, std::vector<TemplateArg
     return true;
 }
 
+// Slice 3s: readId's, a template template parameter's stand-in `$TT<i>` named as the template `s` binds to it (as `templates_[C]`).
+bool Templates::idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const {
+    int tt = -1;
+    if (!readId(e, name, args)) return false;
+    if (ttRefName(*name, &tt) && s.templates.count(tt) != 0) *name = s.templates.at(tt);
+    return true;
+}
+
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
                           const std::vector<const Type *> *pending) const {
-    if (!readId(e, name, args)) return false;
+    if (!idUnder(s, e, name, args)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
     if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
@@ -3629,8 +3637,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         // Slice 3q: or counted, `sizeof...(Ts)`, where the second scan finds a static's initialiser staticsFromRead reads bound.
         const bool counted = t > start + 2 && t + 1 < p_.tokens_.size() && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") &&
                              p_.tokens_[t - 3].is("sizeof") && p_.tokens_[t + 1].is(")");
+        // Slice 3s: a template template parameter's id, `C<T>`, which the read lays over `$TT<i>` and idUnder names as bound.
+        const bool ttId = t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("<") && !(t > 0 && p_.tokens_[t - 1].is("::"));
         for (std::size_t q = 0; q < params.size(); q++)
-            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded)) {
+            if ((params[q].isPack || params[q].isTemplate) && !params[q].name.empty() && n.text == params[q].name && !(params[q].isPack && expanded) &&
+                !(params[q].isTemplate && !params[q].isPack && ttId)) {
                 if (!(params[q].isPack && counted)) return "replayed: a pack or template parameter, bound by name";
                 sized.push_back(t);
             }
@@ -3791,6 +3802,10 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     }
     if (read->hasVptr()) return "replayed: a virtual function";
     for (std::size_t q = 0; q < binding.size() && q < params.size(); q++) {
+        const std::map<std::string, TemplateDecl>::const_iterator tt = params[q].isTemplate && !params[q].isPack && binding[q] != nullptr &&
+            binding[q]->isTemplateName() ? p_.findTemplate(binding[q]->templateName()) : templates_.end();     // 3s: a class template, keyed by its name
+        if (tt != templates_.end() && tt->second.isClass && !tt->second.isAlias && tt->second.ttParam < 0 && tt->first == tt->second.name)
+            s->templates[static_cast<int>(q)] = tt->first;
         if (params[q].type != nullptr || params[q].isPack || params[q].isTemplate) continue;     // a value, or named nowhere (3f)
         const Type *u = binding[q] != nullptr ? binding[q]->unqualified() : nullptr;
         if (u == nullptr) return "replayed: a type parameter bound to no type";
@@ -3848,7 +3863,19 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (m.isBitField() || m.anonUnion != nullptr) return "replayed: a bit-field or an anonymous union";
         const Type *t = dataUnder(*s, m), *e = t;
         if (pointsAtOwn(m.type)) continue;     // `__hash_node *next`: a pointer, the made class once readStands maps it
-        if (p_.dependentType(t)) return "replayed: a data member of a type the binding does not carry";
+        const Type *owner = m.type->unqualified()->kind() == Kind::DependentMember ? m.type->unqualified()->pointee()->unqualified() : nullptr;
+        std::string on;     // 3s: `typename C<T>::type t`, its class made first, as the replay makes it reading the member
+        std::vector<TemplateArg> oa;
+        if (owner != nullptr && wanted != nullptr && p_.dependentType(t) && owner != read && readId(owner, nullptr, nullptr) &&
+            (std::find(wanted->begin(), wanted->end(), owner) != wanted->end() || earlyArgs(*s, owner, read, &on, &oa, false, wanted))) {
+            if (std::find(wanted->begin(), wanted->end(), owner) == wanted->end()) dataAt.push_back(memberAt(m.name)), wanted->push_back(owner);
+            continue;
+        }
+        int tt = -1;     // 3s: a stand-in id another read laid first stays a specialization of `$TT<i>`, dependent until mapped below
+        const Type *bare = t;
+        while (bare->isArray() || bare->unqualified() != bare) bare = bare->isArray() ? bare->pointee() : bare->unqualified();
+        const bool standIn = bare->isSpecialization() && ttRefName(bare->templateName(), &tt) && s->templates.count(tt) != 0;
+        if (p_.dependentType(t) && !standIn) return "replayed: a data member of a type the binding does not carry";
         while (e->isArray()) e = e->pointee();
         if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
         const Type *u = e->unqualified();
