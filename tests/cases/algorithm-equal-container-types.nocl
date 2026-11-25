@@ -1,0 +1,1 @@
+This case includes this tree's own <algorithm>, <vector>, <map>, <set> and <string>, whose templates are inline and instantiated in the object; cl's are its own library's classes with other layouts and names, so the two objects share nothing to compare.

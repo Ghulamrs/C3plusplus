@@ -10,8 +10,9 @@ struct S {
 S::S(int x) : v(x) { lfBuilt(this, "S"); }
 S::S(const S &o) : v(o.v) { lfBuilt(this, "S"); }
 S::~S() { lfGone(this, "S"); }
-struct Named { S name; Named(); };
+struct Named { S name; Named(); ~Named(); };
 Named::Named() : name(7) {}
+Named::~Named() {}
 int pick(bool empty, const Named &n) {
     const S &r = empty ? S(0) : n.name;
     const S &q = (!empty ? S(40) : n.name);
