@@ -1002,9 +1002,9 @@ ExprPtr Parser::conditionalNode() {
     }
 
     // **[expr.cond]/3: two lvalues differing only in const** - `c ? x : cx` - the plain one converts to a
-    // reference to the const one, so the `?:` is an lvalue of the const type and `decltype` of it `const int &`
-    // (1.27, 2026-10-21, review of 1.25, item 3: it was read as an `int` prvalue).
-    if (ta != tb && ta->unqualified() == tb->unqualified() && !ta->isStructOrUnion() &&
+    // reference to the const one, so the `?:` is an lvalue of the const type, `decltype` of it `const int &`;
+    // a class's too, so it picks f(const T &) and the copy assignment, never f(T &&) or the move (w46fix).
+    if (ta != tb && ta->unqualified() == tb->unqualified() &&
         ta->isConst() != tb->isConst() && isLvalue(*a) && isLvalue(*b)) {
         const Type *constOne = ta->isConst() ? ta : tb;
         if (ta->isConst()) b->setType(constOne); else a->setType(constOne);
