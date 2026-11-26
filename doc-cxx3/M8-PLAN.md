@@ -6489,3 +6489,58 @@ template's class layer is bound before its own; a specialization a call declares
 ([temp.point]); `Constexpr` folds trees and never runs the VM.
 
 **Where it stopped**: the table above, measured; no slice started (4a is the next lane's whole hour).
+
+## M8.4 slice 4a: the census made whole - every door counted by why it falls back, and one `falling back=` sum a unit (lane m84b, 2026-11-26)
+
+Base fa983239 (wave m6d-w49 cd93e1bd under gate m6dw49g, with m84a's plan); commits 6903cfe6, 6f5c9286 (EXCLUSIONS: three
+Templates.cpp citations re-pointed), e90358a0 (cl C2662: the class door's list is const, so the default count is `mutable`).
+src/ 98,258 -> 98,349 lines (Templates.cpp +94, Templates.h +8, Constexpr.cpp/.h 0 net). **Counts only**: no path changed, no
+`template-census:` key added or moved (subst.sh:76/89 read it as before); the new lines print with the other census lines
+(`-check=templates`, or CXX1_TEMPLATE_CENSUS) and only under `-templates=subst`, as the class measure's do, so no
+`.templates` record moves.
+
+**THE MEASURE** (Windows cxx3-msvc, `-templates=subst`, no check, the seven doors m84a summed - class replayed, function and
+member door less those made, member template, SFINAE trial, constexpr-ahead, alias):
+
+| | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
+| --- | --- | --- | --- | --- |
+| before, fa983239 | 6,570 | 6,570 | 87,834 | 87,906 |
+| after, e90358a0 | 6,570 | (owed: the run was cut at the hour if absent from the handover) | 87,982 | (owed) |
+
+The suite is the like-for-like count and is unchanged, part by part: classes 23, functions 594 (536 made of 1,130), members
+3,819 (806 of 4,625), member templates 202, SFINAE trials 1,875, constexpr-ahead 36, aliases 21. The self-host grows 148
+because its input does: it compiles 4a's own new lines in Templates.cpp (members 59,576 -> 59,720 bodies, SFINAE 33,863 ->
+33,892), not because a door counts differently. 9c110cb7's 6,562/87,779 -> fa983239's 6,570/87,834 is wave w49's sources
+and cases, not this slice.
+
+**`falling back=`** (one line a unit, `-check=templates falling back=N classes= functions= members= member-templates=
+sfinae-trials= constexpr-ahead= aliases= defaults=`): suite 6,768 over the 1,026 units that print it - the seven doors 6,565
+(the 350 units that fail after the parse print `template-census:` but not the report: 2 member templates and 3 trials sit
+there) and **defaults 203**, a door no count had; self-host 88,931 = 87,982 + defaults 949. The per-unit line is the sum a
+slice moves; the seven-door column above is the one to compare with m84a's.
+
+**The splits** (x86_64-linux; each sums to its door's part of `falling back=`, checked: 200, 1,872, 36 / 1,365, 33,892, 645):
+- member templates, suite 200 / self 1,365: a constructor 90 / 1,109; an own pack 19 / 5; a body the read did not read 10 /
+  32; two layers, a body read 50 / 218; one layer, a body read 31 / 1. The self-host's door is constructors (4i before 4h
+  by count).
+- SFINAE trials, suite 1,872 / self 33,892: a function template - types alone 1,407 / 30,308, a value over the parameters 70 /
+  0, a `decltype` 87 / 0, a default 12 / 0; a member template - types alone 167 / 2,954, a value 23 / 0, a default 106 / 630.
+  "A default" is a deduction that took a default with nothing else in the signature: the library's `class = enable_if<..>`
+  shape, whose test is in the default and not the signature - 4b/4c's defaults feed 4e there.
+- constexpr-ahead, suite 36 / self 645: a constexpr member function, its class made from the read 32 / 645; a constexpr
+  constructor, its class made from the read 4 / 0; none whose class was replayed. 4k needs only M8.3's made class.
+- defaults (`defaultTemplateArgument` replays, by kind and door), suite 203 / self 949: a type, deduced 154 / 949; a type, the
+  class door's list 30 / 0; a value, deduced 3 / 0; a value, the class list 15 / 0; a template, deduced 1 / 0.
+
+The shapes are read where m84a's entry put them: `instantiateMemberTemplate` (`isConstructor`, an own `isPack`, the member
+door's read by `afterParams` - `memberTemplateRead_`, filled by `tallyRead`'s ReadMember - and `classParams`), the two trial
+sites over the kept `pattern` (`patternHolds`: a `DependentExpr` is a `decltype`; a non-type argument that is a parameter,
+folded from one or an expression is a value), `instantiateForConstant` (its body's tag in `specializationCensus_`; the caller
+says constructor), and the two callers of `defaultTemplateArgument` (counted when it replayed, a failed substitution
+included).
+
+**Gates** (e90358a0; the next wave gates fully): cl /W4 /WX clean (msvc\build.cmd, 4 min 16 s beside a census); g++ -Werror
+clean (Linux); static on Linux: exclusions 129 sites 0 uncited 0 stale (lowering 0/0), comments 0 over the cap, memory-gate
+below its baseline, ast-residue not raised (ExprPtr 2012), ide up to date. identical.sh, run.sh both ways, subst.sh, the
+full self-compile, the check censuses, names.sh and overload.sh: as the handover boxkit/m84b-handover.md's last lines say -
+each one not listed there was cut by the hour and is owed to the wave gate.
