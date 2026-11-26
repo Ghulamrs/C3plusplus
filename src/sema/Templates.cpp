@@ -3991,7 +3991,7 @@ static bool cvOverReference(const Templates::Substituted &s, const Type *t) {
 // Slice 3a's shape: type parameters bound to scalars, to a class (boundClass's) or to a reference to either, and a read
 // class of data members alone, each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                                  const Substituted *early, std::vector<const Type *> *wanted) const {
+                                  const Substituted *early, std::vector<const Type *> *wanted) {
     // Slice 3f: a pack or template parameter its class names in member bodies alone (replayed by name, as instantiate's door
     // asks) is in its tag alone; a partial's scan from past its written arguments, which name it (`is_function<R(A...)>`).
     std::size_t from = start;
@@ -5250,7 +5250,7 @@ static bool nestedAt(const std::vector<std::pair<std::size_t, std::size_t> > &ne
 
 // Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                                   Substituted *early, std::vector<const Type *> *wanted) const {
+                                   Substituted *early, std::vector<const Type *> *wanted) {
     Substituted &s = *early;
     // The body's member beyond first: under one, the ids idsBefore would make are not made, so a signature's refusal hides it.
     const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), outside = classBeyond(start), beyond = outside.empty() ? shape : outside;
@@ -5265,7 +5265,7 @@ std::string Templates::classBefore(std::size_t start, const std::vector<Template
 }
 
 // Step (2): each of the read's member typedefs and aliases names, under `s`, a type the binding carries; else why not.
-std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) const {
+std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) {
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
         if (!typedefCarried(start, s, td.second, wanted) && typedefByPath(start, s, td) == 0)     // else read by staticsFromRead
             return "replayed: a member typedef or alias over a type the binding does not carry";
@@ -5311,7 +5311,7 @@ std::size_t Templates::typedefByPath(std::size_t start, const Substituted &s, co
 // Step 4's shape: a covered class made from the read lacks what its body declares beyond data members and member functions,
 // and its held member bodies are the read's records under the real tag, each one's function the replay's by readSymbol_.
 std::string Templates::classSkip(std::size_t start, const std::string &tag, const std::vector<Parser::PendingBody> &bodies,
-                                 const std::string &name, std::size_t typedefsFrom) const {
+                                 const std::string &name, std::size_t typedefsFrom) {
     const std::string beyond = classBeyond(start);
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
