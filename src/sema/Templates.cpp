@@ -415,16 +415,17 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         r.why = "a partial's read class, which the binding does not carry";
         return r;
     }
-    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args, maker, pos)) {
+    const bool id = idUnder(s, o, &name, &args);
+    std::vector<TemplateArg> own = args;     // 3R-h: an id over the member template's own parameters is the replay's shallow one
+    if (id && pattern && maker == nullptr && templates_.count(name) != 0 && patternArgs(s, &own, pos) && p_.dependentArgs(own)) {
+        r.type = shallowId(templates_.at(name), specializationKey(name, own), own), r.at = nullptr;
+        return r;
+    }
+    if (!id || !argsUnder(s, o, name, &args, maker, pos)) {
         r.why = "a class template-id with an argument the binding does not carry";
         return r;
     }
     const Type *real = p_.lookup_.findTypedef(specializationKey(name, args));
-    bool over = pattern && templates_.count(name) != 0 && p_.dependentArgs(args);     // 3R-h: each a parameter or no parameter at all
-    for (std::size_t k = 0; over && k < args.size(); k++)
-        over = args[k].isType && !args[k].isPack && !args[k].isTemplate && args[k].expr == nullptr && !args[k].isParam && args[k].type != nullptr &&
-               (args[k].type->unqualified()->kind() == Kind::TemplateParam || !p_.dependentType(args[k].type));
-    if (real == nullptr && over) real = shallowId(templates_.at(name), specializationKey(name, args), args);
     if (real == nullptr && maker != nullptr && templates_.count(name) != 0) {
         real = maker->makeId(name, args, pos, nullptr);
         maker->classCensus_["made at first need: a class template-id at a door"]++;
@@ -433,6 +434,25 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     else { r.type = real; r.at = nullptr; }
     if (real != nullptr && maker != nullptr && needing_ != nullptr && needing_->s == &s) needing_->made.push_back(std::make_pair(o, real));
     return r;
+}
+
+// A member template's pattern's id arguments under `s` (3R-h): one of its own parameters renumbered as `s` maps it (`N`, `Ts...`),
+// a type by Pattern, the rest by argUnder; false where one is not carried.
+bool Templates::patternArgs(const Substituted &s, std::vector<TemplateArg> *args, std::size_t pos) const {
+    for (TemplateArg &a : *args) {
+        const int i = a.isTemplate ? -1 : a.isPack ? a.expandsParam : !a.isType && a.isParam ? a.paramIndex : -1;
+        const Type *mine = nullptr;
+        for (std::size_t k = 0; i >= 0 && k < s.from.size(); k++)
+            if (s.from[k] == p_.types_.templateParam(i) && s.to[k] != nullptr && s.to[k]->kind() == Kind::TemplateParam) mine = s.to[k];
+        if (mine != nullptr && a.isPack) a.expandsParam = static_cast<int>(mine->length()), a.pack.assign(1, mine);
+        else if (mine != nullptr) a.paramIndex = static_cast<int>(mine->length());
+        else if (a.isType && !a.isPack && !a.isTemplate && a.type != nullptr) {
+            const Substitution r = substituteIn(s, a.type, Pattern, nullptr, pos);
+            if (!r.carried()) return false;
+            a.type = r.type;
+        } else if (!argUnder(s, &a, false, nullptr, pos)) return false;
+    }
+    return true;
 }
 
 // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler and deduction read only its name and

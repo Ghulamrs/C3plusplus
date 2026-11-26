@@ -282,6 +282,7 @@ public:
     Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos, bool pattern = false) const;     // the id step
     const Type *shallowId(const TemplateDecl &decl, const std::string &tag, const std::vector<TemplateArg> &args) const;     // a pattern's id
+    bool patternArgs(const Substituted &s, std::vector<TemplateArg> *args, std::size_t pos) const;     // a member template's own, renumbered
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
                    std::size_t pos = static_cast<std::size_t>(-1)) const;
     const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
