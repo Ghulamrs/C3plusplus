@@ -323,6 +323,8 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
     return substituteIn(s, t, Made, this, at.pos);
 }
 
+static bool overParameters(const std::string &tag);
+
 // The kernel's one recursion: each of `from` is `to` under any declarator, a member type through its class, a function's
 // parameters through the list form (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
 // Made is carried under every declarator and asks the map first, as Mapped does; the cv is stripped before either.
@@ -338,7 +340,8 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     }
     for (std::size_t k = 0; k < s.from.size(); k++)
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
-    if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
+    if (ids == Made && readId(t, nullptr, nullptr) && (readIds_.count(t) != 0 || overParameters(t->tag())))     // a program's class is itself
+        return specializationIn(s, t, maker, pos);
     const int bound = t->isArray() ? t->boundParam() : -1;
     if (t->isPointer() || (t->isArray() && bound < 0)) {
         r = substituteIn(s, t->pointee(), below, maker, pos);
