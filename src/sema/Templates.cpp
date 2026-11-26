@@ -5187,8 +5187,11 @@ std::vector<const TemplateDecl *> Templates::templatesOf(const std::string &tag)
 const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
                                      const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out) const {
     if (!mt.layered || mt.classParams.size() != params.size()) return "its pattern not read in two layers";
-    for (const TemplateParam &p : mt.params)
-        if (p.type != nullptr || p.isTemplate || p.defBegin != 0) return "a non-type, template or defaulted parameter of its own";
+    for (const TemplateParam &p : mt.params) {     // a value's type and a default as the replay reads them inside the class
+        if (p.isTemplate) return "a template template parameter of its own";
+        if (p.type != nullptr && (p.typeOf >= 0 || p_.dependentType(p.type))) return "a value parameter whose type names a parameter";
+        if (p.defBegin != 0 && (p.defPattern != nullptr || p.defExpr != nullptr || p.defValued)) return "a default the class read read";
+    }
     Substituted both = s;
     for (std::size_t i = 0; i < mt.params.size(); i++) {
         both.from.push_back(p_.types_.templateParam(static_cast<int>(params.size() + i)));
@@ -5223,8 +5226,12 @@ const char *Templates::templateSame(const TemplateDecl &a, const TemplateDecl &b
         return "its name or kind";
     if (a.params.size() != b.params.size()) return "its parameters";
     for (std::size_t i = 0; i < a.params.size(); i++)
-        if (a.params[i].name != b.params[i].name || a.params[i].isPack != b.params[i].isPack || a.params[i].pos != b.params[i].pos)
+        if (a.params[i].name != b.params[i].name || a.params[i].isPack != b.params[i].isPack || a.params[i].pos != b.params[i].pos ||
+            a.params[i].type != b.params[i].type || a.params[i].typeOf != b.params[i].typeOf || a.params[i].isTemplate != b.params[i].isTemplate)
             return "its parameters";
+        else if (a.params[i].defBegin != b.params[i].defBegin || a.params[i].defEnd != b.params[i].defEnd || a.params[i].defPattern != b.params[i].defPattern ||
+                 a.params[i].defExpr != b.params[i].defExpr || a.params[i].defValued != b.params[i].defValued || a.params[i].defValue != b.params[i].defValue)
+            return "its parameter's default";
     if (a.classParams.size() != b.classParams.size() || a.classBinding != b.classBinding || a.classValues != b.classValues) return "its class layer";
     for (std::size_t k = 0; k < a.classPacks.size() && k < b.classPacks.size(); k++)
         if (static_cast<const std::vector<const Type *> &>(a.classPacks[k]) != static_cast<const std::vector<const Type *> &>(b.classPacks[k]) ||
