@@ -7304,8 +7304,8 @@ the env switch (`boxkit/m8r1e-switch3.diff` itself no longer applies at Template
 exclusions 0 uncited 0 stale, comments 0 over, memory gate lower, ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide
 up to date; **the FULL stage-0 self-compile 102 of 102 (183 s)**; x86_64-linux census suite class 0, body 20 (REF 20), self-host
 class 0, body 11 (REF 11), the same reasons as B's below; re-entries at instantiation under the check 26,941 suite, 464,780
-self-host. identical with the switch unset (f, p) and names.sh / overload.sh were queued behind (e) and not reached:
-owed. No difference found to fix.
+self-host; **subst.sh 0 failed** (run -O0 / -O2 1,369 / 0, typed 1,016 / 0, self 102 of 102); **run.sh plain 1,369 / 0**.
+identical with the switch unset (f, p) and names.sh / overload.sh were queued behind (e) and not reached: owed. No difference found to fix.
 
 **(1) The switch on, B** (`boxkit/m8r1i-lgate.sh b`, `boxkit/m8r1i-wident.sh`): **run.sh -templates=subst with CXX1_FIRST_NEED=1:
 1,369 passed, 0 failed.** -check=templates census, x86_64-linux: suite 1,377 units, **class differ 0, body differ 20 (REF 20)** -
@@ -7333,6 +7333,5 @@ slots were held by the coordinator's coordw53 runs and lane m8r4e's for most of 
 **Owed** (the wave's gate): on 68185444 itself g++ -Werror, cl /W4 /WX, run.sh plain and under the flag, subst.sh, the FULL
 self-compile and the censuses on both ABIs (its paths are B's under the switch, measured above, but its own build was queued at the
 hour); identical with the switch on at tms6747 -O1 and -O2 on x86_64-windows and tms6747, and on four targets at three levels
-under the flag and plain; names.sh and overload.sh;
-on A, subst.sh and run.sh plain (queued behind the census at the hour); then idsBefore's family. Re-measure: `boxkit/m8r1i-lgate.sh <a|b>` (with `m8r1i-one.sh`), `boxkit/m8r1i-wident.sh <arch> <level> <jobs> <p|f|e>`,
+under the flag and plain; names.sh and overload.sh; then idsBefore's family. Re-measure: `boxkit/m8r1i-lgate.sh <a|b>` (with `m8r1i-one.sh`), `boxkit/m8r1i-wident.sh <arch> <level> <jobs> <p|f|e>`,
 `boxkit/m8r1i-winbuild.sh <r|b>`, `boxkit/m8r1i-wchain.sh`.
