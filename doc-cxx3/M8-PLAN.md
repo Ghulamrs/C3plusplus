@@ -7291,3 +7291,48 @@ No changed emitted output found (x86_64-windows -O0 under the flag, part-way). S
 then ship first need (`boxkit/m8r1f-shipped-form.diff` applies with `-C1`; EXCLUSIONS' three Templates.cpp lines move +11), then
 idsBefore's family - and with it classShape asking Keyed, so Mapped folds in. Re-measure: `boxkit/m8r1h-wcen.sh <r|h> <arch>
 <0|1> <P> [s]`, `boxkit/m8r1h-wident.sh <arch> <level> <jobs> <p|f|e>`, `boxkit/m8r1h-lgate.sh <c|h>`, `boxkit/m8r1h-lcen.sh <0|1>`.
+
+## R1, ninth lane: Keyed gated, and first need shipped (lane m8r1i, 2026-11-26)
+
+Base 758e0237 (m8-r1h: 7cac2415, the typer asks Keyed). Commit **68185444: first need shipped** (`boxkit/m8r1f-shipped-form.diff`
+with `-C1`, EXCLUSIONS' Templates.cpp 3289 / 2590 / 2538 -> 3300 / 2601 / 2549), and this entry. src/ 98,648 -> 98,661 lines (+28 / -15: Templates.cpp +26 / -15,
+Templates.h +2). Trees: REF 501e2819; A = 7cac2415 (switch off, the shipped code until now); B = 3f3ef250, m8r1h's 7cac2415 +
+the env switch (`boxkit/m8r1e-switch3.diff` itself no longer applies at Templates.cpp:1217; 3f3ef250 is its resolution).
+`CXX1_FIRST_NEED=1` on B is the shipped form's paths (`need` at `At{p_.at_}`); B with it unset is A's.
+
+**(0) m8r1h's owed, on A** (Linux, `boxkit/m8r1i-lgate.sh a`): **g++ -Werror clean; run.sh -templates=subst 1,369 / 0**; static:
+exclusions 0 uncited 0 stale, comments 0 over, memory gate lower, ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide
+up to date; **the FULL stage-0 self-compile 102 of 102 (183 s)**; x86_64-linux census suite class 0, body 20 (REF 20), self-host
+class 0, body 11 (REF 11), the same reasons as B's below; re-entries at instantiation under the check 26,941 suite, 464,780
+self-host. identical with the switch unset (f, p) and names.sh / overload.sh were queued behind (e) and not reached:
+owed. No difference found to fix.
+
+**(1) The switch on, B** (`boxkit/m8r1i-lgate.sh b`, `boxkit/m8r1i-wident.sh`): **run.sh -templates=subst with CXX1_FIRST_NEED=1:
+1,369 passed, 0 failed.** -check=templates census, x86_64-linux: suite 1,377 units, **class differ 0, body differ 20 (REF 20)** -
+return type 6, decltype return 5, exception specification 4, block table 2, shell 2, the frame's size 1; self-host 102 units,
+**class differ 0, body differ 11 (REF 11)** - exception specification 7, frame size 4. x86_64-windows (m8r1h's, 3f3ef250 both
+envs): suite 19 (REF 19), class 0; self-host 10 at 100 of 102 (REF 11). **identical against the REF, switch on, under the flag:
+0 differ at -O0 on all four targets (x86_64-windows 2,050 compared, both spellings; x86_64-linux, arm64-darwin and tms6747
+1,025 each), at -O1 on x86_64-windows (2,050), and at -O1 and -O2 on x86_64-linux and arm64-darwin (1,025 each)** - each
+byte for byte, so content 0 and order-only 0. Re-entries at instantiation, suite x86_64-linux, census without the
+check: **21,553** switch on, 21,550 on A (R0's 21,549; +3 with the switch on, not traced); under the check 26,961; self-host under the check 464,940.
+
+**(2) Shipped**, since all of (1) held: run.sh 0 failed, body differ not above the REF's on both ABIs, class differ 0,
+identical 0 / 0 on four targets. 68185444 is (1)'s paths with the switch gone - `need` always at `At{p_.at_}`, the made-at-a-door
+count keyed "made at first need: a class template-id at a door". Static gates on its tree: exclusions 0 uncited 0 stale, comments
+0 over, memory gate lower, ast-residue not raised, replay-residue +0, ide up to date. No changed emitted output found at -O0 (four
+targets), -O1 (three) or -O2 (x86_64-linux, arm64-darwin); tms6747 -O1, and -O2 on x86_64-windows and tms6747, are owed.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. **replay-residue 150 / 19 / 26 / 6, +0.** idsBefore's family (classShape,
+classBefore and typedefsCarried non-const, then idsBefore, argsWanted, earlyArgs and carriedId's early branch, one commit each) was
+not reached inside the hour. Slices 4m-4s untouched.
+
+**Gates**: Windows **cl /W4 /WX clean** on 501e2819 and 3f3ef250, two at once, 17:53:47-17:58:17 (4 min 30 s). The Linux box's two
+slots were held by the coordinator's coordw53 runs and lane m8r4e's for most of the hour (chain a waited 20 minutes for its build).
+**Owed** (the wave's gate): on 68185444 itself g++ -Werror, cl /W4 /WX, run.sh plain and under the flag, subst.sh, the FULL
+self-compile and the censuses on both ABIs (its paths are B's under the switch, measured above, but its own build was queued at the
+hour); identical with the switch on at tms6747 -O1 and -O2 on x86_64-windows and tms6747, and on four targets at three levels
+under the flag and plain; names.sh and overload.sh;
+on A, subst.sh and run.sh plain (queued behind the census at the hour); then idsBefore's family. Re-measure: `boxkit/m8r1i-lgate.sh <a|b>` (with `m8r1i-one.sh`), `boxkit/m8r1i-wident.sh <arch> <level> <jobs> <p|f|e>`,
+`boxkit/m8r1i-winbuild.sh <r|b>`, `boxkit/m8r1i-wchain.sh`.
