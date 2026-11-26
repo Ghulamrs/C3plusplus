@@ -417,8 +417,15 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     }
     const bool id = idUnder(s, o, &name, &args);
     std::vector<TemplateArg> own = args;     // 3R-h: an id over the member template's own parameters is the replay's shallow one
-    if (id && pattern && maker == nullptr && templates_.count(name) != 0 && patternArgs(s, &own, pos) && p_.dependentArgs(own)) {
-        r.type = shallowId(templates_.at(name), specializationKey(name, own), own), r.at = nullptr;
+    if (id && pattern && maker == nullptr && templates_.count(name) != 0 && patternArgs(s, &own, pos)) {
+        const std::string key = specializationKey(name, own);     // one it leaves parameter-free made at first need, as the replay's read
+        const Type *real = p_.dependentArgs(own) ? shallowId(templates_.at(name), key, own) : p_.lookup_.findTypedef(key);
+        if (real == nullptr && patternMaker_ != nullptr) {
+            real = patternMaker_->makeId(name, own, patternMaker_->patternAt_, nullptr);
+            patternMaker_->classCensus_["made at first need: a member template's pattern"]++;
+        }
+        if (real != nullptr) r.type = real, r.at = nullptr;
+        else r.why = "a class template-id over the parameters the program has not made";
         return r;
     }
     if (!id || !argsUnder(s, o, name, &args, maker, pos)) {
@@ -5286,7 +5293,11 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
     for (const TemplateDecl *mt : read) {
         TemplateDecl mine;
         std::string shape;
+        Templates *const outer = patternMaker_;
+        const std::size_t outerAt = patternAt_;     // a class made below makes its own and gives these back
+        patternMaker_ = this, patternAt_ = mt->start;
         const char *const why = templateUnder(*mt, tag, s, params, binding, values, &mine, &shape);
+        patternMaker_ = outer, patternAt_ = outerAt;
         templatesCensus_[why == nullptr ? "declared from the read" : shape.empty() ? why : shape.c_str()]++;
         if (why == nullptr) memberTemplates_[tag + "::" + mine.name].push_back(mine), keys.insert(tag + "::" + mine.name);
         else at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));

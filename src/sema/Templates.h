@@ -283,6 +283,8 @@ public:
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos, bool pattern = false) const;     // the id step
     const Type *shallowId(const TemplateDecl &decl, const std::string &tag, const std::vector<TemplateArg> &args) const;     // a pattern's id
     bool patternArgs(const Substituted &s, std::vector<TemplateArg> *args, std::size_t pos) const;     // a member template's own, renumbered
+    Templates *patternMaker_ = nullptr;     // templatesFromRead's, while a pattern's parameter-free ids are made (at patternAt_)
+    std::size_t patternAt_ = 0;
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
                    std::size_t pos = static_cast<std::size_t>(-1)) const;
     const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
