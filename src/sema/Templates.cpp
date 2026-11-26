@@ -4404,7 +4404,6 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
         std::size_t name = 0;
         const std::size_t at = staticAt(start, m.name, &cx, &name);
         if (at == 0) return "replayed: a static data member its class's braces do not declare by name";
-        if (cx) return "replayed: a constexpr static data member";
         const Type *t = substituted(s, m.type), *e = t;
         if (p_.dependentType(t)) return "replayed: a static data member of a type the binding does not carry";
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
@@ -4501,7 +4500,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         bool cx = false;
         std::size_t name = 0;
         p_.at_ = staticAt(start, m.name, &cx, &name);
-        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substituted(s, m.type), name), m.access, m.isVolatile, m.isThreadLocal, false);
+        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substituted(s, m.type), name), m.access, m.isVolatile, m.isThreadLocal, cx);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
