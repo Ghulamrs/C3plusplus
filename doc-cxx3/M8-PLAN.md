@@ -6505,11 +6505,12 @@ member door less those made, member template, SFINAE trial, constexpr-ahead, ali
 | | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
 | --- | --- | --- | --- | --- |
 | before, fa983239 | 6,570 | 6,570 | 87,834 | 87,906 |
-| after, e90358a0 | 6,570 | (owed: the run was cut at the hour if absent from the handover) | 87,982 | (owed) |
+| after, e90358a0 | 6,570 | 6,570 | 87,982 | 88,054 |
+| after, `falling back=` summed (defaults in) | 6,768 (1,026 units) | 6,768 (1,007 units) | 88,931 | 89,004 |
 
 The suite is the like-for-like count and is unchanged, part by part: classes 23, functions 594 (536 made of 1,130), members
-3,819 (806 of 4,625), member templates 202, SFINAE trials 1,875, constexpr-ahead 36, aliases 21. The self-host grows 148
-because its input does: it compiles 4a's own new lines in Templates.cpp (members 59,576 -> 59,720 bodies, SFINAE 33,863 ->
+3,819 (806 of 4,625), member templates 202, SFINAE trials 1,875, constexpr-ahead 36, aliases 21, on both targets. The self-host grows 148 (x86_64-windows
+148, 87,906 -> 88,054) because its input does: it compiles 4a's own new lines in Templates.cpp (members 59,576 -> 59,720 bodies, SFINAE 33,863 ->
 33,892), not because a door counts differently. 9c110cb7's 6,562/87,779 -> fa983239's 6,570/87,834 is wave w49's sources
 and cases, not this slice.
 
