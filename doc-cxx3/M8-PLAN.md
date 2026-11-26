@@ -7958,3 +7958,65 @@ on arm64-darwin and x86_64-windows; on 23e0e204 run.sh plain, static, identical 
 re-entries. No changed emitted output in what ran (every identical 0 differ). No accepted lines, no wave-expected rows.
 Re-measure: `boxkit/m8r1m-lbuild.sh <x>`, `m8r1m-q.sh <x> <job>...` (runf runp subst static self, cen:<s|h>:<c|n>:<l|w>,
 id:<arch>:<level>:<p|f>), `m8r1m-cmp.sh`.
+
+## R1, fourteenth lane: earlyArgs and carriedId (lane m8r1n, 2026-11-27)
+
+Base eb772f58 (m8-r1m: f781321d, argsWanted retired). REF built from 24d17607 on Linux. **Linux only** (the user: the Windows box
+unreachable): every Windows check is owed. Commit **7c8421d9** - earlyArgs' token scan retired, replay-residue's baseline lowered
+in it; this entry. carriedId's early branch tried (candidate b) and **not shipped**: the census rose. src/ 99,094 -> 99,084 lines
+(Templates.cpp -10).
+
+**THE MEASURE: substitution helpers left with callers 4 -> 4** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not
+counted): carriedId 7, idUnder 3, earlyArgs 10, typedefCarried 2 - call sites 22 -> 22. **replay-residue tokens 150 -> 147 (-3,
+the scan's lines; baseline lowered in 7c8421d9)**, at-jumps 19, binds 26, trials 6. **Re-entries at instantiation under the check,
+suite x86_64-linux: 27,076 -> 27,059 (-17)** - ids the scan held back are made ahead now instead of inside the replay's class.
+**Census body differ: suite x86_64-linux 22 -> 22, class differ 0** (the same reasons: return type 7, decltype return 5,
+exception specification 5, block table 2, shell 2, frame size 1). Slices 4m-4s untouched.
+
+**(0) m8r1m's owed, on f781321d**, against the REF: **identical under the flag: tms6747 -O1 / -O2, arm64-darwin -O0 / -O1 / -O2,
+x86_64-linux -O1 / -O2 1,027 / 0 each; x86_64-windows -O0 / -O1 / -O2 2,054 / 0 each** (on Linux); **run.sh -templates=subst
+1,374 / 0**; **subst.sh rc 0** (run -O0 / -O2 1,374 / 0, typed 1,021 / 0 at both, 2 not for this host; 1,161 through the function
+door; bodies 1,018 of 1,018). The self-host censuses on both ABIs were m8r1m's on f781321d's src (class 0, body 11 / 11). No
+difference: nothing to fix.
+
+**earlyArgs' token scan, retired.** It refused to make ahead an id whose template's body (the primary's or a partial's) named the
+read's own template - m83p's rule for `__tree_iterator` inside `__tree_const_iterator`, made there by the replay inside the class
+it had begun. Since argsWanted's retirement (f781321d) and first need (the kernel's Made at the door) the rule decides nothing the
+suite shows: without it every identical that ran is 0 differ (the probe `template-subst-early` among them), the suite census is
+the same in its counts and reasons (per unit not compared), and 17 re-entries go. Its four `p_.tokens_[` reads were the only token reads earlyArgs made.
+**Gates on 7c8421d9's src** (Linux, against the REF): **g++ -Werror clean**; **identical under the flag: x86_64-linux -O0 / -O1 /
+-O2 1,027 / 0, tms6747 -O0 / -O2 1,027 / 0, arm64-darwin -O0 / -O2 1,027 / 0, x86_64-windows -O0 / -O2 2,054 / 0; plain
+x86_64-linux -O0 1,027 / 0** - no changed emitted output at -O0, -O1 or -O2 in any that ran (plain elsewhere by construction:
+earlyArgs is asked only under -templates=subst); **run.sh -templates=subst 1,374 / 0**; **subst.sh rc 0** (run -O0 / -O2 1,374 / 0,
+typed 1,021 / 0 at both, 2 not for this host; 1,161 through the function door; bodies 1,018 of 1,018); **the FULL self-compile 102
+of 102 (180 s)**; static:
+exclusions rc 0 (554 / 4, no citation moves: the three Templates.cpp citations sit above line 3,600), comments 0 over, memory gate
+lower, ast-residue not raised, **replay-residue --check rc 0 at the new baseline 147**, ide up to date; **census suite -check:
+x86_64-linux class differ 0, body 22; x86_64-windows class 0, body 21 (= f781321d's); re-entries under the check 27,059 / 26,915
+(-17 each)**; **census self-host -check: x86_64-linux 102 units, class 0, body 11; x86_64-windows class 0, body 11 (REF 11 both);
+re-entries under the check 466,196 (f781321d 466,205: -9) / 466,082**.
+
+**carriedId's early branch: candidate b, measured and not shipped** (boxkit/m8r1n-b.diff, Templates.cpp/.h +21 / -20). The
+post-make classShape passed the replay's mark (makeClass's `typedefsFrom`) for the `early` map; past the mark carriedId answered the
+map first, then Declared less any class the typedef table gained at or after the mark. Identical under the flag x86_64-linux -O0 /
+-O2 and tms6747 -O0 1,027 / 0 and run.sh -templates=subst 1,374 / 0, **but the suite census under -check x86_64-linux: class differ
+in 56 units, body differ 78 (base 0 / 22)** - 52 of them "the class skip before the replay and after it": the typedef table's
+order is not the replay's mark - the likely root (not traced): classes the replay completes or reaches were declared before
+`typedefsFrom` (a shallow, a class named ahead), so they answer as carried after it and the post-make shape covers classes the early
+map never held. **What it needs**:
+the mark on the made class itself (made by this class's replay, or by its door before it), as m8r1m said - a field the kernel's
+Keyed can ask, not a table position.
+
+**What the rest need.** **earlyArgs** (10 sites) stays as classShape's filter on whether an id may be made ahead - its remaining
+rules are the kernel's own questions (idUnder, the template found, each argument carried or itself an id made first at Made), so
+it retires when classShape asks Made itself at the point it pushes onto `wanted`, which needs the refusals after that point (a
+signature's, a data member's) to be asked before any id is made - otherwise a class refused later has made ids ahead of the replay.
+**idUnder** (3: specializationIn, earlyArgs, valueTrial's R2 path) folds into specializationIn once earlyArgs goes; valueTrial's
+call is R2's. **typedefCarried** (2) waits for R3's complete records (m8r1c's reason, unchanged). R1 does not close this lane: the
+four remain, named.
+
+**Owed** (the wave's gate): **Windows: cl /W4 /WX, names.sh, overload.sh** on 7c8421d9; on 7c8421d9 run.sh plain, identical under
+the flag at -O1 on tms6747, arm64-darwin and x86_64-windows, plain at -O1 / -O2 and on the three other targets at -O0. No accepted
+lines, no wave-expected rows. Re-measure: `boxkit/m8r1n-lbuild.sh <x>` (`m8r1n-lbuild2.sh <x>`: the files of `~/m8r1n-ov-<x>`
+laid over), `m8r1n-q.sh <x> <job>...` (runf runp subst static self, cen:<s|h>:<c|n>:<l|w>, id:<arch>:<level>:<p|f>; no timeout
+round a chain - each job its own `~/slot timeout 1500`).
