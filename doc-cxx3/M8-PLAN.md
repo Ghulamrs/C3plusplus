@@ -8392,3 +8392,63 @@ suite censuses with and without the check, both ABIs; the self-host census on x8
 overload.sh**. No probe (Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
 `boxkit/m8r3rh-ship.sh <x> <commit|tree>` (m8r3ra's scripts renamed on Linux), `m8r3rh-q.sh <x> <job>...`, `m8r3rh-mt.sh <census
 dir>` (made-class parts and the member template census).
+
+## R3, slice 3R-h, second lane: one template at a time (lane m8r3rh2, 2026-11-27)
+
+Base af7afdab (m8-3rh). REF built from 7b60b484 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **afefd2a5** (boxkit/m8r3rh-c.diff as written: a template at a time, the census line printed without the check),
+**1159d5ef** (an own value parameter of a plain type and an own default the class read left unread, from the read), **636bc2b3**
+(the census names the substitution's own reason), this entry. src/ +31 / -17 over af7afdab (Templates.cpp +30 / -16, Templates.h
++1 / -1).
+
+**THE MEASURE (census without the check, x86_64-linux; R0's counter, the `made class: templatesFromRead` parts).** Self-host
+(102 units, rc 0): **jump 44,370 -> 27,480, bind 27,884 -> 27,480, bind in the read 44,370 -> 27,434** (af7afdab's; REF
+7b60b484 44,392 / 27,906 / 44,392), made-class re-entries 191,117 (REF) -> 156,676. afefd2a5 alone: jump 44,370, bind 28,025
+(a template at a time declares no more than all-or-nothing on the self-host: every template held one of the two reasons below).
+Suite (1,383 units, 354 nonzero as the REF's): **jump 782 -> 379 (370 + 9 in lines two units wrote together), bind 582 -> 394,
+bind in the read 778 -> 388**, made-class 5,264 -> 4,307 (afefd2a5: 757 / 539 / 766). REF on x86_64-windows: self-host 44,378 /
+27,898 / 44,378 (made-class 190,918), suite 782 / 582 / 778. **Reasons counted** (`-check=templates member template (n):`):
+self-host at afefd2a5 "a pattern the class layer does not carry" 27,473, "a non-type, template or defaulted parameter of its
+own" 16,897, declared 22; at 636bc2b3 **declared from the read 16,912, "a type over the parameters the binding does not carry"
+27,480 - the only reason left**; suite 410 declared, 388 the same reason. `p_.at_ =` in Templates.cpp 19 and
+`bindTemplateParameters(` 22, unchanged: the re-read stays for those 27,480, so replay-residue's baseline is not lowered (tokens
+136, at-jumps 19, binds 26, trials 6).
+
+**The reason left, for the next lane (read from the code, not measured by template).** The pattern of such a template likely names a class template-id over its own parameters
+(`pair<_U1, _U2>`, `allocator<_Up>`, an `enable_if` over `_Up`): the read made it as a read id (`readIds_`) over the class's
+stand-ins and its own at `classParams.size() + i`, and substitute's Declared step finds no program class for it -
+substituteIn's last branch, "a type over the parameters the binding does not carry". The replay's read makes its own shallow id
+over `templateParam(i)`; the made class's pattern wants that one. The step is to map a read id whose arguments are only own
+parameters (after the class layer is substituted) to the shallow id the replay's read would make, never a copy of the replay.
+
+**What the steps are.** afefd2a5: templatesFromRead declares each complete template from its record and re-reads only the
+others, each name's overloads sorted back to the body's order (an `InOrder` guard). 1159d5ef: inside a class both the read and the
+replay leave an own default unread (typeDefaultRead / otherDefaultRead: "read inside a class or a pattern, its parameters numbered
+apart"), so it is the same token range in both and is copied; an own value parameter whose type names no parameter is the same
+type in both. Still refused by name: a template template parameter of its own; a value parameter whose type names a parameter
+(the class's stand-ins and its own share indices in the read: `typeOf` cannot say which); a default the class read did read.
+templateSame now holds each parameter's type, `typeOf`, kind and default (`defBegin`/`defEnd`, `defPattern`, `defExpr`,
+`defValued`/`defValue`) against the replay's under the check. 636bc2b3: where the class layer does not carry the pattern, the
+census line is the substitution's own `why`. The `under the check:` lines print without the check too: templatesHeld runs at
+every class door (classMembers' last step), its counts the door's.
+
+**Gates on 636bc2b3** (Linux, one NEW exe built incrementally from afefd2a5's tree, against the REF): **g++ -Werror clean; the
+FULL self-compile 102 of 102 (stage 0 171 s); identical under the flag x86_64-linux -O0 / -O2 1,031 / 0, x86_64-windows -O0 /
+-O2 2,062 / 0, tms6747 -O0 1,031 / 0, arm64-darwin -O0 1,031 / 0, plain x86_64-linux -O0 1,031 / 0; run.sh 1,375 passed 0
+failed under the flag and plain; census `-check=templates` x86_64-linux self-host 102 rc 0, class differ 0, body differ 11 (the
+REF line's 11), no `a member template from the read` differ; suite 1,383 units, 355 nonzero, class differ 0, body differ lines
+23 (the one unit nonzero only under the check, specialization-in-pattern-parameter, "struct Mx<3,3> is defined twice", the REF
+gives the same error); the static gates: exclusions 0 / 0 (554 and 4 at their baselines; no Templates.cpp citation lies between the moved lines),
+comments 0 over the cap, memory gate lower, ast-residue not raised, replay-residue unchanged (not lowered), ide/generate up to
+date.** No changed emitted output in what ran. **The other ABI, census without the check x86_64-windows at 636bc2b3: self-host 102 rc
+0, made-class 156,676, jump 27,472, bind 27,472, bind in the read 27,472 (REF 44,378 / 27,898 / 44,378), declared 16,906, the
+same one reason 27,472; suite 1,383 units, 378 nonzero (the REF's 378), jump 379, bind 394, bind in the read 388 (REF 782 / 582 /
+778), declared 410, the reason 388.**
+**Owed:** identical at -O1 on all four targets, tms6747 and arm64-darwin -O2, and plain on x86_64-windows, tms6747 and
+arm64-darwin at all three levels and x86_64-linux -O1 / -O2 (stopped unstarted so the measure's census got a slot); the suite
+census under the check at the REF (its 355 nonzero and 23 body lines have no REF line beside them); the x86_64-windows censuses
+under the check; tests/subst.sh (started last, its result not in by the hour: boxkit/m8r3rh2-handover.md has it if it lands);
+**Windows: cl /W4 /WX, names.sh, overload.sh**. No probe (Linux has no clang for a .expected).
+No accepted lines, no wave-expected rows. Re-measure: `boxkit/m8r3rh2-ship.sh <x> <tree-ish>` (m8r3ra's scripts renamed on
+Linux), `boxkit/m8r3rh2-inc.sh <from> <x>` (a built tree copied, the changed files over it, an incremental make),
+`m8r3rh2-q.sh <x> <job>...`, `m8r3rh2-mt.sh <census dir>`.
