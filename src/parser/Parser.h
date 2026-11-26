@@ -279,7 +279,8 @@ private:
                                  const std::vector<TemplateArg> &args,
                                  std::size_t pos,
                                  const Packs &packs =
-                                     Packs());
+                                     Packs(),
+                                 const Type *formed = nullptr);     // 4e: the signature substituted, not read again
     // The template's declaration re-read with `binding` in force. Answers its
     // function type and, through `name`, the name it declares.
     const Type *readTemplateDeclaration(const TemplateDecl &decl,

@@ -585,8 +585,11 @@ bool Parser::templateDeclaration() {
     decl.classKey = peek().is("class");
     bool constructs = false;
     const Type *fnPattern = nullptr;
+    const std::vector<std::size_t> defaultsWere = pendingDefaults_;     // a list with no default leaves it as it was
+    pendingDefaults_.clear();
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
-    if (!decl.isClass) { decl.signature = patternSignature_; decl.pattern = fnPattern; }
+    if (!decl.isClass) { decl.signature = patternSignature_; decl.pattern = fnPattern; decl.patternDefaults = pendingDefaults_; decl.patternNoexcept = patternNoexcept_; }
+    if (pendingDefaults_.empty()) pendingDefaults_ = defaultsWere;
     if (decl.isClass) refuseAfterPack(decl.params);
     else              tmpl_.requireDeducibleAfterPack(decl, fnPattern);
     if (!decl.isClass && !literalSuffix(decl.name).empty())
@@ -1247,7 +1250,7 @@ Parser::instantiate(const TemplateDecl &decl,
                     const std::vector<const Type *> &binding,
                     const std::vector<long long> &values,
                     const std::vector<TemplateArg> &args, std::size_t pos,
-                    const Packs &packs) {
+                    const Packs &packs, const Type *formed) {
     if (!decl.defined)
         src_.fail(pos, "'" + decl.name + "' is declared but never defined, so "
                        "there is nothing to instantiate");
@@ -1256,9 +1259,9 @@ Parser::instantiate(const TemplateDecl &decl,
         if (binding[i] != nullptr && dependentType(binding[i]))
             throw SubstitutionFailure("a call with a dependent argument, which would instantiate its callee");
 
-    std::string name;
-    const Type *fn = readTemplateDeclaration(decl, binding, values, &name,
-                                             nullptr, &packs);
+    std::string name;     // 4e: `formed` stands for the read, with what it leaves - the pattern's defaults (if any) and bare `noexcept`
+    const Type *fn = formed != nullptr ? formed : readTemplateDeclaration(decl, binding, values, &name, nullptr, &packs);
+    if (formed != nullptr) { if (!decl.patternDefaults.empty()) pendingDefaults_ = decl.patternDefaults; patternNoexcept_ = decl.patternNoexcept; }
 
     // **Two function-template overloads can share a name and arguments and differ only in
     // signature** - operator*(V<N>, double) and operator*(double, V<N>) both key operator*<3>

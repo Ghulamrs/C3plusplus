@@ -1527,16 +1527,35 @@ const char *Templates::trialSubstituted(const TemplateDecl &decl, const std::vec
     return why;
 }
 
+const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
+    if (fn == nullptr || fn->kind() != Kind::Function) return "formed: no function type";
+    if (!decl.defined) return "formed: a template declared and never defined";
+    if (p_.dependentType(fn)) return "formed: a signature still over the parameters";
+    return mentionsDeduced(fn->returns()) ? "formed: a deduced return type" : nullptr;
+}
+
+// The replay's declaration beside the substituted one: its signature, the defaults its list wrote and its bare `noexcept`.
+std::string Templates::formedHeld(const TemplateDecl &decl, const Type *formed, const Signature &read) const {
+    const Type *const replayed = p_.types_.functionType(read.returns, read.params, read.variadic);
+    if (replayed->describe() != formed->describe())
+        return "held: differ: formed '" + formed->describe() + "', the replay read '" + replayed->describe() + "'";
+    if (!decl.patternDefaults.empty() && p_.pendingDefaults_ != decl.patternDefaults) return "held: differ: the defaults the replay read";
+    return p_.patternNoexcept_ != decl.patternNoexcept ? "held: differ: the replay's noexcept" : "held: formed as the replay read it";
+}
+
 std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
-                                         const std::vector<long long> &values, const Packs &packs, std::size_t pos) {
+                                         const std::vector<long long> &values, const Packs &packs, std::size_t pos,
+                                         const Type **formed) {
     Substituted s;
     const char *why = trialSubstituted(decl, binding, values, packs, &s);
     std::string failed;
+    *formed = nullptr;
     if (why == nullptr) {
         try {
             Substitution r = substitute(s, decl.pattern, Declared);     // a qualifier's class not yet made: made at the use, as the replay makes it
             if (!r.carried() && std::string(r.why) == "a member type whose class the binding does not carry") r = substitute(s, decl.pattern, At{ pos });
-            why = r.carried() ? "formed: the specialization still declared by the replay" : r.why;
+            why = r.carried() ? formedWhy(decl, r.type) : r.why;
+            if (why == nullptr) *formed = r.type;
             const Type *cls = nullptr;
             if (!r.carried() && r.at != nullptr && r.at->kind() == Kind::DependentMember) {
                 const Substitution q = substitute(s, r.at->pointee(), Declared);
@@ -1553,7 +1572,8 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
             why = "a class the kernel made failed to substitute";      // the replay meets it again, and re-raises a refusal
         }
     }
-    sfinaeReport_[!failed.empty() ? std::string("substituted: a failed substitution") : std::string("re-read: ") + why]++;
+    sfinaeReport_[!failed.empty() ? std::string("substituted: a failed substitution") : *formed != nullptr ?
+                  std::string("substituted: formed, declared from the substituted signature") : std::string("re-read: ") + why]++;
     return failed;
 }
 
@@ -5816,6 +5836,15 @@ bool Templates::functionHidesTemplates(const std::string &name) const {
     return false;
 }
 
+namespace {
+// A failure inside it is an answer and prints nothing (Source's trial alone: no token is read again, so nothing to put back).
+struct Diagnosed {
+    explicit Diagnosed(const Source *s) : s_(s) { s_->beginTrial(); }
+    ~Diagnosed() { s_->endTrial(); }
+    const Source *s_;
+};
+}
+
 void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
                                         const std::vector<const Type *> &argTypes, std::size_t pos) {
     for (std::size_t k = 0; k < overloads.size(); k++) {
@@ -5835,16 +5864,24 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         std::vector<std::string> folded;     // 4d: the trial still decides
         if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
         // 4e: a signature of types the kernel shows cannot be formed drops the candidate with no re-read; the check replays it beside.
-        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs, pos) : std::string();
+        const Type *formed = nullptr;     // and one that forms is declared from its substituted signature, with no re-read
+        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs, pos, &formed) : std::string();
         if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
         try {
+            if (formed != nullptr && !checkBodies_) {
+                const Diagnosed quiet(&p_.src_);     // [temp.deduct]/8 still: a name the linker cannot hold drops the candidate
+                p_.instantiate(decl, binding, values, args, pos, packs, formed);
+                continue;
+            }
             Parser::Trial trial(&p_);
-            p_.instantiate(decl, binding, values, args, pos, packs);
+            const Parser::Signature &read = p_.instantiate(decl, binding, values, args, pos, packs);
             if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
             if (!failed.empty()) sfinaeReport_["held: differ: substituted a failure, the replay formed it"]++;
+            if (formed != nullptr) sfinaeReport_[formedHeld(decl, formed, read)]++;
         } catch (const SubstitutionFailure &f) {
             if (checkBodies_ && !folded.empty()) valueHeld(folded, false);
             if (!failed.empty()) sfinaeReport_[f.why == failed ? "held: the replay's failure" : "held: both failed, in other words: " + f.why]++;
+            if (formed != nullptr) sfinaeReport_["held: differ: substituted a formed signature, the replay failed: " + f.why]++;
             count(SfinaeFailed);
             // This template does not apply; the others still might - unless
             // what stopped it was a feature this compiler has not built, which
