@@ -325,6 +325,14 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
     return substituteIn(s, t, Made, this, at.pos);
 }
 
+// A door's type under `s`, an id over the parameters made at first need where the read stands (R1, lane m8r1f).
+Templates::Substitution Templates::need(const Substituted &s, const Type *t) {
+    return substitute(s, t, At{p_.at_});
+}
+Templates::Substitutions Templates::need(const Substituted &s, const std::vector<const Type *> &params) {
+    return substitute(s, params, At{p_.at_});
+}
+
 // The kernel's one recursion: each of `from` is `to` under any declarator, a member type through its class, a function's
 // parameters through the list form (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
 // Made is carried under every declarator and asks the map first, as Mapped does; the cv is stripped before either.
@@ -405,7 +413,10 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         return r;
     }
     const Type *real = p_.lookup_.findTypedef(specializationKey(name, args));
-    if (real == nullptr && maker != nullptr && templates_.count(name) != 0) real = maker->makeId(name, args, pos, nullptr);
+    if (real == nullptr && maker != nullptr && templates_.count(name) != 0) {
+        real = maker->makeId(name, args, pos, nullptr);
+        maker->classCensus_["made at first need: a class template-id at a door"]++;
+    }
     if (real == nullptr) r.why = "a class template-id over the parameters the program has not made";
     else { r.type = real; r.at = nullptr; }
     return r;
@@ -846,7 +857,7 @@ std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, 
         if (st.node(st.child(call, c)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Local ||
             r->second.type == nullptr)
             return "a dependent-name call over an argument other than a local, which the instantiation does not type here";
-        const Type *t = substitute(s, r->second.type).type;
+        const Type *t = need(s, r->second.type).type;
         t = (t->isReference() ? t->referent() : t)->unqualified();
         if (!t->isArithmetic() || t->isEnumeration()) return "a dependent-name call over an argument whose type ADL would search";
         given.push_back(t);
@@ -897,7 +908,7 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, c
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(a.v);
         const Type *t = nullptr;
         if (st.node(a).kind == syntax::Kind::Name && r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Local && r->second.type != nullptr) {
-            t = substitute(s, r->second.type).type;
+            t = need(s, r->second.type).type;
             t = t->isReference() ? t : p_.types_.referenceTo(t);
         } else if (st.node(a).kind == syntax::Kind::Call) {
             // A call passed is a prvalue of what its record returns: the body's (asked first, its node the lower) or the read's.
@@ -1109,7 +1120,7 @@ bool Templates::boundObject(syntax::NodeId id, const Substituted &s, bool classB
 std::string Templates::valueCast(syntax::NodeId id, const Substituted &s) {
     const syntax::Tree &st = p_.syntaxTree_;
     const std::string &t = st.text(id);
-    const Type *read = p_.castTypes_.at(id.v), *to = substitute(s, read).type;
+    const Type *read = p_.castTypes_.at(id.v), *to = need(s, read).type;
     const bool named = t.compare(0, 12, "static_cast<") == 0 && t.find('&') == std::string::npos;
     if (st.node(id).count != 1 || !(named || t == read->describe()))
         return "a cast other than a static_cast to a reference, which the read records no type for";
@@ -1237,7 +1248,7 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 if (boundObject(p_.syntaxTree_.child(id, c), s, classBound)) return "an operator, an assignment or a return over a class's object";
             const std::unordered_map<std::uint32_t, const Type *>::const_iterator v =
                 n.kind == Kind::Var ? p_.declaredTypes_.find(id.v) : p_.declaredTypes_.end();
-            const Type *by = v != p_.declaredTypes_.end() ? substitute(s, v->second).type : nullptr;
+            const Type *by = v != p_.declaredTypes_.end() ? need(s, v->second).type : nullptr;
             // `const B &r = t`, B a base of the bound class at a nonzero offset: the replay's conversion lays a `.bp` slot the read does not.
             const Type *at = by != nullptr && (by->isReference() || by->isPointer()) ? (by->isReference() ? by->referent() : by->pointee())->unqualified() : nullptr;
             for (std::size_t q = 0; at != nullptr && at->isStructOrUnion() && q < s.to.size(); q++)
@@ -1340,13 +1351,13 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
         for (std::size_t q = 0; q < requests->size(); q++) asked = asked || (*requests)[q].v == id.v;
         if (calls->count(id.v) != 0 || asked) continue;       // the read's record of a dependent-name call is no record: dependentCall's or requestCall's is
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-        if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(substitute(s, r->second.type).type))
+        if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(need(s, r->second.type).type))
             return std::string("a '") + syntax::kindName(n.kind) + "' the read resolved to a type the binding does not carry";
         if (n.kind == Kind::Unary && p_.syntaxTree_.text(id) == "+" && n.count == 1 &&
             (p_.syntaxTree_.node(p_.syntaxTree_.child(id, 0)).marks & syntax::TypeDependent) != 0)
             return "a unary '+' over a dependent name, which the replay records as its operand";     // unaryNode hands `v` on
         const std::unordered_map<std::uint32_t, const Type *>::const_iterator v = p_.declaredTypes_.find(id.v);
-        const Type *declared = v != p_.declaredTypes_.end() ? substitute(s, v->second).type : nullptr;
+        const Type *declared = v != p_.declaredTypes_.end() ? need(s, v->second).type : nullptr;
         if (n.kind == Kind::Var && declared != nullptr && (p_.dependentType(declared) ||     // a member pointer `substituted` keeps as written
             (declared->unqualified()->isMemberPointer() && p_.dependentType(declared->unqualified()->pointee()))))
             return "a 'var' declared with a type the binding does not carry";
@@ -4552,7 +4563,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
-        if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, substitute(own, td.second).type);
+        if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, need(own, td.second).type);
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values, bodies);
@@ -4783,7 +4794,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         std::size_t name = 0;
         p_.at_ = staticAt(start, m.name, &cx, &name);
         reentered("jump: a static data member");
-        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substitute(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
+        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, need(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
@@ -4856,7 +4867,7 @@ void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos
     std::vector<const Type *> types(1, a.returns);
     types.insert(types.end(), a.params.begin(), a.params.end());
     for (const Type *t : types) {
-        const Type *e = substitute(*ids, t).type;
+        const Type *e = need(*ids, t).type;
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
         e = e->unqualified();
         std::string name;
@@ -4886,9 +4897,9 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         Signature f = a;
         f.name = memberName(a, r.first, tag, s);
         f.owner = tag;
-        f.returns = substitute(s, a.returns).type;
-        f.params = substitute(s, a.params).types;
-        f.written = substitute(s, a.written).types;
+        f.returns = need(s, a.returns).type;
+        f.params = need(s, a.params).types;
+        f.written = need(s, a.written).types;
         f.symbol = memberSymbol(a, f.name, f, tag);
         if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
             p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
@@ -4905,8 +4916,8 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
             if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
     }
     for (VSlot &v : own ? p_.classes_.vtables_[tag] : none) {     // each slot's signature under `s`, a deleting destructor this tag's
-        v.params = substitute(s, v.params).types;
-        if (v.returns != nullptr) v.returns = substitute(s, v.returns).type;
+        v.params = need(s, v.params).types;
+        if (v.returns != nullptr) v.returns = need(s, v.returns).type;
         if (v.name == "~$deleting" || (v.name == "~" && p_.target_.microsoftNames())) v.symbol = p_.linkage_.deletingDestructorSymbol(tag);
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {

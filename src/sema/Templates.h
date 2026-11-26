@@ -253,6 +253,7 @@ public:
     Substitution substitute(const Substituted &s, const Type *t, Ids ids = Mapped) const;
     struct At { std::size_t pos; };
     Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
+    Substitution need(const Substituted &s, const Type *t);     // a door's: Made at first need, at `p_.at_`
     Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const;     // the id step
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
@@ -263,6 +264,7 @@ public:
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params, At at);     // Made, at `at.pos`
     Substitutions substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker, std::size_t pos) const;
+    Substitutions need(const Substituted &s, const std::vector<const Type *> &params);     // the list form's, the same
     bool argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker = nullptr,     // one of argsUnder's: a pack
                   std::size_t pos = static_cast<std::size_t>(-1)) const;                             // (`X<Ts...>`) expanded
     bool argTypeUnder(const Substituted &s, const Type **t, Templates *maker, std::size_t pos) const;     // Made: false if not carried
