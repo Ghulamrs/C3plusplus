@@ -7147,22 +7147,24 @@ plain 1,370 passed 0 failed**; **-check=templates self-host censuses: no class d
 76,412, x86_64-windows 76,397 of 76,397, body differ lines 11 each - R0's covered-and-replayed reasons - no default differ),
 and **the suite's on x86_64-windows** (no class differ, 19 body lines, no default differ); **identical x86_64-windows -O0 both
 spellings, under the flag 2,052/0 and plain 2,052/0** (cxx3-msvc, JOBS=4, two at once - 25 minutes a level beside each
-other). No difference, so nothing to fix. **Still owed** of m8r4c's list: identical x86_64-windows -O1/-O2 (running at the
-hour), arm64-darwin and tms6747 both ways at -O0/-O1/-O2, names.sh plain and under the flag on 6903a031.
+other). No difference, so nothing to fix. **Still owed** of m8r4c's list: identical x86_64-windows -O1/-O2 (-O1 stopped
+unfinished at the hour), arm64-darwin and tms6747 both ways at -O0/-O1/-O2 against 321d1ba2, names.sh plain and under the
+flag on 6903a031.
 
 **Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4dn`, 9d5f2003's src, g++): **g++ -Werror clean**;
 **static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0), comments 0 over the cap, memory-gate lower, ast-residue not
 raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **the FULL stage-0 self-compile 102 of 102** (165 s);
 **run.sh -templates=subst 1,371 passed 0 failed, plain 1,371/0**; **subst.sh 0 failed** (run 1,371/0 at -O0 and -O2, typed
 1,018/0 x2, census 0 by substitution, bodies 1,015 of 1,015); **identical x86_64-linux -O0/-O1/-O2 against 6903a031 under the
-flag 3,081 compared 0 differ, plain 3,081/0** (the probe is the three new files); **the probe** right on Linux plain and under the flag and
+flag 3,081 compared 0 differ, plain 3,081/0** (the probe is the three new files); **arm64-darwin and tms6747 the same, under the
+flag 3,081/0 and plain 3,081/0 each**; **the probe** right on Linux plain and under the flag and
 under the check on Windows (12 folded, 12 held). Windows (`work\m8r4dx`, the same src): **cl /W4 /WX clean** (16:11:43-16:20:14,
 8 min 31 s - beside two identicals, not alone); **-check=templates suite censuses, both ABIs: no class differ, no default differ,
 no value differ** (65 folded and 65 held: 55 by the replay's constant, 10 by its failure; body lines 21 / 20, the base's 20 / 19
 and the probe's one covered-and-replayed line); **overload.sh 46 agreed 0 differed under the flag**. No changed emitted output
-at -O0, -O1 or -O2 on x86_64-linux, either way. Slices 4m-4s untouched; no new src/sema function indexes `p_.tokens_` or
-moves `p_.at_`, and none opens a `Parser::Trial`. **Owed** (to the wave gate): identical against 6903a031 on x86_64-windows,
-arm64-darwin and tms6747 both ways (arm64-darwin and tms6747 under the flag running at the hour); names.sh plain and under the flag (under the
-flag running at the hour); cl /W4 /WX alone; the self-host censuses on the lane (0 value trials by 4a's split).
+at -O0, -O1 or -O2 on x86_64-linux, arm64-darwin or tms6747, either way. Slices 4m-4s untouched; no new src/sema function indexes `p_.tokens_` or
+moves `p_.at_`, and none opens a `Parser::Trial`. **Owed** (to the wave gate): identical against 6903a031 on x86_64-windows both
+ways (the box carried m8r4c's owed x86_64-windows levels this hour); names.sh plain and under the flag (under the flag stopped
+unfinished at the hour); overload.sh plain; cl /W4 /WX alone; the self-host censuses on the lane (0 value trials by 4a's split).
 Re-measure: `boxkit/m8r4d-cen.sh <r|b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4d-wcen.sh <b|x> <arch> <m|c> s`
 (Windows), `boxkit/m8r4d-owed.sh`, `boxkit/m8r4d-gate.sh`, `boxkit/m8r4d-wident.sh`.
