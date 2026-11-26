@@ -7348,7 +7348,11 @@ order, by `substitute(s, e, At{pos})` (specializationIn, makeId) instead of earl
 and self-host class 0 body 11 (= REF), re-entries 21,553 (unchanged), and every unit's class census the same but for the key
 ("made before the class" 859 -> "made at first need" 859). **But tests/subst.sh's typed step failed 5 at -O0 and -O2**
 (include-string, map-set-comparator, map-set-node-stability, ssa-conversion-string-local, wstring: `-check=typed` copies records,
-copy != 0) - so reverted. Whether 68185444's own tree fails these five too was being measured at the hour (`boxkit/m8r1j-typed1.sh`).
+copy != 0) - so reverted. **68185444's own tree fails the same five with the same copies** (2 / 2 / 4 / 1 / 2, `boxkit/m8r1j-typed1.sh`;
+its subst.sh: run -O0 / -O2 1,369 / 0, typed 1,011 passed 5 failed at both levels, self 102 of 102), where 7cac2415 (m8r1i's A, the
+switch off) passed: the copies are first need's, not 5b12ee6b's. **So e560d8e7 reverts 68185444** (the brief's rule: first need
+ships only if its owed hold), EXCLUSIONS' three Templates.cpp citations back to 3289 / 2590 / 2538. 5b12ee6b's src may come back
+over first need once the five typed copies are traced: on its own it moved none of them.
 
 **(0) m8r1i's owed, on 68185444's tree** (39a28fda; `boxkit/m8r1j-lgate.sh a 1|2`, `boxkit/m8r1j-wchain.sh a`): **g++ -Werror
 clean; cl /W4 /WX clean** (work\m8r1jr and work\m8r1ja, two at once, 18:48:41-18:52:41, 4 min); x86_64-windows census suite 1,377
@@ -7360,7 +7364,8 @@ under the flag, the shipped form's gaps: tms6747 -O1 1,025 / 0, tms6747 -O2 1,02
 timeout part-way, 0 DIFFERS in what ran; plain, tms6747 -O0 1,025 / 0. **names.sh plain 1,025 passed, 0 failed** (20 .nonames rows
 open, the register's). **run.sh -templates=subst 1,369 / 0; static clean** (exclusions 0 / 0, comments 0 over, memory gate lower,
 ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide up to date); **FULL self-compile 102 of 102 (174 s)**. subst.sh and
-run.sh plain on this tree were running at the hour. No difference found to fix in what finished: first need stays shipped.
+**run.sh plain 1,369 / 0**; **subst.sh: typed 5 failed at -O0 and -O2** (above) - the one difference, not fixed in the hour, so first
+need is reverted (e560d8e7).
 
 **Re-entries** (suite x86_64-linux, census without the check): **21,553** at instantiation on 68185444 - R0 21,549, m8r1i's A
 (the switch off) 21,550: the +3 is first need's own (the same suite, the same tree but for the switch), a cause and not a probe;
@@ -7383,7 +7388,8 @@ Slices 4m-4s untouched.
 **Gates**: src/ 98,661 -> 98,661 lines (cdf13d12 +8 / -8). g++ -Werror clean on cdf13d12; its cl /W4 /WX build at /MP1 beside
 nine of this lane's processes linked after 15 minutes (18:53:37-19:08), past the 9-minute cap - a defect recorded, not retried; no
 warning (the exe links only under /WX clean). The Linux slots were held by gate m6dw53g and lane m8r4e3 most of the hour (a's
-run.sh waited 23 minutes). **Owed** (the wave's gate): subst.sh and run.sh plain on 68185444 and cdf13d12; identical x86_64-windows
+run.sh waited 23 minutes). src/ at e560d8e7 is 7cac2415's with cdf13d12's eight lines. **Owed** (the wave's gate): first need's five typed copies traced
+(include-string first), then 68185444 and 5b12ee6b again; e560d8e7's own build, run.sh, subst.sh and censuses; identical x86_64-windows
 -O2 under the flag and plain on four targets at three levels (tms6747 -O0 done); names.sh under the flag, overload.sh; the five
 typed cases on 68185444; then idsBefore's retirement with the typed step's copies traced. Re-measure: `boxkit/m8r1j-lgate.sh <a|b|c>
 <1|2>`, `boxkit/m8r1j-wchain.sh`, `m8r1j-wident.sh`, `m8r1j-wcen.sh`, `m8r1j-wnames.sh`, `m8r1j-winbuild.sh`, `m8r1j-typed1.sh`.
