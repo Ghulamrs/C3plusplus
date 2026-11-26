@@ -7003,11 +7003,20 @@ the SSA lowering: a local of a constructed class built by no constructor" (an RA
 clean**; **static** (f5ac0153's EXCLUSIONS): exclusions 0 uncited 0 stale (lowering 554/95 0/0), comments 0 over the cap,
 memory-gate lower, ast-residue not raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **identical.sh
 x86_64-linux -O0/-O1/-O2, c1 against the REF: under -templates=subst 3,075 compared 0 differ, plain 3,075/0** (the probe is
-the three new files); **run.sh -templates=subst 1,369 passed 0 failed, plain 1,369/0**; **subst.sh 0 failed** (run 1,369/0 at
+the three new files); **identical x86_64-windows, both spellings, -O0/-O1/-O2: under the flag 6,150/0, plain 6,150/0**; arm64-darwin under the flag
+3,075/0 and plain 3,075/0; tms6747 under the flag 3,075/0 and plain 3,075/0 - **0 differ on four targets at three levels, both
+ways**;
+**run.sh -templates=subst 1,369 passed 0 failed, plain 1,369/0**; **subst.sh 0 failed** (run 1,369/0 at
 -O0 and -O2, typed 1,016/0 x2, census 0 by substitution, bodies 1,013 of 1,013); **the FULL stage-0 self-compile 102 of 102**
 (177 s); **-check=templates census x86_64-linux** (c1): no class differ, suite 2,640 made of 2,663 and self-host 76,412 of
 76,412, their body `differ` lines 20 and 11 (R0's, the check's own covered-and-replayed reasons), **no default differ** (30 type
-defaults made under the check, each held pointer-equal to its replay). Windows (08a72286, `work\m8r4bx`): **cl /W4 /WX clean**
-(msvc\build.cmd, `_CL_=/MP2`, /affinity 3FF, cl alone, 14:27:21-14:29:06, 1 min 45 s); **overload.sh 46 agreed 0 differed,
-plain and under the flag**; **names.sh under the flag 1,025 passed 0 failed** (through a wrapper script as CXX1; 20 .nonames OPEN
-as recorded). No changed emitted output at -O0, -O1 or -O2 on x86_64-linux, either way. Slices 4m-4s untouched.
+defaults made under the check, each held pointer-equal to its replay); c2 (f5ac0153's src) compiles ParserTemplate.cpp on
+x86_64-linux under the flag and plain, rc 0. Windows (`work\m8r4bx`): **cl /W4 /WX clean** on 08a72286 (msvc\build.cmd,
+`_CL_=/MP2`, /affinity 3FF, cl alone, 14:27:21-14:29:06, 1 min 45 s) and on f5ac0153 (14:51:52-14:56:23, 4 min 31 s); **overload.sh 46 agreed 0 differed,
+plain and under the flag**; **names.sh 1,025 passed 0 failed, plain and under the flag** (the flag through a wrapper script as
+CXX1; 20 .nonames OPEN as recorded). No changed emitted output at -O0, -O1 or -O2 on x86_64-linux or x86_64-windows, either
+way. Slices 4m-4s untouched. The identical, run.sh, subst.sh and census rows are c1's (08a72286's src); f5ac0153 changes only
+how typeDefaultRead pops its layer (the same answers), and the self-compile ran on the tree rebuilt from it. **Owed** (to the
+wave gate): the -check=templates census on x86_64-windows; the REF's x86_64-windows measure (taken as 4a's 184 here); the
+self-host census re-run on c2 (c1's ParserTemplate.cpp unit was the refused one).
+Re-measure: `boxkit/m8r4b-cen.sh <r|n> <tag> <arch> <m|c> sh`, `boxkit/m8r4b-gate.sh`, `boxkit/m8r4b-gate2.sh`.
