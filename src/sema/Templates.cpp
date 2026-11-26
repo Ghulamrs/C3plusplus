@@ -1366,8 +1366,39 @@ void Templates::reentered(const char *what, bool standIn, std::size_t site) cons
 void Templates::countDefault(const TemplateParam &p, bool deduced) const {
     if (p.defBegin == 0) return;
     deducedDefaults_ += deduced ? 1 : 0;
+    if (defaultMade_) {
+        defaultReport_[std::string("made: a type") + (deduced ? ", deduced" : ", the class door's list")]++;
+        defaultMade_ = false;
+        return;
+    }
     fallbackCensus_[std::string("default: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") +
                     (deduced ? ", deduced" : ", the class door's list")]++;
+}
+
+const Type *Templates::defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding) {
+    const TemplateParam &p = decl.params[i];
+    const char *why = p.defPattern == nullptr ? (p.defUnread != nullptr ? p.defUnread : "not read at its declaration") : nullptr;
+    if (why == nullptr && decl.isMember) why = "a member template's, its class's parameters numbered apart";
+    Substituted s;
+    for (std::size_t k = 0; why == nullptr && k < i; k++) {
+        if (binding[k] == nullptr) why = "a parameter before it unbound";
+        s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
+        s.to.push_back(binding[k]);
+    }
+    const Type *made = nullptr;
+    if (why == nullptr) {
+        const Substitution r = substitute(s, p.defPattern, At{ p.defBegin });
+        made = r.type, why = r.why;
+    }
+    if (why != nullptr) defaultReport_[std::string("replayed: a type: ") + why]++;
+    return why == nullptr ? made : nullptr;
+}
+
+bool Templates::defaultHeld(const Type *made, const Type *replayed) {
+    if (made == replayed) return true;
+    defaultReport_["replayed: a type: differ: made " + made->describe() + ", replayed " +
+                   (replayed != nullptr ? replayed->describe() : std::string("nothing"))]++;
+    return false;
 }
 
 void Templates::countAhead(const std::string &tag, bool constructor) {
@@ -2234,6 +2265,8 @@ std::string Templates::builtReport() const {
         out += "-check=templates falling back (" + std::to_string(i->second) + "): " + i->first + "\n";
         defaults += i->first.compare(0, 9, "default: ") == 0 ? i->second : 0;
     }
+    for (std::map<std::string, long>::const_iterator i = defaultReport_.begin(); i != defaultReport_.end(); ++i)
+        out += "-check=templates default (" + std::to_string(i->second) + "): " + i->first + "\n";
     const std::map<std::string, int>::const_iterator fm = replayCensus_.find("substituted with no replay"),
                                                      mm = replayCensus_.find("member: substituted with no replay");
     const long parts[] = { total - made, census_[FunctionBody] - (fm != replayCensus_.end() ? fm->second : 0),

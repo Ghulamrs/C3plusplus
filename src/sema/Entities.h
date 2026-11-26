@@ -235,6 +235,10 @@ struct TemplateParam {
     // the earlier parameters bound. begin == 0 means there is none.
     std::size_t defBegin = 0;
     std::size_t defEnd = 0;
+    // R2, slice 4b (-templates=subst): a type default read once where it is written, the parameters before it standing for
+    // themselves; null with `defUnread` the reason where it was not, and the default is replayed at its use.
+    const Type *defPattern = nullptr;
+    const char *defUnread = nullptr;
 };
 
 // What is known about a name that names a template. `start` is the
