@@ -6669,3 +6669,83 @@ failed** (20 .nonames OPEN as recorded). **names.sh under the flag is owed**: ru
 -templates=subst" it reported 246 passed, 778 failed, and every failure read is the harness's - `tools/mangled-names:
 line 171: .../cxx3-msvc.exe -templates=subst: No such file or directory` (it quotes `$CXX1`); it wants a wrapper
 script as the Linux run.sh one, not a flag in CXX1 (m84b's run of it was cut before it said so).
+
+## R1, first lane: the kernel - one total `substitute`, and `substituted`, `memberUnder`, `specializationUnder` retired into it (lane m8r1a, 2026-11-26)
+
+Base 4a127f66 (wave m6d-w50: main c9619846 + slice 4a + the restart's decisions + R0). Commits 1eaa58a1 (the kernel;
+`substituted` retired), 88ba615b (`memberUnder` folded), 84f6ee04 (`specializationUnder` retired), a5045a52 (three
+EXCLUSIONS citations re-pointed), 234d8a29 (the kernel's returns as statements, below), and this entry (the citations
+again, +71 in all). src/ 98,413 -> 98,477 lines (183 added, 119 deleted: Templates.cpp +165/-111, Templates.h +14/-4,
+Typing.cpp +4/-4). **No path changed**: every moved site reads what the helper it replaced answered.
+
+**The measure** (call sites, a helper's own definition and declaration not counted, `git grep -o '\bNAME('` over src/sema):
+`substituted` 57 -> **0** (49 sites now read `substitute(...).type`; 6 were its own recursion and 2 paramsUnder's;
+Mangle.cpp's three `substituted(` are Mangle's own `bool substituted(const Type *)`, not this helper - the brief's 61 counted
+them); `memberUnder` 1 -> **0**; `specializationUnder` 4 -> **0**. **Helpers left with callers, of the eleven: 11 -> 9**:
+carriedId 7, idUnder 2 (one of them the kernel's id step: the template template parameter's), listUnder 1, earlyArgs 12,
+argsWanted 5, idsBefore 1, packUnder 3, paramsUnder 8 (now the kernel's pack step, carrying its first failure),
+typedefCarried 2. **Re-entries under a binding** (`boxkit/m8r1a-cen.sh x86_64-linux m`, census, no check, exe 84f6ee04):
+suite **21,565 at instantiation, 54,093 in the read** (75,658: binds 42,582, jumps 33,076), R0's to the unit - not risen;
+falling back= 6,768 over 1,026 units, classes 2,638 made of 2,661. Self-host 376,774 at instantiation, 383,186 in the read -
+over this lane's own sources, a different corpus from R0's, and with Templates.cpp refused (below), so not a comparison.
+**replay-residue** 150 / 19 / 26 / 6, +0 on every kind (the kernel indexes no token and moves no `p_.at_`).
+
+**A defect the census found in this lane's own code**: the self-host's Templates.cpp exited 1 - cxx3 refuses "a class
+returned from what is not an object" for `return r.why = "...", r;`, a comma expression returning the `Substitution`. The
+stage-0 self-compile was 101 of 102 at 1eaa58a1..84f6ee04; 234d8a29 writes each such return as statements (same answers).
+
+**The kernel** (`Templates.h`, "R1's kernel"): `Substitution substitute(const Substituted &s, const Type *t, Ids = Mapped)
+const` and `substitute(s, t, At{pos})` (non-const: Made); one recursion, `substituteIn(s, t, ids, maker, pos)`. The result
+is `{ type, why, at }`: `why` null when the binding carries every part, else the first part it cannot carry, named - a
+template parameter the binding does not carry; a type over the parameters it does not carry; an array bound over a non-type
+parameter with no value; a member type whose class it does not carry, or which its class lacks; a class template-id with an
+argument it does not carry, or one the program has not made - and `at` that part. `type` is then the carried parts
+substituted and the rest as written, which is `substituted`'s old answer: a site reading `.type` is marked as one that does
+not yet read the failure (slice 4e reads `why`). `why` is a fixed string, so the hot path allocates nothing. The binding is
+`Substituted` (the `Type`-level one, from/to with values, packs, bounds and bound templates), not `Binding` (TypeIds): every
+helper the kernel retires takes it.
+
+**A class template-id has three answers, by `Ids`**: `Mapped` - the binding's own map only (`substituted`'s contract; the
+replay's order fills the map through carriedId, argsWanted and idsBefore); `Declared` - the program's specialization by its
+key (`specializationUnder`'s), through `idUnder` (a `$TT<i>` stand-in renamed) and `argsUnder` (packs expanded by packUnder,
+values folded by argValued, types by the kernel); `Made` - where none is declared, made through `makeId`: the tag looked up,
+else `makeClass` under `Parser::Nesting`, the one path idsBefore and idsInside now make by (no copy). A dependent member type
+goes through the id step at `Declared` (at `Made` under a maker), then `lookupInClass`.
+
+**Order, and why `Mapped` and `Declared` remain**: they exist only because the replay makes classes first in its own order
+and identical.sh holds substitution to that order. Every caller this lane moved is a const shape question (classShape,
+typedefsCarried, the Typer's records) asked before a door decides; making `X<U>` at first need there would make classes the
+replay makes later or never, which moves `specializations_` and so emitted functions, vtables and COMDATs. So the moved sites
+keep `Mapped`/`Declared` (identical holds by construction) and `Made` is reached only where a class was already being made
+(idsBefore, idsInside, through `makeId`) - the same order. **Whether identical holds with a class made at first need is not
+measured here** (owed: an env switch turning the non-const doors' `Mapped` into `Made`, then identical under the flag;
+expected to differ in order only, the restart's question 7).
+
+**What the kernel already subsumes, and what each helper still needs** (R1's next two lanes): `paramsUnder` - is the kernel's
+pack step; fold it in once its 8 callers take a `Substitution` (they read a list). `packUnder` - the id step's pack argument;
+moves with `argsUnder` once `earlyArgs` and `listUnder` call `argsUnder` instead of laying packs themselves. `idUnder` - the
+template template parameter step, already the kernel's; its other caller is earlyArgs. `carriedId` - is `substitute(s, e,
+Declared)` filtered (struct, not dependent, not a read shallow, not over parameters) or `early`'s map; it goes when classShape
+asks the kernel and reads `why`. `listUnder` - a `$TT<i>` stand-in's list laid by the bound template's parameters, defaults
+included; it needs the kernel to substitute a default (slice 4b) before it can be the id step's. `earlyArgs`, `argsWanted`,
+`idsBefore` - exist only for the replay's order (ids made before the class that names them, innermost first): they retire
+when `Made` at first need is measured identical (or Q7 accepts the order); until then they are the order, not substitution.
+`typedefCarried` - a member typedef's type under `s` against the read's tokens (`typedefByPath`): D1/D3's, retired with R3's
+complete records, not by the kernel.
+
+**Gates** (REF built from 4a127f66 on each box; most on 84f6ee04's exe, whose answers 234d8a29 keeps - it rewrites
+returns only; the coordinator's gate m6dw50g held Linux's other slot, so this lane had one): **g++ -Werror clean** on
+84f6ee04 and on 234d8a29 (Linux); **cl /W4 /WX clean** on 84f6ee04 (Windows, `_CL_=/MP2`, /affinity 3FF, cl alone,
+11:49:37-11:53:23, 3 min 46 s); **static** on the final tree: exclusions 0 uncited 0 stale (after 59209b59), comments 0
+over the cap, memory-gate lower, ast-residue not raised (ExprPtr 2012), replay-residue +0 on every kind, ide up to date;
+**run.sh 1,368 passed 0 failed** plain and under the flag; **subst.sh 0 failed** (run 1,368/0 at -O0 and -O2, typed
+1,015/0 x2, census 0 by substitution, bodies 1,012 of 1,012); **the FULL stage-0 self-compile 102 of 102** on 234d8a29
+(169 s plain; 101 of 102 before it - the defect above); **-check=templates census, x86_64-linux**: no class differ, suite
+(1,376 units, 2,638 of 2,661, its 20 `differ` lines R0's) or self-host (76,412 of 76,412, its 11 R0's); **identical.sh**,
+-O0/-O1/-O2: under -templates=subst x86_64-linux 3,072 compared 0 differ (Windows, cxx3-msvc, 84f6ee04), tms6747 3,072/0
+and arm64-darwin 3,072/0 (Linux, g++, 234d8a29); plain tms6747, arm64-darwin and x86_64-linux 3,072/0 each (Linux,
+234d8a29); **overload.sh 46 agreed 0 differed** (Windows, plain). **Owed** (to the wave gate): identical x86_64-windows both
+spellings, plain and under the flag (the Windows run under the flag, beside names.sh, met its 25-minute cap - a defect of
+this lane's split, not a result); names.sh plain and under the flag (still running at the hour, through a wrapper script
+`work\m8r1ay\cxx3-subst` as R0 asked); the -check=templates census on x86_64-windows; cl /W4 /WX on 234d8a29 (its change is
+statements only); the self-host measure on one corpus against the REF; whether `Made` at first need keeps identical.
