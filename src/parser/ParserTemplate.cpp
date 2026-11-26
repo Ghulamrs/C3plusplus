@@ -1562,6 +1562,7 @@ bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
                                      std::vector<long long> *values) {
     const TemplateParam &p = decl.params[i];
     if (p.defBegin == 0) return false;
+    const sema::Templates::DoorAt defaultDoor(&tmpl_, "default argument");
     std::vector<Shadow> undo;
     struct Unbind {
         Parser *p; std::vector<Shadow> *u;

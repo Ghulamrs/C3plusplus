@@ -591,6 +591,7 @@ bool Constexpr::instantiateForConstant(const std::string &symbol, bool construct
             self.lookup_.functions_[body.which].used = true;
             const Parser::Specialization sp = p_.tmpl_.specializations_[i];
             std::vector<Shadow> undo;
+            const Templates::DoorAt ahead(&self.tmpl_, "constexpr-ahead");
             self.tmpl_.bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             std::vector<std::vector<ConstexprSlot> > frames;
             frames.swap(constexprFrames_);

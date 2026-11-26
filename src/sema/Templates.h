@@ -193,6 +193,17 @@ public:
     void countAhead(const std::string &tag, bool constructor);         // constexpr-ahead, by whether its class was made
     std::string trialShape(const TemplateDecl &decl, bool defaulted) const;
     std::set<std::size_t> memberTemplateRead_;                         // a member template's body the read read, by `afterParams`
+    // R0 (D5, D7): each parser re-entry under a binding, a bind or a jump of `p_.at_`, read or instantiation, by the door
+    // DoorAt names; an instantiation's bind kept by its template's site. Counts only, printed under -templates=subst.
+    mutable const char *door_ = nullptr;
+    struct DoorAt {
+        const Templates *t; const char *was;
+        DoorAt(const Templates *of, const char *door) : t(of), was(of->door_) { of->door_ = door; }
+        ~DoorAt() { t->door_ = was; }
+    };
+    mutable std::map<std::string, long> reentries_;
+    mutable std::map<std::size_t, std::set<std::string> > reenteredAt_;
+    void reentered(const char *what, bool standIn = false, std::size_t site = static_cast<std::size_t>(-1)) const;
     // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read; the read itself is always made.
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);

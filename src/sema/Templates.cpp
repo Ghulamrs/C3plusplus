@@ -44,6 +44,9 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
                                     const std::vector<long long> &values,
                                     const Packs &packs,
                                     std::vector<Shadow> *undo) {
+    bool standIn = false;     // R0: a parameter bound to a parameter is a pattern's read
+    for (std::size_t i = 0; substitute_ && i < binding.size(); i++) standIn = standIn || (binding[i] != nullptr && binding[i]->kind() == Kind::TemplateParam);
+    reentered("bind", standIn, params.empty() ? static_cast<std::size_t>(-1) : params[0].pos);
     for (std::size_t i = 0; i < params.size(); i++) {
         const TemplateParam &p = params[i];
         Shadow s;
@@ -1245,6 +1248,17 @@ void Templates::countWhy(Door d, const std::string &why) {
     fallbackCensus_[std::string(doorNames[d]) + ": " + why]++;
 }
 
+// R0: a jump with no door is no template's (an ordinary class's held bodies); a bind with none is counted as "other".
+void Templates::reentered(const char *what, bool standIn, std::size_t site) const {
+    if (!substitute_) return;
+    const bool bind = std::string(what) == "bind";
+    if (door_ == nullptr && !bind) return;
+    const std::string door = door_ == nullptr ? "other" : door_;
+    const bool read = standIn || door == "read";
+    reentries_[std::string(read ? "read " : "instantiation ") + door + ": " + what]++;
+    if (!read && bind && site != static_cast<std::size_t>(-1)) reenteredAt_[site].insert(door);
+}
+
 void Templates::countDefault(const TemplateParam &p, bool deduced) const {
     if (p.defBegin == 0) return;
     deducedDefaults_ += deduced ? 1 : 0;
@@ -1356,6 +1370,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
 void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::size_t which) {
     // The class doors read with no flag, as the function door (commit 5), and never from inside a read.
     if (door != ReadFunction && p_.patternUses_) return;
+    const DoorAt reading(this, "read");
     const bool partial = door == ReadPartial;
     const std::vector<TemplateParam> &params = partial ? decl.partials[which].params : decl.params;
     std::string why;
@@ -1420,6 +1435,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
             p_.current_ = &pattern;
             if (door == ReadFunction) {
                 p_.at_ = decl.afterParams;
+                reentered("jump: a function template's definition");
                 struct LogBack { Parser *p; std::vector<FrameEvent> *was; ~LogBack() { p->frameLog_ = was; } } logBack = { &p_, p_.frameLog_ };
                 if (substitute_ && outermost) { readFrames_[decl.afterParams].clear(); p_.frameLog_ = &readFrames_[decl.afterParams]; }
                 p_.topLevel(pattern);
@@ -1430,6 +1446,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 replayMemberTemplate(decl, display, decl.ownerTag + "::" + display, args, nullptr, false);
             } else if (door == ReadAlias) {
                 p_.at_ = decl.aliasAt;
+                reentered("jump: an alias's type-id");
                 Parser::StorageClass sc;
                 Parser::Qualifiers quals;
                 const Type *base = p_.specifiers(&sc, &quals);
@@ -1482,6 +1499,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
                     p_.at_ = decl.outOfLine[which].start;
+                    reentered("jump: a member defined out of line");
                     p_.topLevel(pattern);
                 }
                 // Each held member body is a read of its own: one refused leaves the others read.
@@ -2121,6 +2139,21 @@ std::string Templates::builtReport() const {
     long all = 0;
     for (std::size_t i = 0; i < sizeof parts / sizeof parts[0]; i++) all += parts[i], sum += std::string(" ") + partNames[i] + "=" + std::to_string(parts[i]);
     out += "-check=templates falling back=" + std::to_string(all) + sum + "\n";
+    // R0's measure (D5, D7): the unit's re-entries under a binding by kind, their sum, and each template re-entered by site.
+    long reads = 0, insts = 0, binds = 0;
+    for (std::map<std::string, long>::const_iterator i = reentries_.begin(); i != reentries_.end(); ++i) {
+        out += "-check=templates reentry (" + std::to_string(i->second) + "): " + i->first + "\n";
+        if (i->first.compare(0, 5, "read ") == 0) reads += i->second;
+        else insts += i->second;
+        binds += i->first.size() > 6 && i->first.compare(i->first.size() - 6, 6, ": bind") == 0 ? i->second : 0;
+    }
+    out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
+           std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
+    for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
+        const std::string where = p_.src_.where(i->first);
+        for (const std::string &door : i->second)
+            out += "-check=templates reentered at: " + where.substr(0, where.rfind(':')) + " | " + door + "\n";
+    }
     return out;
 }
 
@@ -2221,6 +2254,7 @@ void Templates::instantiatePending() {
             TemplateDecl decl = templates_[sp.name];
 
             std::vector<Shadow> undo;
+            const DoorAt bodyDoor(this, sp.isClass ? "member body" : "function body");
             bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             const std::string wasKey = p_.instantiationKey_;
             const std::string wasOf = p_.instantiationOf_;
@@ -2258,6 +2292,7 @@ void Templates::instantiatePending() {
                 // member-definition path reads the qualifier itself.
                 for (std::size_t k = 0; k < outsideNow.size(); k++) {
                     p_.at_ = templates_[sp.name].outOfLine[outsideNow[k]].start;
+                    reentered("jump: a member defined out of line");
                     p_.topLevel(*p_.current_);
                 }
             } else {
@@ -2281,6 +2316,7 @@ void Templates::instantiatePending() {
                     p_.frameLog_ = logBack.was;
                 } else {
                     if (bound != bound_.end()) replayCensus_[checkBodies_ ? skip : "replayed: " + skip]++;
+                    reentered("jump: a function body");
                     p_.topLevel(*p_.current_);
                     p_.frameLog_ = logBack.was;
                     if (bound != bound_.end() && checkBodies_)
@@ -3255,6 +3291,7 @@ const Type *Templates::readClassBody(const TemplateDecl &decl, const std::string
     // body has to see - the primary's Ts is not in scope at all.
     bindTemplateParameters(useParams, useBinding, useValues, packs, &undo);
     p_.at_ = start;
+    reentered("jump: a class body");
     // **A specialization is not a member of whatever class asked for it.**
     std::vector<const Type *> outerClasses;
     outerClasses.swap(p_.classStack_);
@@ -3332,9 +3369,11 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
             Parser *p; std::vector<Shadow> *u;
             ~Unbind() { p->tmpl_.unbindTemplateParameters(*u); }
         } unbind{ &p_, &undo };
+        const DoorAt alias(this, "alias");
         bindTemplateParameters(decl.params, binding, values, packs, &undo);
         count(AliasId);
         p_.at_ = decl.aliasAt;
+        reentered("jump: an alias's type-id");
         Parser::StorageClass sc;
         Parser::Qualifiers quals;
         const Type *base = p_.specifiers(&sc, &quals);
@@ -3402,6 +3441,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
                                  const std::vector<TemplateArg> &args, const Packs &packs, std::size_t pos) {
     const std::size_t logFrom = seatLog_.size(), fnFrom = p_.lookup_.functions_.size();
     const Parser::ReplayUses replayed(&p_);
+    const DoorAt classDoor(this, "class");
 
     // **A partial specialization is chosen before anything is replayed**, and what
     // it changes is which tokens get replayed and with which parameters bound. The
@@ -4336,6 +4376,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
                                      const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos,
                                      std::vector<Parser::PendingBody> *bodies,
                                      const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values) {
+    const DoorAt madeDoor(this, "made class");     // D1: a class made from the read, and what it reads again
     const Type *read = readClass_.at(start);
     const Kind kind = partial ? Kind::Struct : read->kind();
     Type *type = p_.types_.structType(kind, tag);
@@ -4541,6 +4582,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     std::sort(order.begin(), order.end());
     const Type *enumScope = owner == scope || enums.empty() ? scope : p_.types_.structType(Kind::Struct, tag + "::$held");
     std::vector<Shadow> undo;
+    const DoorAt staticsDoor(this, "made class: staticsFromRead");
     bindTemplateParameters(params, binding, values, s.packs.size() == params.size() ? s.packs : Packs(params.size()), &undo);
     const Parser::LocalsHidden hidden(&p_);
     const std::size_t resume = p_.at_, angle = p_.angleSplit_;
@@ -4559,6 +4601,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
             p_.deferSpecializationBodies_ = true, p_.inlineOwner_.clear();
             Parser::StorageClass storage = Parser::StorageNone;
             p_.at_ = o.first;
+            reentered("jump: a nested class (nestedByPath)");
             p_.specifiers(&storage);
             p_.deferSpecializationBodies_ = wasDeferring, p_.inlineOwner_ = outerInline;
             std::vector<Parser::PendingBody>::iterator at = bodies->end();     // 3ac: before the class's bodies after its `}`, the replay's order
@@ -4569,6 +4612,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         }
         if (o.second == statics.size() + 1) {
             p_.at_ = o.first;
+            reentered("jump: a member typedef (typedefByPath)");
             Parser::StorageClass storage = Parser::StorageNone;
             const Parser::Declared td = p_.declarator(p_.specifiers(&storage));
             p_.lookup_.declareTypeName(tag + (owner == scope ? "::" : "::$held::") + td.name, td.type);
@@ -4578,6 +4622,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
             Parser::StorageClass storage = Parser::StorageNone;
             if (enumScope != scope) p_.classStack_.push_back(enumScope), p_.currentClass_ = scope;     // its names found in `scope`
             p_.at_ = o.first;
+            reentered("jump: a member enumeration");
             p_.specifiers(&storage);
             p_.classStack_.resize(1), p_.currentClass_ = nullptr;
             continue;
@@ -4586,6 +4631,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         bool cx = false;
         std::size_t name = 0;
         p_.at_ = staticAt(start, m.name, &cx, &name);
+        reentered("jump: a static data member");
         p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substituted(s, m.type), name), m.access, m.isVolatile, m.isThreadLocal, cx);
     }
     p_.namespaceStack_ = outerStack;
@@ -4747,6 +4793,7 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
         at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
     if (at.empty()) return;
     std::vector<Shadow> undo;
+    const DoorAt templatesDoor(this, "made class: templatesFromRead");
     bindTemplateParameters(params, binding, values, packs.empty() ? Packs(params.size()) : packs, &undo);
     const Parser::LocalsHidden hidden(&p_);
     const std::size_t resume = p_.at_, angle = p_.angleSplit_;
@@ -4763,6 +4810,7 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
     p_.instantiatingValues_ = values;
     for (const std::pair<std::size_t, std::pair<std::string, Access> > &a : at) {
         p_.at_ = a.first;
+        reentered("jump: a member template's declaration");
         p_.memberTemplate(tag, a.second.first, a.second.second);
     }
     p_.instantiatingArgs_ = outerArgs;
@@ -5353,6 +5401,7 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const TemplateDecl &mt, const std::vector<const Type *> &binding,
     const std::vector<long long> &values,
     const std::vector<TemplateArg> &args, std::size_t pos) {
+    const DoorAt memberTemplateDoor(this, "member template");
     // head<3>; a constructor's is spelled from the class's name, CMatrix<3>, and keyed apart from it.
     const std::string display =
         specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args);
@@ -5492,6 +5541,7 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
                                         const std::vector<const Type *> &argTypes, std::size_t pos) {
     for (std::size_t k = 0; k < overloads.size(); k++) {
         const TemplateDecl &decl = overloads[k];
+        const DoorAt trialDoor(this, "SFINAE trial");
         std::vector<const Type *> binding;
         std::vector<long long> values;
         Packs packs;
@@ -5559,6 +5609,7 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
     std::vector<long long> values;
     Packs packs;
     std::string why;
+    const DoorAt trialDoor(this, "SFINAE trial");
     Parser::BoundParams bound(&p_);
     if (!mt.classParams.empty())
         bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues, mt.classPacks, &bound.undo);
