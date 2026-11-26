@@ -3661,7 +3661,20 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         ahead->noteClassKey(decl.classKey);
     }
     if (ahead != nullptr) readStands(start, ahead, &early);
-    const std::string met = substitute_ && !p_.patternUses_ ? idsBefore(start, useParams, useBinding, useValues, pos, early.packs, ahead) : std::string();
+    // The ids classShape wants made before the class, in the body's order, each at Made (the kernel's id step); else what stopped it.
+    std::string met;
+    if (substitute_ && !p_.patternUses_) {
+        Substituted s;
+        s.values = useValues, s.packs = early.packs;
+        if (ahead != nullptr) readStands(start, ahead, &s);     // the class itself, as an id's argument, the tag declared ahead
+        std::vector<const Type *> wanted;
+        const std::string first = classBefore(start, useParams, useBinding, &s, &wanted);
+        met = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start, useParams);
+        for (std::size_t k = 0; met.empty() && k < wanted.size(); k++) {
+            const Substitution m = substitute(s, wanted[k], At{pos});
+            if (m.carried()) s.from.push_back(wanted[k]), s.to.push_back(m.type);     // an id's argument, as the next one reads it
+        }
+    }
     const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class the door takes made from the read, its written members and held bodies too; the replay beside under the check.
@@ -3674,7 +3687,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies, useParams, useBinding, useValues)
                      : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
     if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
-    // The measure: one verdict a tag - step (1)'s, else classBefore's or idsBefore's reason, as "before the replay" says it.
+    // The measure: one verdict a tag - step (1)'s, else classBefore's or the wanted ids' reason, as "before the replay" says it.
     const std::string why = fromRead != "-" ? fromRead : !substitute_ || p_.patternUses_ ? std::string("not under -templates=subst") : met.empty() ? before : met;
     const std::string verdict = fromRead.empty() ? std::string("made from the read with no replay")
                               : fromRead.compare(0, 7, "beside:") == 0 ? std::string("made from the read, the replay beside under -check=templates")
@@ -3708,7 +3721,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         }
         // Step (1) decides before the replay: what it takes is what the skip takes after it, or the two are apart.
         const bool takes = before.compare(0, 18, "made from the read") == 0;
-        classCensus_["before the replay: " + (takes || met.empty() ? before : met)]++;     // what idsBefore met, if it stopped
+        classCensus_["before the replay: " + (takes || met.empty() ? before : met)]++;     // what the wanted ids met, if they stopped
         if (takes != (skip.compare(0, 18, "made from the read") == 0))
             classCensus_["differ: the class skip before the replay and after it: " + (takes ? skip : before)]++;
         classWhy_[tag] = held.empty() ? "covered" : held;
@@ -3926,30 +3939,7 @@ void Templates::argsWanted(Substituted *s, const Type *e, const Type *read, cons
     }
 }
 
-// Work (2): the ids a class the door takes names over its parameters and the program had not declared, made before it through
-// makeClass, as its replay makes them when it reads the body - in the body's order, each declared once; nothing for another class.
-// Its answer is what stopped it: the census's reason where the second classBefore, wanting no ids, refuses the class.
-std::string Templates::idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                              const std::vector<long long> &values, std::size_t pos, const Packs &packs, const Type *ahead) {
-    Substituted s;
-    s.values = values, s.packs = packs;
-    if (ahead != nullptr) readStands(start, ahead, &s);     // the class itself, as an id's argument, the tag declared ahead
-    std::vector<const Type *> wanted;
-    const std::string first = classBefore(start, params, binding, &s, &wanted);
-    const std::string why = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start, params);
-    if (!why.empty() || wanted.empty()) return why;
-    for (const Type *e : wanted) {
-        std::string name;
-        std::vector<TemplateArg> args;
-        if (!earlyArgs(s, e, readClass_.at(start), &name, &args) && !earlyArgs(s, e, readClass_.at(start), &name, &args, false, nullptr, true)) continue;
-        bool made = false;
-        s.from.push_back(e), s.to.push_back(makeId(name, args, pos, &made));     // an id's argument, as the next one reads it
-        if (made) classCensus_["made before the class, as its replay makes it: a class template-id over its parameters"]++;
-    }
-    return std::string();
-}
-
-// An id among the read's typedefs and signatures with the read class itself as an argument: idsBefore makes it once the tag is.
+// An id among the read's typedefs and signatures with the read class itself as an argument: made at Made once the tag is.
 bool Templates::namesItself(std::size_t start) const {
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
@@ -4334,7 +4324,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
         if (wanted != nullptr && wanted->size() != had) dataAt.push_back(memberAt(m.name));     // where the replay makes them
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
-        std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
+        std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one wanted, made first at Made
         std::vector<TemplateArg> args;
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = dataUnder(*s, m);
         else if (over) {
@@ -4392,7 +4382,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *e = substitute(*s, t).type;
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
-            // `X<$T0>::m` whose X<U> the program had not declared: X<U> wanted by idsBefore, the member found once it is made.
+            // `X<$T0>::m` whose X<U> the program had not declared: X<U> wanted first, the member found once it is made.
             std::string name;
             std::vector<TemplateArg> args;
             const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
@@ -4664,7 +4654,7 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
         return p_.tokens_[e].is("=") && read->findStaticMember(p_.tokens_[e - 1].text) != nullptr &&
                staticAt(start, p_.tokens_[e - 1].text, &cx, &name) == e && !cx;
     };
-    // Its ids are made where staticsFromRead evaluates it, after idsBefore's: the body's order while none is named after `k`.
+    // Its ids are made where staticsFromRead evaluates it, after the wanted ids: the body's order while none is named after `k`.
     const auto namedLater = [&](std::size_t k) {
         for (std::size_t depth = 1, t = k + 1; t < p_.tokens_.size(); t++) {
             const Token &w = p_.tokens_[t], &was = p_.tokens_[t - 1];
@@ -5252,7 +5242,7 @@ static bool nestedAt(const std::vector<std::pair<std::size_t, std::size_t> > &ne
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
                                    Substituted *early, std::vector<const Type *> *wanted) {
     Substituted &s = *early;
-    // The body's member beyond first: under one, the ids idsBefore would make are not made, so a signature's refusal hides it.
+    // The body's member beyond first: under one, the wanted ids are not made, so a signature's refusal hides it.
     const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), outside = classBeyond(start), beyond = outside.empty() ? shape : outside;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);

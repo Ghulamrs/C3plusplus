@@ -7335,3 +7335,37 @@ self-compile and the censuses on both ABIs (its paths are B's under the switch, 
 hour); identical with the switch on at tms6747 -O1 and -O2 on x86_64-windows and tms6747, and on four targets at three levels
 under the flag and plain; names.sh and overload.sh; then idsBefore's family. Re-measure: `boxkit/m8r1i-lgate.sh <a|b>` (with `m8r1i-one.sh`), `boxkit/m8r1i-wident.sh <arch> <level> <jobs> <p|f|e>`,
 `boxkit/m8r1i-winbuild.sh <r|b>`, `boxkit/m8r1i-wchain.sh`.
+
+## R1, tenth lane: first need gated, and idsBefore's family (lane m8r1j, 2026-11-26)
+
+Base 39a28fda (m8-r1i: 68185444 ships classes made at first need under -templates=subst). REF 501e2819 on both boxes. Commits:
+**cdf13d12** - classShape, classBefore, typedefsCarried and classSkip (typedefsCarried's other caller) non-const, so the class
+door's shape questions may ask the kernel at Made: 8 lines changed in place, no line moved, identical by construction.
+@IDSBEFORE@
+
+**(0) m8r1i's owed, on 68185444's tree** (39a28fda; `boxkit/m8r1j-lgate.sh a 1|2`, `boxkit/m8r1j-wchain.sh a`): **g++ -Werror
+clean; cl /W4 /WX clean** (work\m8r1jr and work\m8r1ja, two at once, 18:48:41-18:52:41, 4 min); x86_64-windows census suite 1,377
+units, **class differ 0, body differ 19 (REF 19)** - return type 6, decltype return 5, exception specification 4, block table 2,
+shell 2; self-host 102 units, **class 0, body 11 (REF 11)**, exception specification 11; x86_64-linux census suite **class 0, body
+20 (REF 20)** (return type 6, decltype return 5, exception specification 4, block table 2, shell 2, frame size 1), self-host **class
+0, body 11 (REF 11)**; re-entries at instantiation under the check 26,961 suite, 464,938 self-host. **identical against the REF
+under the flag, the shipped form's gaps: tms6747 -O1 1,025 / 0, tms6747 -O2 1,025 / 0**@ZERO@. **names.sh plain 1,025 passed, 0
+failed** (20 .nonames rows open, the register's)@ZEROB@. No difference found to fix: first need stays shipped.
+
+**Re-entries** (suite x86_64-linux, census without the check): **21,553** at instantiation on 68185444 - R0 21,549, m8r1i's A
+(the switch off) 21,550: the +3 is first need's own (the same suite, the same tree but for the switch), a cause and not a probe;
+not traced to its three bodies.
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): @HELPERS@
+
+**What the rest need.** `argsWanted` (5: its own recursion 1, classShape 4) and `earlyArgs` (@EA@) are the order the wanted ids
+keep and the filter on whether one may be made ahead: retiring them means classShape making at Made where it now pushes onto
+`wanted` - eight sites (the bases, a data member's class and its `C<T>::type` owner, a typedef's id and owner, a signature's id and
+owner, and `own`), and the `placed` / `ahead` / `behind` refusals that order the data members' ids against the signatures' go with
+them; the token scan in earlyArgs (`p_.tokens_[t]` over the named template's bodies) goes in that commit, replay-residue's `tokens`
+-1 or more. `carriedId`'s `early` branch is that order's own map (the classes declared before the replay) and goes with argsWanted.
+`idUnder` is the kernel's template template parameter step already (specializationIn); its other caller is earlyArgs, so it
+folds into specializationIn when earlyArgs goes. `typedefCarried` waits for R3's complete records (m8r1c's reason, unchanged).
+Slices 4m-4s untouched.
+
+**Gates**: @GATES@
