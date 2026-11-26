@@ -6343,3 +6343,149 @@ src/: 98,247 -> 98,251 lines (Templates.cpp +4); EXCLUSIONS' citations below the
 Check census x86_64-windows (cxx3-msvc): suite 1,376 units nonzero 378, 2,636 of 2,661, no class differ; self-host 75,675 of 75,675, no class differ. Linux g++ identical x86_64-windows plain against 1996faa8 6144/0 (-O0/-O1/-O2, both spellings).
 **Owed at the hour** (stopped by PID at the hour, not failed): identical x86_64-windows under the flag at -O1 and -O2 (Linux's was running, Windows' -O2 too), names.sh re-run with the `.nonames`; cl /W4 /WX on 4f8cf194 built past the 9-minute cap (07:13-07:23 beside the gate and m83bu; /WX, so clean - a defect, not retried).
 **Next**: Vec x2 (`class Vec`, its access labels before `iterator`, and `iterator` named by `begin()`/`end()` - the read's nested class mapped to the made one in readStands before membersFromRead declares the signatures, the named enumeration's problem too); then the suite's single reasons (a friend, a using-declaration, a bit-field, an incomplete data member, a reference-bound data member, a const over a reference, 1 each).
+
+## M8.4 split into slices: the rest of the doors, and its exit counts measured at main 9c110cb7 (lane m84a, 2026-11-26)
+
+Base 9c110cb7 (main: m6d-w48 landed; M8.3's last lanes, m83bs-m83bv, ride in wave m6d-w49, ungated as this is written, so
+their classes are counted below as still replayed). No src/ change; src/ 98,128 lines. **Each slice is one commit of identical
+output without the flag**, as M8.2's and M8.3's were: identical.sh against the slice's REF 0 differ on four targets plain and 0
+under `-templates=subst` (the shapes it covers emit what their replay emitted); under `-check=templates` the slice's door holds
+what it builds against a replay run beside it, and a `differ` fails the slice; a shape it does not cover replays by name and is
+counted. **The gate of every slice** is the full lane gate: identical plain on the four targets and under the flag, run.sh
+plain and with CXX1 carrying the flag, subst.sh, the FULL stage-0 self-compile (102 of 102), the check censuses on both ABIs (no
+class or body differ), the static gates (exclusions --check, make comments, memory-gate, ast-residue, ide --check), names.sh
+and overload.sh plain and under the flag, g++ `-Werror` and cl /W4 /WX.
+
+**The exit counts at 9c110cb7, each beside its command.**
+- **(a) overload.sh** (Windows; cxx3-msvc built from 9c110cb7 by msvc\build.cmd, cl /W4 /WX clean, 3.5 min; clang 19): `sh
+  tests/overload.sh` **46 agreed, 0 differed**; `CXX1="cxx3-msvc.exe -templates=subst" sh tests/overload.sh` **46 agreed, 0
+  differed**. The row's "44/0" was the suite's size when the row was written; the exit is every row agreeing both ways. It is a
+  count every slice must hold, not one any slice moves: today every candidate under the flag is still the trial's re-read.
+- **(b) feature-sweep's sfinae rows** (`sfinae`, `sfinae-decltype-trailing`, `sfinae-decltype-leading`; Linux, `CXX1=<exe>
+  python3 tools/feature-sweep`, and with CXX1 a wrapper adding `-templates=subst`; g++ `-Werror` build of 9c110cb7, clean):
+  all three **compile**, plain and under the flag; the sweep whole 90 compile, 6 refused by name, 0 refused naming nothing, of
+  96, the same both ways. Like (a) a count to hold: the sweep asks acceptance, and under the flag each row is still the
+  trial's re-read, so the rows move to "compiled by substitution" only when 4a's SFINAE line says so for their units.
+- **(c) -check=templates falling back** (Windows, `CXX1_TEMPLATE_CENSUS=1 cxx3-msvc -nologo -arch x86_64-linux
+  -templates=subst -check=templates -S` per unit, boxkit/m84a-wcen.sh and m84a-wsubst.sh; suite 1,371 units, nonzero 354 - the
+  `.error` set; self-host 102 sources, nonzero 0; no class differ in either):
+
+  | door (the census's name) | suite: replayed of all | self-host | what M8.4 reads it as |
+  | --- | --- | --- | --- |
+  | class specializations (`specialization:` lines) | 53 of 2,634 | 0 of 75,681 | M8.3's tail (below) |
+  | function bodies (`replay (N):` without the check, `subst (N):` with it) | 593 of 1,129 (536 made with no replay; 79 covered and replayed - a return type the binding does not carry 45, a `decltype` return 34) | 1,204 of 5,088 (3,884 made) | M8.2's tail: packs 118/55, the rest shapes of the body |
+  | class member bodies (`replay (N): member:`, `member (N):`) | 3,783 of 4,565 (782 made; 18 covered and replayed - an exception specification or landing pads) | 50,751 of 59,558 (8,807 made; 98 the same reason) | M8.3's tail: shapes of the body |
+  | member templates (`member-template=`) | 202 of 202 | 1,359 of 1,359 | every one replayed: `instantiateMemberTemplate` has no substitution path |
+  | SFINAE trials (`sfinae-trial=`, `sfinae-failed=`) | 1,874 of 1,874 (23 failed) | 33,822 of 33,822 (194 failed) | every candidate's declaration re-read under a `Trial` (under the check 2,026 and 34,674: the check's own reads add trials) |
+  | constexpr-ahead (`constexpr-ahead=`) | 36 of 36 | 643 of 643 | one held body replayed for a constant |
+  | alias type-ids (`alias=`) | 21 (31 under the check) | 0 | re-read at the use |
+
+  The first two columns are the no-check census (`-templates=subst` without `-check=templates`: made with no replay against
+  replayed); the reasons are the check census's, which runs every covered body beside its replay. **x86_64-windows** (the
+  same build, `-arch x86_64-windows`, no check): the suite's every count the same (nonzero 378, that target's `.error` set);
+  the self-host classes 75,666 of 75,666, functions 3,880 made of 5,087, members 8,798 of 59,551, member templates 1,360,
+  SFINAE trials 33,887 (194 failed), constexpr-ahead 644, all replayed as on x86_64-linux. The census's
+  `by-substitution=` door reads 0 in both, on every unit: `Templates::instantiate` never answers true (a covered body is made
+  later, on the replay's road, and counted there as `replay (N): substituted with no replay`). It is the deleted stand-in's
+  count, and subst.sh:89 fails a probe where it is not 0 (decision ii), so it is a tombstone a gate reads, not a measure: 4a
+  leaves it, and a slice that reads it as "bodies made by substitution" reads the wrong line.
+  **M8.4's one measure**, the sum of the table's replayed column (x86_64-linux, no check): **suite 6,562** (53 + 593 + 3,783 +
+  202 + 1,874 + 36 + 21), **self-host 87,779** (0 + 1,204 + 50,751 + 1,359 + 33,822 + 643 + 0); the exit is 0 and 0. Each
+  slice's entry leads with it, and 4a's `falling back=` line prints it per unit.
+  So "0 falling back" is not the row's items alone: it includes the function and member body tails M8.2 and M8.3 left, which are the self-host's largest number (51,955 bodies). The table below takes them as slices of their own (4m-4r); the
+  coordinator may instead read the exit as "0 at the doors the row names" and move them to an M8.4b - recorded, not decided here.
+  The four doors with no reason line today (member template, SFINAE trial, constexpr-ahead, default argument) print a door total
+  and nothing else, so 4a's first job is to make them count by reason.
+- **(d) src/ lines of what the row retires, and their callers** (9c110cb7):
+  - pack expansion by token copy: `Parser::packPatternEnd`, `bindPatternMember`, `expandPackPattern`, `expandPackInitialiser`,
+    `expandPackValues` - ParserTemplate.cpp:1406-1556, 147 lines with their comments, and 5 declarations in Parser.h;
+    `bindPatternMember` and `packPatternEnd` are called by the three alone (3 each), the three by one site each
+    (ParserExprCall.cpp:68, ParserInit.cpp:37, ParserTemplate.cpp:1093). `packDeclarator` and `wrapPackMember` (ParserClass.cpp,
+    ParserStmt.cpp: a parameter pack's declarator) are not token copies and stay.
+  - `ParserDependent`'s `DepExpr`: the dependent-expression reader `depNode` .. `depPrimary`, ParserDependent.cpp:34-380
+    (347 of its 478 lines; `dependentAhead` above it is a lookahead four other sites ask - ParserType.cpp:639, 2569, 2571,
+    ParserConst.cpp:204 - and stays, as do `depText`, `spelledTokens` and the mark helpers below), entered at two sites, both under `patternOnly_` (ParserTemplate.cpp:1167, a template argument over
+    the parameters; ParserExpr.cpp:2396, `decltype` of one); `DepExpr` itself (Type.h:58-85) stays as the Itanium spelling's
+    input (Mangle.cpp, 20 mentions) - what goes is the second reader of an expression, not the tree.
+  - SFINAE's trials: `Parser::Trial` in Templates.cpp at six sites - three are the M8.1 read's (1360, 1441, 1536), one a default
+    argument's ([temp.deduct]/7, 2716), two the candidates' (5298 a function template through `Parser::instantiate`,
+    ParserTemplate.cpp:1228-1324, 97 lines; 5371 a member template through `instantiateMemberTemplate`). The plan's "three"
+    are the last three. ParserTemplate.cpp's own two (764 a partial's arguments, 1838 an explicit specialization) and
+    ParserOperator.cpp's cast are grammar or matching, and stay.
+  - member templates: `replayMemberTemplate` (Templates.cpp:5110-5146, 37 lines) and `instantiateMemberTemplate` (5149-5208, 60;
+    callers 3: definedOutOfLine, instantiateViableMemberTemplate, ParserTemplate.cpp:1954).
+  - default template arguments: `Parser::defaultTemplateArgument` (ParserTemplate.cpp:1557-1609, 53 lines, a token replay from
+    `TemplateParam::defBegin`; callers 2: Templates.cpp:2717 the deduced path, 3545 the class door's list).
+  - `Constexpr::instantiateForConstant` (Constexpr.cpp:572-616, 45 lines; callers 2, Constexpr.cpp:68 a function, 680 a
+    constructor).
+  - `Parser::deduceAuto`'s second reading (ParserTemplate.cpp:1325-1373, 49 lines; the `Discarded` read and rewind are 7 of
+    them; callers 2, ParserTopLevel.cpp:409 and ParserStmt.cpp:209 - not a template door: every `auto` declaration).
+
+**None of (d) can be deleted inside M8.4 while the plain path is replay**: each serves the unflagged compile until M8.6 retires
+the flag. A slice that covers a piece's shapes makes it unreached under `-templates=subst` - a counter in the census, 0 over the
+suite and the self-host - and M8.6's deletion commit removes it with `replayInlineBodies`. The one exception is 4g (the
+dependent-expression reader), which runs without the flag for every pattern signature: its slice replaces the reader on the
+plain path too, and its proof is identical plain on four targets and names.sh 0 differ, not the flag.
+
+| slice | the change (under `-templates=subst` alone unless said) | its measure at 9c110cb7 | what must not change |
+| --- | --- | --- | --- |
+| 4a | **the census made whole**: the member-template door by shape (two layers, a constructor, an own pack, a body the read did not read), each SFINAE trial by what its signature holds (types alone, a value over the parameters, a `decltype`, a default), constexpr-ahead by why, each default argument by kind (type, value, template), and per unit one `falling back=` sum of every door | the four doors' totals above split by reason, each sum equal to its door count (202/1,359; 1,874/33,822 without the check; 36/643) - counts only, nothing built | every door count, the `.error` set, every emitted byte with and without the flag |
+| 4b | **type defaults by substitution**: a type parameter's default read once at the declaration (in the read's layer, the parameters before it bound to themselves) and kept on its `TemplateParam`; `defaultTemplateArgument` under the flag answers from `substituted` under the binding so far, held against the token replay under the check | 4a's type defaults, replayed -> made; the library's are few (`unordered_map`'s and `unordered_set`'s `hash<K>`, `equal_to<K>`; `duration`'s `ratio<1>`; `time_point`'s `typename Clock::duration`), so the suite's own cases are most of it | [temp.param]/9's order; a default read in its template's scope (`signatureClass_`, the namespace); M8.3's `listUnder` defaults give the same classes |
+| 4c | value and template defaults; the deduction's default trial (Templates.cpp:2716) a failed substitution, [temp.deduct]/7 | 4a's value and template defaults -> made; `defaultTemplateArgument`'s token read unreached under the flag | a default that does not substitute fails the deduction and no more |
+| 4d | **a dependent value under a binding**: a `DepExpr` in a pattern signature (`sizeof(T) == 4`, `N + 1`, `is_integral<T>::value` over a class M8.3 makes) folded by substitution, held against the replay's constant | 4a's "a value over the parameters" trials, their arguments folded by substitution (the trial still decides; 4e moves it) | M8rev L2: no constant from a read; Itanium still spells the unfolded tree |
+| 4e | **SFINAE as a failed substitution** for free function templates whose signature 4b-4d carry: the candidate's signature from the kept pattern (m82ai) under the deduced binding; a type that cannot be formed (a member a made class lacks, a reference to void, a non-class qualifier) drops the candidate and counts `sfinae-failed`; a refusal by name re-raises; the trial's re-read (Templates.cpp:5298) only for shapes not carried, by name | sfinae-trial re-reads 1,874/33,822 -> substituted; sfinae-failed 23/194 unchanged; the function door's "a return type the binding does not carry" 45/0; feature-sweep's `sfinae` row and overload.sh 46/0 under the flag | 1.5's re-raise; a candidate never chosen gets no body (`pruneUnchosenCandidates`); partial ordering; Microsoft spelled from the substituted signature, Itanium from the pattern |
+| 4f | expression SFINAE: a leading or trailing `decltype` in a signature typed under the binding (member access and calls on a bound class through M8.2's paths); the function door's "trailing 'decltype'" reason | the `sfinae-decltype-*` rows under the flag; that reason 5/0 and "a `decltype` return, which the replay works out" 34/0 -> 0 | 1.15's `decltype` categories; the Itanium `Dt`/`DT` spelling |
+| 4g | **one reader of a dependent expression**: the pattern's `DepExpr` made from the read's syntax node; ParserDependent.cpp:34-380's reader retires (plain path too) | ParserDependent.cpp 478 -> about 130 lines; names.sh 0 differ, identical plain 0 on four targets | every Itanium name (`X...E`, `Dt`, `DT`); expression SFINAE's answers |
+| 4h | **member function templates of a class made from the read**: two binding layers - the class's `Binding`, then the member's own arguments - over the member's read body through M8.2's function path; `replayMemberTemplate` for the rest, by name | member-template door 202/1,359 -> made; the self-host's 25 "member-templates" unread bodies (a range-based `for` over a dependent class) read | the class layer bound first; `memberTemplateMade_` keyed per template and `declaredAt`; `owedBodies_` ([temp.point]); the Itanium name from `mt.pattern` |
+| 4i | constructor templates (C1/C2 from the pattern, keyed apart from the class, `explicit`), and a member template as a candidate (Templates.cpp:5371's trial a failed substitution, as 4e) | 4h's constructor and candidate rows -> made | a constructor template counts as user-declared before the implicit specials are decided (m83u); overload ranking of converting constructors |
+| 4j | **a pack expansion as one node**: `f(args...)`, `{args...}`, `X<Ns...>` and `sizeof...` in a read body expanded under the `PackBinding` by the door that types the body; the token-copy five unreached under the flag | function door "a pack or template parameter" 118/55 -> 0; the class door's pack tail (tuple 5, Wide 2, Derived 1); the five's calls under the flag 0 | `Packs` indexed like the binding; a partial's tail `R...`; the order of a pack's members in a name |
+| 4k | **constexpr-ahead from the made body**: `instantiateForConstant` under the flag folds the constexpr member's body made from the read (M8.3's class), not a replay of it | constexpr-ahead replays 36/643 -> 0; M8.3's "a constexpr member" 4 and "a constexpr static data member" 1 | `Constexpr` stays the tree evaluator (no VM, design 3.5); the fold's answer; a read asks no fold (`patternUses_`) |
+| 4l | `deduceAuto` reads its initialiser once: the one reading's tree kept and the declaration built from it | a census count of second readings -> 0 under the flag | the three refusals' texts (cited in EXCLUSIONS); [dcl.spec.auto]/3 |
+| 4m | the bodies' tail, a `meminit` in a member body (constructors' mem-initialiser lists under the class's binding) | member door "a 'meminit'" 326/9,137 | the order of initialisation and the guards m83ab laid |
+| 4n | calls resolved at the instantiation: a type-dependent argument or dependent-name callee, ADL alone, a call through a value, member or class | function door 47+20+13+10+3/304+81+68; member door 778+404+468+31/8,651+2,460+5,817+834 | [temp.dep.candidate]: the definition's candidates plus ADL at both points; M8.5 changes the lookup, not this slice |
+| 4o | a member function of a bound class reached by name, its access checked | 24/18 and 146/6,091; "other than public" 39/2,148 | access asked from the right class (history: "Access control asked from the wrong class") |
+| 4p | a `conditional` whose type the read may hold apart | 9 (function) and 658/4,311 (member) | `?:` as an lvalue |
+| 4q | `new`, `delete`, and operators, assignments and returns over a class's object; a local of a class by value | function 13+30/33; member 282+63+16/3,525+4,142+80 (operators, `delete`, `new`) | the ledger's counts (lifetime.h); elision |
+| 4r | the rest of the body reasons (literals, `sizeof`, casts, names resolved to types the binding does not carry, `switch`, static members, ...), each a part as 2d's were | the function and member doors' remainder | each reason's own |
+| 4s | **M8.3's tail** (the class door, below) | 53/0 classes, and the 69 suite member bodies replayed only because their class is ("its class replayed: ...") | M8.3's "What must not change" |
+| 4t | **the close**: (c) 0 falling back over the suite and the self-host on both ABIs; overload.sh 46/0 both ways; the sfinae rows compiled under the flag; the census's counters for (d)'s pieces 0 under the flag | the exit row | - |
+
+**4a's sites, for the lane that takes it** (9c110cb7's lines): the member-template door counts at Templates.cpp:5192
+(`count(MemberTemplate)`, in `instantiateMemberTemplate`) - its shape from `mt` there (`isConstructor`, `classParams.empty()`
+for one layer, an `args[i].isPack`, `outOfLineBody`, `declOnly`); the SFINAE trials at 5296 (a function template, before
+`Parser::instantiate`) and 5369 (a member template) - the shape from `decl`'s kept pattern signature (a `Kind::DependentExpr`
+anywhere in it: a value or a `decltype`; a parameter the deduction left to its default); constexpr-ahead at Constexpr.cpp:603 -
+whether the class whose body it replays was made from the read (`specializationCensus_` under its tag) or replayed; a default
+at `Parser::defaultTemplateArgument`'s entry (ParserTemplate.cpp:1560) - its kind (`p.isTemplate`, `p.type == nullptr` a type,
+else a value) and its door (Templates.cpp:2717 deduced, 3545 the class list). Each a map printed by `builtReport` as the other
+`-check=templates` lines are, under the env as well as the check. **Must not change in 4a**: `template-census:`'s keys and
+their order - subst.sh:76 sums them by name and subst.sh:89 matches `by-substitution=0` at the line's end, so a new key goes
+anywhere but after it; the `.census` files subst.sh writes are read by name, never by position.
+
+**Order.** 4a first (one lane-hour: report lines and counters in Templates.cpp, ParserTemplate.cpp's `defaultTemplateArgument`
+and Constexpr.cpp, no path changed). Defaults (4b, 4c) before SFINAE, since deduction takes a default; the dependent value
+(4d) before SFINAE, since `enable_if<cond>` is a value; 4e before 4f and before 4i's candidates; 4h before 4i; 4j after 4h,
+because the self-host's packs are member templates (`make_owned`, `emplace_back`, `function`); 4k needs only M8.3's made class
+and may run beside 4b-4j; 4l and 4g stand alone. 4m-4s are independent of each other and of 4a-4l, and may run in any lane.
+
+**What M8.4 inherits from M8.3's tail** (the 53 suite classes at 9c110cb7, check census, by reason -> slice): a nested or
+elaborated class 10 (Tree 4, Vec 2, B 1, Pair<int,2> 1, IsInt 2) -> 4s, m83bv's c1/c2 in wave w49 take Tree<int>, Tree<long
+long>; a virtual function 7 (polymorphic-class-template 6, V<3>) -> 4s; a member enumeration naming a template parameter 5
+(sized 2, ByValue 3) -> 4s, m83bt in w49 takes sized; a base over a class template-id over its parameters 5 (tuple's Tuple<...>
+over a pack) -> 4j; a non-type parameter named outside its member bodies 4 (P<2,3>, Derived<{7,8}>, Wide<{5,6}>, Wide<{}>) ->
+4j for the packs, 4s for P, m83bu in w49 takes Derived; a constexpr member 4 (Pair, W) -> 4k, m83bs in w49 takes them by
+replaying the body by name; a data member of a type the binding does not carry 3 (match_results, Pair<int>, Mx<2,3>) -> 4s; a
+member initialiser naming a template parameter 2 (Box) -> 4m; a member enumeration with a name beside a member function 2 -> 4s;
+a data member of a class the read named over its parameters 2 (Mx<3,3>, Node<int>) -> 4s; and one each -> 4s: a using-declaration
+(inheriting constructors), a static data member's initialiser naming a template before another, a signature's const over a
+parameter bound to a reference, a friend, a data member the binding makes a reference, a data member of an incomplete type, a
+bit-field or an anonymous union, a base over its parameters that is polymorphic, final, incomplete or a union; a constexpr static
+data member (W<P>) -> 4k, m83bu in w49 takes it. The self-host has no class left (75,681 of 75,681).
+
+**What must not change through M8.4**, beyond the plan's list above: a refusal inside a trial re-raises, on the substitution
+as on the trial; `sfinae-failed` is a fact of the program (23 and 194), not of the path; the Itanium name is the pattern's
+(`mt.pattern`, the kept signature), the Microsoft name the substituted one's; a candidate never chosen gets no body; a member
+template's class layer is bound before its own; a specialization a call declares before its definition is owed its body there
+([temp.point]); `Constexpr` folds trees and never runs the VM.
+
+**Where it stopped**: the table above, measured; no slice started (4a is the next lane's whole hour).
