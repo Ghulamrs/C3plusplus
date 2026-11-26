@@ -157,7 +157,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3089`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3125`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1147`
@@ -180,14 +180,14 @@ is left:
   and **a function template's explicit specialization declared without its
   body** - give it the body there. `src/parser/ParserTemplate.cpp:729`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:1751`,
-  `src/parser/ParserTemplate.cpp:1805`, `src/parser/ParserTemplate.cpp:1890`
+  that was only declared** - `src/parser/ParserTemplate.cpp:1752`,
+  `src/parser/ParserTemplate.cpp:1806`, `src/parser/ParserTemplate.cpp:1891`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1894`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1895`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1964`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1965`; **a member class template** -
   `src/parser/ParserType.cpp:64`; **an out-of-line member template
   definition of a class template's member, or of a constructor template** (a
   non-template class's other member templates are defined out of line) -
@@ -230,7 +230,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:868`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:869`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:125`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:802`
@@ -317,7 +317,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1686`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:2390`
+  deduced one does not - `src/sema/Templates.cpp:2426`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -527,7 +527,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:2338` - a template instantiating itself past
+- `src/sema/Templates.cpp:2374` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 
