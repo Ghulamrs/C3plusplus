@@ -7089,3 +7089,71 @@ how typeDefaultRead pops its layer (the same answers), and the self-compile ran 
 wave gate): the -check=templates census on x86_64-windows; the REF's x86_64-windows measure (taken as 4a's 184 here); the
 self-host census re-run on c2 (c1's ParserTemplate.cpp unit was the refused one).
 Re-measure: `boxkit/m8r4b-cen.sh <r|n> <tag> <arch> <m|c> sh`, `boxkit/m8r4b-gate.sh`, `boxkit/m8r4b-gate2.sh`.
+
+## R1, sixth lane: classes made at first need (lane m8r1f, 2026-11-26)
+
+Base 501e2819 (wave m6d-w52: main c60ed082 + m8-r1d + m8-r1e + m8-4b2). **No src/ commit**: src/ is 501e2819's, 0 added, 0
+deleted; this entry is the lane's one commit. **The switch is not shipped**: emitted output holds on four targets, but the
+-check=templates census and the re-entries rise under it (below), and the brief ships only with both held.
+
+**The measure** - m8r1e's switch (`boxkit/m8r1e-switch3.diff`, applies to 501e2819 unchanged; the switched tree is the stash
+object ea641785), identical.sh, NEW under -templates=subst with `CXX1_FIRST_NEED=1` against a REF built from 501e2819 (the
+switch absent), classified by `boxkit/m8r1c-order.py`; all on the Windows box (cxx3-msvc, both built by cl, the Linux box's two
+slots held throughout by the coordinator's coordw52 and lane m8r4c):
+
+| target | -O0 | -O1 | -O2 | content | order only |
+| --- | --- | --- | --- | --- | --- |
+| x86_64-windows (both spellings) | 2,050 / 0 | 2,050 / 0 | 2,050 / 0 | 0 | 0 |
+| x86_64-linux | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+| tms6747 | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+| arm64-darwin | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+
+**Content 0 and order-only 0 on all four targets at all three levels**: making at first need moves no emitted byte, so the
+restart's question 7 (a golden re-record for order) does not arise from R1 at all.
+
+**The censuses with the switch on** (-check=templates, census env, `CXX1_FIRST_NEED=1` on both sides, the 501e2819 tree's
+tests/cases and 102 sources; `boxkit/m8r1f-wcen.sh` and `m8r1f-wcenl.sh` on Windows):
+
+| | REF 501e2819 | switch on |
+| --- | --- | --- |
+| x86_64-windows suite (1,377 units, 378 nonzero rc on both sides): class differ / body differ lines | 0 / **19** | 0 / **36** |
+| x86_64-windows self-host (102 units, rc 0): class differ / body differ lines | 0 / **11** | 0 / **112** |
+| x86_64-linux suite (354 nonzero rc) / self-host: class differ, body differ lines | 0, 20 / 0, 11 (m8r4b's c1 and R0's) | 0, **37** / 0, **112** |
+
+**No class differ on either ABI, but the body differ lines rise past the REF's: +17 suite, +101 self-host on each ABI, every
+new one "frame: a local: typed apart"** (17 and 101 such lines under the switch, none in the REF's) (m8r1c's +16 / +101, which m8r1d and m8r1e's mends left standing). **The root, by reading**: `layFrame`
+(Templates.cpp:1848, const, the check's frame) and the made body's frame beside it (:1973) substitute each read local's type
+at `Mapped` - `substitute(s, r.type)` - and a class `need()` made at first need is in no map, so the local keeps the read's
+shallow (`X<$T0>`) where the replay's local is the made class. It is memberSymbol's shape (m8r1e's 14f84e75) at a second
+site: a door makes the class, and a later const question asks the map the door did not fill. Emitted output does not move
+because the frame that differs is then not taken (the body falls to its replay, which is the program's). **The mend for the
+next lane**, measured, not by construction: either the frame's two sites ask at `Declared` (the made class is declared by its
+key), or - the one-implementation form - `need()` hands back what it made and the door enters it in its binding's map, so
+every later `Mapped` question (memberSymbol's included) reads one answer.
+
+**Re-entries under a binding** (R0's measure: census, no check, suite, -arch x86_64-linux; `boxkit/m8r1f-wre.sh`): switch on
+**21,569 at instantiation, 54,161 in the read** (binds 42,647, jumps 33,083, over 1,027 units; classes 2,640 made of 2,663,
+none made at a door); REF 501e2819 **21,549 and 54,151** (binds 42,617, jumps 33,083). **The switch raises them +20 at
+instantiation, +10 in the read (+30 binds)** - the same frame: with no check beside it, `layFrame`'s shallow answers "a type
+the binding does not carry" and the body falls back to its replay, a re-entry. A second reason not to ship it; the mend above
+answers both. (R0's 21,565 / 54,093 were measured at its base; the base has moved since.) **replay-residue** is 501e2819's, 150 / 19 / 26 / 6 (no src change).
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7,
+idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. `idsBefore`, `argsWanted`, `earlyArgs` retire only after
+the switch ships (step 2 of the brief), so none moved. After this lane: **idsBefore** - with Made at first need shipped, the
+const shape questions it serves (classShape, classBefore, typedefsCarried) must ask at Made or read `why`, so it needs those
+three made non-const first; **argsWanted** and **earlyArgs** (its token scan of the template's bodies, `p_.tokens_[t]`, goes
+with it: replay-residue -1 or more) are the order idsBefore keeps and go with it, now that order is shown not to matter.
+**carriedId** - its `early` branch is that order's own map and goes with argsWanted; its Declared branch's filter (not
+dependent, not a read shallow, no `$` tag) is the kernel's Declared answering "not carried" for a key over the parameters,
+measured. **idUnder** - the kernel's template template parameter step already; its second caller is earlyArgs, so it is
+single-use when earlyArgs goes. **typedefCarried** - R3's complete records, unchanged by this lane.
+
+**Gates**: no src change, so 501e2819's stand (the wave gate m6dw52g's). The switched tree builds clean under g++ -Werror
+(Linux, ~/m8r1f-m.exe, 0 warnings) and cl /W4 /WX (Windows, the REF and the switched tree built at once, 15:05:28-15:07:58,
+2 min 30 s, no warning). No changed emitted output at -O0, -O1 or -O2 on any target (the table). Slices 4m-4s untouched.
+**Owed** (to the lane that mends the frame): the switch's plain run on four targets (the shipped form's plain:
+`boxkit/m8r1f-wpid.sh`, `m8r1f-lchain2.sh`, neither run inside the hour), the x86_64-linux REF census at 501e2819 itself, and then the
+shipped form (`boxkit/m8r1f-shipped-form.diff`: need() at Made unconditionally, its census key renamed; EXCLUSIONS' three
+Templates.cpp citations 3264, 2565, 2513 move +11 with it) under the full gate. Re-measure: `boxkit/m8r1f-wident.sh <arch>
+<level> <jobs>` and `m8r1f-wcen.sh <r|m> <P>` (Windows, trees work\m8r1fr and work\m8r1fm), `boxkit/m8r1f-wre.sh`.
