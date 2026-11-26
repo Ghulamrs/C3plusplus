@@ -1528,19 +1528,27 @@ const char *Templates::trialSubstituted(const TemplateDecl &decl, const std::vec
 }
 
 std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
-                                         const std::vector<long long> &values, const Packs &packs) {
+                                         const std::vector<long long> &values, const Packs &packs, std::size_t pos) {
     Substituted s;
     const char *why = trialSubstituted(decl, binding, values, packs, &s);
     std::string failed;
     if (why == nullptr) {
         try {
-            const Substitution r = substitute(s, decl.pattern, Declared);     // makes nothing: a class not yet made is the re-read's
+            Substitution r = substitute(s, decl.pattern, Declared);     // a qualifier's class not yet made: made at the use, as the replay makes it
+            if (!r.carried() && std::string(r.why) == "a member type whose class the binding does not carry") r = substitute(s, decl.pattern, At{ pos });
             why = r.carried() ? "formed: the specialization still declared by the replay" : r.why;
-            // [temp.deduct]/8: a complete class the binding carries that lacks the member type named, said as the replay says it.
-            const Type *cls = !r.carried() && r.at != nullptr && std::string(r.why) == "a member type its class lacks" ? substitute(s, r.at->pointee(), Declared).type : nullptr;
+            const Type *cls = nullptr;
+            if (!r.carried() && r.at != nullptr && r.at->kind() == Kind::DependentMember) {
+                const Substitution q = substitute(s, r.at->pointee(), Declared);
+                if (q.carried() && q.type != nullptr && !p_.dependentType(q.type)) cls = q.type->unqualified();
+            }
+            // [temp.deduct]/8: a complete class the binding carries that lacks the member type named (said as the replay says
+            // it), or a qualifier that is no class at all.
             if (cls != nullptr && cls->isStructOrUnion() && cls->isComplete() && cls->findMember(r.at->tag()) == nullptr &&
                 !(cls->isSpecialization() && cls->findStaticMember(r.at->tag()) != nullptr))
                 failed = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
+            else if (cls != nullptr && !cls->isStructOrUnion() && !cls->isTemplateName())
+                failed = "a qualifier that is no class has no member type called '" + r.at->tag() + "'";
         } catch (const SubstitutionFailure &) {
             why = "a class the kernel made failed to substitute";      // the replay meets it again, and re-raises a refusal
         }
@@ -5827,7 +5835,7 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         std::vector<std::string> folded;     // 4d: the trial still decides
         if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
         // 4e: a signature of types the kernel shows cannot be formed drops the candidate with no re-read; the check replays it beside.
-        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs) : std::string();
+        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs, pos) : std::string();
         if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
         try {
             Parser::Trial trial(&p_);

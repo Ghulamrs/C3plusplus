@@ -256,9 +256,9 @@ public:
     const char *trialSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
                                  const Packs &packs, Substituted *s);
     // 4e: a function template's types-alone signature under the deduced binding through the kernel: the replay's words where a
-    // complete class it carries lacks the member type named (the candidate drops), else empty; counted in `sfinaeReport_`.
+    // complete class it carries lacks the member type named or a qualifier is no class (the candidate drops), else empty; `sfinaeReport_`.
     std::string sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
-                                  const Packs &packs);
+                                  const Packs &packs, std::size_t pos);
     std::map<std::string, long> sfinaeReport_;
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed, its list laid
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
