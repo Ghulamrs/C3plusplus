@@ -7209,8 +7209,8 @@ substituted a failure, the replay formed it` (the replay's answer kept). Census 
 **m8r4d's owed checks, on 0c30afec** against a REF built from 6903a031 (Windows, cl, `work\m8r4er` / `work\m8r4eb`): **cl /W4 /WX
 alone clean** (msvc\build.cmd, `_CL_=/MP2`, /affinity 3FF, 16:56:16-17:00:31, 4 min 15 s with the ship); **overload.sh plain 46
 agreed 0 differed**; **names.sh plain 1,027 passed 0 failed** (20 .nonames OPEN as recorded); **identical x86_64-windows -O0
-under the flag 2,054 compared 0 differ, plain 2,054/0** (cxx3-msvc, JOBS=3, the two at once, about 30 minutes); -O1 both ways
-stopped unfinished at the hour; **names.sh under the flag 1,027 passed 0 failed** (through a wrapper script as CXX1). No difference, so nothing to fix.
+under the flag 2,054 compared 0 differ, plain 2,054/0** (cxx3-msvc, JOBS=3, the two at once, about 22 minutes), **-O1 under the
+flag 2,054/0, plain 2,054/0**; -O2 both ways stopped at its start at the hour; **names.sh under the flag 1,027 passed 0 failed** (through a wrapper script as CXX1). No difference, so nothing to fix.
 
 **Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4en`, 47d12e4b's src with 45e00858's EXCLUSIONS, g++):
 **g++ -Werror clean**; **static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0) after 45e00858 (3 stale on 47d12e4b alone),
