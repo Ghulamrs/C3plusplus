@@ -3783,7 +3783,12 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         return t + 1 + 2 * params.size();
     };
     const auto idArg = [&](std::size_t t) {     // `N` a whole argument of a class template-id (`V<N>`, `Mx<M, N>`), made by its value
-        std::size_t lo = t, hi = t + 1, at = 0;     // 3h: or in one foldBound folds (`V<N + 1>`), which argValued folds as well
+        bool packed = false;     // slice 3ab: `<Ns...>`, a non-type pack the whole list (`<Ns..., 0>` the check finds differ)
+        for (std::size_t q = 0; q < params.size() && t > start && t + 2 < p_.tokens_.size(); q++)
+            packed = packed || (params[q].isPack && params[q].type != nullptr && p_.tokens_[t].text == params[q].name && p_.tokens_[t - 1].is("<") &&
+                                p_.tokens_[t + 1].is("...") && p_.tokens_[t + 2].is(">"));
+        const std::size_t whole = t + (packed ? 2 : 1);
+        std::size_t lo = t, hi = whole, at = 0;     // 3h: or in one foldBound folds (`V<N + 1>`), which argValued folds as well
         long long v = 0;
         const auto stops = [&](std::size_t k) { return p_.tokens_[k].is(";") || p_.tokens_[k].is("{") || p_.tokens_[k].is("}"); };
         for (int parens = 0; lo > start + 1 && !stops(lo - 1) && (parens > 0 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(","))); lo--)
@@ -3791,7 +3796,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         for (int parens = 0; hi < p_.tokens_.size() && !stops(hi) && (parens > 0 || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(","))); hi++)
             parens += (p_.tokens_[hi].is("(") ? 1 : 0) - (p_.tokens_[hi].is(")") ? 1 : 0);
         if (hi >= p_.tokens_.size() || lo <= start + 1 || !(p_.tokens_[lo - 1].is("<") || p_.tokens_[lo - 1].is(",")) || !(p_.tokens_[hi].is(">") || p_.tokens_[hi].is(",")) ||
-            (hi != t + 1 || lo != t ? !foldBound(p_.tokens_, &(at = lo), hi, params, s->values, 0, &v) || at != hi || v < 0 : false))
+            (hi != whole || lo != t ? !foldBound(p_.tokens_, &(at = lo), hi, params, s->values, 0, &v) || at != hi || v < 0 : false))
             return false;
         for (std::size_t b = lo - 1, angles = 0; b > start; b--) {
             const Token &x = p_.tokens_[b];
