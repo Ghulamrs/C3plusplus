@@ -419,7 +419,10 @@ windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools
         v=$(tr -d '\r' < "$L" | awk -F'\t' '$1 == "VERDICT" { print $3 "\t" $4 }' | tail -1)
         [ -n "$v" ] && printf '%s\t%s\n' "$s" "$v" >> "$OUT/windows.verdicts" || verdict "$s" FAIL "no verdict came back; $L" windows ;;
     esac; }
-windows_leg() {
+# while the gate's Windows steps run, work\GATE-WINDOWS-BUSY.txt names it: lanes start no Windows job until it goes
+windows_leg() { ssh -o BatchMode=yes "$WINDOWS" "echo $N %date% %time%> $WORK\\GATE-WINDOWS-BUSY.txt" > /dev/null 2>&1
+    windows_steps; ssh -o BatchMode=yes "$WINDOWS" "del $WORK\\GATE-WINDOWS-BUSY.txt 2>nul" > /dev/null 2>&1; }
+windows_steps() {
     [ -n "$KEEP" ] || { : > "$OUT/windows.verdicts"; ssh -o BatchMode=yes "$WINDOWS" "del $WORK\\$N-cycles.txt $WORK\\$N-verdicts.txt 2>nul" > /dev/null 2>&1; }
     st=$(legsteps windows); case " $st " in *" wbuild "*) windows_step wbuild || return 0; st=$(echo " $st " | sed 's/ wbuild / /');; esac
     [ "$(boxof cycles)" = windows ] && [ -z "$(why cycles)" ] && ! done_ cycles && st="$st cycles"   # wrun joins it
