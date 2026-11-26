@@ -5425,3 +5425,11 @@ bodies (15% made in the self-host, 806 of 4,625 in the suite) and alias type-ids
 the recommended option).** An M6d slice that frees a parser action family of `ExprPtr` also gives that family the
 signature M8's body instantiator (M8-PLAN, restart step R5) calls with typed operands, so the parser and the
 instantiator call one action and the family is rewritten once. A slice that cannot is written down with why.
+
+**m6d-w50's wave landed, 2026-11-26 (gate m6dw50g at 4a127f66 against main c9619846: 40 passed, 0 failed, no rows;
+the fixed point checked not owed; 52 minutes).** M8's restart, R0 (m8-r0, lane m8r0) with slice 4a (m8-4b, lane m84b):
+the census by reason and `falling back=` per unit; the restart's seven decisions (M8-PLAN); **re-entries under a binding
+at instantiation, suite 21,565, self-host 376,781 (x86_64-linux); distinct template definitions re-entered, suite 1,200,
+self-host 185; self-host wall time plain against -templates=subst 166 s / 354 s (Linux), 51 s / 90 s (Windows)**;
+`tools/replay-residue` the fifth gate of `make test` at 150 / 19 / 26 / 6, and wave-gate's static step running it and
+ast-residue by name. Nothing changes without the flag. Owed: names.sh under the flag (its harness quotes `$CXX1`).
