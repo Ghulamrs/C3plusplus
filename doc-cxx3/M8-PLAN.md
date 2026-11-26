@@ -8384,10 +8384,10 @@ the read: <part>` failing the class.
 **Gates on 409ff1d3** (Linux, against the REF): **g++ -Werror clean; the FULL self-compile 102 of 102 (stage 0 179 s);
 identical under the flag x86_64-windows -O0 / -O2 2,062 / 0; subst.sh rc 0** (run -O0 / -O2 1,375 / 0, typed 1,022 / 0 at
 both, 2 not for this host, 1,166 through the function door); **census self-host `-check=templates` x86_64-linux 102 rc 0, class
-differ 0, body differ 11 (m8r3ra's REF 11), no `a member template from the read` differ**; census self-host without the check
-above. No changed emitted output in what ran. **Owed (the hour ran out; slots shared with m8r3rb):** identical x86_64-linux,
+differ 0, body differ 11 (m8r3ra's REF 11), no `a member template from the read` differ; x86_64-windows the same: 102 rc 0,
+class differ 0, body differ 11**; census self-host without the check above. No changed emitted output in what ran. **Owed (the hour ran out; slots shared with m8r3rb):** identical x86_64-linux,
 tms6747 and arm64-darwin at -O0/-O1/-O2 both ways, x86_64-windows -O1 under the flag and all three plain; run.sh both ways; the
-suite censuses with and without the check, both ABIs; the self-host censuses on x86_64-windows; the static gates (exclusions on
+suite censuses with and without the check, both ABIs; the self-host census on x86_64-windows without the check; the static gates (exclusions on
 3c1754a3, comments, memory gate, ast-residue, replay-residue - not lowered, unchanged counts); **Windows: cl /W4 /WX, names.sh,
 overload.sh**. No probe (Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
 `boxkit/m8r3rh-ship.sh <x> <commit|tree>` (m8r3ra's scripts renamed on Linux), `m8r3rh-q.sh <x> <job>...`, `m8r3rh-mt.sh <census
