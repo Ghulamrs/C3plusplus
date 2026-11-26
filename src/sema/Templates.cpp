@@ -1597,7 +1597,7 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
     if (why == nullptr) {
         try {
             // A qualifier's class not yet made, or an id under a declarator (Declared lays the outermost only): made at the use, as
-            // the replay makes it reading the id.
+            // the replay makes it reading the id, in the caller's trial.
             Substitution r = substitute(s, decl.pattern, Declared);
             if (!r.carried() && (std::string(r.why) == "a member type whose class the binding does not carry" ||
                                  (std::string(r.why) == "a type over the parameters the binding does not carry" && madeAtUse(r.at))))
@@ -1617,8 +1617,9 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
                 failed = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
             else if (cls != nullptr && !cls->isStructOrUnion() && !cls->isTemplateName())
                 failed = "a qualifier that is no class has no member type called '" + r.at->tag() + "'";
-        } catch (const SubstitutionFailure &) {
-            why = "a class the kernel made failed to substitute";      // the replay meets it again, and re-raises a refusal
+        } catch (const SubstitutionFailure &) {     // [temp.deduct]/8: a class made at the use that cannot be made; the trial puts back
+            sfinaeReport_["substituted: a class made at the use failed"]++;     // what its read left, and a refusal is re-raised there
+            throw;
         }
     }
     const std::string kind = why != nullptr && std::string(why) == "a type over the parameters the binding does not carry" ? ": " + trialKind(at) : "";
@@ -5915,19 +5916,26 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
         // 4e: a signature of types the kernel shows cannot be formed drops the candidate with no re-read; the check replays it beside.
         const Type *formed = nullptr;     // and one that forms is declared from its substituted signature, with no re-read
-        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs, pos, &formed) : std::string();
-        if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
+        std::string failed;
         try {
-            if (formed != nullptr && !checkBodies_) {
+            bool declare = false;
+            {
+                // The kernel's ids made at the use inside the replay's trial: a class that cannot be made is a failure, its read put back.
+                Parser::Trial trial(&p_);
+                if (substitute_ && (shape == "types alone" || shape == "a default")) failed = sfinaeSubstituted(decl, binding, values, packs, pos, &formed);
+                if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
+                declare = formed != nullptr && !checkBodies_;
+                if (!declare) {
+                    const Parser::Signature &read = p_.instantiate(decl, binding, values, args, pos, packs);
+                    if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
+                    if (!failed.empty()) sfinaeReport_["held: differ: substituted a failure, the replay formed it"]++;
+                    if (formed != nullptr) sfinaeReport_[formedHeld(decl, formed, read)]++;
+                }
+            }
+            if (declare) {
                 const Diagnosed quiet(&p_.src_);     // [temp.deduct]/8 still: a name the linker cannot hold drops the candidate
                 p_.instantiate(decl, binding, values, args, pos, packs, formed);
-                continue;
             }
-            Parser::Trial trial(&p_);
-            const Parser::Signature &read = p_.instantiate(decl, binding, values, args, pos, packs);
-            if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
-            if (!failed.empty()) sfinaeReport_["held: differ: substituted a failure, the replay formed it"]++;
-            if (formed != nullptr) sfinaeReport_[formedHeld(decl, formed, read)]++;
         } catch (const SubstitutionFailure &f) {
             if (checkBodies_ && !folded.empty()) valueHeld(folded, false);
             if (!failed.empty()) sfinaeReport_[f.why == failed ? "held: the replay's failure" : "held: both failed, in other words: " + f.why]++;
