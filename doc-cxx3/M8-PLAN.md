@@ -7373,3 +7373,56 @@ the base counted twice (`sfinae-failed` 36 -> 35). **Next for 4e**: the 2 member
 to member (`dependentType` does not walk them); then the trial's `Parser::Trial` in `instantiateViableTemplates` falls where
 every shape substitutes (4d's values, 4f's `decltype`, 4h's member templates). Re-measure: `boxkit/m8r4e3-cen.sh <a|b|m|n> <tag>
 <arch> <m|c> <s|h|sh>` (Linux), `boxkit/m8r4e3-wcen.sh` (Windows), `boxkit/m8r4e3-gate.sh`, `m8r4e3-wident.sh`, `m8r4e3-wnames.sh`.
+
+## R2, slice 4g: one reader of a dependent expression (lane m8r4g, 2026-11-26)
+
+**The measure** (`wc -l src/parser/ParserDependent.cpp`; the token reader `dependentExpression`'s call sites outside its file): at
+4ab0bcba 478 lines, 3 sites (`decltype` in a pattern, ParserExpr.cpp:2396; a template argument over the parameters,
+ParserTemplate.cpp:1188; 4c's value default over the parameters before it, ParserTemplate.cpp:1620). c1 623aa80e: 537, 2 sites;
+c2 e403be17: 568, 2 sites. **The file grew**: the reader cannot go whole in an hour, and the two kinds moved are the ones the parser's
+own path reads with no dependent operand. The slice goes on kind by kind; the row's "about 130" is reached only when the last site moves.
+
+**What it does.** `Parser::depFromSyntax` makes the pattern's `DepExpr` from the syntax node the parser's own expression path made -
+an integer literal of type int (`literalTokens_`'s token: no suffix, not a character, at most INT_MAX), `true`/`false`, a name that is
+a pattern's non-type parameter (`T_`) or an enclosing template's bound value (its literal, as the reader spelled it), a parenthesis,
+the prefix and binary operators (one table of Itanium codes now, shared with the reader) and `?:` - and null for anything else.
+(c1) 4c's value default over earlier parameters (flag path only) is read by `conditional()` and made so; a shape it does not carry
+is `defUnread` "a value past the literals, parameters and operators depFromSyntax carries" (0 over the 22 cases below). (c2) **On the plain
+path**: a template argument over the parameters whose tokens are integer literals, non-type parameters (no pack, no call, no `::` or
+`<` after them) and operators alone (`valueOperandsAhead`: binary + - * & | ^ && || == !=, the relations, shifts and `?:` only inside
+parentheses, prefix - + ! ~) is read by `conditional()` - its nodes killed after, as the reader's were never live - and its
+`DepExpr` made from the syntax node; anything else, or a node the converter declines, rewinds and goes to the reader. **Which kinds
+stay with the reader**, by reason: `sizeof` of a type or an expression, casts (`T(x)`, C-style, `static_cast`), a function
+parameter, member access, calls and `T::name` - each needs the reader's own typing of a dependent operand (the parser's path in a
+signature has no dependent operands: `patternBody_` is off there), so they move when the signature is read the way a body is;
+and `decltype`'s site whole, for the same reason. Literals with a suffix or past INT_MAX go to the reader (their type ladder is
+`primary`'s, not repeated here).
+
+**Shown**: under gdb on a probe of seven forms (`XplT_Li1EE`, `XqugtT_Li2ELi1ELi0EE`, `XmimlT_T0_Li1EE`, `XplngT_Li4EE`,
+`XorlsT_Li2ELi1EE`, `XntT_E`, and `XplstT_Li1EE` left to the reader) depFromSyntax ran 76 times and the reader 16; the `.s` the same
+as 4ab0bcba's, byte for byte, and the program prints g++'s answers. -check=templates over the 22 suite cases that write a default:
+every default line as 4ab0bcba's (measure: value made 15 class list + 3 deduced; check: 12 + 3; 0 default, class, value or
+sfinae differ).
+
+**Gates** (REF 4ab0bcba built on each box; the lane measured on fc034c2d, c2's tree before its last two edits - a `syntax::Node` held
+by copy, not reference, and EXCLUSIONS - both of which change no emitted byte). Linux (g++, `~/m8r4gm`): **g++ -Werror clean** (c1 and
+c2); **the FULL stage-0 self-compile 102 of 102** (156 s); **identical plain 0 differ** x86_64-linux 3087/0, tms6747 3087/0 and arm64-darwin 3087/0 at
+-O0/-O1/-O2; under the flag tms6747 3087/3, the three template-angle-split at -O0/-O1/-O2, the case below; run.sh plain 1373/0; run.sh under the flag 1372/1 and subst.sh 2 failed (run -O0, -O2), all three the one case
+template-angle-split ("an array length must be positive, not -4" in `Y<char>`), which REF 4ab0bcba refuses the same under the flag:
+the base's, not this lane's (owed to the wave: named for 4e's SFINAE trial or the class door); subst.sh typed 1019/0 both levels,
+self 102 of 102. Static on c2: exclusions 0/0 after the ten re-pointed (c1 alone left them stale), comments 0 over, memory-gate
+lower, **ast-residue not raised at c2** (c1 alone raised node-refs 298 -> 299 by `const syntax::Node &`, undone in c2),
+**replay-residue 150/19/26/6 +0** at c1 and c2, ide up to date. Windows (cl, `work\m8r4gx` fc034c2d, `work\m8r4gz` e403be17):
+**cl /W4 /WX clean** on both (1 min 15 s on fc034c2d, no other job of the lane's on the box; 3 min 16 s on e403be17 beside the tests); **names.sh plain 1029 passed,
+0 failed** (Itanium and Microsoft; 20 .nonames open as recorded).
+**Not done in the hour**: identical x86_64-windows plain at -O0/-O1/-O2 in one run passed the 25-minute cap (rc 124, a defect, as
+m8r4e3's; -O0 alone was started at 20:25 - its answer, if any, is in boxkit/m8r4g-handover.md); identical under the flag on
+x86_64-linux, arm64-darwin and x86_64-windows; names.sh under the flag and overload.sh (running at the hour's end, see the
+handover); the -check=templates censuses over the whole suite and the self-host (only the 22 default cases were run).
+
+**Owed and next.** The two remaining sites - `decltype` (ParserExpr.cpp:2396) and the template argument's other kinds - need the
+signature read with dependent operands, as a body is (`patternBody_`'s zeros of a dependent type, M8.1): then `sizeof(T)`, `T(x)`,
+`t.m`, `f(t)` and `T::n` come out of the parser's own path as syntax nodes, and depFromSyntax takes `Sizeof`, `Cast`, `Member`,
+`Call` and the qualified `Name` (a type operand recorded beside its node, as `literalTokens_` records a literal's token). Only
+then does the reader (ParserDependent.cpp's `dependentExpression` .. `depPrimary`, about 330 lines) go, and with it
+`valueOperandsAhead`. Re-measure: `boxkit/m8r4g-cen.sh <tag> <m|c>`, `m8r4g-gate.sh` (TREE=n|m), `m8r4g-wident2.sh`, `m8r4g-wnames.sh`.
