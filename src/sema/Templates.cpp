@@ -513,20 +513,22 @@ static bool writtenValue(const TemplateArg &a) {
 bool Templates::argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const {
     std::string written;
     const bool bound = readId(o, &written, nullptr) && written != name;     // 3t: a stand-in's list, renamed
-    for (std::size_t k = 0; k < args->size(); k++) {
-        TemplateArg &a = (*args)[k];
-        if (a.isPack && !a.isTemplate && packUnder(s, &a)) continue;
-        if (!a.isType && (argValued(s, &a) || (bound && writtenValue(a)))) continue;
-        if (a.isTemplate && a.type->isTemplateName()) continue;     // a class template, bound or written
-        if (!a.isType || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) return false;
-        a.type = substitute(s, a.type).type;
-    }
+    for (std::size_t k = 0; k < args->size(); k++)
+        if (!argUnder(s, &(*args)[k], bound)) return false;
     return true;
 }
 
-// A read's pack argument under `s`, as the replay's template-id lists it: `Ts...` the members `s` binds to Ts, each other
-// member substituted; false where `s` binds no such pack or a member stays a parameter (`List<M>` of a non-type M).
-bool Templates::packUnder(const Substituted &s, TemplateArg *a) const {
+// The kernel's argument step, one of an id's under `s` (`bound`: a stand-in's list, its written values kept): a value folded, a
+// type substituted, a class template kept; a pack as the replay's template-id lists it - `Ts...` the members `s` binds to Ts, each
+// other member substituted. False where one stays a parameter, `s` binds no such pack or a member does (`List<M>` of a non-type M).
+bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound) const {
+    if (!a->isPack || a->isTemplate) {
+        if (!a->isType && (argValued(s, a) || (bound && writtenValue(*a)))) return true;
+        if (a->isTemplate && a->type->isTemplateName()) return true;     // a class template, bound or written
+        if (!a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->isParam) return false;
+        a->type = substitute(s, a->type).type;
+        return true;
+    }
     PackMembers out;
     for (std::size_t k = 0; k < a->pack.size(); k++) {
         const Type *m = a->pack[k];
@@ -3719,7 +3721,7 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
     for (std::size_t j = 0; j < args->size(); j++) {
         TemplateArg a = (*args)[j];
         if (!a.isPack) { flat.push_back(a); continue; }
-        if (a.isTemplate || a.packIsValue || !packUnder(s, &a)) return false;
+        if (a.isTemplate || a.packIsValue || !argUnder(s, &a, false)) return false;
         for (const Type *m : a.pack) { TemplateArg one; one.type = m; flat.push_back(one); }
     }
     std::size_t k = 0;
@@ -3779,7 +3781,7 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
         TemplateArg &a = (*args)[k];
         const TemplateParam &q = d->second.params[k];
         if (q.type != nullptr && !q.isPack && (argValued(s, &a) || (written != *name && writtenValue(a)))) continue;
-        bool carried = !itself && q.isPack && a.isPack && !a.isTemplate && packUnder(s, &a);     // `X<Ts...>`: its members, as the replay lists them
+        bool carried = !itself && q.isPack && a.isPack && !a.isTemplate && argUnder(s, &a, false);     // `X<Ts...>`: its members, as the replay lists them
         for (std::size_t m = 0; carried && m < a.pack.size(); m++) {
             const Type *u = a.pack[m]->unqualified();
             carried = !u->isFunction() && readIds_.count(u) == 0 && !(u->isStructOrUnion() && overParameters(u->tag()));
@@ -3928,7 +3930,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             open.pop_back();     // 3q: a `>` inside parentheses compares, `Max<(N > M ? N : M), Rest...>`
         std::size_t e = t + 1;
         while (e < p_.tokens_.size() && (p_.tokens_[e].is("&") || p_.tokens_[e].is("&&") || p_.tokens_[e].is("*"))) e++;
-        // ... or in a template-id's arguments, `X<Ts...>`, whose read id the kernel's id step and earlyArgs expand (packUnder).
+        // ... or in a template-id's arguments, `X<Ts...>`, whose read id the kernel's id step and earlyArgs expand (argUnder).
         const bool expanded = !open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1));
         // Slice 3q: or counted, `sizeof...(Ts)`, where the second scan finds a static's initialiser staticsFromRead reads bound.
         const bool counted = t > start + 2 && t + 1 < p_.tokens_.size() && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") &&
