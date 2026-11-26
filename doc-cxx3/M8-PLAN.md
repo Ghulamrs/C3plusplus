@@ -7907,3 +7907,76 @@ g++ -Werror clean on c7c78bed; the x86_64-linux self-host census under -check=te
 ways, subst.sh, the full self-compile, static gates, identical on four targets both ways, the suite censuses, the x86_64-windows
 censuses, names/overload, cl /W4 /WX (no Windows job ran: GATE-WINDOWS-BUSY.txt stood, then the box went unreachable);
 argsWanted, earlyArgs and carriedId's early branch not reached.
+
+## R2, slice 4f: expression SFINAE, and Parser::Trial (lane m8r4f, 2026-11-27)
+
+Base 23e0e204 (wave m6d-w54). Commit 17e3a27c (the step, its probe `template-subst-sfinaedecltype`, three Templates.cpp citations
++40, each the same refusal at its new line) and this entry. src/ 99,128 -> 99,170 lines (46 added, 4 deleted: Templates.cpp +44/-4,
+Templates.h +2). **Nothing changes without the flag.** Linux only (the user, 2026-11-27): every Windows check is owed.
+
+**What it does.** `decltypeUnder`: a function template's return `decltype` whose expression is a member call with no arguments on
+an object the binding types - a function parameter (`decltype(t.f())`, `t->f()`) or a value-initialised `T` (`decltype(T().f())`) -
+is the call's type where the object's class is complete and `f` is its one member function of that name: public, of no parameters
+or ref-qualifier, not a member template, callable on the object's cv (a const object, a const member), its return not a cv scalar.
+That type goes in the trial's map (`Substituted::needed`, where an id made at first need goes), so `sfinaeSubstituted` substitutes
+the whole signature and, where it forms, the candidate is declared from it with no re-read (4e2's path); the trial shape "a
+'decltype'" now enters `sfinaeSubstituted`. Anything else re-reads, named: "a 'decltype' of no member call without arguments", "...
+over an object neither a function parameter nor `T()`", "... of a member call not one function" (no member of that name, an
+overload set or a member template - the class's own lookup only), "... the read would rank" (a parameter, a ref-qualifier, cv,
+access, deleted), "... over an object no complete class", "... over a volatile object". A failed member call is never claimed as a
+failure here: the replay decides it, as before. `returnLeaf` (a return's leaf under cv, pointers and references) is shared with the
+function door's "a decltype return" test, which had the loop inline. Under `-check=templates` every formed one is replayed and held
+(`formedHeld`).
+
+**THE MEASURE.** **`Parser::Trial` in Templates.cpp 6 -> 6; replay-residue 150 / 19 / 26 / 6, +0.** No use is retired: each still has
+a caller that replays - every one on the plain path, and under the flag: the declaration's read (Templates.cpp:1870), each held member
+body of a read class (1956) and each member template of one (2051) are the read itself (R3, R5); the default's trial at deduction
+(3285) runs the replay beside 4b/4c's made default; the SFINAE trial (6012) holds the kernel's made-at-use classes (c085a7fc) and
+replays every shape not carried (the 85 `decltype` trials below, 4d's values, the not-carried kinds) and everything under the check;
+a member template as a candidate (6107) is 4h's. The census (`-templates=subst`, g++ on Linux; before = the coordinator's coord54
+census of 23e0e204, after = 17e3a27c; the lane's suite holds the probe - 10 `decltype` trials, 5 formed, 5 re-read):
+
+| | `decltype` trials | formed from the substitution | re-read, by reason | the function door: "a `decltype` return, which the replay works out" / "trailing 'decltype'" | `sfinae-failed` | SFINAE-door re-entries |
+| --- | --- | --- | --- | --- | --- | --- |
+| suite x86_64-linux, before | 87 | 0 (the shape never entered `sfinaeSubstituted`) | all | 34 / 5 | 37 | 5,837 / 8,510 |
+| suite x86_64-windows under the check, after | 97 = 87 + the probe's 10 | **12 = 7 + the probe's 5**, every one held as the replay read it | 79 no member call without arguments, 4 not one function (the probe's), 1 would rank (the probe's), 1 no complete class | 37 (34 + the probe's 3) / 5: **unchanged** | 42 = 37 + the probe's 5 (**unchanged**) | 7,313 / 8,543 (under the check) |
+| self-host x86_64-linux, before | 0 | - | - | 0 / 0 | 195 | 78,771 / 244,775 |
+
+So this step carries the `sfinae-decltype-*` shape (a member call on a parameter or on `T()`): 7 of the suite's 87 trials, and the
+probe's 5; the rest are a `decltype` of something else (79: arithmetic, a free function's call, a data member, `declval`). The
+self-host has no `decltype` trial at all. **The function door's two `decltype` reasons are not touched** (34 / 5): the body door
+still replays a `decltype` return; typing it there is `decltypeUnder` over the read `Function`'s parameters, the next step. **The
+320 self-host trials 4e3 left not carried are 0 at 23e0e204** (all "an id the read cleared", carried by 4e3's c3 77268ba1; the
+base's 30,457 self-host trials of these shapes all form): nothing is left to split by kind. Not measured in the hour (owed): the
+suite after without the check, and the self-host after on both ABIs (the step cannot reach the self-host: it has no `decltype`
+trial). **The probe** `template-subst-sfinaedecltype` (g++ 11.5 `-x c++ -std=c++11 -pedantic-errors` on Linux: `7 17 41 6 8` /
+`1 2 3 4 6`; the Linux box has no clang since 11-25, so clang's answer is owed on Windows): trailing and leading, a reference
+return assigned through, `->`, a const object against a non-const member and a non-const one beside it; right plain and under the
+flag, the .s the same both ways.
+
+**m8r4fix's owed checks, on 23e0e204** against REF 24d17607 (both g++ on Linux; 23e0e204's exe the coordinator's coord54 build,
+its src the lane's by `diff -rq`): the wave gate coord54 ran the plain identicals on four targets and the flag-both-sides ones on
+x86 meanwhile - **0 differ everywhere**: plain tms6747, arm64-darwin and x86_64-linux 1,030/0 at each of -O0/-O1/-O2, x86_64-windows
+2,060/0 at each; under the flag x86_64-linux 1,030/0 and x86_64-windows 2,060/0 at each level - so they were not repeated. The lane's own - NEW under the flag against a plain REF on tms6747, arm64-darwin and
+x86_64-windows by level, and the self-host censuses on both ABIs - waited in `~/slot` behind about twenty jobs (the base build
+alone 19 minutes, stopped by PID and replaced by coord54's exe) and did not run: **owed**. The self-host census of 23e0e204 on
+x86_64-linux (coord54's): 102 units rc 0, no not-carried trial, no `decltype`.
+
+**Gates** (a coding lane's, Linux only; the next wave gates it whole). `~/m8r4fm` (17e3a27c's files over 23e0e204), g++ 11.5:
+**g++ -Werror clean**; **the FULL stage-0 self-compile 102 of 102** (177 s); **run.sh under the flag 1,375 passed, 0 failed**
+(1,374 + the probe); **identical against 23e0e204 at -O0/-O1/-O2 - x86_64-linux under the flag 3,093 compared 0 differ, plain
+3,093/0; tms6747 under the flag 3,093/0, plain 3,093/0; arm64-darwin under the flag 3,093/0, plain 3,093/0** (the probe is the three new files; no emitted file changed at any level);
+**-check=templates over the suite on x86_64-windows: no class, default, value or sfinae differ**, 1,611 formed every one held,
+body differ lines 22 (m8r4fix's 21 + the probe's one); **static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0), comments 0
+over the cap, memory-gate lower, ast-residue not raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date (after
+six AppleDouble `._` files the Mac's tar had put in the tree were removed by name - a slip of the ship, not of the commit).
+Slices 4m-4s untouched; no new src/sema function indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`.
+
+**Owed** (to the wave gate): cl /W4 /WX, names.sh and overload.sh both ways (Windows); clang's `.expected` for the probe
+(Windows); on Linux, not reached in the hour: run.sh plain, subst.sh, identical on x86_64-windows both ways (by level; stopped unstarted at the hour, as run.sh plain was stopped by PID mid-run),
+the -check=templates census over the self-host on both ABIs and the suite's on x86_64-linux, the census without the check; and
+m8r4fix's NEW-under-the-flag identicals on tms6747, arm64-darwin and x86_64-windows and its self-host censuses. **Next for 4f**: the function door's `decltype` return (34 / 5) by `decltypeUnder` over the read function;
+then the 79 re-read here by kind - a free function's call through the definition's candidates (M8.2 2d), arithmetic over the
+bound types, a data member (`decltype(t.m)` against `decltype((t.m))`: the id flag the type keeps); `Parser::Trial`'s SFINAE use
+falls only when the plain path substitutes too. Re-measure: `boxkit/m8r4f-cen2.sh <m|n|r> <tag> <arch> <m|c> <s|h|sh>`,
+`m8r4f-gate2.sh` (TREE=m), `m8r4f-job2.sh`.
