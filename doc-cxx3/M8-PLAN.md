@@ -6902,9 +6902,11 @@ root not found inside the hour: pair's partial (`pair(const pair<T1, T2> &p)`: "
 'pair<const int,int>' with these parameters and qualifiers", 10 cases), std::function's primary chosen (its static_assert, 4) and
 array's `T elems_[N]` laid with N an unset value (139,720,235,404,512 elements, 1). **Ruled out** by measure: an argument not
 carried passed on (ab5d0613), Made stopping at the first declarator or the list form (7d2ecb43), and a program's own class
-re-keyed at Made (c7f7258a, reverted: 48 the same). Next: read where the made pair's member signature and its body's key part
-(classMembers / memberShape against `memberName`), and which door asks `std::function<R(Args...)>` with what arguments, by
--dump of the one case each (range-for-vector, std-function, array-header). **Question 7 does not arise yet** - nothing is
+re-keyed at Made (c7f7258a, reverted: 48 the same). A pointer for the next lane: pair's refusal is the replay's, not the
+door's - `src/parser/ParserTopLevel.cpp:1054`, the held body `pair(const pair<T1, T2> &)` replayed against the members
+membersFromRead declared, matched by `classes_.sameParameters` - so the made signature's `pair<int,int>` and the replay's are two
+`Type`s for one id (a class made at need under the kernel's key beside the one the replay finds); then which door asks
+`std::function<R(Args...)>` with what arguments, by -dump of one case each (range-for-vector, std-function, array-header). **Question 7 does not arise yet** - nothing is
 order-only - so no switch is committed and `idsBefore`, `argsWanted`, `earlyArgs` stay.
 
 **The shapes, and what in the kernel answered by key where the map answered:**
