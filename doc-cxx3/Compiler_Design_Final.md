@@ -9,6 +9,7 @@ Draft 2.5, 2026-10-22. It replaces `Compiler_Design.md` (Draft 1) and meets `Com
   - **cpp11** (`toolchain/Compilers/C++Optimize`, 1.28, at GRIDE cf1e607; its development repository at 1.23 holds `docs/`, `tests/`, `tools/`);
   - **cppparse 1.0** (`examples/projects/cppparse` at GRIDE cf1e607, 2026-10-22);
   - **compilerpp 1.0** (`examples/projects/compilerpp` at GRIDE 7f0cdce, 2026-10-21);
+  - Tracked now (2026-11-26): cpp11 1.83 (Compiler-Cpp-Optimize c482b4ed = GRIDE f8b3032); cppparse 6.0 (Compiler-Cpp98-Fable tag v6.0, 1253401); compilerpp 1.0, unchanged.
 - the requirement that the result **compiles itself** (R5, R9.1).
 
 A decision cites the code it rests on. Where the three compilers disagree, the one whose behaviour is measured wins. For the language, that measure is the oracle policy (section 11.1).

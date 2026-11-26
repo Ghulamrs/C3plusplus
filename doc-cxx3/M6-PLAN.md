@@ -5409,3 +5409,12 @@ template whose first base is polymorphic - its vtable seeded by layBases, a vtab
 the read) and m8-3bn (typedefByPath: ratio_divide, decay). **Class specializations made with no replay (exact census):
 suite 2,581 of 2,635 on the merged tree; self-host 75,681 of 75,681 - every class - by the lanes' counts.**
 Nothing changes without the flag.
+
+**m6d-w49's wave landed, and M8.3 closed, 2026-11-26 (gate m6dw49g at cd93e1bd against main 9c110cb7, -m M8.3 -a mfixed:
+45 passed, 0 failed, no rows - identical 0 differ on four targets; the fixed point at -O0 and -O2 on Linux, Windows (masm)
+and the Mac's arm64-darwin, 102 of 102 from stages 0, 1, 2 and from 2, 3; overload 46/0; 158 minutes).** m8-3br, m8-3bq,
+m8-3bs, m8-3bt, m8-3bu, m8-3bv (slices 3y-3ac: constexpr members, a constructor's mem-initialisers read with its body, an
+enumerator over sizeof(T), a constexpr static, a value pack in a base, nested classes of a specialization). **Class
+specializations made with no replay (exact census): suite 2,636 of 2,661; self-host every class, on both ABIs, by the lanes'
+counts.** The suite's ~25 still replayed pass to M8.4 (M8-PLAN, m84a's slice table). Nothing changes without the flag.
+M8.4's slice 4a (m8-4b, 989172e9) waits unlanded for the restart; work is paused for the review of the M8 direction.
