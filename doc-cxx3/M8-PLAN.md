@@ -8107,6 +8107,13 @@ enumerators declared `tag::a` the same way, a typedef substituted at Made, a nes
 binding, a member template declared under `tag` from its TemplateDecl with the class's layer recorded on it (4h's first layer). No
 `p_.at_` moves and no `bindTemplateParameters` opens.
 
+**R1 closes at four helpers with callers, and each moves into an R3 slice** (the coordinator, 2026-11-27, after m8r1n: argsWanted
+retired by f781321d, earlyArgs' token scan by 7c8421d9, both on m8-r1n, not in this base): **typedefCarried -> 3R-f**; **carriedId ->
+3R-d** - its early branch needs a mark on each class the walk made, not a position in the typedef table (m8r1n's try by the position,
+`boxkit/m8r1n-b.diff`, gave 56 class-differ units), and 3R-d is the first slice that makes ids at first need in the walk, so it
+records that mark; **earlyArgs -> 3R-k** (its callers are classShape's id half and idsInside); **idUnder -> 3R-k**, folded into
+specializationIn once earlyArgs goes. The paragraph below is this lane's reading at da2e6ed2, before m8r1n's commits.
+
 **Which R1 helpers R3 takes.** `typedefCarried` (2 callers, both the class door's: typedefsCarried and typedefByPath) - retired in
 3R-f into the kernel: a read typedef's Type substituted at Made answers carried or not by `why`, and "one classShape wanted made
 first" becomes "made at first need in the walk". `idUnder` (3 callers: the kernel's id step, the SFINAE trial's id list, earlyArgs) -
