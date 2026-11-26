@@ -2612,8 +2612,6 @@ std::string Templates::builtReport() const {
     }
     out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
-    out += "-check=templates position record asked=" + std::to_string(nestedAsked_) + " disagree=" + std::to_string(nestedDisagree_) +
-           " absent=" + std::to_string(nestedAbsent_) + "\n";     // R3 3R-c: the record against nestedByPath's scan
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -5411,47 +5409,8 @@ std::vector<std::size_t> Templates::enumsInOrder(std::size_t start, bool *other)
 // with no access label before it and no member template after it, N named nowhere else, no template in it (3ac: its members defined
 // out of line, its static data members and enumerations are the same path's).
 std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedByPath(std::size_t start) const {
-    const std::vector<std::pair<std::size_t, std::size_t> > scanned = nestedScanned(start);
-    std::vector<std::pair<std::size_t, std::size_t> > recorded;
-    for (const MemberRecord &r : orderOf(start)) recorded.insert(recorded.end(), r.nested.begin(), r.nested.end());
-    if (readOrder_.count(start) == 0) nestedAbsent_++;
-    else { nestedAsked_++; nestedDisagree_ += recorded != scanned; }
-    return scanned;
-}
-
-std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedScanned(std::size_t start) const {
-    std::vector<std::pair<std::size_t, std::size_t> > at;
-    std::size_t open = start, end = start;
-    while (open < p_.tokens_.size() && !p_.tokens_[open].is("{") && !p_.tokens_[open].is(";")) open++;
-    if (!p_.tokens_[start].is("struct") || open >= p_.tokens_.size() || !p_.tokens_[open].is("{")) return at;
-    for (int depth = 0; end < p_.tokens_.size(); end++)
-        if ((depth += p_.tokens_[end].is("{") ? 1 : p_.tokens_[end].is("}") ? -1 : 0) == 0 && end > open) break;
-    bool label = false;
-    for (std::size_t t = open + 1; t < end; t++) {
-        const Token &k = p_.tokens_[t];
-        if (k.is("{") || k.is("(") || k.is("[")) {     // a member function's body or an initialiser: not this level
-            for (int depth = 0; t < end; t++)
-                if ((depth += p_.tokens_[t].is("{") || p_.tokens_[t].is("(") || p_.tokens_[t].is("[") ? 1 :
-                              p_.tokens_[t].is("}") || p_.tokens_[t].is(")") || p_.tokens_[t].is("]") ? -1 : 0) == 0) break;
-            continue;
-        }
-        label = label || k.is("public") || k.is("private") || k.is("protected");
-        if (!(k.is("struct") || k.is("class")) || label || p_.tokens_[t + 1].kind != TokenKind::Ident || !p_.tokens_[t + 2].is("{")) continue;
-        std::size_t close = t + 2;
-        for (int inner = 0; close < end; close++)
-            if ((inner += p_.tokens_[close].is("{") ? 1 : p_.tokens_[close].is("}") ? -1 : 0) == 0) break;
-        bool plain = close + 1 < end && p_.tokens_[close + 1].is(";");
-        for (std::size_t i = t + 3; i < close && plain; i++) {
-            const Token &n = p_.tokens_[i];
-            plain = !(n.is("template") || n.is("friend") || n.is("virtual") || n.is("union") || n.is("using") || n.is("default") ||
-                      n.is("delete") || n.is("constexpr") ||
-                      ((n.is("struct") || n.is("class")) && !(p_.tokens_[i + 1].kind == TokenKind::Ident && p_.tokens_[i + 2].is("{"))));
-        }
-        for (std::size_t i = open + 1; i < end && plain; i++) plain = (i > t && i <= close) || p_.tokens_[i].text != p_.tokens_[t + 1].text;
-        for (std::size_t i = close + 2; i < end && plain; i++) plain = !p_.tokens_[i].is("template");     // 3ac: a function after it, held in place
-        if (plain) at.push_back(std::make_pair(t, close));
-        t = close;
-    }
+    std::vector<std::pair<std::size_t, std::size_t> > at;     // R3 3R-c: as the read's order record took them (Parser::logNested)
+    for (const MemberRecord &r : orderOf(start)) at.insert(at.end(), r.nested.begin(), r.nested.end());
     return at;
 }
 
