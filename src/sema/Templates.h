@@ -245,7 +245,8 @@ public:
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
-                         std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
+                         std::map<int, std::string> templates;     // a template template parameter's index: the template bound
+                         std::vector<std::pair<const Type *, const Type *> > needed; };     // ids its door made at first need: the map's
     struct FoldLeaf { virtual ~FoldLeaf() {} virtual bool leaf(const DepExpr *e, long long *out) const = 0; };     // 4d: a size, a static
     // R2, slice 4d: a value trial's ids, their value arguments folded under the deduced binding (`keys`: each id's, all folded; else
     // none and why counted); under the check held against the replay's ids after it (`replayed`: it succeeded). Counted in `valueReport_`.
@@ -269,12 +270,13 @@ public:
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
     // then the carried parts substituted and `at` the part that failed. A class template-id: `s`'s own map (Mapped), the
-    // program's by its key (Declared), or made on demand through makeClass (Made, the non-const one).
+    // program's by its key (Declared; Keyed the map first, under every declarator), or made through makeClass (Made, non-const).
     struct Substitution { const Type *type; const char *why; const Type *at; bool carried() const { return why == nullptr; } };
-    enum Ids { Mapped, Declared, Made };
+    enum Ids { Mapped, Declared, Made, Keyed };
     Substitution substitute(const Substituted &s, const Type *t, Ids ids = Mapped) const;
     struct At { std::size_t pos; };
     Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
+    Substitution need(const Substituted &s, const Type *t);     // a door's: Made at first need, at `p_.at_`
     Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const;     // the id step
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
@@ -285,6 +287,7 @@ public:
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params, At at);     // Made, at `at.pos`
     Substitutions substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker, std::size_t pos) const;
+    Substitutions need(const Substituted &s, const std::vector<const Type *> &params);     // the list form's, the same
     bool argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker = nullptr,     // one of argsUnder's: a pack
                   std::size_t pos = static_cast<std::size_t>(-1)) const;                             // (`X<Ts...>`) expanded
     bool argTypeUnder(const Substituted &s, const Type **t, Templates *maker, std::size_t pos) const;     // Made: false if not carried
@@ -305,7 +308,8 @@ public:
                                 std::size_t *chosen, const Type **full);     // why `o.f(x)` replays, or empty
     std::string valueCast(syntax::NodeId id, const Substituted &s);     // why a cast to no reference replays, or empty
     std::string boundClass(const Type &t) const;       // why a class bound to a type parameter replays, or empty: a class
-    bool boundObject(syntax::NodeId id, const Substituted &s) const;       // an lvalue of a bound class, by its name or a pointer's
+    bool boundObject(syntax::NodeId id, const Substituted &s, bool classBound) const;     // an lvalue of a bound class, by its name or a pointer's
+    bool overRead(const Type *read) const;     // a read type over the parameters: a class it names comes from the binding
     // Slice 2f: each value-dependent name of a read worth its value under `values`, by node; why it is not, or empty.
     std::string valueShape(syntax::NodeId body, const Specialization &sp, std::map<std::uint32_t, std::size_t> *values) const;
     bool foldUnder(syntax::NodeId id, const std::map<std::string, int> &params, const std::map<std::string, int> &consts,
@@ -327,13 +331,11 @@ public:
     std::set<const Type *> readPartials_;            // the read classes of partials, laid over their own parameters
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                           const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr) const;     // early: ids carried before the replay
+                           const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr);     // early: ids carried before the replay
     bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself = false,
                    const std::vector<const Type *> *pending = nullptr, bool base = false) const;     // pending: ids wanted first; base: 3z
     void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
-    std::string idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                          const std::vector<long long> &values, std::size_t pos, const Packs &packs = Packs(), const Type *ahead = nullptr);
     bool namesItself(std::size_t start) const;     // an id the read names with its own class as an argument (deque's iterator)
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
     // Slice 3b: the read class's member functions, specials among them, as the read declared them, with the read's tag.
@@ -352,19 +354,22 @@ public:
     // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
     std::map<std::string, Bound> bound_;
     std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
+    // While the function door asks a body's shape: its binding, and each id the id step made over it at first need (R1, m8r1k).
+    struct Needing { const Substituted *s; std::vector<std::pair<const Type *, const Type *> > made; };
+    Needing *needing_ = nullptr;
     // Step 4: the read's held member bodies with each one's symbol, by start; a class's door reason, by tag.
     std::map<std::size_t, std::vector<std::pair<PendingBody, std::string> > > readBodies_;
     std::map<std::string, std::string> classWhy_;
     std::string classSkip(std::size_t start, const std::string &tag, const std::vector<PendingBody> &bodies, const std::string &name,
-                          std::size_t typedefsFrom) const;     // the class skip's shape
+                          std::size_t typedefsFrom);     // the class skip's shape
     std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > > readTypedefs_;     // step (2): by start, in order
-    std::string typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted = nullptr) const;
+    std::string typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted = nullptr);
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::vector<std::size_t> memberEnums(std::size_t start, bool *other) const;     // the unnamed `enum { ... };` staticsFromRead reads
     std::vector<std::pair<std::size_t, std::size_t> > nestedByPath(std::size_t start) const;     // slice 3v: `struct N { ... };`, read by path
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                            std::vector<const Type *> *wanted = nullptr) const;
+                            std::vector<const Type *> *wanted = nullptr);
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;
     std::vector<Type::BaseSpec> basesUnder(const Type *read, const Substituted &s, BasesLaid *bases, const std::string &seed = std::string()) const;
     std::string vtableHeld(const std::string &readTag, const std::string &tag, const std::map<std::string, std::string> &symbols) const;

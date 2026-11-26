@@ -7672,3 +7672,238 @@ clean**; **the FULL stage-0 self-compile 102 of 102** (182 s); run.sh under the 
 150/19/26/6 +0, ide up to date. MOREGATES
 
 **Owed.** OWED
+
+## R1, eighth lane: Mapped by key, and first need shipped (lane m8r1h, 2026-11-26)
+
+Base 0ed6414f (m8-r1g on wave m6d-w52 501e2819). Commit 7cac2415 (the Keyed mend and the refusals), and this entry. src/ 98,631 -> 98,648 lines (+29 / -12: Templates.cpp +23 / -7,
+Templates.h +4 / -3, Typing.cpp +2 / -2). **First need is not shipped**: its census is back to the REF's with the
+switch on (below) and (b) ran run.sh 0 failed under the shipped form, but identical with the switch on and run.sh on the committed
+tree (c) were not reached inside the hour (the Linux box's two slots were held by other jobs for the lane's last 25 minutes).
+
+**What was tried, in order, each measured** (the switch as `boxkit/m8r1e-switch3.diff`, `CXX1_FIRST_NEED=1` = the shipped form;
+REF 501e2819):
+
+| tree | run.sh -templates=subst, switch off | the shipped form | x86_64-windows suite census, body differ / class differ units |
+| --- | --- | --- | --- |
+| m8r1g (0ed6414f) | 1,369 / 0 | 1,361 / **8 failed** | 30 / 0 (switch on) |
+| (a) Mapped answers a read id by key under every declarator (0aecb903) | 1,356 / **13 failed** | 1,356 / 13 failed | not run |
+| (b) (a) + substShape's class-object refusals without a class bound (ec0b7738) | **1,369 / 0** | **1,369 / 0** | 23 / **4** (off and on alike) |
+| (c) Mapped kept the map's; **Keyed** for the typer; (b)'s refusals (829e2609, the commit) | owed (queued) | owed (queued) | **19 / 0** (off and on alike) |
+
+**(a)'s 13** (`std::operator+<char>`: "a class local initialised from another type", "a 'assign' the typer did not type"): with
+a read id answered by key, substShape's doors (Mapped while the switch is off) let `basic_string<C> r(a); r += b; return r;` with
+C = char through - no class is bound, so the class-object refusals (classBound) never ran - and the typer cannot type a
+constructor from `const C *` or an operator over the class. **(b)** holds those refusals without a class bound where the read's
+type is over the parameters (`overRead`: dependent, or a cleared read id): a class an id answers is one the binding made, reached
+by reference, never built, copied or operated on in a made body. That also clears m8r1g's 8 under the shipped form. **(b)'s 4
+class differ units** are "the class skip before the replay and after it": `classShape`'s `dataUnder` and `idsBefore` ask Mapped
+and keep the order the map gives (m8r1f's idsBefore family); a keyed answer differs before the replay (the id not declared yet)
+and after it. So **(c)**: Mapped stays the map's alone until idsBefore's family retires, and the kernel's fourth answer `Keyed`
+(the map first, then the program's class by its key, under every declarator, never made; a partial's read class not asked -
+readPartials_' refusal kept) is what the typer asks (`Typing.cpp:1037`, `:1094`). One recursion, one id step
+(`specializationIn` with no maker); when classShape and idsBefore ask at Made or Keyed, Mapped folds into Keyed.
+
+**THE MEASURE** (-check=templates census, x86_64-windows, 3f3ef250 = 7cac2415 + the env switch, `boxkit/m8r1h-wcen.sh`):
+suite (1,377 units) **body differ 19, class differ 0, with the switch off and with it on** - the REF's 19, reason for reason
+(return type 6, decltype return 5, exception specification 4, block table 2, shell 1, ...); m8r1g's switch-on 30 (sret 10,
+then "a slot given back" 10) are gone. Self-host (102 sources): 10 lines at 100 of 102 units on both (REF 11), class differ 0;
+the run was stopped at the hour before its last units. x86_64-linux censuses not run (owed). **identical x86_64-windows -O0
+under the flag, switch off, 7cac2415's tree against the REF: 0 DIFFERS** (both spellings, stopped at the hour part-way).
+
+**The frame's next step** ("the read's a slot given back where the replay has a slot no local names", m8r1g's 10 suite / 95
+self-host): not reached this lane. By reading: the read logs `f` at a scope's close where the replay first lays an anonymous
+slot (`allocateFrameSlot`, `a`), which the parser lays for a class temporary - a call returning a class by value
+(`ParserExprCall.cpp:738`), an argument of class type (`:744`) - that the read, its callee dependent, never lays. (b)'s refusals
+keep a made body from operating on a class over the parameters: with them the suite census has none left with the switch on.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. **replay-residue 150 / 19 / 26 / 6, +0**. Re-entries not re-measured.
+
+**Gates** (a coding lane's): Windows **cl /W4 /WX clean** on 501e2819 and 0667c65e (two at once, 16:57:36-17:01:52, 4 min 16 s),
+on f880406b (**CAPPED at 9 minutes**, 17:10:28-17:19:29 beside the coordinator's gate, the exe linked at 17:19 - a defect, not
+retried) and on 3f3ef250 (7cac2415 + the switch, 17:29:56-17:36:41, 6 min 45 s, no warning). Linux on ec0b7738 ((b): the same
+src as 7cac2415 but Mapped by key in place of Keyed): **g++ -Werror clean; run.sh -templates=subst 1,369 / 0, and 1,369 / 0 under
+the shipped form; static: exclusions 0 uncited 0 stale, comments 0 over, memory gate lower, ast-residue not raised,
+replay-residue +0, ide up to date; the FULL stage-0 self-compile 102 of 102 (183 s)**. **Owed on 7cac2415 itself**: g++, run.sh
+plain and under the flag, the shipped form's run.sh, subst.sh, the self-compile, static gates (its EXCLUSIONS citations are
+ec0b7738's: Templates.cpp 3289 / 2590 / 2538, no line moved since), identical on four targets at three levels plain, under the
+flag and with the switch on, names.sh and overload.sh, the x86_64-linux censuses and the self-host census to 102, re-entries.
+No changed emitted output found (x86_64-windows -O0 under the flag, part-way). Slices 4m-4s untouched. **Next**: those gates,
+then ship first need (`boxkit/m8r1f-shipped-form.diff` applies with `-C1`; EXCLUSIONS' three Templates.cpp lines move +11), then
+idsBefore's family - and with it classShape asking Keyed, so Mapped folds in. Re-measure: `boxkit/m8r1h-wcen.sh <r|h> <arch>
+<0|1> <P> [s]`, `boxkit/m8r1h-wident.sh <arch> <level> <jobs> <p|f|e>`, `boxkit/m8r1h-lgate.sh <c|h>`, `boxkit/m8r1h-lcen.sh <0|1>`.
+
+## R1, ninth lane: Keyed gated, and first need shipped (lane m8r1i, 2026-11-26)
+
+Base 758e0237 (m8-r1h: 7cac2415, the typer asks Keyed). Commit **68185444: first need shipped** (`boxkit/m8r1f-shipped-form.diff`
+with `-C1`, EXCLUSIONS' Templates.cpp 3289 / 2590 / 2538 -> 3300 / 2601 / 2549), and this entry. src/ 98,648 -> 98,661 lines (+28 / -15: Templates.cpp +26 / -15,
+Templates.h +2). Trees: REF 501e2819; A = 7cac2415 (switch off, the shipped code until now); B = 3f3ef250, m8r1h's 7cac2415 +
+the env switch (`boxkit/m8r1e-switch3.diff` itself no longer applies at Templates.cpp:1217; 3f3ef250 is its resolution).
+`CXX1_FIRST_NEED=1` on B is the shipped form's paths (`need` at `At{p_.at_}`); B with it unset is A's.
+
+**(0) m8r1h's owed, on A** (Linux, `boxkit/m8r1i-lgate.sh a`): **g++ -Werror clean; run.sh -templates=subst 1,369 / 0**; static:
+exclusions 0 uncited 0 stale, comments 0 over, memory gate lower, ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide
+up to date; **the FULL stage-0 self-compile 102 of 102 (183 s)**; x86_64-linux census suite class 0, body 20 (REF 20), self-host
+class 0, body 11 (REF 11), the same reasons as B's below; re-entries at instantiation under the check 26,941 suite, 464,780
+self-host; **subst.sh 0 failed** (run -O0 / -O2 1,369 / 0, typed 1,016 / 0, self 102 of 102); **run.sh plain 1,369 / 0**.
+identical with the switch unset (f, p) and names.sh / overload.sh were queued behind (e) and not reached: owed. No difference found to fix.
+
+**(1) The switch on, B** (`boxkit/m8r1i-lgate.sh b`, `boxkit/m8r1i-wident.sh`): **run.sh -templates=subst with CXX1_FIRST_NEED=1:
+1,369 passed, 0 failed.** -check=templates census, x86_64-linux: suite 1,377 units, **class differ 0, body differ 20 (REF 20)** -
+return type 6, decltype return 5, exception specification 4, block table 2, shell 2, the frame's size 1; self-host 102 units,
+**class differ 0, body differ 11 (REF 11)** - exception specification 7, frame size 4. x86_64-windows (m8r1h's, 3f3ef250 both
+envs): suite 19 (REF 19), class 0; self-host 10 at 100 of 102 (REF 11). **identical against the REF, switch on, under the flag:
+0 differ at -O0 on all four targets (x86_64-windows 2,050 compared, both spellings; x86_64-linux, arm64-darwin and tms6747
+1,025 each), at -O1 on x86_64-windows (2,050), and at -O1 and -O2 on x86_64-linux and arm64-darwin (1,025 each)** - each
+byte for byte, so content 0 and order-only 0. Re-entries at instantiation, suite x86_64-linux, census without the
+check: **21,553** switch on, 21,550 on A (R0's 21,549; +3 with the switch on, not traced); under the check 26,961; self-host under the check 464,940.
+
+**(2) Shipped**, since all of (1) held: run.sh 0 failed, body differ not above the REF's on both ABIs, class differ 0,
+identical 0 / 0 on four targets. 68185444 is (1)'s paths with the switch gone - `need` always at `At{p_.at_}`, the made-at-a-door
+count keyed "made at first need: a class template-id at a door". Static gates on its tree: exclusions 0 uncited 0 stale, comments
+0 over, memory gate lower, ast-residue not raised, replay-residue +0, ide up to date. No changed emitted output found at -O0 (four
+targets), -O1 (three) or -O2 (x86_64-linux, arm64-darwin); tms6747 -O1, and -O2 on x86_64-windows and tms6747, are owed.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. **replay-residue 150 / 19 / 26 / 6, +0.** idsBefore's family (classShape,
+classBefore and typedefsCarried non-const, then idsBefore, argsWanted, earlyArgs and carriedId's early branch, one commit each) was
+not reached inside the hour. Slices 4m-4s untouched.
+
+**Gates**: Windows **cl /W4 /WX clean** on 501e2819 and 3f3ef250, two at once, 17:53:47-17:58:17 (4 min 30 s). The Linux box's two
+slots were held by the coordinator's coordw53 runs and lane m8r4e's for most of the hour (chain a waited 20 minutes for its build).
+**Owed** (the wave's gate): on 68185444 itself g++ -Werror, cl /W4 /WX, run.sh plain and under the flag, subst.sh, the FULL
+self-compile and the censuses on both ABIs (its paths are B's under the switch, measured above, but its own build was queued at the
+hour); identical with the switch on at tms6747 -O1 and -O2 on x86_64-windows and tms6747, and on four targets at three levels
+under the flag and plain; names.sh and overload.sh; then idsBefore's family. Re-measure: `boxkit/m8r1i-lgate.sh <a|b>` (with `m8r1i-one.sh`), `boxkit/m8r1i-wident.sh <arch> <level> <jobs> <p|f|e>`,
+`boxkit/m8r1i-winbuild.sh <r|b>`, `boxkit/m8r1i-wchain.sh`.
+
+## R1, tenth lane: first need gated, and idsBefore's family (lane m8r1j, 2026-11-26)
+
+Base 39a28fda (m8-r1i: 68185444 ships classes made at first need under -templates=subst). REF 501e2819 on both boxes. Commits:
+**cdf13d12** - classShape, classBefore, typedefsCarried and classSkip (typedefsCarried's other caller) non-const, so the class
+door's shape questions may ask the kernel at Made: 8 lines changed in place, no line moved, identical by construction.
+**5b12ee6b, reverted by 71036e3b** - idsBefore retired: makeClass asks classBefore for the wanted ids and makes each, in the same
+order, by `substitute(s, e, At{pos})` (specializationIn, makeId) instead of earlyArgs' laying and makeId. It held g++ -Werror, cl
+/W4 /WX (linked), run.sh -templates=subst 1,369 / 0, run.sh plain 1,369 / 0, the FULL self-compile 102 of 102 (184 s), static
+(replay-residue +0), identical x86_64-linux -O0 plain and under the flag 1,025 / 0, the x86_64-linux census suite class 0 body 20
+and self-host class 0 body 11 (= REF), re-entries 21,553 (unchanged), and every unit's class census the same but for the key
+("made before the class" 859 -> "made at first need" 859). **But tests/subst.sh's typed step failed 5 at -O0 and -O2**
+(include-string, map-set-comparator, map-set-node-stability, ssa-conversion-string-local, wstring: `-check=typed` copies records,
+copy != 0) - so reverted. **68185444's own tree fails the same five with the same copies** (2 / 2 / 4 / 1 / 2, `boxkit/m8r1j-typed1.sh`;
+its subst.sh: run -O0 / -O2 1,369 / 0, typed 1,011 passed 5 failed at both levels, self 102 of 102), where 7cac2415 (m8r1i's A, the
+switch off) passed: the copies are first need's, not 5b12ee6b's. **So e560d8e7 reverts 68185444** (the brief's rule: first need
+ships only if its owed hold), EXCLUSIONS' three Templates.cpp citations back to 3289 / 2590 / 2538. 5b12ee6b's src may come back
+over first need once the five typed copies are traced: on its own it moved none of them.
+
+**(0) m8r1i's owed, on 68185444's tree** (39a28fda; `boxkit/m8r1j-lgate.sh a 1|2`, `boxkit/m8r1j-wchain.sh a`): **g++ -Werror
+clean; cl /W4 /WX clean** (work\m8r1jr and work\m8r1ja, two at once, 18:48:41-18:52:41, 4 min); x86_64-windows census suite 1,377
+units, **class differ 0, body differ 19 (REF 19)** - return type 6, decltype return 5, exception specification 4, block table 2,
+shell 2; self-host 102 units, **class 0, body 11 (REF 11)**, exception specification 11; x86_64-linux census suite **class 0, body
+20 (REF 20)** (return type 6, decltype return 5, exception specification 4, block table 2, shell 2, frame size 1), self-host **class
+0, body 11 (REF 11)**; re-entries at instantiation under the check 26,961 suite, 464,938 self-host. **identical against the REF
+under the flag, the shipped form's gaps: tms6747 -O1 1,025 / 0, tms6747 -O2 1,025 / 0**; x86_64-windows -O2 stopped by its own 23-minute
+timeout part-way, 0 DIFFERS in what ran; plain, tms6747 -O0 1,025 / 0. **names.sh plain 1,025 passed, 0 failed** (20 .nonames rows
+open, the register's). **run.sh -templates=subst 1,369 / 0; static clean** (exclusions 0 / 0, comments 0 over, memory gate lower,
+ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide up to date); **FULL self-compile 102 of 102 (174 s)**. subst.sh and
+**run.sh plain 1,369 / 0**; **subst.sh: typed 5 failed at -O0 and -O2** (above) - the one difference, not fixed in the hour, so first
+need is reverted (e560d8e7).
+
+**Re-entries** (suite x86_64-linux, census without the check): **21,553** at instantiation on 68185444 - R0 21,549, m8r1i's A
+(the switch off) 21,550: the +3 is first need's own (the same suite, the same tree but for the switch), a cause and not a probe;
+not traced to its three bodies.
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6**, call
+sites 29 -> 29 - carriedId 7, idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2 (cdf13d12 takes none; 5b12ee6b
+took idsBefore 1 -> 0 and earlyArgs 12 -> 10, 5 helpers / 26 sites, and was reverted). replay-residue 150 / 19 / 26 / 6, +0.
+
+**What the rest need.** `argsWanted` (5: its own recursion 1, classShape 4) and `earlyArgs` (12: idsBefore 2, argsWanted 1, classShape 8, idsInside 1) are the order the wanted ids
+keep and the filter on whether one may be made ahead: retiring them means classShape making at Made where it now pushes onto
+`wanted` - eight sites (the bases, a data member's class and its `C<T>::type` owner, a typedef's id and owner, a signature's id and
+owner, and `own`), and the `placed` / `ahead` / `behind` refusals that order the data members' ids against the signatures' go with
+them; the token scan in earlyArgs (`p_.tokens_[t]` over the named template's bodies) goes in that commit, replay-residue's `tokens`
+-1 or more. `carriedId`'s `early` branch is that order's own map (the classes declared before the replay) and goes with argsWanted.
+`idUnder` is the kernel's template template parameter step already (specializationIn); its other caller is earlyArgs, so it
+folds into specializationIn when earlyArgs goes. `typedefCarried` waits for R3's complete records (m8r1c's reason, unchanged).
+Slices 4m-4s untouched.
+
+**Gates**: src/ 98,661 -> 98,661 lines (cdf13d12 +8 / -8). g++ -Werror clean on cdf13d12; its cl /W4 /WX build at /MP1 beside
+nine of this lane's processes linked after 15 minutes (18:53:37-19:08), past the 9-minute cap - a defect recorded, not retried; no
+warning (the exe links only under /WX clean). The Linux slots were held by gate m6dw53g and lane m8r4e3 most of the hour (a's
+run.sh waited 23 minutes). src/ at e560d8e7 is 7cac2415's with cdf13d12's eight lines. **Owed** (the wave's gate): first need's five typed copies traced
+(include-string first), then 68185444 and 5b12ee6b again; e560d8e7's own build, run.sh, subst.sh and censuses; identical x86_64-windows
+-O2 under the flag and plain on four targets at three levels (tms6747 -O0 done); names.sh under the flag, overload.sh; the five
+typed cases on 68185444; then idsBefore's retirement with the typed step's copies traced. Re-measure: `boxkit/m8r1j-lgate.sh <a|b|c>
+<1|2>`, `boxkit/m8r1j-wchain.sh`, `m8r1j-wident.sh`, `m8r1j-wcen.sh`, `m8r1j-wnames.sh`, `m8r1j-winbuild.sh`, `m8r1j-typed1.sh`.
+
+## R1, eleventh lane: the five typed copies (lane m8r1k, 2026-11-26)
+
+Base 4786245e (m8-r1j: src = 7cac2415 + cdf13d12, first need reverted). REF 501e2819. Commits: **49d6a1a8** - the mend;
+**35daf100** - e560d8e7 reverted, so classes are made at first need again (68185444's src); **a0ba0409** - the sink's declaration
+moved below `coveredClass_` (make comments' cap); this entry. src/ 98,648 -> 98,675 lines (+43 / -16: the mend Templates.cpp +10,
+Templates.h +5 / -1; first need back Templates.cpp +26 / -15, Templates.h +2).
+
+**THE MEASURE: tests/subst.sh's typed step with first need on, 5 failed -> 0** (typed 1,016 passed, 0 failed at -O0 and -O2;
+include-string, map-set-comparator, map-set-node-stability, ssa-conversion-string-local, wstring: `-check=typed` copy 2 / 2 / 4 / 1 /
+2 -> 0 / 0 / 0 / 0 / 0 at both levels, on 39a28fda + the mend's src and on the mend with first need off alike).
+
+**The root (one, all five).** Every copy was "the record's fields" on a parameter `name` - `a` and `b` in `operator!=(const
+basic_string<C> &a, const C *b) { return !(a == b); }` (include/string:511-512), the trees' `operator==` / `operator<`
+(map:141, :145, set:96). Under first need the function door's shape questions (`need`, Made at `p_.at_`) make or find
+`basic_string<char>`, `map<...>`, `set<...>` for the read id `basic_string<$T0>`, so these bodies are read instead of replayed
+("a 'name' the read resolved to a type the binding does not carry" no longer fires). The Typer then types each record under the
+binding by **Keyed** (the map, then the class by its key: `Typing.cpp:1037`), while `recordDiffers` asks **Mapped** (the map
+alone): the parser's `const basic_string<$T0> &` came back dependent from one and as the class from the other. Not a second Type,
+not a body typed twice: one class, and a binding whose map did not hold what its door had made. **The mend, in the kernel**: while
+`instantiate` asks the body's shape and its requests, a sink (`Templates::Needing`, the binding by address) takes each id the id
+step (`specializationIn` with a maker) answers over that binding; once bound, they are the binding's `Substituted::needed`, which
+`substituteIn` asks right after `from` / `to`. So Mapped, Keyed and Made answer the same class for it, the check unchanged. With
+first need off nothing reaches Made over the door's binding inside that window, so `needed` stays empty: identical by
+construction (`needed` is never one of `to`'s bound classes, so `classBound`, `boundObjectClass`, `offsetUnder`'s `from.back()`
+and `cvOverReference` see the binding as before).
+
+**Gates.** Linux: **g++ -Werror clean** on 49d6a1a8's src and on 39a28fda + it (n); **run.sh -templates=subst 1,369 / 0** on both;
+**subst.sh rc 0 on n** (run -O0 / -O2 1,369 / 0, typed 1,016 / 0 at both, census 1,133 bodies through the function door, bodies
+1,013 of 1,013, self); static on a0ba0409: exclusions 0 uncited 0 stale (rc 0), comments 0 over (35daf100 had 1 - a0ba0409),
+memory gate lower, ast-residue not raised, **replay-residue 150 / 19 / 26 / 6, +0**, ide up to date. Windows: **cl /W4 /WX clean on
+49d6a1a8** (20:00:17-20:02:17, 2 min, build.cmd's own /MP) **and on 35daf100** (20:06:57-20:11:13, 4 min 16 s). On n also
+**the FULL stage-0 self-compile 102 of 102 (164 s)** and **run.sh plain 1,369 / 0**; on 49d6a1a8's src (first need off) run.sh
+-templates=subst 1,369 / 0 and subst.sh rc 0. **identical against a REF built from 501e2819, n under the flag: x86_64-linux -O0
+1,025 / 0, -O2 1,025 / 0; plain -O0 1,025 / 0; arm64-darwin and tms6747 -O0 and -O2 1,025 / 0 each; x86_64-windows -O0 and -O2
+2,050 / 0 each (both spellings)** - byte for byte, so no changed emitted output at -O0 or -O2; -O1 was cut by the chain's own
+timeout. **names.sh on 35daf100 (Windows): plain 1,025 / 0, under the flag 1,025 / 0** (20 .nonames open, the register's);
+**overload.sh 46 agreed, 0 differed**. **Census x86_64-linux on n**: suite 1,377 units, **class differ 0, body
+differ 20 (REF 20**, the same reasons: return type 6, decltype return 5, exception specification 4, block table 2, shell 2, frame
+size 1); self-host 102 units, **class differ 0, body differ 11 (REF 11**: exception specification 7, frame size 4); re-entries under
+the check 26,961 suite (= 68185444's), **465,644 self-host (68185444: 464,938, +706 - not traced: owed)**. **Re-entries** (suite, no check): 21,553 on n, 21,550 with first need off and the mend (m) - unchanged by the mend; per
+unit the +3 is **map-set-node-stability 402 -> 406** (its four tree bodies now read, their classes made at the door) and
+**template-angle-split 8 -> 7**, every other unit the same: first need's, named.
+
+**Owed** (the wave's gate): identical at -O1 on four targets and plain at -O1 / -O2 (and on three targets at -O0), the
+x86_64-windows censuses, the self-host re-entries' +706 under the check, 49d6a1a8's own self-compile and run.sh plain (its chain
+reached its 25-minute timeout waiting for a slot), the gates on a0ba0409 itself beyond static (it moves one declaration); then **5b12ee6b again** (revert 71036e3b: idsBefore retired into Made - it moved none of the copies on its own, so
+with this mend its typed step holds: candidate d9b2dfb6 = 106c57c8 + 71036e3b reverted, g++ -Werror clean, -check=typed copy 0
+in all five at -O0 and -O2; nothing else run, not committed), argsWanted, earlyArgs (its token scan: replay-residue's baseline down in that
+commit) and carriedId's early branch. The mend asks R3 nothing: the records were complete, the binding's map was not.
+Re-measure: `boxkit/m8r1k-lbuild.sh <x>` (build, the five typed), `m8r1k-chain.sh <m|n>`, `m8r1k-lident.sh`, `m8r1k-lident2.sh`,
+`m8r1k-lcen.sh`, `m8r1k-reent.sh`, `m8r1k-static.sh`, `m8r1k-winbuild.sh <x> <rev>`, `m8r1k-wchain.sh <x>`.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. Slices 4m-4s untouched. No accepted lines, no wave-expected rows.
+
+## R1, twelfth lane: idsBefore's family retired (lane m8r1l, 2026-11-26)
+
+Base 64ddc778 (m8-r1k). REF 501e2819. Commit **c7c78bed** - idsBefore retired: 5b12ee6b redone by hand over 49d6a1a8's mend
+(its src diff is byte for byte d9b2dfb6's, read with `git show`, never applied from the stash): makeClass asks classBefore for the
+wanted ids and makes each at Made (`substitute(s, e, At{pos})`, the kernel's id step) in the same order, an id it carried mapped
+for the next; the census key "made before the class, as its replay makes it" goes with it (m8r1j: the same units count it as "made
+at first need"). src/ 98,675 -> 98,663 lines (Templates.cpp +21 / -31, Templates.h -2). EXCLUSIONS' Templates.cpp citations sit
+above the change: none moves.
+
+**THE MEASURE: helpers left with callers 6 -> 5** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted):
+carriedId 7, idUnder 2, **earlyArgs 12 -> 10** (idsBefore's two calls), argsWanted 5, **idsBefore 1 -> 0**, typedefCarried 2.
+**Gates, as far as they ran before an API network error ended the lane (the coordinator, from boxkit/m8r1l-handover.md):**
+g++ -Werror clean on c7c78bed; the x86_64-linux self-host census under -check=templates: 102 units, class differ 0, body differ
+11 = the REF's, re-entries under the check 465,644 (= m8r1k's - the retirement moves none). **Owed to the wave:** run.sh both
+ways, subst.sh, the full self-compile, static gates, identical on four targets both ways, the suite censuses, the x86_64-windows
+censuses, names/overload, cl /W4 /WX (no Windows job ran: GATE-WINDOWS-BUSY.txt stood, then the box went unreachable);
+argsWanted, earlyArgs and carriedId's early branch not reached.

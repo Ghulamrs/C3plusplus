@@ -315,6 +315,8 @@ bool Templates::memberIsUsed(const std::string &key) const {
     return false;
 }
 
+static bool overParameters(const std::string &tag);
+
 Templates::Substitution Templates::substitute(const Substituted &s, const Type *t, Ids ids) const {
     return substituteIn(s, t, ids == Made ? Declared : ids, nullptr, static_cast<std::size_t>(-1));
 }
@@ -323,13 +325,21 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
     return substituteIn(s, t, Made, this, at.pos);
 }
 
+// A door's type under `s`, an id over the parameters made at first need where the read stands (R1, lane m8r1f).
+Templates::Substitution Templates::need(const Substituted &s, const Type *t) {
+    return substitute(s, t, At{p_.at_});
+}
+Templates::Substitutions Templates::need(const Substituted &s, const std::vector<const Type *> &params) {
+    return substitute(s, params, At{p_.at_});
+}
+
 // The kernel's one recursion: each of `from` is `to` under any declarator, a member type through its class, a function's
 // parameters through the list form (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
 // Made is carried under every declarator and asks the map first, as Mapped does; the cv is stripped before either.
 Templates::Substitution Templates::substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const {
     Substitution r = { t, nullptr, nullptr };
     if (t == nullptr) return r;
-    const Ids below = maker != nullptr ? Made : Mapped;
+    const Ids below = maker != nullptr ? Made : ids == Keyed ? Keyed : Mapped;
     if (ids == Declared && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     if (t->unqualified() != t) {
         r = substituteIn(s, t->unqualified(), below, maker, pos);
@@ -338,7 +348,15 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     }
     for (std::size_t k = 0; k < s.from.size(); k++)
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
+    for (std::size_t k = 0; k < s.needed.size(); k++)
+        if (t == s.needed[k].first) { r.type = s.needed[k].second; return r; }
     if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
+    // Keyed: a read id the map lacks is the program's class by its key (one made at first need included), never made here.
+    if (ids == Keyed && readPartials_.count(t) == 0 && readId(t, nullptr, nullptr)) {
+        const Substitution d = specializationIn(s, t, nullptr, pos);
+        if (d.carried() && d.type->isStructOrUnion() && !p_.dependentType(d.type) && readIds_.count(d.type) == 0 && !overParameters(d.type->tag()))
+            return d;
+    }
     const int bound = t->isArray() ? t->boundParam() : -1;
     if (t->isPointer() || (t->isArray() && bound < 0)) {
         r = substituteIn(s, t->pointee(), below, maker, pos);
@@ -397,9 +415,13 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         return r;
     }
     const Type *real = p_.lookup_.findTypedef(specializationKey(name, args));
-    if (real == nullptr && maker != nullptr && templates_.count(name) != 0) real = maker->makeId(name, args, pos, nullptr);
+    if (real == nullptr && maker != nullptr && templates_.count(name) != 0) {
+        real = maker->makeId(name, args, pos, nullptr);
+        maker->classCensus_["made at first need: a class template-id at a door"]++;
+    }
     if (real == nullptr) r.why = "a class template-id over the parameters the program has not made";
     else { r.type = real; r.at = nullptr; }
+    if (real != nullptr && maker != nullptr && needing_ != nullptr && needing_->s == &s) needing_->made.push_back(std::make_pair(o, real));
     return r;
 }
 
@@ -657,7 +679,11 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
     std::vector<syntax::NodeId> requests;
+    Needing needing = { &made.s, std::vector<std::pair<const Type *, const Type *> >() };
+    Needing *const outerNeeding = needing_;
+    needing_ = &needing;
     const std::string shape = substShape(read->second, made.s, &made.calls, &made.members, &made.assigns, &requests);
+    needing_ = outerNeeding;
     if (!shape.empty()) return *why = "replayed: " + shape, false;
     const std::string value = valueShape(read->second, sp, &made.values);
     if (!value.empty()) return *why = "replayed: " + value, false;
@@ -680,10 +706,13 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     const Specialization outer = sp;
     for (std::size_t q = 0; q < requests.size(); q++) {
         std::size_t chosen = 0;
+        needing_ = &needing;
         const std::string asked = requestCall(outer, requests[q], made.s, made.calls, &chosen);
+        needing_ = outerNeeding;
         if (!asked.empty()) return *why = "replayed: " + asked, false;
         made.calls[requests[q].v] = made.calls[p_.syntaxTree_.child(requests[q], 0).v] = chosen;
     }
+    made.s.needed = needing.made;     // what the door made the body is typed and checked by, as the map answers it
     bound_[outer.symbol] = made;
     return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
@@ -849,7 +878,7 @@ std::string Templates::dependentCall(syntax::NodeId call, const Substituted &s, 
         if (st.node(st.child(call, c)).kind != syntax::Kind::Name || r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Local ||
             r->second.type == nullptr)
             return "a dependent-name call over an argument other than a local, which the instantiation does not type here";
-        const Type *t = substitute(s, r->second.type).type;
+        const Type *t = need(s, r->second.type).type;
         t = (t->isReference() ? t->referent() : t)->unqualified();
         if (!t->isArithmetic() || t->isEnumeration()) return "a dependent-name call over an argument whose type ADL would search";
         given.push_back(t);
@@ -900,7 +929,7 @@ std::string Templates::callArgTypes(syntax::NodeId call, const Substituted &s, c
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(a.v);
         const Type *t = nullptr;
         if (st.node(a).kind == syntax::Kind::Name && r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Local && r->second.type != nullptr) {
-            t = substitute(s, r->second.type).type;
+            t = need(s, r->second.type).type;
             t = t->isReference() ? t : p_.types_.referenceTo(t);
         } else if (st.node(a).kind == syntax::Kind::Call) {
             // A call passed is a prvalue of what its record returns: the body's (asked first, its node the lower) or the read's.
@@ -1085,11 +1114,18 @@ std::string Templates::boundClass(const Type &t) const {
     return std::string();
 }
 
+bool Templates::overRead(const Type *read) const {
+    const Type *e = read;
+    while (e->isReference() || e->isPointer() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+    return p_.dependentType(read) || readIds_.count(e->unqualified()) != 0;
+}
+
 // `t`, `*p`, `p[i]` or `(t)` where `t` names a bound class (a reference to one) and `p` a pointer to one: no copy is made of it.
-bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
+// Without a class bound, the class is one the read named over the parameters (`basic_string<C> &`), which an id answers.
+bool Templates::boundObject(syntax::NodeId id, const Substituted &s, bool classBound) const {
     const syntax::Tree &st = p_.syntaxTree_;
     const syntax::Node n = st.node(id);
-    if (n.kind == syntax::Kind::Paren && n.count == 1) return boundObject(st.child(id, 0), s);
+    if (n.kind == syntax::Kind::Paren && n.count == 1) return boundObject(st.child(id, 0), s, classBound);
     const bool deref = (n.kind == syntax::Kind::Unary && st.text(id) == "*" && n.count == 1) || (n.kind == syntax::Kind::Subscript && n.count == 2);
     const syntax::NodeId named = deref ? st.child(id, 0) : id;
     const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
@@ -1097,7 +1133,7 @@ bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
     const Type *t = substitute(s, r->second.type).type;
     if (t->isReference()) t = t->referent();
     if (deref) t = t->isPointer() ? t->pointee() : nullptr;
-    return t != nullptr && t->unqualified()->isStructOrUnion();
+    return t != nullptr && t->unqualified()->isStructOrUnion() && (classBound || overRead(r->second.type));
 }
 
 // `(T)e`, `T(e)` or `static_cast<T>(e)` to an arithmetic type or void, its record the read's under the binding (castRecord),
@@ -1105,7 +1141,7 @@ bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
 std::string Templates::valueCast(syntax::NodeId id, const Substituted &s) {
     const syntax::Tree &st = p_.syntaxTree_;
     const std::string &t = st.text(id);
-    const Type *read = p_.castTypes_.at(id.v), *to = substitute(s, read).type;
+    const Type *read = p_.castTypes_.at(id.v), *to = need(s, read).type;
     const bool named = t.compare(0, 12, "static_cast<") == 0 && t.find('&') == std::string::npos;
     if (st.node(id).count != 1 || !(named || t == read->describe()))
         return "a cast other than a static_cast to a reference, which the read records no type for";
@@ -1225,22 +1261,23 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
         const syntax::Node n = p_.syntaxTree_.node(id);       // a copy: a reference to `Node` reads as Ast residue
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
-        if (pass == 1 && classBound) {
+        if (pass == 1) {
             // A bound class is reached, never copied: no operator, assignment or return over its object, no local of a class by value.
             const bool op = n.kind == Kind::Binary || n.kind == Kind::Assign || n.kind == Kind::Postfix || n.kind == Kind::Return ||
                             (n.kind == Kind::Unary && p_.syntaxTree_.text(id) != "&");
             for (std::uint32_t c = 0; op && c < n.count; c++)
-                if (boundObject(p_.syntaxTree_.child(id, c), s)) return "an operator, an assignment or a return over a class's object";
+                if (boundObject(p_.syntaxTree_.child(id, c), s, classBound)) return "an operator, an assignment or a return over a class's object";
             const std::unordered_map<std::uint32_t, const Type *>::const_iterator v =
                 n.kind == Kind::Var ? p_.declaredTypes_.find(id.v) : p_.declaredTypes_.end();
-            const Type *by = v != p_.declaredTypes_.end() ? substitute(s, v->second).type : nullptr;
+            const Type *by = v != p_.declaredTypes_.end() ? need(s, v->second).type : nullptr;
             // `const B &r = t`, B a base of the bound class at a nonzero offset: the replay's conversion lays a `.bp` slot the read does not.
             const Type *at = by != nullptr && (by->isReference() || by->isPointer()) ? (by->isReference() ? by->referent() : by->pointee())->unqualified() : nullptr;
             for (std::size_t q = 0; at != nullptr && at->isStructOrUnion() && q < s.to.size(); q++)
                 for (std::size_t k = 0; boundTo(s.to[q])->isStructOrUnion() && k < boundTo(s.to[q])->bases().size(); k++)
                     if (boundTo(s.to[q])->bases()[k].type->unqualified() == at && boundTo(s.to[q])->bases()[k].offset != 0) return "a reference or pointer to a bound class's base at a nonzero offset, whose conversion the replay lays a slot for";
             while (by != nullptr && by->isArray()) by = by->pointee();
-            if (by != nullptr && by->unqualified()->isStructOrUnion()) return "a local or a parameter of a class by value, which its constructor builds";
+            if (by != nullptr && by->unqualified()->isStructOrUnion() && (classBound || overRead(v->second)))
+                return "a local or a parameter of a class by value, which its constructor builds";
         }
         if (pass == 1) {
             switch (n.kind) {
@@ -1335,13 +1372,13 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
         for (std::size_t q = 0; q < requests->size(); q++) asked = asked || (*requests)[q].v == id.v;
         if (calls->count(id.v) != 0 || asked) continue;       // the read's record of a dependent-name call is no record: dependentCall's or requestCall's is
         const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-        if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(substitute(s, r->second.type).type))
+        if (r != p_.resolutions_.end() && r->second.type != nullptr && p_.dependentType(need(s, r->second.type).type))
             return std::string("a '") + syntax::kindName(n.kind) + "' the read resolved to a type the binding does not carry";
         if (n.kind == Kind::Unary && p_.syntaxTree_.text(id) == "+" && n.count == 1 &&
             (p_.syntaxTree_.node(p_.syntaxTree_.child(id, 0)).marks & syntax::TypeDependent) != 0)
             return "a unary '+' over a dependent name, which the replay records as its operand";     // unaryNode hands `v` on
         const std::unordered_map<std::uint32_t, const Type *>::const_iterator v = p_.declaredTypes_.find(id.v);
-        const Type *declared = v != p_.declaredTypes_.end() ? substitute(s, v->second).type : nullptr;
+        const Type *declared = v != p_.declaredTypes_.end() ? need(s, v->second).type : nullptr;
         if (n.kind == Kind::Var && declared != nullptr && (p_.dependentType(declared) ||     // a member pointer `substituted` keeps as written
             (declared->unqualified()->isMemberPointer() && p_.dependentType(declared->unqualified()->pointee()))))
             return "a 'var' declared with a type the binding does not carry";
@@ -3871,7 +3908,20 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         ahead->noteClassKey(decl.classKey);
     }
     if (ahead != nullptr) readStands(start, ahead, &early);
-    const std::string met = substitute_ && !p_.patternUses_ ? idsBefore(start, useParams, useBinding, useValues, pos, early.packs, ahead) : std::string();
+    // The ids classShape wants made before the class, in the body's order, each at Made (the kernel's id step); else what stopped it.
+    std::string met;
+    if (substitute_ && !p_.patternUses_) {
+        Substituted s;
+        s.values = useValues, s.packs = early.packs;
+        if (ahead != nullptr) readStands(start, ahead, &s);     // the class itself, as an id's argument, the tag declared ahead
+        std::vector<const Type *> wanted;
+        const std::string first = classBefore(start, useParams, useBinding, &s, &wanted);
+        met = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start, useParams);
+        for (std::size_t k = 0; met.empty() && k < wanted.size(); k++) {
+            const Substitution m = substitute(s, wanted[k], At{pos});
+            if (m.carried()) s.from.push_back(wanted[k]), s.to.push_back(m.type);     // an id's argument, as the next one reads it
+        }
+    }
     const std::string before = substitute_ && !p_.patternUses_ ? classBefore(start, useParams, useBinding, &early) : std::string();
     const std::size_t typedefsFrom = p_.lookup_.typedefs_.size();
     // Step (1): a class the door takes made from the read, its written members and held bodies too; the replay beside under the check.
@@ -3884,7 +3934,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
     const Type *made = fromRead.empty() ? classFromRead(decl, tag, partial, start, args, bound, pos, &bodies, useParams, useBinding, useValues)
                      : readClassBody(decl, tag, partial, start, args, useParams, useBinding, useValues, partial ? usePacks : packs, &bodies, nullptr);
     if (fromRead != "-") replayCensus_["class: " + (fromRead.empty() ? std::string("made from the read with no replay") : fromRead)]++;
-    // The measure: one verdict a tag - step (1)'s, else classBefore's or idsBefore's reason, as "before the replay" says it.
+    // The measure: one verdict a tag - step (1)'s, else classBefore's or the wanted ids' reason, as "before the replay" says it.
     const std::string why = fromRead != "-" ? fromRead : !substitute_ || p_.patternUses_ ? std::string("not under -templates=subst") : met.empty() ? before : met;
     const std::string verdict = fromRead.empty() ? std::string("made from the read with no replay")
                               : fromRead.compare(0, 7, "beside:") == 0 ? std::string("made from the read, the replay beside under -check=templates")
@@ -3918,7 +3968,7 @@ const Type *Templates::makeClass(const TemplateDecl &decl, const std::string &ta
         }
         // Step (1) decides before the replay: what it takes is what the skip takes after it, or the two are apart.
         const bool takes = before.compare(0, 18, "made from the read") == 0;
-        classCensus_["before the replay: " + (takes || met.empty() ? before : met)]++;     // what idsBefore met, if it stopped
+        classCensus_["before the replay: " + (takes || met.empty() ? before : met)]++;     // what the wanted ids met, if they stopped
         if (takes != (skip.compare(0, 18, "made from the read") == 0))
             classCensus_["differ: the class skip before the replay and after it: " + (takes ? skip : before)]++;
         classWhy_[tag] = held.empty() ? "covered" : held;
@@ -4136,30 +4186,7 @@ void Templates::argsWanted(Substituted *s, const Type *e, const Type *read, cons
     }
 }
 
-// Work (2): the ids a class the door takes names over its parameters and the program had not declared, made before it through
-// makeClass, as its replay makes them when it reads the body - in the body's order, each declared once; nothing for another class.
-// Its answer is what stopped it: the census's reason where the second classBefore, wanting no ids, refuses the class.
-std::string Templates::idsBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                              const std::vector<long long> &values, std::size_t pos, const Packs &packs, const Type *ahead) {
-    Substituted s;
-    s.values = values, s.packs = packs;
-    if (ahead != nullptr) readStands(start, ahead, &s);     // the class itself, as an id's argument, the tag declared ahead
-    std::vector<const Type *> wanted;
-    const std::string first = classBefore(start, params, binding, &s, &wanted);
-    const std::string why = first.compare(0, 18, "made from the read") != 0 ? first : fromReadWhyNot(start, params);
-    if (!why.empty() || wanted.empty()) return why;
-    for (const Type *e : wanted) {
-        std::string name;
-        std::vector<TemplateArg> args;
-        if (!earlyArgs(s, e, readClass_.at(start), &name, &args) && !earlyArgs(s, e, readClass_.at(start), &name, &args, false, nullptr, true)) continue;
-        bool made = false;
-        s.from.push_back(e), s.to.push_back(makeId(name, args, pos, &made));     // an id's argument, as the next one reads it
-        if (made) classCensus_["made before the class, as its replay makes it: a class template-id over its parameters"]++;
-    }
-    return std::string();
-}
-
-// An id among the read's typedefs and signatures with the read class itself as an argument: idsBefore makes it once the tag is.
+// An id among the read's typedefs and signatures with the read class itself as an argument: made at Made once the tag is.
 bool Templates::namesItself(std::size_t start) const {
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
@@ -4201,7 +4228,7 @@ static bool cvOverReference(const Templates::Substituted &s, const Type *t) {
 // Slice 3a's shape: type parameters bound to scalars, to a class (boundClass's) or to a reference to either, and a read
 // class of data members alone, each of a scalar type or a class the read did not name over its parameters.
 std::string Templates::classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
-                                  const Substituted *early, std::vector<const Type *> *wanted) const {
+                                  const Substituted *early, std::vector<const Type *> *wanted) {
     // Slice 3f: a pack or template parameter its class names in member bodies alone (replayed by name, as instantiate's door
     // asks) is in its tag alone; a partial's scan from past its written arguments, which name it (`is_function<R(A...)>`).
     std::size_t from = start;
@@ -4544,7 +4571,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
         if (wanted != nullptr && wanted->size() != had) dataAt.push_back(memberAt(m.name));     // where the replay makes them
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
-        std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one idsBefore makes first
+        std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one wanted, made first at Made
         std::vector<TemplateArg> args;
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = dataUnder(*s, m);
         else if (over) {
@@ -4602,7 +4629,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const Type *e = substitute(*s, t).type;
             while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
             e = e->unqualified();
-            // `X<$T0>::m` whose X<U> the program had not declared: X<U> wanted by idsBefore, the member found once it is made.
+            // `X<$T0>::m` whose X<U> the program had not declared: X<U> wanted first, the member found once it is made.
             std::string name;
             std::vector<TemplateArg> args;
             const Type *of = e->kind() == Kind::DependentMember ? e->pointee()->unqualified() : nullptr;
@@ -4773,7 +4800,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     Substituted own = s;     // a pointer to the class itself, or a typedef of it, is one to the class being made
     readStands(start, type, &own);
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))     // step (2): as the replay declares them
-        if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, substitute(own, td.second).type);
+        if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, need(own, td.second).type);
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
     staticsFromRead(start, decl, tag, s, type, type, params, binding, values, bodies);
@@ -4874,7 +4901,7 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
         return p_.tokens_[e].is("=") && read->findStaticMember(p_.tokens_[e - 1].text) != nullptr &&
                staticAt(start, p_.tokens_[e - 1].text, &cx, &name) == e && !cx;
     };
-    // Its ids are made where staticsFromRead evaluates it, after idsBefore's: the body's order while none is named after `k`.
+    // Its ids are made where staticsFromRead evaluates it, after the wanted ids: the body's order while none is named after `k`.
     const auto namedLater = [&](std::size_t k) {
         for (std::size_t depth = 1, t = k + 1; t < p_.tokens_.size(); t++) {
             const Token &w = p_.tokens_[t], &was = p_.tokens_[t - 1];
@@ -5004,7 +5031,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         std::size_t name = 0;
         p_.at_ = staticAt(start, m.name, &cx, &name);
         reentered("jump: a static data member");
-        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, substitute(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
+        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, need(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
@@ -5077,7 +5104,7 @@ void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos
     std::vector<const Type *> types(1, a.returns);
     types.insert(types.end(), a.params.begin(), a.params.end());
     for (const Type *t : types) {
-        const Type *e = substitute(*ids, t).type;
+        const Type *e = need(*ids, t).type;
         while (e->isPointer() || e->isReference() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
         e = e->unqualified();
         std::string name;
@@ -5107,9 +5134,9 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         Signature f = a;
         f.name = memberName(a, r.first, tag, s);
         f.owner = tag;
-        f.returns = substitute(s, a.returns).type;
-        f.params = substitute(s, a.params).types;
-        f.written = substitute(s, a.written).types;
+        f.returns = need(s, a.returns).type;
+        f.params = need(s, a.params).types;
+        f.written = need(s, a.written).types;
         f.symbol = memberSymbol(a, f.name, f, tag);
         if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
             p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
@@ -5126,8 +5153,8 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
             if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
     }
     for (VSlot &v : own ? p_.classes_.vtables_[tag] : none) {     // each slot's signature under `s`, a deleting destructor this tag's
-        v.params = substitute(s, v.params).types;
-        if (v.returns != nullptr) v.returns = substitute(s, v.returns).type;
+        v.params = need(s, v.params).types;
+        if (v.returns != nullptr) v.returns = need(s, v.returns).type;
         if (v.name == "~$deleting" || (v.name == "~" && p_.target_.microsoftNames())) v.symbol = p_.linkage_.deletingDestructorSymbol(tag);
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
@@ -5460,9 +5487,9 @@ static bool nestedAt(const std::vector<std::pair<std::size_t, std::size_t> > &ne
 
 // Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
 std::string Templates::classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                                   Substituted *early, std::vector<const Type *> *wanted) const {
+                                   Substituted *early, std::vector<const Type *> *wanted) {
     Substituted &s = *early;
-    // The body's member beyond first: under one, the ids idsBefore would make are not made, so a signature's refusal hides it.
+    // The body's member beyond first: under one, the wanted ids are not made, so a signature's refusal hides it.
     const std::string shape = classShape(start, params, binding, &s, nullptr, wanted), outside = classBeyond(start), beyond = outside.empty() ? shape : outside;
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
@@ -5475,7 +5502,7 @@ std::string Templates::classBefore(std::size_t start, const std::vector<Template
 }
 
 // Step (2): each of the read's member typedefs and aliases names, under `s`, a type the binding carries; else why not.
-std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) const {
+std::string Templates::typedefsCarried(std::size_t start, const Substituted &s, std::vector<const Type *> *wanted) {
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
         if (!typedefCarried(start, s, td.second, wanted) && typedefByPath(start, s, td) == 0)     // else read by staticsFromRead
             return "replayed: a member typedef or alias over a type the binding does not carry";
@@ -5521,7 +5548,7 @@ std::size_t Templates::typedefByPath(std::size_t start, const Substituted &s, co
 // Step 4's shape: a covered class made from the read lacks what its body declares beyond data members and member functions,
 // and its held member bodies are the read's records under the real tag, each one's function the replay's by readSymbol_.
 std::string Templates::classSkip(std::size_t start, const std::string &tag, const std::vector<Parser::PendingBody> &bodies,
-                                 const std::string &name, std::size_t typedefsFrom) const {
+                                 const std::string &name, std::size_t typedefsFrom) {
     const std::string beyond = classBeyond(start);
     if (!beyond.empty()) return beyond;
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
