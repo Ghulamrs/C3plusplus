@@ -8509,3 +8509,50 @@ evaluated value, the re-read and its jump gone, staticShape and staticInit delet
 (no output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd-ship.sh <x> <commit-or-tree>`, the Linux scripts
 `m8r3rd-{lbuild,q,lcen,one,job,ident}.sh` (from m8r3rc's; lcen sums `unfolded` as well); the whys by `grep -a '^-check=templates
 static unfolded'` over the census directory.
+
+## R3, slice 3R-d, second lane: the disagreements, and statics from their records (lane m8r3rd2, 2026-11-27)
+
+Base f13e8475 (m8-3rd). REF built from 068ff1c6 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commit **d1c1f20f** (the census's three roots), this entry. src/ +30 / -19 (Templates.cpp +26 / -15, Templates.h +2 / -2; three
+docs/EXCLUSIONS.md citations in Templates.cpp +1). **The deleting half of commit 2 did not land** (unfolded is not 0 on the suite):
+`p_.tokens_[` in Templates.cpp 103 -> 103, replay-residue 107 / 19 / 26 / 6 -> the same, the re-entries "a static data member"
+(767 / 481 under the check) and the made-class totals the REF's.
+
+**THE MEASURE: the static record's disagree, suite 30 -> 0 (both ABIs), self-host 9 -> 0 (both ABIs); unfolded, suite 14 -> 10
+(both ABIs), self-host 0 -> 0.** Suite x86_64-linux and x86_64-windows -check: asked 777 disagree 0 absent 0 unfolded 10;
+self-host x86_64-linux asked 477, x86_64-windows 473, disagree 0 absent 0 unfolded 0 (102 units rc 0 each). Three roots, each named
+by case and member (the census now prints `static disagree (N): member v, the replay's w` and another class's static by why):
+(1) m8r3rd-next.diff - the class's own earlier static named unqualified (`twice = size * 2`, template-subst-staticdata: 3) has no
+dependent mark, so its resolution folded the read's stand-in; a Name resolved as a static member asks `owner` first. (2) **staticAgainst
+held each non-type parameter's value in an int**: `ratio_divide`'s and `ratio_multiply`'s `ratio<1, 3600000000000>` truncated, so
+`<ratio>`'s `num` and `den` folded wrong in chrono-clocks, thread-pool, thread-sleep-yield (9 each) and the self-host's Driver.cpp
+(9); `long long` now. (3) A class's own enumerator in a static's initialiser (template-subst-enumid's `both = bytes + scaled`: the
+4 unfolded) takes the walk's enumerator `tag::[$held::]name`, not value-dependent. **The 10 left, read, not built**: `Max<(N > M ?
+N : M), Rest...>::value` (nontype-pack-recursive and template-subst-packcount, 5 each) - substitute(Declared)'s argValued folds by
+foldArg without `wide`, which takes neither `>` nor `?:` (DepExpr `qu`, three kids), so the census finds no class by key. Its mend
+is the kernel's foldArg (a `qu` under `wide`, the 4d trial's too), outside this slice's functions: owed.
+
+**Gates** (Linux, against the REF, on d1c1f20f's tree b478f9fe): **g++ -Werror clean**; **static: exclusions rc 0 (554 / 4),
+comments 0 over, memory gate lower, ast-residue not raised, replay-residue rc 0 at 107 / 19 / 26 / 6, ide up to date**; **run.sh
+plain 1,375 / 0; run.sh -templates=subst 1,375 / 0** (1,019 printed, 352 refused as recorded); **censuses -check: suite x86_64-linux
+1,383 units, 355 nonzero, class differ 0, body 23, re-entries 27,079, made-class 3,118; x86_64-windows 379 / 0 / 22 / 26,935 / 3,114
+(= REF); self-host x86_64-linux 102 rc 0, class 0, body 11, made-class 74,826; x86_64-windows 102 rc 0, class 0, body 11, made-class
+74,804** (m8r3rd's line for line).
+**The FULL self-compile 102 of 102 (179 s); subst.sh rc 0** (run -O0 / -O2 1,375 / 0, typed at both); **identical under the flag
+on all four targets at -O0 / -O1 / -O2: x86_64-linux, tms6747, arm64-darwin 1,031 / 0, x86_64-windows 2,062 / 0 (on Linux); plain
+x86_64-linux -O0 / -O1 / -O2 1,031 / 0, x86_64-windows -O0 2,062 / 0** - no changed emitted output at any level that ran (the change is the census's alone: staticFolded
+and staticAgainst only count). **Census without the check, suite: x86_64-linux and x86_64-windows made-class 5,264 (= REF), re-entries
+20,223 / 20,079 (= REF), "a static data member" 777 (= REF), static record asked 773 disagree 0 unfolded 10 (REF 466, foldUnder's). Self-host x86_64-linux: 102 rc 0, class 0, body 0,
+made-class 192,935, re-entries 352,054, "a static data member" 481, static record asked 481 disagree 0 unfolded 0** (the REF's
+self-host no-check line not run: owed).
+
+**What must not change, and did not:** every door answer and census line the REF's; [class.static.data]/3, `folded` and `value` as the
+replay sets them (read only); the ids' order; no new `p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh**; on Linux, plain identical on tms6747 and arm64-darwin and x86_64-windows
+-O1 / -O2 (identical by construction: nothing folds without the flag); the 10 unfolded (foldArg's `>` and `?:` under the kernel, root above),
+then the deleting half (staticsFromRead declares each static by `declareStaticMember` with the folded value, the re-read and its jump
+gone, staticShape and staticInit deleted: tokens 103 -> about 85, "a static data member" 777 / 481 -> 0, replay-residue lowered);
+carriedId's early branch. No accepted lines, no wave-expected rows. A probe: none (no output changes; Linux has no clang).
+Re-measure: `boxkit/m8r3rd2-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd2-{lbuild,q,lcen,one,job,ident}.sh` (m8r3rd's
+renamed); `grep -a '^-check=templates static \(unfolded\|disagree\)'` over the census directory names each one.
