@@ -5400,3 +5400,12 @@ template parameters); lane w47merge kept one template-template path (idUnder, li
 Substituted::templates) and deleted main's templateUnder, and renamed m83bi's probe template-subst-ttbound beside main's
 template-subst-ttparam. **Class specializations made with no replay (exact census): suite 2,531 of 2,605, self-host 75,672 of
 75,680.** Nothing changes without the flag.
+
+**m6d-w48's wave landed, 2026-11-26 (gate m6dw48g at 4d5864d6 against main 706641a7: 40 passed, 0 failed, no rows -
+identical 0 differ on four targets; winpass2's gnu leg was cut at the 25-minute cap on the shared Windows box, 421 cases
+not run, and passed alone under -k, 977 same, 0 differ; the fixed point checked not owed).** m8-3bo (m83bm, m83bo: W<Box>
+by the check's templatesHeld, a `: C<int>` base kept by the read, a parameter bound to an array of scalars, a class
+template whose first base is polymorphic - its vtable seeded by layBases, a vtableHeld check, the Itanium primary base from
+the read) and m8-3bn (typedefByPath: ratio_divide, decay). **Class specializations made with no replay (exact census):
+suite 2,581 of 2,635 on the merged tree; self-host 75,681 of 75,681 - every class - by the lanes' counts.**
+Nothing changes without the flag.
