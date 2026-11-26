@@ -7407,7 +7407,7 @@ sfinae differ).
 **Gates** (REF 4ab0bcba built on each box; the lane measured on fc034c2d, c2's tree before its last two edits - a `syntax::Node` held
 by copy, not reference, and EXCLUSIONS - both of which change no emitted byte). Linux (g++, `~/m8r4gm`): **g++ -Werror clean** (c1 and
 c2); **the FULL stage-0 self-compile 102 of 102** (156 s); **identical plain 0 differ** x86_64-linux 3087/0, tms6747 3087/0 and arm64-darwin 3087/0 at
--O0/-O1/-O2; under the flag tms6747 3087/3, the three template-angle-split at -O0/-O1/-O2, the case below; run.sh plain 1373/0; run.sh under the flag 1372/1 and subst.sh 2 failed (run -O0, -O2), all three the one case
+-O0/-O1/-O2; under the flag 3087/3 on each of the three, every differ template-angle-split at -O0/-O1/-O2, the case below; run.sh plain 1373/0; run.sh under the flag 1372/1 and subst.sh 2 failed (run -O0, -O2), all three the one case
 template-angle-split ("an array length must be positive, not -4" in `Y<char>`), which REF 4ab0bcba refuses the same under the flag:
 the base's, not this lane's (owed to the wave: named for 4e's SFINAE trial or the class door); subst.sh typed 1019/0 both levels,
 self 102 of 102. Static on c2: exclusions 0/0 after the ten re-pointed (c1 alone left them stale), comments 0 over, memory-gate
@@ -7417,7 +7417,7 @@ lower, **ast-residue not raised at c2** (c1 alone raised node-refs 298 -> 299 by
 0 failed** (Itanium and Microsoft; 20 .nonames open as recorded).
 **Not done in the hour**: identical x86_64-windows plain at -O0/-O1/-O2 in one run passed the 25-minute cap (rc 124, a defect, as
 m8r4e3's; -O0 alone was started at 20:25 - its answer, if any, is in boxkit/m8r4g-handover.md); identical under the flag on
-x86_64-linux, arm64-darwin and x86_64-windows; names.sh under the flag and overload.sh (running at the hour's end, see the
+x86_64-windows; names.sh under the flag and overload.sh (running at the hour's end, see the
 handover); the -check=templates censuses over the whole suite and the self-host (only the 22 default cases were run).
 
 **Owed and next.** The two remaining sites - `decltype` (ParserExpr.cpp:2396) and the template argument's other kinds - need the
