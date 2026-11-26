@@ -4831,7 +4831,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         f.returns = substitute(s, a.returns).type;
         f.params = substitute(s, a.params).types;
         f.written = substitute(s, a.written).types;
-        f.symbol = memberSymbol(a, f.name, s, tag);
+        f.symbol = memberSymbol(a, f.name, f, tag);
         if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
             p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
         f.defined = f.used = false;
@@ -5044,9 +5044,16 @@ std::string Templates::vtableHeld(const std::string &readTag, const std::string 
 
 // A read member function's name for the real tag from its signature under `s`, as the parser and Classes spell it on each ABI.
 std::string Templates::memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const {
+    Signature under = a;
+    under.params = substitute(s, a.params).types, under.returns = substitute(s, a.returns).type, under.written = substitute(s, a.written).types;
+    return memberSymbol(a, name, under, tag);
+}
+
+// The same from `under`, the read's signature already under the binding (membersFromRead's, the types it declared).
+std::string Templates::memberSymbol(const Signature &a, const std::string &name, const Signature &under, const std::string &tag) const {
     {
-        const std::vector<const Type *> params = substitute(s, a.params).types;
-        const Type *fn = p_.types_.functionType(substitute(s, a.returns).type, params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
+        const std::vector<const Type *> &params = under.params;
+        const Type *fn = p_.types_.functionType(under.returns, params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
         std::string symbol, why;
         if (!p_.target_.microsoftNames()) {
             if (name == tag) itaniumConstructorName(tag, cls, fn, true, &symbol, &why);
@@ -5055,7 +5062,7 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
         } else {
             // The written parameters under the binding stand where manglingType reads them; Classes names an implicit one public.
             const std::vector<const Type *> keptWritten = p_.writtenParams_, keptFor = p_.writtenFor_;
-            p_.writtenParams_ = substitute(s, a.written).types;
+            p_.writtenParams_ = under.written;
             p_.writtenFor_ = a.written.empty() ? std::vector<const Type *>() : params;
             const char code = a.isVirtual ? 'U' : a.implicit ? 'Q' : a.access == Access::Public ? 'Q' : a.access == Access::Protected ? 'I' : 'A';
             if (name == tag) microsoftConstructorName(tag, cls, p_.linkage_.manglingType(fn), code, &symbol, &why);

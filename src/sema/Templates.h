@@ -362,6 +362,7 @@ public:
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
     void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`
     std::string memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const;
+    std::string memberSymbol(const Signature &a, const std::string &name, const Signature &under, const std::string &tag) const;
     std::string memberName(const Signature &a, const std::string &readTag, const std::string &tag, const Substituted &s) const;
     std::string bodyKey(std::size_t start, const std::pair<PendingBody, std::string> &h, const std::string &tag, const Substituted &s) const;
     std::string classWhy(const std::string &tag) const;
