@@ -5198,7 +5198,8 @@ const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &
         both.to.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
     const Substitution r = substitute(both, mt.pattern, Declared);
-    if (mt.pattern == nullptr || !r.carried()) return "a pattern the class layer does not carry";
+    if (mt.pattern == nullptr) return "no pattern read";
+    if (!r.carried()) return r.why;     // the census counts the substitution's own reason
     *out = mt;
     out->pattern = r.type;
     out->layered = false;
