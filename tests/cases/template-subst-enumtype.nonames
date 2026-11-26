@@ -1,0 +1,1 @@
+x86_64-linux  cxx1 emits the C1 form of `Cell<T>`'s inline constructor (`_ZN4CellIcEC1Ec`, `IdEC1Ed`, `IiEC1Ei`) beside the C2 where clang emits only the C2 it calls - the inline-constructor difference qualified-functional-cast.nonames records. x86_64-windows and arm64-darwin agree on every name.
