@@ -1231,12 +1231,66 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
     return std::string();
 }
 
+static const char *const doorNames[Templates::Doors] = { "function", "class", "member", "member-template", "dependent-base",
+                                                         "sfinae-trial", "sfinae-failed", "alias", "constexpr-ahead", "by-substitution" };
+
 std::string Templates::censusLine() const {
-    static const char *const names[Doors] = { "function", "class", "member", "member-template", "dependent-base", "sfinae-trial",
-                                              "sfinae-failed", "alias", "constexpr-ahead", "by-substitution" };
     std::string out = "template-census:";
-    for (int d = 0; d < Doors; d++) out += std::string(" ") + names[d] + "=" + std::to_string(census_[d]);
+    for (int d = 0; d < Doors; d++) out += std::string(" ") + doorNames[d] + "=" + std::to_string(census_[d]);
     return out;
+}
+
+void Templates::countWhy(Door d, const std::string &why) {
+    count(d);
+    fallbackCensus_[std::string(doorNames[d]) + ": " + why]++;
+}
+
+void Templates::countDefault(const TemplateParam &p, bool deduced) {
+    if (p.defBegin == 0) return;
+    deducedDefaults_ += deduced ? 1 : 0;
+    fallbackCensus_[std::string("default: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") +
+                    (deduced ? ", deduced" : ", the class door's list")]++;
+}
+
+void Templates::countAhead(const std::string &tag, bool constructor) {
+    const std::map<std::string, std::string>::const_iterator c = specializationCensus_.find(tag);
+    countWhy(ConstexprAhead, std::string(constructor ? "a constexpr constructor" : "a constexpr member function") + ", its class " +
+                                 (c == specializationCensus_.end() ? "not in the census" : c->second.compare(0, 4, "made") == 0 ? "made from the read" : "replayed"));
+}
+
+// What a kept pattern signature holds beyond types the binding carries: 1 a `decltype`, 2 a value over the parameters.
+static int patternHolds(const Type *t, int depth = 0) {
+    int held = 0;
+    for (; t != nullptr && depth < 64; depth++) {
+        if (t->kind() == Kind::DependentExpr) return held | 1;
+        if (t->unqualified() != t) { t = t->unqualified(); continue; }
+        if (t->kind() == Kind::Function) {
+            for (const Type *q : t->params()) held |= patternHolds(q, depth + 1);
+            t = t->returns();
+            continue;
+        }
+        if (t->isStructOrUnion()) {
+            for (std::size_t i = 0; t->isSpecialization() && i < t->templateArgs().size(); i++) {
+                const TemplateArg &a = t->templateArgs()[i];
+                if (!a.isType && (a.isParam || a.dependentValue || a.expr != nullptr)) held |= 2;
+                if (a.isType) held |= patternHolds(a.type, depth + 1);
+                for (const Type *m : a.pack) held |= patternHolds(m, depth + 1);
+            }
+            return held;
+        }
+        if (t->kind() == Kind::DependentMember || t->kind() == Kind::PackExpansion || t->isPointer() || t->isReference() || t->isArray()) {
+            t = t->pointee();
+            continue;
+        }
+        return held;
+    }
+    return held;
+}
+
+std::string Templates::trialShape(const TemplateDecl &decl, bool defaulted) const {
+    if (decl.pattern == nullptr) return "no pattern signature kept";
+    const int held = patternHolds(decl.pattern);
+    return (held & 1) != 0 ? "a 'decltype'" : (held & 2) != 0 ? "a value over the parameters" : defaulted ? "a default" : "types alone";
 }
 
 void Templates::holdBodies(std::size_t mark) {
@@ -1293,6 +1347,7 @@ void Templates::tallyRead(ReadDoor door, std::size_t mark, std::string why, bool
         return;
     }
     if (wantsBody) declRead_[door].push_back(read);
+    if (wantsBody && door == ReadMember) memberTemplateRead_.insert(at);
     if (wantsBody && (door == ReadFunction || (substitute_ && (door == ReadClass || door == ReadPartial)))) readBody_[at] = read;
     if (wantsBody) p_.syntaxTree_.noteRead(read);
     else declTally_[door][0]++;
@@ -2049,6 +2104,23 @@ std::string Templates::builtReport() const {
     const long total = static_cast<long>(specializationCensus_.size());
     out += "-check=templates specializations: total=" + std::to_string(total) + " made=" + std::to_string(made) + " replayed=" +
            std::to_string(total - made) + " again=" + std::to_string(specializationAgain_) + "\n";
+    // M8.4's measure (slice 4a): every door's fallback by why, then the unit's one sum; a body door's is its count less those made.
+    long defaults = 0;
+    for (std::map<std::string, long>::const_iterator i = fallbackCensus_.begin(); i != fallbackCensus_.end(); ++i) {
+        out += "-check=templates falling back (" + std::to_string(i->second) + "): " + i->first + "\n";
+        defaults += i->first.compare(0, 9, "default: ") == 0 ? i->second : 0;
+    }
+    const std::map<std::string, int>::const_iterator fm = replayCensus_.find("substituted with no replay"),
+                                                     mm = replayCensus_.find("member: substituted with no replay");
+    const long parts[] = { total - made, census_[FunctionBody] - (fm != replayCensus_.end() ? fm->second : 0),
+                           census_[MemberBody] - (mm != replayCensus_.end() ? mm->second : 0), census_[MemberTemplate], census_[SfinaeTrial],
+                           census_[ConstexprAhead], census_[AliasId], defaults };
+    static const char *const partNames[] = { "classes", "functions", "members", "member-templates", "sfinae-trials", "constexpr-ahead",
+                                             "aliases", "defaults" };
+    std::string sum;
+    long all = 0;
+    for (std::size_t i = 0; i < sizeof parts / sizeof parts[0]; i++) all += parts[i], sum += std::string(" ") + partNames[i] + "=" + std::to_string(parts[i]);
+    out += "-check=templates falling back=" + std::to_string(all) + sum + "\n";
     return out;
 }
 
@@ -2721,10 +2793,12 @@ bool Templates::deduceTemplateArguments(const TemplateDecl &decl,
             Parser::Trial trial(&p_);
             took = p_.defaultTemplateArgument(decl, i, binding, values);
         } catch (const SubstitutionFailure &f) {
+            countDefault(decl.params[i], true);
             if (f.unsupported) p_.src_.fail(f.pos, f.why);
             *why = "the default argument of '" + decl.params[i].name + "' does not substitute: " + f.why;
             return false;
         }
+        if (took) countDefault(decl.params[i], true);
         if (!took) {
             *why = "'" + decl.params[i].name + "' appears in no parameter, so "
                    "there is nothing in the call to work it out from - write "
@@ -3547,7 +3621,9 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
         }
         if (!p.isPack && k < flat.size()) a = flat[k++];
         else if (!p.isPack) {
-            if (open || !p_.defaultTemplateArgument(d, q, &binding, &values) || binding[q] == nullptr) return false;
+            if (open || !p_.defaultTemplateArgument(d, q, &binding, &values)) return false;
+            countDefault(p, false);
+            if (binding[q] == nullptr) return false;
             a.isType = p.type == nullptr, a.isTemplate = p.isTemplate, a.type = binding[q], a.value = values[q];
         }
         if (!a.isPack && (a.isTemplate != p.isTemplate || a.isType != (p.type == nullptr) || a.isParam || a.expr != nullptr || a.dependentValue))
@@ -5316,7 +5392,11 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const Type *patternFn = mt.pattern;
     if (patternFn == nullptr) p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' has no pattern signature kept at its declaration");
 
-    count(MemberTemplate);
+    bool ownPack = false;
+    for (std::size_t i = 0; i < mt.params.size(); i++) ownPack = ownPack || mt.params[i].isPack;
+    countWhy(MemberTemplate, mt.isConstructor ? "a constructor" : ownPack ? "an own pack"
+                             : memberTemplateRead_.count(mt.afterParams) == 0 ? "a body the read did not read"
+                             : mt.classParams.empty() ? "one layer, a body read" : "two layers, a body read");
     const std::size_t bodiesFrom = p_.syntaxTree_.size();
     replayMemberTemplate(mt, display, key, args, patternFn, declOnly);
     holdBodies(bodiesFrom);
@@ -5416,11 +5496,12 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         std::vector<long long> values;
         Packs packs;
         std::string why;
+        const long defaultsBefore = deducedDefaults_;
         if (!deduceTemplateArguments(decl, argTypes, &binding, &values, &packs,
                                      &why))
             continue;
         const std::vector<TemplateArg> args = argumentsFromBinding(decl.params, binding, values, packs);
-        count(SfinaeTrial);
+        countWhy(SfinaeTrial, "a function template, " + trialShape(decl, deducedDefaults_ != defaultsBefore));
         try {
             Parser::Trial trial(&p_);
             p_.instantiate(decl, binding, values, args, pos, packs);
@@ -5481,10 +5562,12 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
     Parser::BoundParams bound(&p_);
     if (!mt.classParams.empty())
         bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues, mt.classPacks, &bound.undo);
+    const long defaultsBefore = deducedDefaults_;
     const bool ok = deduceTemplateArguments(mt, argTypes, &binding, &values,
                                             &packs, &why);
     bound.unbindNow();
     if (!ok) return;
+    const bool defaulted = deducedDefaults_ != defaultsBefore;
 
     const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
     const bool wasBody = p_.memberTemplateBody_;
@@ -5493,7 +5576,7 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
     std::vector<std::size_t> uses;
     std::vector<std::size_t> *const wasUses = p_.candidateUses_;
     p_.candidateUses_ = &uses;
-    count(SfinaeTrial);
+    countWhy(SfinaeTrial, "a member template, " + trialShape(mt, defaulted));
     try {
         Parser::Trial trial(&p_);
         const Signature *made = instantiateMemberTemplate(mt, binding, values, args, pos);

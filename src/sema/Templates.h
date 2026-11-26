@@ -185,6 +185,14 @@ public:
                 ConstexprAhead, BySubstitution, Doors };
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
+    // M8.4 slice 4a: a door with no reason line counted by why it falls back, "<door>: <why>" - each door's sum its count.
+    std::map<std::string, long> fallbackCensus_;
+    long deducedDefaults_ = 0;
+    void countWhy(Door d, const std::string &why);
+    void countDefault(const TemplateParam &p, bool deduced);           // a default template argument replayed, by kind
+    void countAhead(const std::string &tag, bool constructor);         // constexpr-ahead, by whether its class was made
+    std::string trialShape(const TemplateDecl &decl, bool defaulted) const;
+    std::set<std::size_t> memberTemplateRead_;                         // a member template's body the read read, by `afterParams`
     // **-check=templates** (M8.1): each body a door replays after node `mark`, held against the first read; the read itself is always made.
     bool checkBodies_ = false;
     void holdBodies(std::size_t mark);

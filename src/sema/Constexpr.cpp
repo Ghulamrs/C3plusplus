@@ -65,7 +65,7 @@ const ConstexprSlot *Constexpr::constexprSlot(const Var &v) const {
 bool Constexpr::enterConstexprCall(const Call &c, const ConstexprFn **out,
                                 std::size_t pos) const {
     auto it = constexprFns_.find(c.symbol());
-    if (it == constexprFns_.end() && instantiateForConstant(c.symbol())) it = constexprFns_.find(c.symbol());
+    if (it == constexprFns_.end() && instantiateForConstant(c.symbol(), false)) it = constexprFns_.find(c.symbol());
     if (it == constexprFns_.end()) return false;
     const ConstexprFn &fn = it->second;
     if (fn.value == nullptr || c.args().size() != fn.slots.size())
@@ -572,7 +572,7 @@ bool Constexpr::foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, s
 
 // **A class template's constexpr member is compiled where a constant needs it**, not after the
 // file as instantiatePending would: that one body is replayed now, its parameters bound.
-bool Constexpr::instantiateForConstant(const std::string &symbol) const {
+bool Constexpr::instantiateForConstant(const std::string &symbol, bool constructor) const {
     Parser &self = p_;
     std::string complete = symbol;
     const std::size_t c2 = complete.find("C2E");
@@ -600,7 +600,7 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
             self.instantiationDisplay_.clear();
             const bool wasInline = p_.replayingInline_;
             const std::size_t resume = p_.at_;
-            self.tmpl_.count(Templates::ConstexprAhead);
+            self.tmpl_.countAhead(body.tag, constructor);
             self.replayInlineBodies(std::vector<Parser::PendingBody>(1, body));
             self.at_ = resume;
             self.replayingInline_ = wasInline;
@@ -677,7 +677,7 @@ bool Constexpr::foldLeaf(const Expr &e, ConstLeaf *out, std::size_t pos) const {
 // **A constexpr constructor run on the object its first argument points at.**
 bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
     std::map<std::string, ConstexprCtor>::const_iterator it = constexprCtors_.find(c.symbol());
-    if (it == constexprCtors_.end() && instantiateForConstant(c.symbol())) it = constexprCtors_.find(c.symbol());
+    if (it == constexprCtors_.end() && instantiateForConstant(c.symbol(), true)) it = constexprCtors_.find(c.symbol());
     if (it == constexprCtors_.end() || c.args().empty()) return false;
     const ConstexprCtor &ctor = it->second;
     if (ctor.slots.size() + 1 != c.args().size()) return false;

@@ -46,7 +46,7 @@ public:
     bool runConstexprEffect(const Expr &e, std::size_t pos) const;
     bool constructConst(const Call &c, std::size_t pos) const;
     std::string constObjectKey(const Var &v) const;
-    bool instantiateForConstant(const std::string &symbol) const;
+    bool instantiateForConstant(const std::string &symbol, bool constructor) const;
     static ConstObject subObject(const ConstObject &from, int at, int size);
     static void storeSubObject(ConstObject &into, int at, int size, const ConstObject &what);
     // The object a declaration's own steps build, run with `target` standing for it.
