@@ -7175,7 +7175,7 @@ the switch as `boxkit/m8r1e-switch3.diff`; `boxkit/m8r1g-wcen.sh`; REF 501e2819 
 | --- | --- | --- | --- | --- |
 | 501e2819 + switch (m8r1f) | 36 | 17 | 112 | 101 |
 | + 4ddf92ae (the frame at Made) | **30** | **0** | **118** | **0** |
-| + the sret mend (@SRET@) | **30** | 0 | **113** (95 "a slot given back", 8 "a declaration it made") | 0 |
+| + the sret mend (78d57478) | **30** | 0 | **113** (95 "a slot given back", 8 "a declaration it made") | 0 |
 
 **"A local: typed apart" is gone on both** (17 -> 0, 101 -> 0), class differ 0 throughout - but the body differ lines stay above
 the REF's, because each mend lets the frame walk one step further: at 4ddf92ae the first step apart is **"the read's a local
