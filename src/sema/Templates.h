@@ -261,6 +261,7 @@ public:
     std::string sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
                                   const Packs &packs, std::size_t pos, const Type **formed);
     const char *formedWhy(const TemplateDecl &decl, const Type *fn) const;     // why a formed one is still read again, or null
+    std::string trialKind(const Type *e) const;     // the kind of the leaf the kernel did not carry, the census's split
     std::string formedHeld(const TemplateDecl &decl, const Type *formed, const Signature &read) const;     // -check=templates' line
     std::map<std::string, long> sfinaeReport_;
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed, its list laid

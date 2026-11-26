@@ -1544,6 +1544,22 @@ static bool partsUnwalked(const Type *t, int depth = 0) {
     return false;
 }
 
+// The kind of the leaf a trial's signature names that the kernel does not carry, for the census (counts only, no key).
+std::string Templates::trialKind(const Type *e) const {
+    int tt;
+    if (e == nullptr) return "no leaf";
+    if (e->kind() == Kind::DependentExpr) return "a 'decltype' (4f's)";
+    if (e->kind() == Kind::PackExpansion) return "a pack expansion";
+    if (e->isMemberPointer()) return "a pointer to member";
+    if (e->isEnumeration()) return "an enumeration of the read";
+    if (!e->isStructOrUnion()) return "another kind";
+    if (e->dependentLayout()) return "a nested class laid over its parameters";
+    if (readIds_.count(e) != 0) return "a class template-id the read cleared";
+    if (!e->isSpecialization()) return "a class of the current instantiation";
+    if (ttRefName(e->templateName(), &tt)) return "a template template parameter's id";
+    return "a class template-id under a declarator";
+}
+
 const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
     if (fn == nullptr || fn->kind() != Kind::Function) return "formed: no function type";
     if (!decl.defined) return "formed: a template declared and never defined";
@@ -1567,12 +1583,14 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
     Substituted s;
     const char *why = trialSubstituted(decl, binding, values, packs, &s);
     std::string failed;
+    const Type *at = nullptr;
     *formed = nullptr;
     if (why == nullptr) {
         try {
             Substitution r = substitute(s, decl.pattern, Declared);     // a qualifier's class not yet made: made at the use, as the replay makes it
             if (!r.carried() && std::string(r.why) == "a member type whose class the binding does not carry") r = substitute(s, decl.pattern, At{ pos });
             why = r.carried() ? formedWhy(decl, r.type) : r.why;
+            at = r.at;
             if (why == nullptr) *formed = r.type;
             const Type *cls = nullptr;
             if (!r.carried() && r.at != nullptr && r.at->kind() == Kind::DependentMember) {
@@ -1590,8 +1608,9 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
             why = "a class the kernel made failed to substitute";      // the replay meets it again, and re-raises a refusal
         }
     }
+    const std::string kind = why != nullptr && std::string(why) == "a type over the parameters the binding does not carry" ? ": " + trialKind(at) : "";
     sfinaeReport_[!failed.empty() ? std::string("substituted: a failed substitution") : *formed != nullptr ?
-                  std::string("substituted: formed, declared from the substituted signature") : std::string("re-read: ") + why]++;
+                  std::string("substituted: formed, declared from the substituted signature") : std::string("re-read: ") + why + kind]++;
     return failed;
 }
 
