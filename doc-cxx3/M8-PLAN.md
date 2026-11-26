@@ -7020,3 +7020,39 @@ how typeDefaultRead pops its layer (the same answers), and the self-compile ran 
 wave gate): the -check=templates census on x86_64-windows; the REF's x86_64-windows measure (taken as 4a's 184 here); the
 self-host census re-run on c2 (c1's ParserTemplate.cpp unit was the refused one).
 Re-measure: `boxkit/m8r4b-cen.sh <r|n> <tag> <arch> <m|c> sh`, `boxkit/m8r4b-gate.sh`, `boxkit/m8r4b-gate2.sh`.
+
+## R2, slice 4c: value and template defaults (lane m8r4c, 2026-11-26)
+
+Base 321d1ba2 (m8-4b2: slice 4b on m8-r1d 3259e466, on wave m6d-w51). Commits 2b3dade8 (the slice, its probe
+`template-subst-valuedefault` with clang 19.1.5's answer from the Windows box, `5 6 12 16 7 1 3`, and
+`tests/open/default-member-of-scalar`) and this entry. src/ 98,606 -> 98,704 lines (128 added, 30 deleted: ParserTemplate.cpp
++72/-15, Templates.cpp +42/-11, Templates.h +6/-3, Entities.h +5, Parser.h +3/-1). **Nothing changes without the flag**: every
+read at the declaration and every made answer is under `-templates=subst`.
+
+MEASURE-PLACEHOLDER
+
+**What it does.** The declaration's scan of a default now also notes whether its tokens are literals, names and `+ - * / % ( )`
+(no call), whether every name is a value parameter before it, and its spelling when it is a name alone (`A::B`). Under the flag:
+a **value default** is read once there by `otherDefaultRead`, through the read 4b's type defaults use (`defaultReadAs`: the
+earlier parameters bound to themselves in a layer of its own, inside a `Trial`, in the declaration's scope) - over the values
+before it as the `DepExpr` the pattern read makes (`dependentExpression`, kept on `TemplateParam::defExpr`), a constant as its
+value (`defValue`); at the use `Templates::defaultMade` answers the declared type under the binding (`paramTypeIn`, as the replay
+does) and the value by `foldArg` under the binding's values by index. A **template default** is the class template its name
+finds at the declaration (`findTemplate`, `templateTemplateMatches`; not one naming a parameter before it), kept as its name type
+on `defPattern`. A **type default after a value or template parameter** (4b's ten "a parameter before it is not a type") is now
+read, those parameters standing for themselves (a value as a pattern parameter, a template as its `$TT<k>` stand-in), and the
+kernel's binding carries them (`Substituted::values` by index, `templates` by name). Packs before a default stay refused by name.
+**The deduction's default trial** ([temp.deduct]/7): where the kernel answers "a member type its class lacks" and the class it
+carries has no member of that name (not a data member, not a static member reached through the id - the replay's two other
+words), `defaultMade` says so in the replay's words (`'X' has no member type called 'm'`, `Templates::defaultFailure_`) and
+`defaultTemplateArgument`, on the deduced path only, raises it as the `SubstitutionFailure` the trial catches - the deduction
+fails and no more, with nothing replayed. The class door's list keeps its replay. Under `-check=templates` the replay runs beside
+every made answer and the two are held: a type or template pointer-equal, a value equal as well, a failure by the replay's own
+`why` ("made: a failed substitution, deduced"); a differ is counted (`replayed: <kind>: differ: ...`) and the replay's kept.
+
+**Found, not mended**: `tests/open/default-member-of-scalar` - `template <class T, class S = typename T::type> int pick(T)` beside
+`int pick(long)`, called `pick(5)`: clang chooses `pick(long)` (2); cxx3 chooses the template (1), plain and under the flag, at
+321d1ba2 and at this lane - `typename int::type` in a deduced default does not fail the deduction. The kernel names it "a member
+type whose class the binding does not carry" (int is no class), so this slice leaves it to the replay, which is the wrong answer.
+
+GATES-PLACEHOLDER
