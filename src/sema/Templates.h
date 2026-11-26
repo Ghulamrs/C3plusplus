@@ -295,6 +295,7 @@ public:
     std::map<std::string, int> substCensus_;                     // -check=templates under -templates=subst: covered, replayed by reason
     // M8.3: a class template's or a partial's class read at the declaration, by the token its body is read from.
     std::map<std::size_t, const Type *> readClass_;
+    std::map<std::size_t, std::string> readOwn_;     // its own key, a partial's the written one (`pair<const $T0,$T1>`)
     std::map<std::string, int> classCensus_;                     // the class door under -templates=subst: laid equal, apart, replayed by reason
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                            const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr) const;     // early: ids carried before the replay

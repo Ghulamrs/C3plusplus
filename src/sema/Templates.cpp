@@ -1584,6 +1584,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                 if (substitute_ && outermost && door != ReadOutOfLine) {
                     const std::size_t key = partial ? decl.partials[which].bodyAt : decl.afterParams;
                     readClass_[key] = made;
+                    readOwn_[key] = own;
                     std::pair<std::string, std::vector<Signature> > &kept = readMembers_[key];
                     kept.first = readTag;
                     kept.second.clear();
@@ -5325,14 +5326,12 @@ std::string Templates::memberShape(const PendingBody &body, const Substituted &s
 }
 
 // The read class standing for `made`, last in `s` (offsetUnder); before it the class the program declared under the read's own tag
-// (`inner<$T0>`, made inside `outer`'s read before `inner<int>`'s), which the read's records may name in its place.
+// (`inner<$T0>`, made inside `outer`'s read before `inner<int>`'s), which the read's records may name in its place - a partial's
+// own key, never the primary's id over its parameters (`pair<$T0,$T1>` in `pair<const T1, T2>` is another class).
 void Templates::readStands(std::size_t start, const Type *made, Substituted *s) const {
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator k = readMembers_.find(start);
-    std::string own = k != readMembers_.end() ? k->second.first : std::string();
-    const std::size_t at = own.find("$read");
-    std::size_t end = at == std::string::npos ? at : at + 5;
-    while (end < own.size() && own[end] >= '0' && own[end] <= '9') end++;
-    const Type *apart = at == std::string::npos ? nullptr : p_.lookup_.findTypedef(own.erase(at, end - at));
+    const std::map<std::size_t, std::string>::const_iterator own = readOwn_.find(start);
+    const Type *apart = own == readOwn_.end() || own->second.empty() ? nullptr : p_.lookup_.findTypedef(own->second);
     if (apart != nullptr && apart != readClass_.at(start) && apart->isStructOrUnion()) s->from.push_back(apart), s->to.push_back(made);
     s->from.push_back(readClass_.at(start));
     s->to.push_back(made);
