@@ -8459,3 +8459,53 @@ about 85, "a static data member" 777 / 481 -> 0); carriedId's early branch. No a
 none (no output changes; Linux has no clang for a .expected). Re-measure: `boxkit/m8r3rc-ship.sh <x> <commit-or-tree>`, the Linux
 scripts `m8r3rc-{lbuild,q,lcen,one,job,ident}.sh` (from m8r3rb's; lcen also sums the static door and the `static record` line - its
 `unfolded` by `grep -o 'static record asked=.*'` over the census directory).
+
+## R3, slice 3R-d, second commit: statics from their records (lane m8r3rd, 2026-11-27)
+
+Base 068ff1c6 (m8-3rc). REF built from 068ff1c6 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **cb8bb0b4** (commit 2's first step: the census's fold by the constant evaluator), **1cb222c2** (its `return (a = b), z;`
+in Parser::unaryNode, which the SSA lowering refuses, as two statements - the self-host's ParserExpr.cpp failed on cb8bb0b4), this
+entry. src/ +103 / -11 (Templates.cpp +68 / -4, Typing.cpp +10 / -1, Templates.h +7 / -4, ParserExpr.cpp +8 / -1, Parser.h +4,
+ParserTemplate.cpp +4 / -1, Constexpr.cpp and Typing.h +1). **The deleting half of commit 2 did not land**: `p_.tokens_[` in Templates.cpp 103 -> 103, replay-residue 107 / 19 /
+26 / 6 -> the same, the re-entries "a static data member" and the made-class totals the REF's (the census line for line).
+
+**THE MEASURE: the static record's unfolded, suite 468 -> 14 on both ABIs (x86_64-linux and x86_64-windows -check: asked 777,
+disagree 0 -> 30 in 4 units, absent 0)**; **self-host x86_64-linux 277 -> 0 (asked 477, disagree 9 in Driver.cpp, absent 0)**;
+**x86_64-windows 275 -> 0 (asked 473, disagree 9 in Driver.cpp, absent 0)** - both on cb8bb0b4, whose ParserExpr.cpp unit failed (rc 1
+of 102; 1cb222c2 mends it); class differ 0, body 11 both ABIs, made-class 74,826 / 74,804. The fold is now the constant evaluator's (`Constexpr::fold` over the
+typed tree), not 2f's foldUnder: `staticFolded` types the read's node under the class's binding (`Typer::typedUnder` with
+`bound_[" static"]`, the way callArgTypes and valueCast type a read operand) and gives each dependent leaf its value on the node
+(`Bound::folds`: the Typer sets it as `folded`, and the typed fold reads a folded Name): a non-type parameter by the binding; a read's
+dependent `sizeof(T)` - which the read turns into its zero, so the parser now records T (`Parser::sizeofTypes_`) - at T's size under
+the binding; `sizeof...(P)` at the binding's pack; another class's `C<N>::v` - recorded where the read leaves a dependent scope to
+the instantiation (`Parser::scopedStatics_`) - by the kernel, found by its key (`substitute`, Declared); a static of the class named
+before it, from `owner`. A dependent leaf of any other shape is refused, and the census prints `static unfolded (N): why`.
+
+**Two findings.** (1) Making `C<N>` at first need here (the 4d trial's leaf, `At`) made classes the replay had not: re-entries 27,079
+-> 27,131, made-class 3,118 -> 3,144, asked 777 -> 790 on the suite, so the census finds by key and makes nothing; the walk's making
+at first need belongs to the step that drops the re-read, where the walk is the only maker. (2) **The 30 disagreements have one root,
+read, not built**: the class's own earlier static named unqualified (`twice = size * 2`, `<ratio>`'s and `<chrono>`'s) carries no
+dependent mark, so the walk leaves it to its resolution, which folds the read's stand-in; the fix - a Name resolved as a static
+member asks `owner` first - is `boxkit/m8r3rd-next.diff` (5 / -3 in Templates.cpp). The 14 unfolded: 10 another class's static not
+made or no constant at the census's moment, 4 `scaled`.
+
+**Gates** (Linux, against the REF, on cb8bb0b4's tree 39b13aa5): **g++ -Werror clean**; **static: exclusions rc 0 (554 / 4),
+comments 0 over, memory gate lower, ast-residue not raised, replay-residue rc 0 at 107 / 19 / 26 / 6, ide up to date**; **censuses
+-check: suite 1,383 units, 355 nonzero, class differ 0, body 23, re-entries 27,079, made-class 3,118 (= REF) on x86_64-linux, the
+x86_64-windows 379 / 0 / 22 / 26,935 / 3,114 (= REF); self-host as above (ParserExpr.cpp's rc 1 the defect 1cb222c2 mends)**. On 1cb222c2: **g++ -Werror clean; the FULL self-compile 102 of 102 (97 s)** (cb8bb0b4's was 101 of 102); static rc 0 as
+above; **identical under the flag x86_64-linux -O0 / -O1 / -O2 1,031 / 0, x86_64-windows -O0 2,062 / 0, tms6747 -O0 1,031 / 0,
+arm64-darwin -O0 1,031 / 0; plain x86_64-linux -O0 1,031 / 0** - no changed emitted output at any level that ran. Not run in the hour
+(owed on Linux): identical at -O1 / -O2 on x86_64-windows, tms6747 and arm64-darwin and plain on the other levels and targets;
+run.sh both ways; subst.sh; the censuses on 1cb222c2 itself (its change is ParserExpr.cpp's statement shape only).
+
+**What must not change, and did not:** every door answer and census line the REF's (re-entries 27,079, made-class 3,118, class
+differ 0, body 23 on the suite); [class.static.data]/3, `folded` and `value` as the replay sets them (read only); no new
+`p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh**; m8r3rd-next.diff built and censused (disagree 0 on the suite and the
+self-host, both ABIs), the 14 unfolded, then the deleting half (staticsFromRead declares each static by `declareStaticMember` with the
+evaluated value, the re-read and its jump gone, staticShape and staticInit deleted: tokens 103 -> about 85, "a static data member"
+777 / 481 -> 0, replay-residue's baseline lowered); carriedId's early branch. No accepted lines, no wave-expected rows. A probe: none
+(no output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd-ship.sh <x> <commit-or-tree>`, the Linux scripts
+`m8r3rd-{lbuild,q,lcen,one,job,ident}.sh` (from m8r3rc's; lcen sums `unfolded` as well); the whys by `grep -a '^-check=templates
+static unfolded'` over the census directory.
