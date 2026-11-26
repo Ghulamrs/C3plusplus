@@ -7307,3 +7307,69 @@ walk, so their formed signatures can leave the re-read; the 200 / 13,447 not-car
 trial's `Parser::Trial` in `instantiateViableTemplates` falls where every shape substitutes (4d's values, 4h's member templates).
 Re-measure: `boxkit/m8r4e2-cen.sh <b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4e2-wcen.sh`, `boxkit/m8r4e2-gate.sh`,
 `boxkit/m8r4e2-gate2.sh`, `boxkit/m8r4e2-wident.sh`, `boxkit/m8r4e2-wnames.sh`.
+
+## R2, slice 4e, third step: the types the kernel did not carry (lane m8r4e3, 2026-11-26)
+
+Base 0a2662e6 (m8-4e2). Commits 17b8ce64 (the census split: `trialKind`, the not-carried leaf's kind on the trial's line -
+counts only, no `template-census:` key), 049be1db (a class template-id under a declarator asked again At the use), 77268ba1 (an
+id the read cleared, the same), 22478f5d (a template template parameter's id, the same), 317fa8f7 (EXCLUSIONS: three Templates.cpp
+citations at their lines - each commit re-pointed them, and c2-c4 counted one line too many; 0 uncited 0 stale after) and this
+entry. src/ 98,931 -> 98,963 (35 added, 3 deleted: Templates.cpp +35/-3, Templates.h +2). **Nothing changes without the flag.**
+
+**What it does.** `substitute(s, pattern, Declared)` lays the outermost id only; under a declarator ids are Mapped, so every
+`const vector<T> &` in a trial's signature answered "a type over the parameters the binding does not carry". `madeAtUse`: where
+that answer's leaf is a class template-id under a declarator, one the read cleared (`readIds_`) or `$TT<i>`'s, the trial asks the
+kernel again At the use (Made - carried under every declarator, the id step making the class through makeClass as the replay makes
+it reading the id; `idUnder` renames `$TT<i>`). The path is the member-type retry 4e already had, not a copy. What still fails
+re-reads, named by kind.
+
+**THE MEASURE** (census, `-templates=subst`, no check; before = 0a2662e6 as m8r4e2 measured it at 08ce61ae's src; after =
+049be1db, x86_64-linux g++ on Linux, x86_64-windows cl on Windows; `boxkit/m8r4e3-cen.sh`, `m8r4e3-wcen.sh`):
+
+| | not carried, a type (by kind after) | formed, declared from the substitution | SFINAE-door re-entries (instantiation / read) | `sfinae-failed` |
+| --- | --- | --- | --- | --- |
+| suite x86_64-linux, before | 201 (not split) + 2 a member's class | 1,234 | 6,037 / 8,502 | 36 |
+| suite x86_64-linux, after c2 | **30**: 19 an id the read cleared, 11 a template template parameter's id; + 2 a member's class, 1 an id with an argument not carried | **1,402** | **5,867** / 8,500 | 35 |
+| suite x86_64-windows, after c2 | the same 30 + 2 + 1 | 1,402 | 5,723 / 8,356 | 35 |
+| self-host x86_64-linux, before / after c2 | 13,447 -> **320**, all an id the read cleared | 16,988 -> **30,122** | 92,146 -> **79,047** / 244,483 | 195 / **195** |
+| self-host x86_64-windows, before / after c2 | 13,485 -> **319**, the same | 17,856 -> **30,187** | -> **78,933** / 244,633 | 195 / **195** |
+
+So the largest kind - a class template-id under a declarator - was nearly all of it: suite 168 and self-host 13,127 carried, every one
+formed and declared from its substitution. `decltype` (4f's): 0 in this answer, suite and self-host (no 'decltype' kind line is left after c2, and c2 carried only ids; the
+trial's own "a 'decltype'" shape is counted apart, before the kernel). c3 and c4 take the last 30 of the suite (19 ids the read
+cleared, 11 `$TT<i>` ids): under the check at 22478f5d, g++ on Linux, both ABIs, the suite's formed rise 1,554 -> **1,584** and
+**no "a type over the parameters" answer is left** - suite 201 -> 0; what still re-reads is 2 a member's class, 1 an id with an
+argument not carried and 2 a pointer to member. The self-host's 320 read-cleared ids at c4 are **not measured** (owed). The suite's trials of this shape 1,448 -> 1,446 and `sfinae-trial`
+1,916 -> 1,914, `sfinae-failed` 36 -> 35: two trials nested in a signature that is no longer re-read run once, as m8r4e2 saw; under
+`-check=templates` (every one replayed) `sfinae-failed` is 35 as well, and no sfinae line differs - which nested failure the 36
+counted twice is owed by name. **`Parser::Trial` in Templates.cpp 6 -> 6** (the trial still opens for a value over the parameters,
+a 'decltype', a member template's and the not-carried kinds above, so none of its uses is retired). **Replay-residue 150 / 19 / 26 / 6, +0.**
+
+**Check** (`-check=templates`, the suite, c2, cl on Windows, x86_64-windows): **1,554 formed, every one held as the replay read it**;
+no class, default, value or sfinae differ (6 failures held by the replay's words, 3 in other words; body differ lines 21, the base's).
+At 22478f5d (g++, Linux) over the suite on x86_64-windows and x86_64-linux: **1,584 formed, every one held**, the same 9 failures
+held, no class, default, value or sfinae differ (body 21). The self-host under the check: not run (owed).
+
+**m8r4e2's owed checks, on 0a2662e6** against REFs built from 325b9818 and 0c30afec (Windows, cl, `work\m8r4e3a`, `b`, `r`):
+**cl /W4 /WX alone clean** (18:48:13-18:51:43, 3 min 30 s with the ship); **overload.sh plain 46 agreed 0 differed, under the flag
+46/0**; names.sh plain started 19:29 and was stopped by PID unfinished at the hour. **Not done**: names.sh both ways; identical x86_64-windows 325b9818 vs 0a2662e6 - at JOBS=2 beside
+the lane's builds and censuses on the shared box, flag -O0 and plain -O1 each ran out their 25 minutes unfinished, and plain -O0
+and flag -O2 were stopped by PID at the hour (a defect: split finer, or run them alone); m8r4e's -O2 against 0c30afec not started;
+the Linux owed chain (run.sh plain and under the flag, subst.sh, identical on x86_64-linux, arm64-darwin and tms6747 against
+325b9818) waited in `~/slot` behind the wave gate m6dw53g and lane m8r1j until its own `timeout 1500` ended it - nothing of it
+ran (a defect: the wait belongs outside the timeout).
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4e3n`, 22478f5d, g++): **g++ -Werror clean**; **static**:
+exclusions 0 uncited 0 stale after 317fa8f7 (lowering 554/95 0/0), comments 0 over the cap, memory-gate lower, ast-residue not
+raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **the FULL stage-0 self-compile 102 of 102** (160 s). Windows (`work\m8r4e3x`, 049be1db):
+**cl /W4 /WX clean** (19:02:27-19:10:28, 8 min, beside the owed identicals - not alone); 22478f5d's cl build passed the 9-minute
+cap beside the same jobs and was stopped by PID at 19:24, a defect recorded, not retried. **Not run in the hour**: identical.sh
+against 0a2662e6 on four targets, run.sh plain and under the flag, subst.sh, names.sh and overload.sh on the lane, cl alone on the
+lane, the self-host censuses at c4 (measure and check). No emitted output is known changed: none was compared. Slices 4m-4s
+untouched; no new src/sema function indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`.
+
+**Owed** (to the wave gate): all of "Not run in the hour" and m8r4e2's owed above that were not done; which nested trial's failure
+the base counted twice (`sfinae-failed` 36 -> 35). **Next for 4e**: the 2 member-class and 1 id-argument answers, the 2 pointers
+to member (`dependentType` does not walk them); then the trial's `Parser::Trial` in `instantiateViableTemplates` falls where
+every shape substitutes (4d's values, 4f's `decltype`, 4h's member templates). Re-measure: `boxkit/m8r4e3-cen.sh <a|b|m|n> <tag>
+<arch> <m|c> <s|h|sh>` (Linux), `boxkit/m8r4e3-wcen.sh` (Windows), `boxkit/m8r4e3-gate.sh`, `m8r4e3-wident.sh`, `m8r4e3-wnames.sh`.
