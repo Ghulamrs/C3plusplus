@@ -1892,6 +1892,19 @@ private:
     void logFrame(char kind, const Type *t, int align, int offset, int serial = 0, const std::string *name = nullptr, bool param = false, int block = 0) {
         if (frameLog_ != nullptr) frameLog_->push_back(FrameEvent{ kind, t, align, offset, serial, name != nullptr ? *name : std::string(), param, block });
     }
+    // R3 3R-a: one record per member declaration of the class body that takes `memberLog_`, in order.
+    typedef sema::MemberRecord MemberRecord;
+    std::vector<MemberRecord> *memberLog_ = nullptr;     // taken by the first class body after `memberLogFrom_`: the read's own
+    std::size_t memberLogFrom_ = 0;
+    MemberRecord *logging_ = nullptr;     // the record of the declaration being read, while its body logs
+    bool keysWatched_ = false;     // while its decl-specifiers are read
+    void loggedKey(bool isEnum) {
+        if (logging_ == nullptr || !keysWatched_) return;
+        if (!isEnum) { if (logging_->classKeyAt == static_cast<std::size_t>(-1)) logging_->classKeyAt = at_; }
+        else if (logging_->enumAt == static_cast<std::size_t>(-1)) logging_->enumAt = at_;
+        else logging_->enumsOther = true;
+    }
+    bool plainEnum(std::size_t at) const;
     int alignasSpecifier();
     void refuseWeakAlignas(int asked, const Type *t, std::size_t pos);
     void declareStaticLocal(const std::string &name, const Type *type,

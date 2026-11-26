@@ -368,6 +368,13 @@ public:
     std::vector<std::pair<std::string, const Type *> > memberTypedefs(const std::string &owner, const std::string &injected, std::size_t from) const;
     std::string classBeyond(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::vector<std::size_t> memberEnums(std::size_t start, bool *other) const;     // the unnamed `enum { ... };` staticsFromRead reads
+    std::map<std::size_t, std::vector<MemberRecord> > readOrder_;     // R3 3R-a: by start, each member declaration in order
+    std::vector<std::size_t> enumsInOrder(const std::vector<MemberRecord> &order, bool *other) const;     // memberEnums' answer
+    std::string beyondInOrder(std::size_t start, const std::vector<MemberRecord> &order) const;     // classBeyond's
+    mutable long orderAsked_ = 0, orderDisagree_ = 0, orderAbsent_ = 0;     // the census: the record against the scanners
+    mutable std::set<std::size_t> orderDiffers_;
+    std::vector<std::size_t> enumsScanned(std::size_t start, bool *other) const;     // the scanners, until the census reads 0
+    std::string beyondScanned(std::size_t start) const;
     std::vector<std::pair<std::size_t, std::size_t> > nestedByPath(std::size_t start) const;     // slice 3v: `struct N { ... };`, read by path
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr);

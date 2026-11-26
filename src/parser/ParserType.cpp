@@ -59,6 +59,7 @@ void Parser::memberTemplate(const std::string &tag, const std::string &local, Ac
     templateParameters(mt.params);
     refuseAfterPack(mt.params);
     mt.afterParams = at_;
+    if (logging_ != nullptr && peek().is("friend")) logging_->kind = MemberRecord::Friend;
     mt.pos = peek().pos;
     if (peek().is("struct") || peek().is("class") || peek().is("union"))
         src_.fail(peek().pos, "a member class template is not supported "
@@ -136,6 +137,16 @@ void Parser::memberTemplate(const std::string &tag, const std::string &local, Ac
     tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);
 }
 
+
+// R3 3R-a: `enum { ... };` or `enum E { ... };` at `at`, after a member's end, its braces holding no brace and ended by `};`.
+bool Parser::plainEnum(std::size_t at) const {
+    const Token &was = tokens_[at - 1];
+    const bool named = tokens_[at + 1].kind == TokenKind::Ident && tokens_[at + 2].is("{");
+    std::size_t close = at + (named ? 3 : 2);
+    while (close + 1 < tokens_.size() && !tokens_[close].is("}") && !tokens_[close].is("{") && !tokens_[close].is(";")) close++;
+    return (was.is(";") || was.is("{") || was.is("}") || was.is(":")) && (named || tokens_[at + 1].is("{")) && tokens_[close].is("}") &&
+           tokens_[close + 1].is(";");
+}
 
 // `#pragma pack(n)` caps an alignment at n; 0 is no pack.
 namespace { struct Packed { static int to(int a, int cap) { return cap != 0 && a > cap ? cap : a; } }; }
@@ -560,13 +571,34 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // **Where this class's own members begin.**
     const std::size_t ownFrom = members.size();
 
+    // R3 3R-a: the read's own body takes `memberLog_` (a base's, made at its head, lies before it); a nested one logs nothing.
+    std::vector<MemberRecord> *const log = memberLog_ != nullptr && at_ > memberLogFrom_ ? memberLog_ : nullptr;
+    if (log != nullptr) memberLog_ = nullptr;
+    struct LogScope { Parser *p; MemberRecord *was; bool watched; ~LogScope() { p->logging_ = was; p->keysWatched_ = watched; } } logScope = { this, logging_, keysWatched_ };
+    logging_ = nullptr;
+    keysWatched_ = false;
+    const auto logged = [&]() {     // the last record's growth, at the next declaration or the `}`
+        if (log == nullptr || log->empty()) return;
+        MemberRecord &r = log->back();
+        r.members = members.size() - r.members, r.statics = type->staticMembers().size() - r.statics;
+        r.enumerators = lookup_.enums_.size() - r.enumerators, r.functions = lookup_.functions_.size() - r.functions;
+        r.typedefs = lookup_.typedefs_.size() - r.typedefs;
+    };
     while (!peek().is("}")) {
         if (peek().kind == TokenKind::End) src_.fail(pos, "unclosed '{'");
+        if (log != nullptr) {
+            logged();
+            const std::size_t none = static_cast<std::size_t>(-1);
+            log->push_back(MemberRecord{ MemberRecord::Declaration, at_, none, none, false, false, false, members.size(), type->staticMembers().size(),
+                                         lookup_.enums_.size(), lookup_.functions_.size(), lookup_.typedefs_.size() });
+            logging_ = &log->back();
+        }
 
         // **A member function template.**
         if (peek().is("template")) {
             if (tag.empty())
                 src_.fail(peek().pos, "a member template needs a named class");
+            if (logging_ != nullptr) logging_->kind = MemberRecord::Template;
             memberTemplate(tag, local, access);
             continue;
         }
@@ -577,6 +609,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (peek().is("using") && tag.empty() && peekAt(2).is("="))
             src_.fail(peek().pos, "an alias declaration needs a class with a name - this one is anonymous");
         if (aliasDeclaration(tag + "::")) continue;
+        if (logging_ != nullptr && peek().is("using")) logging_->kind = MemberRecord::Using;
         // **`using B::B;` inherits B's constructors**, [class.inhctor] - recorded here, declared once the class is complete.
         if (peek().is("using") && !tag.empty()) {
             std::size_t e = at_ + 1;
@@ -766,6 +799,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // that declares nothing in it. **[class.friend]: the function belongs to the
         // enclosing namespace, and what the class gives it is access.**
         if (peek().is("friend")) {
+            if (logging_ != nullptr) logging_->kind = MemberRecord::Friend;
             const std::size_t fpos = peek().pos;
             at_++;
             // **The replay begins after `friend`, not at it** - the same rule `virtual` follows:
@@ -846,7 +880,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // read here rather than in `specifiers` because it names no type and
         // nothing outside a class body may write it.
         const bool isMutable = consume("mutable");
+        keysWatched_ = logging_ != nullptr;
         const Type *base = specifiers(&msc, &mquals);
+        keysWatched_ = false;
 
         // **A typedef inside a class names a type and declares no member.** It is
         // keyed "S::value", the same qualified key a nested class uses, so it is
@@ -881,6 +917,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (anonProper && (wasEnum || (base->isStructOrUnion() && !base->tag().empty())))
                 src_.fail(tokens_[itemStart + 1].pos, "types cannot be declared in an anonymous union");
             // An `enum Kind { ... };` in a class body declares a type, no member.
+            if (wasEnum && logging_ != nullptr && logging_->enumAt == itemStart) {
+                logging_->enumPlain = plainEnum(itemStart);
+                logging_->enumNamed = tokens_[itemStart + 1].kind == TokenKind::Ident;
+            }
             if (wasEnum) { at_++; continue; }
             // **An anonymous union's members are members of the class around it** - [class.union]/5 - at one
             // offset, with the access where it is written; an anonymous struct is the GNU extension clang refuses.
@@ -1354,6 +1394,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         }
         if (!heldBody) expect(";");
     }
+    logged();
     expect("}");
     classStack_.pop_back();
 
@@ -2258,6 +2299,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
 
     if (peek().is("decltype")) return decltypeSpecifier();
 
+    if (peek().is("struct") || peek().is("class") || peek().is("union") || peek().is("enum")) loggedKey(peek().is("enum"));
     if (peek().is("struct")) { at_++; return structOrUnionSpecifier(Kind::Struct); }
     if (peek().is("class"))  { at_++; return structOrUnionSpecifier(Kind::Struct, true); }
     if (peek().is("union"))  { at_++; return structOrUnionSpecifier(Kind::Union); }

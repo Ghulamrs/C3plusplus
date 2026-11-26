@@ -1918,6 +1918,12 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     if (!own.empty()) own = specializationKey(decl.name, written);
                 }
                 if (!own.empty()) { readingTag_ = own; readingRead_ = readTag; }
+                std::vector<Parser::MemberRecord> order;     // R3 3R-a: the body's declarations, in order, as the parser read them
+                struct OrderBack { Parser *p; std::vector<Parser::MemberRecord> *was; ~OrderBack() { p->memberLog_ = was; } } orderBack = { &p_, p_.memberLog_ };
+                if (substitute_ && outermost && door != ReadOutOfLine) {
+                    p_.memberLog_ = &order;
+                    p_.memberLogFrom_ = partial ? decl.partials[which].bodyAt : decl.afterParams;
+                }
                 const Type *made = readClassBody(decl, readTag, partial, partial ? decl.partials[which].bodyAt : decl.afterParams,
                                                  args, params, binding, values, packs, &bodies, &undo);
                 if (!own.empty()) readPattern_[own] = made;
@@ -1937,6 +1943,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     for (const Parser::PendingBody &b : bodies)
                         held.push_back(std::make_pair(b, b.which < p_.lookup_.functions_.size() ? p_.lookup_.functions_[b.which].symbol : std::string()));
                     readTypedefs_[key] = memberTypedefs(readTag, decl.name, layer.sizes.typedefs);
+                    readOrder_[key].swap(order);
                 }
                 p_.replayingInline_ = true;
                 if (door == ReadOutOfLine) {
@@ -2605,6 +2612,9 @@ std::string Templates::builtReport() const {
     }
     out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
+    out += "-check=templates order record asked=" + std::to_string(orderAsked_) + " disagree=" + std::to_string(orderDisagree_) + " absent=" +
+           std::to_string(orderAbsent_) + "\n";     // R3 3R-a: the record against memberEnums' and classBeyond's scans
+    for (const std::size_t d : orderDiffers_) out += "-check=templates order record differs at token " + std::to_string(d) + "\n";
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -5381,8 +5391,47 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
 
 // What a class body declares at its own level beyond data members and member functions, by name; empty when nothing.
 std::string Templates::classBeyond(std::size_t start) const {
+    const std::string scanned = beyondScanned(start);
+    const std::map<std::size_t, std::vector<Parser::MemberRecord> >::const_iterator o = readOrder_.find(start);
+    if (o == readOrder_.end()) { orderAbsent_++; return scanned; }
+    orderAsked_++;
+    if (beyondInOrder(start, o->second) != scanned) { orderDisagree_++; orderDiffers_.insert(start); }
+    return scanned;
+}
+
+// R3 3R-a: classBeyond's answer from the read's order record, each declaration in turn as the scan meets its first token.
+std::string Templates::beyondInOrder(std::size_t start, const std::vector<Parser::MemberRecord> &order) const {
     bool other = false;
-    const std::vector<std::size_t> enums = memberEnums(start, &other);
+    enumsInOrder(order, &other);
+    if (other) return "replayed: a member enumeration with a base or a declarator, or a named one not ended by its braces";
+    const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
+    bool written = own == readMembers_.end() || !templatesOf(own->second.first).empty();     // slice 3r: a named one's type, mapped late
+    for (std::size_t f = 0; own != readMembers_.end() && f < own->second.second.size(); f++) written = written || !own->second.second[f].implicit;
+    for (const Parser::MemberRecord &r : order)
+        if (written && r.enumPlain && r.enumNamed) return "replayed: a member enumeration with a name, beside a member function";
+    const std::vector<std::pair<std::size_t, std::size_t> > nested = nestedByPath(start);
+    for (const Parser::MemberRecord &r : order)
+        if (r.kind == Parser::MemberRecord::Using) return "replayed: a using-declaration";
+        else if (r.kind == Parser::MemberRecord::Friend) return "replayed: a friend";
+        else if (r.classKeyAt != static_cast<std::size_t>(-1) && !nestedAt(nested, r.classKeyAt)) return "replayed: a nested or elaborated class";
+    return std::string();
+}
+
+// R3 3R-a: memberEnums' answer from the read's order record.
+std::vector<std::size_t> Templates::enumsInOrder(const std::vector<Parser::MemberRecord> &order, bool *other) const {
+    std::vector<std::size_t> at;
+    *other = false;
+    for (const Parser::MemberRecord &r : order) {
+        if (r.enumAt == static_cast<std::size_t>(-1)) continue;
+        if (r.enumPlain) at.push_back(r.enumAt);
+        if (!r.enumPlain || r.enumsOther) *other = true;
+    }
+    return at;
+}
+
+std::string Templates::beyondScanned(std::size_t start) const {
+    bool other = false;
+    const std::vector<std::size_t> enums = enumsScanned(start, &other);
     if (other) return "replayed: a member enumeration with a base or a declarator, or a named one not ended by its braces";
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     bool written = own == readMembers_.end() || !templatesOf(own->second.first).empty();     // slice 3r: a named one's type, mapped late
@@ -5415,6 +5464,16 @@ std::string Templates::classBeyond(std::size_t start) const {
 // Slice 3m: each `enum { a = 15, b = is_same<T, int>::value };` (3r: or `enum E { ... };`) in the class's braces, by its `enum`, which
 // staticsFromRead reads as the replay does; `*other` where any other member enumeration is written (3n: a template named too).
 std::vector<std::size_t> Templates::memberEnums(std::size_t start, bool *other) const {
+    const std::vector<std::size_t> scanned = enumsScanned(start, other);
+    const std::map<std::size_t, std::vector<Parser::MemberRecord> >::const_iterator o = readOrder_.find(start);
+    bool recorded = false;
+    if (o == readOrder_.end()) { orderAbsent_++; return scanned; }
+    orderAsked_++;
+    if (enumsInOrder(o->second, &recorded) != scanned || recorded != *other) { orderDisagree_++; orderDiffers_.insert(start); }
+    return scanned;
+}
+
+std::vector<std::size_t> Templates::enumsScanned(std::size_t start, bool *other) const {
     std::vector<std::size_t> at;
     *other = false;
     std::size_t t = start;
