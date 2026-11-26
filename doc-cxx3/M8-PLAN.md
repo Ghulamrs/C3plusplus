@@ -8063,7 +8063,31 @@ every expression kind, `Typedef`, `Var`, `Function`, `MemInit`, and no class-mem
 
 The made classes' counts by kind - how many classes hold each, and how many items - are this lane's measurement patch's
 (`boxkit/m8r3a-inst.py`, never committed: per class made from the read, what it takes from tokens, printed per unit as
-`-check=templates r3a lacks (n): <kind>`), below where it landed.
+`-check=templates r3a lacks (n): <kind>`; built as `~/m8r3a-i.exe` over da2e6ed2 by `boxkit/m8r3a-inst.sh`, census
+`m8r3a-cen.sh i x86_64-linux`, summed by `m8r3a-sum.sh i x86_64-linux`; R0's lines are da2e6ed2's, as the patch only prints).
+Classes made from the read, then per kind **classes holding it / items** (x86_64-linux):
+
+| kind | suite: classes / items | self-host: classes / items |
+| --- | --- | --- |
+| classes made from the read | 2,652 | 76,918 |
+| static data members (staticAt and a jump each) | 649 / 777 | 461 / 481 |
+| of them, an initialiser in the braces | 623 / 715 | 461 / 481 |
+| member enumerations | 212 / 213 | 531 / 531 |
+| typedefs by path | 532 / 973 | 18,134 / **53,886** |
+| nested classes by path | 18 / 18 | 0 / 0 |
+| member templates (a jump each, a bind each class) | 571 / 852 | 30,677 / **49,748** |
+| array bounds folded from tokens | 6 / 6 | 0 / 0 |
+| member initialisers (token starts) | 6 / 13 | 47 / 119 |
+| defaulted parameters (token starts copied to the real symbol) | 989 / 32,249 | 49,491 / 502,491 |
+| held member bodies (R5's) | 1,462 / 25,948 | 57,520 / 716,141 |
+| **classes taking nothing from tokens but their held bodies** | **606** | **8,739** |
+
+The items equal (b)'s jumps kind by kind (statics 777 / 481, enumerations 213 / 531, typedefs 973 / 53,886, member templates 852
+/ 49,748, nested 18 / 0): the counter and the records agree. **Only 8,739 of the self-host's 76,918 made classes (11%) take nothing
+from tokens beyond their bodies**; the rest are 3R-f's typedefs (18,134 classes), 3R-h's member templates (30,677) and the
+defaulted parameters' token starts (49,491 classes - 3R-j's nodes, consumed at the call by R5). Totals beside them, x86_64-linux at
+da2e6ed2: self-host reentries 734,139 (read 385,585, instantiation 348,554), classes 76,918 of 76,918, falling back= 89,348, 102
+units rc 0; suite 1,383 units (nonzero 354), 2,652 of 2,676, reentries 74,636; made-class doors door by door as 23e0e204's.
 
 **The records, as the review asks** (D3: records, not a declaration syntax). At the read, one list a class in declaration order,
 `readOrder_[start]`: each member declaration at the class's level a record of what it added - its kind, name, access, its start
@@ -8135,3 +8159,11 @@ logged at the read and laid under the binding); the two name spellings (Itanium 
 substituted signature); `-check=templates` holding each made thing against a replay beside it and failing the unit on `differ`;
 identical's class order (the walk takes the body's order, which is the replay's, so no golden is re-recorded - the restart's Q7);
 no library name special-cased.
+
+**Where it stopped, and what is owed.** No src/ slice: the hour went to the measure (the lane's build waited 15 minutes in
+`~/slot` behind lane m8r1n's jobs, and its first two census jobs ended on a wait count shorter than the build - restarted). 3R-a is
+the next lane's whole hour. Owed: this lane's census of da2e6ed2 without the counting patch on x86_64-linux (the patch's own run
+stands in for it: it adds no re-entry, and its made-class doors equal 23e0e204's); the counting patch's run on x86_64-windows; the
+self-host wall time plain against the flag (D10) at da2e6ed2. No gate was run, as nothing in src/ changed. Re-measure:
+`boxkit/m8r3a-ship.sh <commit>`, `m8r3a-build.sh <tag>`, `m8r3a-cen.sh <tag> <arch>`, `m8r3a-sum.sh <tag> <arch>`,
+`m8r3a-inst.sh` (the counting patch, `m8r3a-inst.py`), and `python3 boxkit/m8r3a-fn.py <tree>`, `m8r3a-all.py`, `m8r3a-shape.py`.
