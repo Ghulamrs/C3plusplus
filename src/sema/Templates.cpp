@@ -415,7 +415,12 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         r.why = "a partial's read class, which the binding does not carry";
         return r;
     }
-    const bool id = idUnder(s, o, &name, &args);
+    bool id = idUnder(s, o, &name, &args), raw = false;
+    int tt = -1;     // `C<U>`, C the class's template template parameter and U its own: the bound template's id as written
+    if (!id && pattern && readId(o, &name, &args) && ttRefName(name, &tt) && s.templates.count(tt) != 0 && templates_.count(s.templates.at(tt)) != 0) {
+        name = s.templates.at(tt);
+        raw = id = templates_.at(name).params.size() == args.size() && !args.empty() && !templates_.at(name).params.back().isPack;
+    }
     std::vector<TemplateArg> own = args;     // 3R-h: an id over the member template's own parameters is the replay's shallow one
     if (id && pattern && maker == nullptr && templates_.count(name) != 0 && patternArgs(s, &own, pos)) {
         const std::string key = specializationKey(name, own);     // one it leaves parameter-free made at first need, as the replay's read
@@ -428,7 +433,7 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         else r.why = "a class template-id over the parameters the program has not made";
         return r;
     }
-    if (!id || !argsUnder(s, o, name, &args, maker, pos)) {
+    if (raw || !id || !argsUnder(s, o, name, &args, maker, pos)) {
         r.why = "a class template-id with an argument the binding does not carry";
         return r;
     }
