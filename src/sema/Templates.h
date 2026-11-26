@@ -350,9 +350,9 @@ public:
     int offsetUnder(const Substituted &s, const Type *owner, const std::string &spelled, int offset) const;     // a read member's in `s`'s class
     // Slice 2b: a covered specialization's read body and its parameters' types, by symbol; what the lowering made of each.
     struct Bound { syntax::NodeId read; Substituted s; std::map<std::uint32_t, std::size_t> calls, values; std::map<std::uint32_t, const Type *> members;
-                   std::map<std::uint32_t, std::pair<std::string, const Type *> > assigns; };
+                   std::map<std::uint32_t, std::pair<std::string, const Type *> > assigns; bool folds = false; };
     // calls: callee and call nodes; values: 2f's folds, each + 2^31; members: a member call's function type, `this` first;
-    // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
+    // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node; folds: 3R-d's, each value on its node
     std::map<std::string, Bound> bound_;
     std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
     // While the function door asks a body's shape: its binding, and each id the id step made over it at first need (R1, m8r1k).
@@ -381,9 +381,12 @@ public:
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,
                               const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name, std::uint32_t *init = nullptr) const;     // a static member's declarator
-    void staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const std::vector<TemplateParam> &params,
-                       const std::vector<long long> &values) const;     // 3R-d's census: the read's node folded, against the replay
+    void staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const Substituted &s, const std::vector<TemplateParam> &params,
+                       const std::vector<long long> &values);     // 3R-d's census: the read's node folded, against the replay
+    bool staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
+                      const std::map<std::string, int> &named, long long *out);
     mutable std::size_t staticAsked_ = 0, staticDisagree_ = 0, staticAbsent_ = 0, staticUnfolded_ = 0;
+    std::map<std::string, std::size_t> staticWhy_;     // the census's unfolded, by why
     std::size_t ownTypedefAt(std::size_t start, const std::string &n) const;     // `typedef X<num, den> n;`, X its own template
     bool typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const;
     std::size_t typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const;     // slice 3u

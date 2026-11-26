@@ -1164,6 +1164,8 @@ ExprPtr Parser::primary(Program *program) {
     const bool written = tokens_[start].is("typename");
     r = note(std::move(r), syntax::Kind::Name, name, pos);
     markReadName(syn(r), r ? r->type() : nullptr, written, scoped, valueDependentName(name));
+    if (patternBody_ && dependentScopeEnd_ == at_ && pendingScoped_.first != nullptr && syn(r).valid()) scopedStatics_[syn(r).v] = pendingScoped_;
+    pendingScoped_.first = nullptr;
     return r;
 }
 
@@ -3422,6 +3424,8 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Sizeof)
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
+    if (kind == syntax::Kind::Sizeof && pendingSizeof_ != nullptr) sizeofTypes_[f.e->syntax().v] = pendingSizeof_;
+    if (kind == syntax::Kind::Sizeof) pendingSizeof_ = nullptr;
     if (kind == syntax::Kind::Cast) noteTemporarySlot(f.e.get());    // `static_cast<T>(v)` through T's converting constructor
     // A named cast to a scalar or a class is the conversion it names; one to a reference is a glvalue, left unrecorded.
     // A member pointer's operand is often `&C::m`, so only a reference type-id, `&>`, leaves one unrecorded.
@@ -3764,7 +3768,7 @@ ExprPtr Parser::unaryNode() {
             measured = operand->type();
         }
         // A read's body holds a dependent `sizeof` as a dependent value: its number is substitution's.
-        if (patternBody_ && dependentType(measured)) return zeroOf(dependentResult());
+        if (patternBody_ && dependentType(measured)) return (pendingSizeof_ = measured), zeroOf(dependentResult());
         // **A dependent `sizeof` outside a template argument or a `decltype`** - an array bound, a
         // `noexcept` - is the one the expression reader is not reached from.
         if (patternOnly_ && (measured->kind() == Kind::TemplateParam ||

@@ -107,6 +107,9 @@ TypedId Typer::node(syntax::NodeId id) {
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
     if (type == nullptr && isExpression(n.kind)) type = p_.types_.type(boundValue(TypeTable::id(recordedValue(id))));
+    if ((type == nullptr || p_.dependentType(type)) && !binding_.empty() && p_.tmpl_.bound_.at(binding_).folds &&
+        p_.tmpl_.bound_.at(binding_).values.count(id.v) != 0)     // R3 3R-d: a static, its value in long long
+        type = p_.types_.get(Kind::LongLong);
     // A `var` is typed as declared, its `&` kept (M3b.1, M3-IR 3.8): what the lowering sizes its alloca by.
     if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = p_.types_.type(bound(TypeTable::id(p_.declaredTypes_.at(id.v))));
     if (scoped) scopes_.pop_back();
@@ -175,6 +178,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
     const auto k = p_.keywordValues_.find(id.v);
     if (k != p_.keywordValues_.end()) tree_.setFolded(t, k->second.first, TypeTable::id(k->second.second));
+    if (!binding_.empty() && p_.tmpl_.bound_.at(binding_).folds && p_.tmpl_.bound_.at(binding_).values.count(id.v) != 0)     // R3 3R-d's
+        tree_.setFolded(t, static_cast<long long>(p_.tmpl_.bound_.at(binding_).values.at(id.v)) - 2147483648LL, TypeTable::id(tree_.node(t).type));
     // A case label's value as the parser folded it ([stmt.switch]/2), on the `case` node.
     const auto cs = p_.caseFacts_.find(id.v);
     if (cs != p_.caseFacts_.end() && !cs->second.isDefault) tree_.setFolded(t, cs->second.value, TypeId());
@@ -1023,10 +1028,14 @@ TypedId Typer::typeBody(syntax::NodeId fn, const std::string &symbol) {
 }
 
 TypeId Typer::typeUnder(syntax::NodeId e, const std::string &binding) {
+    return TypeTable::id(tree_.node(typedUnder(e, binding)).type);
+}
+
+TypedId Typer::typedUnder(syntax::NodeId e, const std::string &binding) {
     binding_ = binding;
     const TypedId t = typeExpression(e);
     binding_.clear();
-    return TypeTable::id(tree_.node(t).type);
+    return t;
 }
 
 TypeId Typer::boundValue(TypeId t) const {

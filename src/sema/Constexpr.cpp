@@ -291,6 +291,7 @@ bool Constexpr::fold(const TypedTree &t, TypedId id, long long *out, const char 
     case syntax::Kind::FloatLit:
         return false;
     case syntax::Kind::Name: case syntax::Kind::Member: {
+        if (n.folded.has) { *out = n.folded.value; return true; }     // R3 3R-d: another class's static, its value under a binding
         const Resolution &res = t.resolution(id);
         if (res.what == Resolution::Enumerator) { *out = res.value; return true; }
         if (res.what == Resolution::Local) {

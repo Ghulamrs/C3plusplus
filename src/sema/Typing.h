@@ -188,6 +188,7 @@ public:
     TypedId typeExpression(syntax::NodeId e) { scopes_.clear(); return node(e); }
     // M8.2: an argument of a read body typed under Templates::bound_'s `binding` before the body is (Templates::callArgTypes).
     TypeId typeUnder(syntax::NodeId e, const std::string &binding);
+    TypedId typedUnder(syntax::NodeId e, const std::string &binding);     // the same, its node kept for the constant evaluator
     // The body of `symbol` - its own, or M8.2's read typed under its binding where Templates made it so.
     TypedId typeBody(syntax::NodeId fn, const std::string &symbol);
     TypeId declaredReturnOf(syntax::NodeId fn, const std::string &symbol) const;

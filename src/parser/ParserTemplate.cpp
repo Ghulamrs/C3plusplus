@@ -2246,7 +2246,10 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         if (ExprPtr mine = qualifiedMemberThroughThis(cls, *m, member, mpos)) return mine;
     if (unevaluated_ > 0)
         if (const Member *m = cls->findMember(member)) return memberWithoutObject(cls, *m, mpos);
-    if (patternBody_ && dependentType(cls)) { dependentScopeEnd_ = at_; return zeroOf(dependentResult()); }    // the instantiation's to find
+    if (patternBody_ && dependentType(cls)) {    // the instantiation's to find
+        dependentScopeEnd_ = at_, pendingScoped_ = std::make_pair(cls, member);
+        return zeroOf(dependentResult());
+    }
     refuseHeldClass(cls);
     src_.fail(mpos, "'" + cls->describe() + "' has no static member or "
                     "enumerator called '" + member + "'");

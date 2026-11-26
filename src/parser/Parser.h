@@ -640,6 +640,10 @@ private:
     std::unordered_map<std::uint32_t, const Type *> castTypes_;
     // What a sizeof, alignof or noexcept node folded to, and its type: the constant the adapter writes (M2.12).
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
+    std::unordered_map<std::uint32_t, const Type *> sizeofTypes_;     // R3 3R-d: a read's dependent `sizeof(T)`, its T
+    const Type *pendingSizeof_ = nullptr;
+    std::unordered_map<std::uint32_t, std::pair<const Type *, std::string> > scopedStatics_;     // and its `C<N>::v`, the class and v
+    std::pair<const Type *, std::string> pendingScoped_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::map<std::uint32_t, int> scopedFunctions_;
     std::set<std::uint32_t> constructorNodes_;    // the `function` nodes that are constructors, as topLevel decided (M3b.2)
