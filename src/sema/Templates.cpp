@@ -334,7 +334,8 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
         if (!r.type->isReference()) r.type = p_.types_.withConst(r.type);        // [dcl.ref]/1: `const T` with T = U & is U &
         return r;
     }
-    for (std::size_t k = 0; k < s.from.size(); k++) if (t == s.from[k]) return r.type = s.to[k], r;
+    for (std::size_t k = 0; k < s.from.size(); k++)
+        if (t == s.from[k]) { r.type = s.to[k]; return r; }
     const int bound = t->isArray() ? t->boundParam() : -1;
     if (t->isPointer() || (t->isArray() && bound < 0)) {
         r = substituteIn(s, t->pointee(), Mapped, maker, pos);
@@ -343,7 +344,8 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     }
     if (bound >= 0 && static_cast<std::size_t>(bound) < s.values.size() && s.values[bound] > 0) {     // a class read's `T a[N]`
         r = substituteIn(s, t->pointee(), Mapped, maker, pos);
-        return r.type = p_.types_.arrayOf(r.type, s.values[bound]), r;
+        r.type = p_.types_.arrayOf(r.type, s.values[bound]);
+        return r;
     }
     if (t->isReference()) {
         r = substituteIn(s, t->referent(), Mapped, maker, pos);
@@ -355,22 +357,24 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     if (t->kind() == Kind::DependentMember) {     // `X<T>::m`: X<U> by its key (a cleared shallow by its kept id), m as memberTypeWalk finds it
         const bool id = readId(t->pointee(), nullptr, nullptr);
         const Substitution o = substituteIn(s, t->pointee(), id ? (ids == Made ? Made : Declared) : Mapped, maker, pos);
-        if ((id && !o.carried()) || o.type == nullptr || p_.dependentType(o.type) || !o.type->isStructOrUnion())
-            return r.why = "a member type whose class the binding does not carry", r.at = t, r;
-        const Type *m = p_.lookup_.lookupInClass(o.type, t->tag());
-        if (m == nullptr) return r.why = "a member type its class lacks", r.at = t, r;
-        return r.type = m, r;
-    }
-    if (bound >= 0) return r.why = "an array bound over a non-type parameter the binding gives no value", r.at = t, r;
-    if (!t->isFunction()) {
-        if (t->kind() == Kind::TemplateParam) r.why = "a template parameter the binding does not carry", r.at = t;
-        else if (p_.dependentType(t) || readIds_.count(t) != 0 || t->kind() == Kind::PackExpansion)
-            r.why = "a type over the parameters the binding does not carry", r.at = t;
+        const Type *m = (id && !o.carried()) || o.type == nullptr || p_.dependentType(o.type) || !o.type->isStructOrUnion()
+                        ? nullptr : p_.lookup_.lookupInClass(o.type, t->tag());
+        if (m != nullptr) r.type = m;
+        else r.why = o.type != nullptr && o.type->isStructOrUnion() && !p_.dependentType(o.type) && (!id || o.carried())
+                     ? "a member type its class lacks" : "a member type whose class the binding does not carry";
+        if (m == nullptr) r.at = t;
         return r;
     }
+    if (bound >= 0) r.why = "an array bound over a non-type parameter the binding gives no value";
+    else if (t->kind() == Kind::TemplateParam) r.why = "a template parameter the binding does not carry";
+    else if (!t->isFunction() && (p_.dependentType(t) || readIds_.count(t) != 0 || t->kind() == Kind::PackExpansion))
+        r.why = "a type over the parameters the binding does not carry";
+    if (r.why != nullptr) r.at = t;
+    if (bound >= 0 || !t->isFunction()) return r;
     r = substituteIn(s, t->returns(), Mapped, maker, pos);
     const std::vector<const Type *> params = paramsUnder(s, t->params(), r.carried() ? &r : nullptr);
-    return r.type = p_.types_.functionType(r.type, params, t->isVariadicFn()), r;
+    r.type = p_.types_.functionType(r.type, params, t->isVariadicFn());
+    return r;
 }
 
 // The id step: `X<$T0>` under `s`, the specialization the program declared by its key; where none is and `maker` is given, made
@@ -379,12 +383,15 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     Substitution r = { o, nullptr, o };
     std::string name;
     std::vector<TemplateArg> args;
-    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args))
-        return r.why = "a class template-id with an argument the binding does not carry", r;
+    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args)) {
+        r.why = "a class template-id with an argument the binding does not carry";
+        return r;
+    }
     const Type *real = p_.lookup_.findTypedef(specializationKey(name, args));
     if (real == nullptr && maker != nullptr && templates_.count(name) != 0) real = maker->makeId(name, args, pos, nullptr);
-    if (real == nullptr) return r.why = "a class template-id over the parameters the program has not made", r;
-    return r.type = real, r.at = nullptr, r;
+    if (real == nullptr) r.why = "a class template-id over the parameters the program has not made";
+    else { r.type = real; r.at = nullptr; }
+    return r;
 }
 
 // The tag `name<args>` names: the class the program declared, or one made now through makeClass under the nesting bound, as the
@@ -417,7 +424,8 @@ std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std
         while (q != nullptr && (q->unqualified() != q || q->isPointer() || q->isReference()))
             q = q->unqualified() != q ? q->unqualified() : q->isReference() ? q->referent() : q->pointee();
         if (q == nullptr || q->kind() != Kind::TemplateParam || static_cast<std::size_t>(q->length()) >= s.packs.size()) {
-            out.push_back((r = substitute(s, t)).type);
+            r = substitute(s, t);
+            out.push_back(r.type);
             if (failed != nullptr && failed->carried()) failed->why = r.why, failed->at = r.at;
             continue;
         }
@@ -425,7 +433,8 @@ std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std
         for (std::size_t k = 0; k < members.size(); k++) {
             Substituted one = s;
             one.from.insert(one.from.begin(), q), one.to.insert(one.to.begin(), members[k]);
-            out.push_back(p_.types_.withoutConst((r = substitute(one, t->pointee())).type));
+            r = substitute(one, t->pointee());
+            out.push_back(p_.types_.withoutConst(r.type));
             if (failed != nullptr && failed->carried()) failed->why = r.why, failed->at = r.at;
         }
     }
