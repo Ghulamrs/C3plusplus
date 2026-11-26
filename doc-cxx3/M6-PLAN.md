@@ -5391,3 +5391,12 @@ while the parser's [expr.cond]/3 rule still left classes out, so overload resolu
 replay: suite 2,325 of 2,462, self-host 75,272 of 75,319 (m8-3bf's tree).** cppparse built by cxx3: 47 of 47 sources, links,
 --compile6 equal to the g++ build's but for cppparse's own undefined behaviour; its runtime owes _AddressOfReturnAddress
 and pointers to volatile. Nothing changes without the flag but the rows.
+
+**m6d-w47's wave landed, 2026-11-26 (gate m6dw47g at c087c444 against main c9a62245: 40 passed, 0 failed, no rows - identical
+0 differ on four targets; the fixed point checked not owed).** Two M8.3 lines merged to one: m8-3bl (m83bh, m83bj, m83bl:
+a named member enumeration, Linkage::patternSymbol - the x86_64-windows check differ of unordered_map's two erase overloads,
+deque by Templates::namesItself) and m8-3bk (m83be, m83bg, m83bi, m83bk: void and function bounds, sizeof... packs, template
+template parameters); lane w47merge kept one template-template path (idUnder, listUnder, aliasedClass over
+Substituted::templates) and deleted main's templateUnder, and renamed m83bi's probe template-subst-ttbound beside main's
+template-subst-ttparam. **Class specializations made with no replay (exact census): suite 2,531 of 2,605, self-host 75,672 of
+75,680.** Nothing changes without the flag.
