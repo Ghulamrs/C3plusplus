@@ -1560,11 +1560,13 @@ std::string Templates::trialKind(const Type *e) const {
     return "a class template-id under a declarator";
 }
 
-// A leaf Made carries where Declared does not: an id under a declarator, or one the read cleared (readId), laid by the id step.
+// A leaf Made carries where Declared does not: an id under a declarator, one the read cleared (readId), or `$TT<i>`'s (idUnder
+// renames it), laid by the id step.
 bool Templates::madeAtUse(const Type *e) const {
     if (e == nullptr) return false;
     const std::string kind = trialKind(e);
-    return kind == "a class template-id under a declarator" || kind == "a class template-id the read cleared";
+    return kind == "a class template-id under a declarator" || kind == "a class template-id the read cleared" ||
+           kind == "a template template parameter's id";
 }
 
 const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
