@@ -3566,7 +3566,7 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
     std::string written;
     if (!idUnder(s, e, name, args) || !readId(e, &written, nullptr)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
-    const bool ownBase = base && !itself && *name == read->templateName();     // 3x: `Tuple<Rest...>`, made reading the head, as the replay
+    const bool ownBase = base && !itself && *name == read->templateName();     // 3z: `Tuple<Rest...>`, made reading the head, as the replay
     if (d == templates_.end() || ((*name == read->templateName()) != itself && !ownBase) || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
     const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
@@ -3868,7 +3868,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         return false;
     };
     // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's;
-    // 3x: beside one, over a non-type parameter alone, which marks a body's read of it value-dependent (memberShape replays it).
+    // 3z: beside one, over a non-type parameter alone, which marks a body's read of it value-dependent (memberShape replays it).
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     const bool bare = own != readMembers_.end() && own->second.second.empty() && templatesOf(own->second.first).empty();
     for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
@@ -4108,7 +4108,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             if (ahead) sigAt = back;
             if (!ahead && !behind && wanted != nullptr && wanted->size() != had)
                 return "replayed: class template-ids made first for a data member and a member function's signature";
-            if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3x: a base made first
+            if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3z: a base made first
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.

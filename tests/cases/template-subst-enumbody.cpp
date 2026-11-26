@@ -1,4 +1,4 @@
-// Slice 3x: an unnamed member enumeration over a parameter beside the member functions that read it, and a base of the
+// Slice 3z: an unnamed member enumeration over a parameter beside the member functions that read it, and a base of the
 // class's own template over a pack (`Tuple<Rest...>`), made from the read under -templates=subst.
 extern "C" int printf(const char *, ...);
 
