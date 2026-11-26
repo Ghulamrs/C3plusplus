@@ -246,6 +246,13 @@ public:
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
                          std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
+    struct FoldLeaf { virtual ~FoldLeaf() {} virtual bool leaf(const DepExpr *e, long long *out) const = 0; };     // 4d: a size, a static
+    // R2, slice 4d: a value trial's ids, their value arguments folded under the deduced binding (`keys`: each id's, all folded; else
+    // none and why counted); under the check held against the replay's ids after it (`replayed`: it succeeded). Counted in `valueReport_`.
+    void valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                    const Packs &packs, std::size_t pos, std::vector<std::string> *keys);
+    void valueHeld(const std::vector<std::string> &keys, bool replayed);
+    std::map<std::string, long> valueReport_;
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed, its list laid
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
