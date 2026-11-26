@@ -325,30 +325,33 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
 
 // The kernel's one recursion: each of `from` is `to` under any declarator, a member type through its class, a function's
 // parameters through the list form (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
+// Made is carried under every declarator and asks the map first, as Mapped does; the cv is stripped before either.
 Templates::Substitution Templates::substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const {
     Substitution r = { t, nullptr, nullptr };
     if (t == nullptr) return r;
-    if (ids != Mapped && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
+    const Ids below = maker != nullptr ? Made : Mapped;
+    if (ids == Declared && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     if (t->unqualified() != t) {
-        r = substituteIn(s, t->unqualified(), Mapped, maker, pos);
+        r = substituteIn(s, t->unqualified(), below, maker, pos);
         if (!r.type->isReference()) r.type = p_.types_.withConst(r.type);        // [dcl.ref]/1: `const T` with T = U & is U &
         return r;
     }
     for (std::size_t k = 0; k < s.from.size(); k++)
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
+    if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     const int bound = t->isArray() ? t->boundParam() : -1;
     if (t->isPointer() || (t->isArray() && bound < 0)) {
-        r = substituteIn(s, t->pointee(), Mapped, maker, pos);
+        r = substituteIn(s, t->pointee(), below, maker, pos);
         r.type = t->isPointer() ? p_.types_.pointerTo(r.type) : p_.types_.arrayOf(r.type, t->length());
         return r;
     }
     if (bound >= 0 && static_cast<std::size_t>(bound) < s.values.size() && s.values[bound] > 0) {     // a class read's `T a[N]`
-        r = substituteIn(s, t->pointee(), Mapped, maker, pos);
+        r = substituteIn(s, t->pointee(), below, maker, pos);
         r.type = p_.types_.arrayOf(r.type, s.values[bound]);
         return r;
     }
     if (t->isReference()) {
-        r = substituteIn(s, t->referent(), Mapped, maker, pos);
+        r = substituteIn(s, t->referent(), below, maker, pos);
         const Type *u = r.type;
         if (u->isReference()) r.type = t->isRValueReference() ? u : p_.types_.referenceTo(u->referent());   // [dcl.ref]/6
         else r.type = t->isRValueReference() ? p_.types_.rvalueReferenceTo(u) : p_.types_.referenceTo(u);
@@ -356,7 +359,7 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     }
     if (t->kind() == Kind::DependentMember) {     // `X<T>::m`: X<U> by its key (a cleared shallow by its kept id), m as memberTypeWalk finds it
         const bool id = readId(t->pointee(), nullptr, nullptr);
-        const Substitution o = substituteIn(s, t->pointee(), id ? (ids == Made ? Made : Declared) : Mapped, maker, pos);
+        const Substitution o = substituteIn(s, t->pointee(), id ? (ids == Made ? Made : Declared) : below, maker, pos);
         const Type *m = (id && !o.carried()) || o.type == nullptr || p_.dependentType(o.type) || !o.type->isStructOrUnion()
                         ? nullptr : p_.lookup_.lookupInClass(o.type, t->tag());
         if (m != nullptr) r.type = m;
@@ -371,8 +374,8 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
         r.why = "a type over the parameters the binding does not carry";
     if (r.why != nullptr) r.at = t;
     if (bound >= 0 || !t->isFunction()) return r;
-    r = substituteIn(s, t->returns(), Mapped, maker, pos);
-    const Substitutions params = substitute(s, t->params());
+    r = substituteIn(s, t->returns(), below, maker, pos);
+    const Substitutions params = substituteList(s, t->params(), maker, pos);
     if (r.carried()) r.why = params.why, r.at = params.at;
     r.type = p_.types_.functionType(r.type, params.types, t->isVariadicFn());
     return r;
@@ -418,6 +421,17 @@ const Type *Templates::makeId(const std::string &name, const std::vector<Templat
 // A parameter list under `s`: a read's `Args... a` (or `const Args &...`) is one parameter per member of the pack `s` binds, made
 // as Parser::packParameter makes them for the replay; kept as written where `s` binds no packs. The kernel's pack step: its first failure.
 Templates::Substitutions Templates::substitute(const Substituted &s, const std::vector<const Type *> &params) const {
+    return substituteList(s, params, nullptr, static_cast<std::size_t>(-1));
+}
+
+Templates::Substitutions Templates::substitute(const Substituted &s, const std::vector<const Type *> &params, At at) {
+    return substituteList(s, params, this, at.pos);
+}
+
+// The list form's one loop, each parameter at Mapped or (with `maker`) at Made.
+Templates::Substitutions Templates::substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker,
+                                                   std::size_t pos) const {
+    const Ids ids = maker != nullptr ? Made : Mapped;
     Substitutions list;
     list.why = nullptr, list.at = nullptr;
     std::vector<const Type *> &out = list.types;
@@ -427,7 +441,7 @@ Templates::Substitutions Templates::substitute(const Substituted &s, const std::
         while (q != nullptr && (q->unqualified() != q || q->isPointer() || q->isReference()))
             q = q->unqualified() != q ? q->unqualified() : q->isReference() ? q->referent() : q->pointee();
         if (q == nullptr || q->kind() != Kind::TemplateParam || static_cast<std::size_t>(q->length()) >= s.packs.size()) {
-            r = substitute(s, t);
+            r = substituteIn(s, t, ids, maker, pos);
             out.push_back(r.type);
             if (list.why == nullptr) list.why = r.why, list.at = r.at;
             continue;
@@ -436,7 +450,7 @@ Templates::Substitutions Templates::substitute(const Substituted &s, const std::
         for (std::size_t k = 0; k < members.size(); k++) {
             Substituted one = s;
             one.from.insert(one.from.begin(), q), one.to.insert(one.to.begin(), members[k]);
-            r = substitute(one, t->pointee());
+            r = substituteIn(one, t->pointee(), ids, maker, pos);
             out.push_back(p_.types_.withoutConst(r.type));
             if (list.why == nullptr) list.why = r.why, list.at = r.at;
         }

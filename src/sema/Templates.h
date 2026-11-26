@@ -255,6 +255,8 @@ public:
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     struct Substitutions { std::vector<const Type *> types; const char *why; const Type *at; };
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
+    Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params, At at);     // Made, at `at.pos`
+    Substitutions substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker, std::size_t pos) const;
     bool argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker = nullptr,     // one of argsUnder's: a pack
                   std::size_t pos = static_cast<std::size_t>(-1)) const;                             // (`X<Ts...>`) expanded
     bool argTypeUnder(const Substituted &s, const Type **t, Templates *maker, std::size_t pos) const;     // Made: false if not carried
