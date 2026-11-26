@@ -7980,3 +7980,154 @@ then the 79 re-read here by kind - a free function's call through the definition
 bound types, a data member (`decltype(t.m)` against `decltype((t.m))`: the id flag the type keeps); `Parser::Trial`'s SFINAE use
 falls only when the plain path substitutes too. Re-measure: `boxkit/m8r4f-cen2.sh <m|n|r> <tag> <arch> <m|c> <s|h|sh>`,
 `m8r4f-gate2.sh` (TREE=m), `m8r4f-job2.sh`.
+
+## R3 split into slices: the pattern's records made complete, and the class door walking them (lane m8r3a, 2026-11-27)
+
+Base da2e6ed2 (m8-4f on wave m6d-w54 23e0e204, neither landed: Windows is unreachable). **No src/ change** (src/ 99,170 lines):
+this entry is the plan, measured. Linux only (the user, 2026-11-27). R3 is the review's D1-D3 (`boxkit/fable-m8-direction-review.md`):
+a class "made from the read" is still completed by token scanners in Sema (D2) and by re-reading its body at token indices under
+bound parameters (D1), because the read's records do not hold a class body's parts (D3). R3 makes the records complete and the
+door walk them; its exit is the review's row: **`p_.tokens_[` in Templates.cpp 146 -> under 20, re-entries inside a made class 0**.
+
+**THE MEASURE at da2e6ed2, each beside its command.**
+
+**(a) Token reads and parser moves per class-door function** (`python3 boxkit/m8r3a-fn.py <tree>` on Linux - tools/replay-residue's
+rule: comments and literals blanked, a line once a kind; `m8r3a-all.py` for every function, `m8r3a-shape.py` for classShape's parts):
+
+| function (line) | lines | `p_.tokens_[` | `p_.at_ =` | what it asks the tokens |
+| --- | --- | --- | --- | --- |
+| classShape (4270) | 439 | **65** | 0 | where a parameter is named: packs and template template parameters 20, non-type parameters (main scan 10, ownId 2, ctorAt 2), an id argument's fold (idArg 2, stops 8), a data member's bound (boundAt 7), a static's initialiser (staticInit 3), a `static_assert` (assertAt 6), an enumeration (inEnum 1); the Type half 3, memberAt 1 |
+| staticShape (4920) | 74 | **14** | 0 | a static's initialiser naming a template before another member does (the order the replay makes classes in) |
+| nestedByPath (5485) | 35 | **13** | 0 | `struct N { ... };` at the class's level, and the shapes it may hold |
+| ownTypedefAt (4900) | 18 | **7** | 0 | `typedef X<num, den> n;`, X the class's own template over its statics |
+| memberEnums (5460) | 21 | **6** | 0 | each `enum { ... };` / `enum E { ... };` at the class's level |
+| typedefByPath (5564) | 23 | **6** | 0 | a typedef the binding does not carry, written with one declarator |
+| classBeyond (5426) | 31 | **5** | 0 | a using-declaration, a friend, an elaborated or nested class, a named enumeration beside a function |
+| fromReadWhyNot (4778) | 33 | **3** | 0 | `#pragma pack` at the head, a member initialiser's tokens naming a parameter, `alignas`, `final` |
+| staticAt (4874) | 23 | **3** | 0 | a static data member's declarator: its position, its bounds, `constexpr` |
+| staticsFromRead (4997) | 86 | **1** | **5** | the class's `}`; jumps to each static, enumeration, typedef by path and nested class |
+| templatesFromRead (5221) | 38 | 0 | **2** | jumps to each member template's `template` (and the restore) |
+| namesItself, membersFromRead, classFromRead | 23, 46, 57 | 0 | 0 | - (namesItself asks the read's ids; the other two copy token starts: below) |
+| **the class door** | | **123** | **7** | beside it aliasedClass 5 (classShape's alias step), makeClass 3, readStands 3, earlyArgs 3 |
+| **Templates.cpp** | 6,143 | **146** | **19** | replay-residue 150 / 19 / 26 / 6 over src/sema |
+
+So the door is 123 of the 146: deleting its scanners leaves 23, and the alias step and earlyArgs (which goes with the class door's
+order helpers, below) bring it to **15** - instantiate 3, makeClass 3, readStands 3, memberFrame 2, foldUnder, tallyRead,
+constantsHeld, madeMember 1 each - under the row's 20. The at-jumps fall 19 -> 12 (the door's 7); binds 22 -> 20 (staticsFromRead's
+and templatesFromRead's).
+
+**(b) Re-entries under a binding inside made classes, by function** (R0's counter, `-templates=subst` with the census, no check;
+the wave gate's census of 23e0e204, `~/coordw54-cen-<arch>-m.log` by `boxkit/coord-cen2.sh`; da2e6ed2 adds only 4f's `decltype`
+step, which no made class reaches; this lane's own census of da2e6ed2, `boxkit/m8r3a-cen.sh c0 <arch>`, below where it landed):
+
+| made class: function: part | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
+| --- | --- | --- | --- | --- |
+| staticsFromRead: bind | 1,173 | 1,173 | 18,904 | 18,897 |
+| staticsFromRead: jump: a member typedef (typedefByPath) | 973 | 973 | **53,886** | 53,871 |
+| staticsFromRead: jump: a static data member | 777 | 777 | 481 | 481 |
+| staticsFromRead: jump: a member enumeration | 213 | 213 | 531 | 531 |
+| staticsFromRead: jump: a nested class (nestedByPath) | 18 | 18 | 0 | 0 |
+| templatesFromRead: jump: a member template's declaration | 852 | 852 | **49,748** | 49,734 |
+| templatesFromRead: bind | 609 | 609 | 30,677 | 30,669 |
+| templatesFromRead: bind, in the read (a read class made inside a read) | 852 | 852 | 49,748 | 49,734 |
+| **all, inside made classes** | **5,467** (4,615 at instantiation) | **5,467** | **203,975** (154,227 at instantiation) | **203,917** |
+| for scale: all re-entries in the unit (read + instantiation) | 74,600 | 74,312 | 733,932 | 733,944 |
+
+Definitions re-entered (R0's sites, deduplicated): suite staticsFromRead 156, templatesFromRead 37; self-host 21 and 16. Every
+made class still re-reads: the two largest numbers of the self-host, typedefs by path and member template declarations, are
+`ratio`'s and `duration`'s typedefs and every class template's member function templates (`vector::emplace_back`, `function`'s).
+
+**(c) What the read's records lack that a scanner fetches from tokens, by kind** (a record is readClass_'s pattern Type,
+readMembers_'s Signatures, readTypedefs_'s Types, readBodies_'s held bodies, memberTemplates_'s TemplateDecls; the syntax tree has
+every expression kind, `Typedef`, `Var`, `Function`, `MemInit`, and no class-member, enumerator or default-argument kind):
+
+| kind | what the read keeps today | what the door takes from tokens, and where | scanner lines | re-entries (suite / self-host, x86_64-linux) |
+| --- | --- | --- | --- | --- |
+| static data member initialisers | StaticMember {name, type, access, symbol, folded, value}: no initialiser, no position, no `constexpr` | staticAt's declarator; a jump and `declareStaticMember` re-reads `= init` bound; staticShape's order scan; classShape's staticInit | 21 | 777 / 481 |
+| enumerator values | the read's enumerators (`readTag::a`, EnumConst value and valueDependent): no value node, no position | memberEnums' `enum`; a jump and `specifiers` re-reads the enumeration | 7 + classBeyond's | 213 / 531 |
+| typedefs over the class's statics | readTypedefs_'s pattern Type, whose argument over a static is no value the kernel folds | ownTypedefAt, typedefByPath; a jump and `declarator` re-reads it | 13 | 973 / 53,886 |
+| nested classes | none by key: the read's `readTag::N` is not kept; its bodies sit in readBodies_, filtered by nestedAt | nestedByPath; a jump and `specifiers` re-reads the class | 13 | 18 / 0 |
+| member templates | a TemplateDecl each (start, owner, access, kept pattern signature) | templatesFromRead binds the class's parameters, jumps to each `template` and `memberTemplate` re-reads the declaration | 0 (2 at-jumps) | 852 + 609 binds / 49,748 + 30,677 |
+| array bounds over values | the array Type; `[N]` alone as `Type::boundParam` | classShape's boundAt folds `[N + 1]` from tokens into `s->bounds` | 7 | 0 (a scan) |
+| `static_assert` conditions | none | classShape's assertAt folds `a op b` from tokens | 6 | 0 |
+| an id argument over values (`V<N + 1>`) | the read id's TemplateArg (its `DepExpr`) | classShape's idArg and stops fold it from tokens again | 10 | 0 |
+| where a parameter is named, and the head's facts | the members' Types (overParameters, the kernel's `why`); `isFinal()`; no per-member mark | classShape's head and main scans, ownId, ctorAt; fromReadWhyNot's pack, `alignas`, `final` | 36 | 0 |
+| beyond data members and functions (using-declarations, friends, elaborated classes) | none | classBeyond | 5 | 0 |
+| member initialisers (`int x = 5;` on the member) | `p_.memberInit_`: a token start by `readTag::m` | fromReadWhyNot scans it for a parameter's name; classFromRead copies the start; the constructor replays it | 1 | at the member body door (R5's) |
+| default arguments | `p_.defaultArgs_`: token starts by the read's symbol | membersFromRead copies them to the real symbol; each call replays them | 0 | at the default argument door |
+| held member bodies | readBodies_ (token starts and symbols) and the read Function (keepRead) | membersFromRead pushes them; made or replayed at the member body door | 0 | R5's, not R3's |
+
+The made classes' counts by kind - how many classes hold each, and how many items - are this lane's measurement patch's
+(`boxkit/m8r3a-inst.py`, never committed: per class made from the read, what it takes from tokens, printed per unit as
+`-check=templates r3a lacks (n): <kind>`), below where it landed.
+
+**The records, as the review asks** (D3: records, not a declaration syntax). At the read, one list a class in declaration order,
+`readOrder_[start]`: each member declaration at the class's level a record of what it added - its kind, name, access, its start
+token kept only for the dump and the census - and, by kind: a static data member its initialiser as the read's expression node
+(the read parses it under the parameters, so a node is made; whether the read's class body keeps it alive or a trial kills it is
+3R-d's first question - kept as a pattern node, `markPattern`, as the signatures' are) and `constexpr`; an
+enumeration its enumerators with each value's node; a typedef its pattern Type (an argument over a static member a `DepExpr` naming
+it, as 4d's values are); a nested class its own pattern Type and its own records under its own start, recursively; a member
+template its TemplateDecl; a data member its bound's node where the bound is not `[N]`; a `static_assert` its condition's node; a
+member initialiser and each default argument its node in place of the token start; a using-declaration, a friend and an elaborated
+class a record of their kind (the door's refusal reads the kind, never the tokens). A node's marks (TypeDependent, ValueDependent,
+DependentName) answer "names a parameter"; a Type's answer is the kernel's `why`. The door then walks `readOrder_` in order: a
+data member and a function as now (laidFromRead, membersFromRead), a static declared by `declareStaticMember` with its value folded
+from the node under the binding (`foldUnder`, 2f's fold over a node, and `argValued`, 4d's over a `DepExpr`; ids made at first
+need - in the walk's order, which is the replay's), an enumeration's
+enumerators declared `tag::a` the same way, a typedef substituted at Made, a nested class made by the same door under the same
+binding, a member template declared under `tag` from its TemplateDecl with the class's layer recorded on it (4h's first layer). No
+`p_.at_` moves and no `bindTemplateParameters` opens.
+
+**Which R1 helpers R3 takes.** `typedefCarried` (2 callers, both the class door's: typedefsCarried and typedefByPath) - retired in
+3R-f into the kernel: a read typedef's Type substituted at Made answers carried or not by `why`, and "one classShape wanted made
+first" becomes "made at first need in the walk". `idUnder` (3 callers: the kernel's id step, the SFINAE trial's id list, earlyArgs) -
+R3 takes the earlyArgs caller: earlyArgs, argsWanted and carriedId are called from classShape (16 sites) and idsInside alone, the
+class door's order helpers, and go with classShape's id half in 3R-k; idUnder then has the kernel's and the trial's callers, and
+folds into the kernel's id step when 4e's trial asks the kernel instead (R2's). R1's `Made` at first need is what lets the walk
+make an id where the replay makes it, so 3R-d on needs R1's first-need path as gated (m8r1e-m8r1l).
+
+| slice | the change (under `-templates=subst` unless said) | its measure at da2e6ed2 | what must not change |
+| --- | --- | --- | --- |
+| **3R-a** | **the order record**: `readOrder_` kept at the read - the parser's class-body loop (ParserType.cpp:563) logs, while `Parser::memberLog_` is set (as `frameLog_` is, Templates.cpp:1880), each member declaration's kind and name from what it added (members, statics, enumerators, typedefs, functions, member templates, nested types, a using-declaration, a friend); memberEnums and classBeyond answer from it and are deleted | tokens 146 -> **135** (memberEnums 6, classBeyond 5); every class door answer the same (held for one gate against the scanners before they go: a `differ` under the check fails it) | every door answer and census line; the read's order; identical plain and under the flag by construction |
+| 3R-b | the positions from the record: staticAt, ownTypedefAt and typedefByPath's scan answer from `readOrder_`'s statics and typedefs | tokens 135 -> **119** (3 + 7 + 6) | staticsFromRead's order (still its jumps: 3R-d moves them) |
+| 3R-c | the nested class's record: its start, extent and shape (access label before it, member template after it, its name used elsewhere) from the record; nestedByPath's scan answers from it (the function goes in 3R-g), nestedAt reads the record | tokens 119 -> **106** (13); fromReadWhyNot's and membersFromRead's nestedAt from the record | 3ac's body order (a nested class's bodies before the class's after its `}`) |
+| 3R-d | **static data members from their records**: each static's initialiser kept as its node; staticsFromRead declares it by `declareStaticMember` with the value folded from the node under the binding, ids made at first need in the walk; staticShape and classShape's staticInit deleted | re-entries "a static data member" 777 / 481 -> **0**; tokens 106 -> **88** (staticShape 14, staticInit 3, staticsFromRead's 1) | [class.static.data]/3's in-class constant; `folded` and `value` as the replay sets them (staticsHeld holds them under the check); the ids' order; `constexpr` |
+| 3R-e | **member enumerations from their records**: enumerators declared `tag::a` (3r: `tag::E`'s type) with values folded from their nodes in the walk | re-entries "a member enumeration" 213 / 531 -> **0**; classShape's inEnum 1 -> 0 | enumerator values and types (staticsHeld's check); `valueDependent` |
+| 3R-f | **typedefs by path from their records**: a typedef's pattern Type over a static as a value the kernel folds after 3R-d, substituted at Made; ownTypedefAt and typedefByPath deleted, typedefCarried retired into the kernel's `why` | re-entries "a member typedef" 973 / **53,886 -> 0**; tokens +0 (3R-b took the two functions' scans; this deletes them); R1 helpers 6 -> 5 | `ratio`'s and `duration`'s types; the typedefs' `$held` check |
+| 3R-g | **nested classes as pattern Types**: the read keeps `readTag::N` with its own records by its start; the door makes `tag::N` through classFromRead under the class's binding | re-entries "a nested class" 18 / 0 -> **0**; staticsFromRead's jumps and its bind gone (with 3R-d-f): bind 1,173 / 18,904 -> **0**, at-jumps -5, binds -1 | 3ac's body order; a nested class's names (`tag::N`); its held bodies keyed to it |
+| 3R-h | **member templates as their own reads**: each TemplateDecl declared under `tag` from the read's (retagged, its class layer's binding recorded for 4h), no `memberTemplate` re-read | re-entries 852 + 609 + 852 / **49,748 + 30,677 + 49,748 -> 0**; at-jumps -2, binds -1 | `memberTemplateMade_` per template and `declaredAt`; the Itanium name from `mt.pattern`; templatesHeld's check |
+| 3R-i | bounds and `static_assert`s from their nodes: a data member's bound over values and a class-level condition folded by the kernel from the record | tokens -13 (boundAt 7, assertAt 6) | 3g's bounds, 3k's folds |
+| 3R-j | member initialisers and default arguments as nodes on their records (the constructor and the call still read them where they do: R5 consumes the node); fromReadWhyNot asks the node's marks, `isFinal()` and the Type's alignment | tokens -3 (fromReadWhyNot) | 3q's "a member initialiser naming a template parameter"; [dcl.fct.default]'s scope |
+| 3R-k | **classShape's token half deleted**: where a parameter is named from the records' marks and the kernel's `why`; the id fold from the read id's `DepExpr`; the alias step from the alias's pattern; the class door's ids made at first need in the walk, so earlyArgs, argsWanted and carriedId lose their class-door callers and earlyArgs goes | tokens -(65 - 3 - 7 - 6 - 1) - 5 - 3 = **-56**; Templates.cpp **15**; R1 helpers 5 -> 2 (carriedId, argsWanted go with earlyArgs; idUnder's earlyArgs caller with them) | M8.3's "what must not change"; identical's class order (the walk's is the replay's) |
+| 3R-l | the close | **tokens 15, re-entries inside a made class 0** on the suite and the self-host, both ABIs; replay-residue's baseline lowered in each slice's commit | - |
+
+**The gate of every slice** (each one commit; the brief's lane gate): identical.sh against a REF built from the slice's base, 0
+differ on four targets at -O0/-O1/-O2 plain and under `-templates=subst` (the class door's shape questions run under the flag only,
+so plain is identical by construction and under the flag the walk must make what the replay made, in its order); run.sh and
+subst.sh 0 failed both ways; `-check=templates` censuses over tests/cases and the self-host for both ABIs: **no class differ**
+(staticsHeld and templatesHeld hold the walk's statics, enumerators, typedefs and member templates against the replay's); the FULL
+self-compile 102 of 102; the static gates (exclusions 0/0, comment cap, memory gate, ast-residue, **replay-residue - each slice
+lowers its baseline in its own commit**); g++ -Werror; and on Windows cl /W4 /WX, names.sh and overload.sh both ways.
+
+**Order.** 3R-a first (the record every later slice reads); 3R-b and 3R-c use only its positions and are identical by
+construction; 3R-d before 3R-e (an enumerator may name a static, a static an enumerator: the walk takes both in order) and before
+3R-f (a typedef over a static wants the static's folded value); 3R-g after 3R-d-f (3ac's nested class holds statics, enumerations
+and typedefs of its own); 3R-h stands alone after 3R-a; 3R-i and 3R-j after 3R-d (the node and fold machinery); 3R-k last (it asks
+every other record's marks). Frozen meanwhile, as the restart froze them: 4m-4s; and no new `src/sema` function indexes
+`p_.tokens_` or moves `p_.at_` - each slice only deletes such lines.
+
+**3R-a for the lane that takes it** (one lane-hour): `Parser::memberLog_` (a `std::vector<MemberRecord> *`, null but at the read),
+pushed at the end of each iteration of ParserType.cpp:563's loop with what the iteration added (the sizes of `members`,
+`staticMembers`, `lookup_.enums_`, `lookup_.functions_`, the typedef table, `memberTemplates_` before and after; a using-declaration
+and a friend by their branch); set and cleared where `frameLog_` is (Templates.cpp:1880, the outermost read's door); kept as
+`readOrder_[key]` beside readTypedefs_ (Templates.cpp:1939). memberEnums' five callers (classShape 4426, staticShape 4986,
+staticsFromRead 5005, classBeyond 5428, readStands 5698) and classBeyond's two (classBefore 5533, 5592) read it. Its proof: for one gate both run and a census line counts
+disagreements (0 on the suite and the self-host, both ABIs), then the scanners go in the same commit.
+
+**What must not change through R3** (D11, and the plan's list): the read at the declaration, for every door, with its dependent
+marks; layout and member signatures by Type substitution with `Classes` deciding the specials; `layFrame` (the frame's events
+logged at the read and laid under the binding); the two name spellings (Itanium from the kept pattern, Microsoft from the
+substituted signature); `-check=templates` holding each made thing against a replay beside it and failing the unit on `differ`;
+identical's class order (the walk takes the body's order, which is the replay's, so no golden is re-recorded - the restart's Q7);
+no library name special-cased.
