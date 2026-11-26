@@ -7089,15 +7089,14 @@ both boxes, plain and under the flag (`5 6 12 16 7 1 3`, clang 19.1.5 on Windows
 failed substitution held by the replay's own words), body differ lines 20 (R0's covered-and-replayed reasons); under the check
 the made counts are below the measure's (types 39 of 45, values 15 of 18) because a replay beside a default can reset the
 `defaultMade_` flag through a default it meets itself - an undercount, no differ line. **identical x86_64-linux, the lane against
-321d1ba2** (Windows, cxx3-msvc, JOBS=8): under the flag -O0 1,026 compared 0 differ, -O1 1,026/0, -O2 1,026/0, plain -O0 1,026/0; **subst.sh** on the lane (Linux; stopped at the hour in its last step, no FAIL
-line): run 1,370/0 at -O0 and -O2, typed 1,017/0 x2, census 0 by substitution, bodies 1,014 of 1,014; **the FULL stage-0 self-compile 102 of 102** (Linux, 187 s); **run.sh -templates=subst
+321d1ba2** (Windows, cxx3-msvc, JOBS=8): under the flag -O0 1,026 compared 0 differ, -O1 1,026/0, -O2 1,026/0, plain -O0 1,026/0; **subst.sh 0 failed** on the lane (Linux): run 1,370/0 at -O0 and -O2, typed 1,017/0 x2, census 0 by substitution, bodies 1,014 of 1,014; **the FULL stage-0 self-compile 102 of 102** (Linux, 187 s); **run.sh -templates=subst
 1,370 passed 0 failed** (Linux); **overload.sh 46 agreed 0 differed under the flag** (Windows). **The measure on x86_64-windows** (the same census
 on the lane's suite, cxx3-msvc): identical to x86_64-linux's - values 17 made + 1 replayed, the template made, 44 types made +
 146 replayed, door 446, `defaults=` 147, falling back= 6,725 over 1,009 units. **No changed emitted output** at -O0 or -O1 on x86_64-linux, either way
 and at -O2 under the flag (1,026/0). Slices 4m-4s untouched; no new src/sema function indexes `p_.tokens_` or moves `p_.at_`.
 **Owed** (to the wave gate - the Linux slots were shared four ways this hour, so the Windows box carried the censuses and the
 identicals): identical on x86_64-windows, arm64-darwin and tms6747 against 321d1ba2, both ways, -O0/-O1/-O2, and x86_64-linux
-plain at -O1/-O2; run.sh plain (its run was mis-launched, rc 127); subst.sh's last step; names.sh under the flag (running at
+plain at -O1/-O2; run.sh plain (its run was mis-launched, rc 127); names.sh under the flag (running at
 the hour) and plain; and the -check=templates census on x86_64-windows and on the self-host (both ABIs; the
 self-host's measure was not taken - 4b's 949 self-host type defaults are member templates', which this slice leaves to 4h); cl /W4 /WX with cl alone. Re-measure: `boxkit/m8r4c-wcen.sh <v|x> <arch> <m|c> s` (Windows),
 `boxkit/m8r4c-cen.sh`, `boxkit/m8r4c-owed.sh`, `boxkit/m8r4c-lean.sh`, `boxkit/m8r4c-wident.sh`.
