@@ -7168,3 +7168,67 @@ ways (the box carried m8r4c's owed x86_64-windows levels this hour); names.sh pl
 unfinished at the hour); overload.sh plain; cl /W4 /WX alone; the self-host censuses on the lane (0 value trials by 4a's split).
 Re-measure: `boxkit/m8r4d-cen.sh <r|b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4d-wcen.sh <b|x> <arch> <m|c> s`
 (Windows), `boxkit/m8r4d-owed.sh`, `boxkit/m8r4d-gate.sh`, `boxkit/m8r4d-wident.sh`.
+
+## R2, slice 4e: SFINAE as a failed substitution (lane m8r4e, 2026-11-26)
+
+Base 0c30afec (m8-4d). Commits 0562bf6e (the slice and its probe `template-subst-sfinaefail`), 47d12e4b (a qualifier's class
+made at the use, and a qualifier that is no class; the probe extended - clang 19.1.5 on the Windows box, `1 2 3 120` / `4 5 6 7`),
+45e00858 (EXCLUSIONS: three Templates.cpp citations re-pointed +38, each the same refusal at its new line) and this entry.
+src/ 98,816 -> 98,866 lines (58 added, 8 deleted: Templates.cpp +51/-8, Templates.h +7). **Nothing changes without the flag.**
+
+**THE MEASURE** (census, `-templates=subst`, no check; before = 0c30afec, after = 47d12e4b's src, both g++ on Linux,
+`boxkit/m8r4e-cen.sh`; the lane's suite holds the probe - 12 trials, 6 of them failed and all 6 substituted - so like for like is
+the lane less those):
+
+| x86_64-linux | function-template trials of types alone or a default | failed, substituted (no re-read) | re-read, by reason | `sfinae-failed` | SFINAE-door re-entries (instantiation / read binds) |
+| --- | --- | --- | --- | --- | --- |
+| suite, before | 1,426 (1,407 + 19) | 0 | all | 29 (23 + 4d's probe 6) | 7,260 / 8,479 |
+| suite, after | 1,438 = 1,426 + the probe's 12 | **2** (template-sfinae's `Value<double>::type` and `T::type` with T = double) + the probe's 6 | formed 1,228 (the specialization still declared by the replay); a type over the parameters the kernel does not carry 200; a member type whose class it does not carry 2 (template-nondependent-argument, template-sfinae-misc) | 35 = 29 + the probe's 6 (**unchanged**) | 7,264 / 8,491 = **7,258 / 8,479** less the probe's 6 / 12 |
+| suite x86_64-windows, before / after | the same | 0 / **2** + the probe's 6 | the same 1,228 / 200 / 2 | 29 / 35 = 29 + 6 | 7,116 / 8,335 -> 7,120 / 8,347 = **7,114 / 8,335** less the probe's |
+| self-host, before | (33,987 trials of every shape) | 0 | all | 195 | 108,999 / 244,002 |
+| self-host, after | (34,009: the input grew by this slice's own lines) | **0** | formed 16,988; a type over the parameters the kernel does not carry 13,436 | **195** | 109,086 / 244,223 (the input's growth; not like for like) |
+
+So 4e takes **the suite's 2 type-alone failures from the re-read** (2 of 4a's 1,874 trials; the other 21 of the suite's 23 failures
+are a value over the parameters, a `decltype` or a member template's - 4d's, the trial's and 4h's), and the door's instantiation
+side falls by them. The 1,228 that form still re-read: the trial's `p_.instantiate` declares the specialization (its Signature and
+the Itanium name from the pattern), which a substituted signature does not yet do - the next step of 4e. **`Parser::Trial` in
+Templates.cpp 6 -> 6** (the trial opens one for every candidate that forms). **Replay-residue 150 / 19 / 26 / 6, +0.**
+
+**What it does.** `Templates::sfinaeSubstituted`, under the flag, for a free function template whose trial shape is types alone or
+a default: the kept pattern under the deduced binding (`trialSubstituted`, valueTrial's binding loop, now shared) through the kernel
+at Declared - it makes nothing; where the answer is "a member type whose class the binding does not carry" it is asked again At the
+use, which makes a qualifier's class as the replay would. A complete class it carries that lacks the member type named (not a data
+member, not a static member reached through the id) is the failed substitution in the replay's words (`'X' has no member type called
+'m'`); so is a qualifier that is no class. The candidate drops and `sfinae-failed` counts it, with no replay. A refusal by name
+re-raises: a `SubstitutionFailure` the kernel meets sends the candidate to the replay, which raises it as before. Under
+`-check=templates` the replay runs beside every substituted failure and the two are held: `held: the replay's failure` (its words
+equal), `held: both failed, in other words` (the replay's parse words for a non-class qualifier, `expected a name`), or `held: differ:
+substituted a failure, the replay formed it` (the replay's answer kept). Census lines `-check=templates sfinae trial (n): substituted:
+... | re-read: <why> | held: ...`; no `template-census:` key.
+
+**m8r4d's owed checks, on 0c30afec** against a REF built from 6903a031 (Windows, cl, `work\m8r4er` / `work\m8r4eb`): **cl /W4 /WX
+alone clean** (msvc\build.cmd, `_CL_=/MP2`, /affinity 3FF, 16:56:16-17:00:31, 4 min 15 s with the ship); **overload.sh plain 46
+agreed 0 differed**; **names.sh plain 1,027 passed 0 failed** (20 .nonames OPEN as recorded); **identical x86_64-windows -O0
+under the flag 2,054 compared 0 differ, plain 2,054/0** (cxx3-msvc, JOBS=3, the two at once, about 30 minutes); -O1 both ways
+stopped unfinished at the hour; **names.sh under the flag 1,027 passed 0 failed** (through a wrapper script as CXX1). No difference, so nothing to fix.
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4en`, 47d12e4b's src with 45e00858's EXCLUSIONS, g++):
+**g++ -Werror clean**; **static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0) after 45e00858 (3 stale on 47d12e4b alone),
+comments 0 over the cap, memory-gate lower, ast-residue not raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date;
+**the FULL stage-0 self-compile 102 of 102** (178 s); **run.sh -templates=subst 1,372 passed 0 failed, plain 1,372/0**; **subst.sh 0
+failed** (run 1,372/0 at -O0 and -O2, typed 1,019/0 x2, census 0 by substitution, bodies 1,016 of 1,016, self 102 of 102);
+**identical x86_64-linux -O0/-O1/-O2 against 0c30afec under the flag 3,084 compared 0 differ** (the probe is the three new files);
+plain 3,084/0; **arm64-darwin and tms6747 the same, under the flag 3,084/0 and plain 3,084/0 each**; **the probe** right plain and under the flag on Linux; **-check=templates suite censuses, both ABIs: no class differ, no
+default, value or sfinae differ** (8 substituted failures held: 6 by the replay's words, 2 in other words; body differ lines 21, the
+base's 20 and the probe's covered-and-replayed line); **the self-host's on x86_64-linux: 102 units rc 0, no class differ, no
+default, value or sfinae differ** (body lines 11, R0's; 0 substituted - the library's failures are not of these two shapes); (`work\m8r4ex`, 45e00858): **cl /W4 /WX clean**
+(17:28:01-17:34:47, 6 min 46 s, beside the owed identicals and names.sh - not alone; the first lane build, of 0562bf6e, passed the
+9-minute cap beside the same jobs and was stopped at 17:17, a defect recorded); **overload.sh 46 agreed 0 differed under the flag and plain**.
+No changed emitted output at -O0, -O1 or -O2 on x86_64-linux, arm64-darwin or tms6747, either way. Slices 4m-4s untouched; no new src/sema function
+indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`. **Owed** (to the wave gate): identical against 0c30afec
+on x86_64-windows both ways, split by level; names.sh plain and under the flag on the lane; cl /W4 /WX alone on the lane; the self-host -check=templates census on x86_64-windows; m8r4d's
+x86_64-windows -O1/-O2 identicals (stopped at the hour). **Next for 4e**: the 1,228 that form - the specialization declared from
+the substituted signature (Microsoft spelled from it, Itanium from the pattern) instead of the trial's `p_.instantiate`, which is
+where `Parser::Trial` falls; the 200 "a type over the parameters the kernel does not carry" (13,436 in the self-host) named by kind.
+Re-measure: `boxkit/m8r4e-cen.sh <b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4e-wcen.sh`, `boxkit/m8r4e-gate.sh`,
+`boxkit/m8r4e-wident.sh`, `boxkit/m8r4e-wnames.sh`.
