@@ -396,7 +396,8 @@ public:
                            const Substituted &s);
     // R3 3R-h: a read member template under `tag` from its record, the class layer substituted and recorded; or why the read is not complete.
     const char *templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
-                              const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out) const;
+                              const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out,
+                              std::string *shape = nullptr) const;
     static const char *templateSame(const TemplateDecl &a, const TemplateDecl &b);     // under the check: the replay's against it
     mutable std::map<std::string, int> templatesCensus_;     // member templates of made classes: from the read, or why they are read again
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;

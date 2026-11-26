@@ -5185,7 +5185,8 @@ std::vector<const TemplateDecl *> Templates::templatesOf(const std::string &tag)
 // R3 3R-h: `mt`, read in the class's read, as the class body's path declares it under `tag`: its pattern's class layer substituted
 // by `s` (its own parameters, after the class's, back to themselves), the class's binding recorded on it as memberTemplate does.
 const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
-                                     const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out) const {
+                                     const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out,
+                                     std::string *shape) const {
     if (!mt.layered || mt.classParams.size() != params.size()) return "its pattern not read in two layers";
     for (const TemplateParam &p : mt.params) {     // a value's type and a default as the replay reads them inside the class
         if (p.isTemplate) return "a template template parameter of its own";
@@ -5199,6 +5200,7 @@ const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &
     }
     const Substitution r = substitute(both, mt.pattern, Declared);
     if (mt.pattern == nullptr) return "no pattern read";
+    if (!r.carried() && shape != nullptr) *shape = std::string(r.why) + ": " + trialKind(r.at);     // the census's split, by the leaf
     if (!r.carried()) return r.why;     // the census counts the substitution's own reason
     *out = mt;
     out->pattern = r.type;
@@ -5254,8 +5256,9 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
     std::set<std::string> keys;
     for (const TemplateDecl *mt : read) {
         TemplateDecl mine;
-        const char *const why = templateUnder(*mt, tag, s, params, binding, values, &mine);
-        templatesCensus_[why != nullptr ? why : "declared from the read"]++;
+        std::string shape;
+        const char *const why = templateUnder(*mt, tag, s, params, binding, values, &mine, &shape);
+        templatesCensus_[why == nullptr ? "declared from the read" : shape.empty() ? why : shape.c_str()]++;
         if (why == nullptr) memberTemplates_[tag + "::" + mine.name].push_back(mine), keys.insert(tag + "::" + mine.name);
         else at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
     }
