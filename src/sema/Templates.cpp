@@ -3891,9 +3891,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
         return shallow;
     }
 
-    // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
-    // and deduction read only its name and arguments. An argument list that mentions no
-    // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
+    // A pattern's id over a parameter is shallow; one naming none is a real class (`enable_if<2 + 2 == 4, int>`).
     if (p_.patternOnly_ && p_.dependentArgs(args)) return shallowId(decl, tag, args);
 
     if (const Type *had = p_.lookup_.findTypedef(tag)) {
