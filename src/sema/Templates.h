@@ -240,9 +240,21 @@ public:
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed
     bool listUnder(const Substituted &s, const TemplateDecl &d, std::vector<TemplateArg> *args) const;     // its list laid by `d`'s
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
-    const Type *substituted(const Substituted &s, const Type *t) const;
+    // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
+    // then the carried parts substituted and `at` the part that failed. A class template-id: `s`'s own map (Mapped), the
+    // program's by its key (Declared), or made on demand through makeClass (Made, the non-const one).
+    struct Substitution { const Type *type; const char *why; const Type *at; bool carried() const { return why == nullptr; } };
+    enum Ids { Mapped, Declared, Made };
+    Substitution substitute(const Substituted &s, const Type *t, Ids ids = Mapped) const;
+    struct At { std::size_t pos; };
+    Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
+    Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
+    Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const;     // the id step
+    bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const;
+    const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
-    std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` expanded
+    std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params,
+                                          Substitution *failed = nullptr) const;     // `Args...` expanded; the kernel's first failure
     const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
