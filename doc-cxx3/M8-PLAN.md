@@ -8289,3 +8289,59 @@ the flag at -O1 on tms6747, arm64-darwin and x86_64-windows, plain at -O1 / -O2 
 lines, no wave-expected rows. Re-measure: `boxkit/m8r1n-lbuild.sh <x>` (`m8r1n-lbuild2.sh <x>`: the files of `~/m8r1n-ov-<x>`
 laid over), `m8r1n-q.sh <x> <job>...` (runf runp subst static self, cen:<s|h>:<c|n>:<l|w>, id:<arch>:<level>:<p|f>; no timeout
 round a chain - each job its own `~/slot timeout 1500`).
+
+## R3, slice 3R-a: the order record (lane m8r3ra, 2026-11-27)
+
+Base 82120c84 (m8-r3base: m8r3a's plan + m8r1n). REF built from 82120c84 on Linux. **Linux only** (the user, 2026-11-27): every
+Windows check is owed. Commits **7058dec5** (the record and the census beside the scanners), **4cbd9760** (the callers ask the
+record; memberEnums and classBeyond deleted; replay-residue's baseline lowered), **b2deea62** (28 ParserType.cpp citations moved
+with their lines), this entry. src/ 99,126 -> 99,182 lines (+105 / -49 over the base: ParserType.cpp +42, Parser.h +13, Entities.h +9,
+Templates.cpp +37 / -47, Templates.h +4 / -2; 7058dec5 alone +131 / -1, 4cbd9760 +27 / -101).
+
+**THE MEASURE: `p_.tokens_[` in Templates.cpp 143 -> 132 (-11: memberEnums 6, classBeyond 5); replay-residue tokens 147 -> 136**
+(at-jumps 19, binds 26, trials 6; baseline lowered in 4cbd9760). The brief's 146 -> 135 was da2e6ed2's count; m8r1n's commit took
+3 first. **The record against the scanners, both running (7058dec5's census, `-check=templates order record asked= disagree=
+absent=`, every call of memberEnums and classBeyond): suite x86_64-linux asked 52,619 disagree 0 absent 0 (1,032 units),
+x86_64-windows 52,619 / 0 / 0 (1,013 units); self-host x86_64-linux 1,700,211 / 0 / 0, x86_64-windows 1,699,892 / 0 / 0 (102
+units each).** **R0's re-entries inside made classes (census, no check) not risen: suite 5,264 on both ABIs, the REF's
+exactly (R0's 5,467 was da2e6ed2's); self-host 191,117 / 190,918** (R0's 203,975 / 203,917; the self-host compiles its own src, so
+no REF number is the same input).
+
+**The record.** `Parser::memberLog_` (null but at the read) is set beside `frameLog_`'s door, at the class door of the outermost
+read under `-templates=subst` (Templates.cpp, readClassBody's call), with `memberLogFrom_` the read's key; the first class body
+whose loop starts past the key takes it (a base made at the head replays tokens before it) and nulls it, so a nested class body and
+anything replayed inside an iteration log nothing (`logging_` and `keysWatched_` saved and restored by the loop). Each iteration of
+ParserType.cpp's class-body loop pushes a `sema::MemberRecord` (Entities.h): its kind by branch (a member template, a
+using-declaration - every `using` aliasDeclaration does not take -, a friend, a member template whose declaration is a friend; else a
+declaration), its start, the first class key and the first `enum` its decl-specifiers read (`Parser::loggedKey` in
+unqualifiedSpecifiers, only while the member's own specifiers are read), whether that `enum` is `enum [E] { ... };` alone
+(`Parser::plainEnum`, the shape memberEnums tested, asked by the parser once at the read) and named, a second `enum`; and what it
+added to members, statics, enumerators, functions and typedefs. Kept as `readOrder_[key]` beside readTypedefs_. `enumsInOrder`
+answers memberEnums' list (each plain `enum`, `*other` for any other) and `beyondInOrder` classBeyond's reasons in the same order
+(a non-plain enumeration; a named one beside a written function; then, declaration by declaration, a using-declaration, a friend, a
+class key not nestedByPath's). Plain is identical by construction: nothing logs without the flag.
+
+**Gates** (Linux, against the REF; on 4cbd9760's src, b2deea62 changes docs only): **g++ -Werror clean** (7058dec5 and 4cbd9760);
+**identical under the flag: x86_64-linux, tms6747 and arm64-darwin -O0 / -O1 / -O2 1,031 / 0 each, x86_64-windows -O0 / -O1 /
+-O2 2,062 / 0 each (on Linux)**; **plain: the same 12, 1,031 / 0 and 2,062 / 0 each**; 7058dec5 under the flag: x86_64-linux -O0 1,031 / 0, x86_64-windows -O0
+2,062 / 0 (its -O2 runs were stopped by PID for slot time: owed). No changed emitted output at -O0, -O1 or
+-O2 in any that ran. **run.sh -templates=subst 1,375 / 0** (1,019 printed, 352 refused as recorded); **run.sh plain 1,375 / 0**; **subst.sh rc 0** (run -O0 / -O2 1,375 / 0,
+typed 1,022 / 0 at both, 2 not for this host; 1,166 through the function door of 1,166 bodies); **the FULL self-compile 102 of 102 (166
+s)**; static: **exclusions rc 0 (129 sites, 0 uncited, 0 stale; 554 / 4)** - 7058dec5 alone left 28 ParserType.cpp and 3
+Templates.cpp citations stale (its added lines), moved in 4cbd9760 (Templates.cpp, +7) and b2deea62 (ParserType.cpp, by each line's
+text); comments 0 over, memory gate lower, ast-residue not raised, **replay-residue --check rc 0 at 136**, ide up to date;
+**census `-check=templates` = the REF's line for line: suite x86_64-linux 1,383 units, nonzero 355, class differ 0, body 23,
+re-entries under the check 27,079; x86_64-windows 379, 0, 22, 26,935; self-host 102 units rc 0, class 0, body 11 on both ABIs
+(7058dec5 and 4cbd9760 alike; m8r1n's REF 11 / 11), re-entries under the check 468,165 / 468,051 (7058dec5's own src 468,354 /
+468,240).**
+
+**What must not change, and did not:** every door answer (the census's reasons the REF's, the identicals 0 differ); the read's order
+(the record is taken in the body's order and only read); no new `p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's later
+slices. **Next: 3R-b** (staticAt, ownTypedefAt and typedefByPath's scan from the record's statics and typedefs: the record's sizes
+are there for it).
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** on b2deea62; on 7058dec5 alone (its src is superseded) identical at -O1 / -O2 and plain, run.sh and
+subst.sh, and its static gates (exclusions failed on it: the stale citations above). A probe of its own: none (the record changes no
+output; Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
+`boxkit/m8r3ra-ship.sh <x> <commit>` (git archive -> `~/m8r3ra<x>`, built by `m8r3ra-lbuild.sh`), `m8r3ra-q.sh <x> <job>...` (runf
+runp subst static self, cen:<s|h>:<c|n>:<l|w>, id:<arch>:<level>:<p|f>; `m8r3ra-lcen.sh` sums the order line).
