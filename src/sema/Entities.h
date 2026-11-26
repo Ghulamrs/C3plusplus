@@ -171,6 +171,7 @@ struct MemberRecord {
     std::size_t members, statics, enumerators, functions, typedefs;
     std::vector<StaticPlace> placed;     // 3R-b: each static data member it declared
     std::vector<TypedefPlace> typedefsAt;
+    std::vector<std::pair<std::size_t, std::size_t> > nested;     // 3R-c: a nested class read by path, its key and `}`
 };
 
 struct TypedefName {

@@ -185,6 +185,45 @@ void Parser::logTypedef() {
     logging_->typedefsAt.push_back(p);
 }
 
+// R3 3R-c: at the read's `}`, each `struct N { ... };` staticsFromRead reads by path, on the record that holds its key: in a struct
+// with no access label before it and no member template after it, N named nowhere else, no template in it.
+void Parser::logNested(std::vector<MemberRecord> &log) const {
+    const std::size_t start = memberLogFrom_;
+    std::size_t open = start, end = start;
+    while (open < tokens_.size() && !tokens_[open].is("{") && !tokens_[open].is(";")) open++;
+    if (!tokens_[start].is("struct") || open >= tokens_.size() || !tokens_[open].is("{")) return;
+    for (int depth = 0; end < tokens_.size(); end++)
+        if ((depth += tokens_[end].is("{") ? 1 : tokens_[end].is("}") ? -1 : 0) == 0 && end > open) break;
+    bool label = false;
+    for (std::size_t t = open + 1; t < end; t++) {
+        const Token &k = tokens_[t];
+        if (k.is("{") || k.is("(") || k.is("[")) {     // a member function's body or an initialiser: not this level
+            for (int depth = 0; t < end; t++)
+                if ((depth += tokens_[t].is("{") || tokens_[t].is("(") || tokens_[t].is("[") ? 1 :
+                              tokens_[t].is("}") || tokens_[t].is(")") || tokens_[t].is("]") ? -1 : 0) == 0) break;
+            continue;
+        }
+        label = label || k.is("public") || k.is("private") || k.is("protected");
+        if (!(k.is("struct") || k.is("class")) || label || tokens_[t + 1].kind != TokenKind::Ident || !tokens_[t + 2].is("{")) continue;
+        std::size_t close = t + 2;
+        for (int inner = 0; close < end; close++)
+            if ((inner += tokens_[close].is("{") ? 1 : tokens_[close].is("}") ? -1 : 0) == 0) break;
+        bool plain = close + 1 < end && tokens_[close + 1].is(";");
+        for (std::size_t i = t + 3; i < close && plain; i++) {
+            const Token &n = tokens_[i];
+            plain = !(n.is("template") || n.is("friend") || n.is("virtual") || n.is("union") || n.is("using") || n.is("default") ||
+                      n.is("delete") || n.is("constexpr") ||
+                      ((n.is("struct") || n.is("class")) && !(tokens_[i + 1].kind == TokenKind::Ident && tokens_[i + 2].is("{"))));
+        }
+        for (std::size_t i = open + 1; i < end && plain; i++) plain = (i > t && i <= close) || tokens_[i].text != tokens_[t + 1].text;
+        for (std::size_t i = close + 2; i < end && plain; i++) plain = !tokens_[i].is("template");     // 3ac: a function after it, held in place
+        MemberRecord *on = nullptr;
+        for (MemberRecord &r : log) if (r.start <= t) on = &r;
+        if (plain && on != nullptr) on->nested.push_back(std::make_pair(t, close));
+        t = close;
+    }
+}
+
 // `#pragma pack(n)` caps an alignment at n; 0 is no pack.
 namespace { struct Packed { static int to(int a, int cap) { return cap != 0 && a > cap ? cap : a; } }; }
 
@@ -627,7 +666,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             logged();
             const std::size_t none = static_cast<std::size_t>(-1);
             log->push_back(MemberRecord{ MemberRecord::Declaration, at_, none, none, false, false, false, members.size(), type->staticMembers().size(),
-                                         lookup_.enums_.size(), lookup_.functions_.size(), lookup_.typedefs_.size(), {}, {} });
+                                         lookup_.enums_.size(), lookup_.functions_.size(), lookup_.typedefs_.size(), {}, {}, {} });
             logging_ = &log->back();
         }
 
@@ -1434,6 +1473,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (!heldBody) expect(";");
     }
     logged();
+    if (log != nullptr) logNested(*log);
     expect("}");
     classStack_.pop_back();
 

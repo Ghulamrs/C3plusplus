@@ -2612,6 +2612,8 @@ std::string Templates::builtReport() const {
     }
     out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
+    out += "-check=templates position record asked=" + std::to_string(nestedAsked_) + " disagree=" + std::to_string(nestedDisagree_) +
+           " absent=" + std::to_string(nestedAbsent_) + "\n";     // R3 3R-c: the record against nestedByPath's scan
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -5409,6 +5411,15 @@ std::vector<std::size_t> Templates::enumsInOrder(std::size_t start, bool *other)
 // with no access label before it and no member template after it, N named nowhere else, no template in it (3ac: its members defined
 // out of line, its static data members and enumerations are the same path's).
 std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedByPath(std::size_t start) const {
+    const std::vector<std::pair<std::size_t, std::size_t> > scanned = nestedScanned(start);
+    std::vector<std::pair<std::size_t, std::size_t> > recorded;
+    for (const MemberRecord &r : orderOf(start)) recorded.insert(recorded.end(), r.nested.begin(), r.nested.end());
+    if (readOrder_.count(start) == 0) nestedAbsent_++;
+    else { nestedAsked_++; nestedDisagree_ += recorded != scanned; }
+    return scanned;
+}
+
+std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedScanned(std::size_t start) const {
     std::vector<std::pair<std::size_t, std::size_t> > at;
     std::size_t open = start, end = start;
     while (open < p_.tokens_.size() && !p_.tokens_[open].is("{") && !p_.tokens_[open].is(";")) open++;

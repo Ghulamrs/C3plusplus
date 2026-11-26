@@ -371,6 +371,8 @@ public:
     std::string beyondInOrder(std::size_t start) const;     // a class body's member beyond data members and functions, by name
     std::vector<std::size_t> enumsInOrder(std::size_t start, bool *other) const;     // the `enum [E] { ... };` staticsFromRead reads
     std::vector<std::pair<std::size_t, std::size_t> > nestedByPath(std::size_t start) const;     // slice 3v: `struct N { ... };`, read by path
+    std::vector<std::pair<std::size_t, std::size_t> > nestedScanned(std::size_t start) const;     // 3R-c's census: the scan
+    mutable std::size_t nestedAsked_ = 0, nestedDisagree_ = 0, nestedAbsent_ = 0;
     std::string classBefore(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                             std::vector<const Type *> *wanted = nullptr);
     void laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const;

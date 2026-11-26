@@ -1909,6 +1909,7 @@ private:
     typedef sema::TypedefPlace TypedefPlace;
     void logStatic(const std::string &name, bool cx);     // R3 3R-b: into `logging_`, at the read
     void logTypedef();
+    void logNested(std::vector<MemberRecord> &log) const;     // 3R-c, at the read's `}`
     int alignasSpecifier();
     void refuseWeakAlignas(int asked, const Type *t, std::size_t pos);
     void declareStaticLocal(const std::string &name, const Type *type,
