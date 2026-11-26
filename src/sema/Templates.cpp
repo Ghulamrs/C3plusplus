@@ -384,7 +384,7 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     Substitution r = { o, nullptr, o };
     std::string name;
     std::vector<TemplateArg> args;
-    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args)) {
+    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args, maker, pos)) {
         r.why = "a class template-id with an argument the binding does not carry";
         return r;
     }
@@ -509,25 +509,32 @@ static bool writtenValue(const TemplateArg &a) {
 }
 
 // An id's arguments (idUnder's, of template `name`) under `s`: packs expanded, values folded, types substituted; false at one
-// that stays a parameter.
-bool Templates::argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const {
+// that stays a parameter. With `maker` (the id step at Made), an id among them made too and one not carried a failure.
+bool Templates::argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker,
+                          std::size_t pos) const {
     std::string written;
     const bool bound = readId(o, &written, nullptr) && written != name;     // 3t: a stand-in's list, renamed
     for (std::size_t k = 0; k < args->size(); k++)
-        if (!argUnder(s, &(*args)[k], bound)) return false;
+        if (!argUnder(s, &(*args)[k], bound, maker, pos)) return false;
     return true;
+}
+
+// One argument's type under `s`: the map's (Mapped), or at Made as the recursion carries it - false there where it is not carried.
+bool Templates::argTypeUnder(const Substituted &s, const Type **t, Templates *maker, std::size_t pos) const {
+    const Substitution r = substituteIn(s, *t, maker != nullptr ? Made : Mapped, maker, pos);
+    *t = r.type;
+    return maker == nullptr || r.carried();
 }
 
 // The kernel's argument step, one of an id's under `s` (`bound`: a stand-in's list, its written values kept): a value folded, a
 // type substituted, a class template kept; a pack as the replay's template-id lists it - `Ts...` the members `s` binds to Ts, each
 // other member substituted. False where one stays a parameter, `s` binds no such pack or a member does (`List<M>` of a non-type M).
-bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound) const {
+bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker, std::size_t pos) const {
     if (!a->isPack || a->isTemplate) {
         if (!a->isType && (argValued(s, a) || (bound && writtenValue(*a)))) return true;
         if (a->isTemplate && a->type->isTemplateName()) return true;     // a class template, bound or written
         if (!a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->isParam) return false;
-        a->type = substitute(s, a->type).type;
-        return true;
+        return argTypeUnder(s, &a->type, maker, pos);
     }
     PackMembers out;
     for (std::size_t k = 0; k < a->pack.size(); k++) {
@@ -539,7 +546,9 @@ bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound) const
         if (expansion) out.values.insert(out.values.end(), s.packs[q].values.begin(), s.packs[q].values.end());
         if (expansion) continue;
         if (a->packIsValue && (m->kind() == Kind::TemplateParam || k >= a->packValues.size())) return false;
-        out.push_back(substitute(s, m).type);
+        const Type *u = m;
+        if (!argTypeUnder(s, &u, maker, pos)) return false;
+        out.push_back(u);
         if (a->packIsValue) out.values.push_back(a->packValues[k]);
     }
     for (std::size_t k = 0; k < out.size(); k++) if (out[k] == nullptr || p_.dependentType(out[k])) return false;

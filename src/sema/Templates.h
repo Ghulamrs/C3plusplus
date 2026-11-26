@@ -249,12 +249,15 @@ public:
     Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
     Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const;     // the id step
-    bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const;
+    bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
+                   std::size_t pos = static_cast<std::size_t>(-1)) const;
     const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     struct Substitutions { std::vector<const Type *> types; const char *why; const Type *at; };
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
-    bool argUnder(const Substituted &s, TemplateArg *a, bool bound) const;     // one of argsUnder's: a pack (`X<Ts...>`) expanded
+    bool argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker = nullptr,     // one of argsUnder's: a pack
+                  std::size_t pos = static_cast<std::size_t>(-1)) const;                             // (`X<Ts...>`) expanded
+    bool argTypeUnder(const Substituted &s, const Type **t, Templates *maker, std::size_t pos) const;     // Made: false if not carried
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
     std::pair<const Type *, bool> castUnder(const Substituted &s, const std::pair<const Type *, bool> &read) const;
