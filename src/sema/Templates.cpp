@@ -1954,7 +1954,10 @@ bool Templates::madeMember(const PendingBody &body) {
     std::string why;
     Built built;     // its members' constructors noted and recorded as the replay's constructMember does
     std::vector<std::string> guards;
-    why = wrapInherited(body) ? "a noexcept body wrapped by the calls of the bodies before it" : membersBuilt(body, sp.symbol, &built, &guards, s);
+    bool cx = p_.constant_.constexprCtorSymbols_.count(sp.symbol) != 0;     // slice 3y: a constexpr member replays by name
+    for (std::size_t t = body.start; t < p_.tokens_.size() && !p_.tokens_[t].is("(") && !cx; t++) cx = p_.tokens_[t].is("constexpr");
+    why = cx ? "a constexpr member, whose constant the definition's path keeps"
+        : wrapInherited(body) ? "a noexcept body wrapped by the calls of the bodies before it" : membersBuilt(body, sp.symbol, &built, &guards, s);
     for (std::size_t q = 0; why.empty() && q < built.size(); q++) {
         p_.noteChosen(built[q].second.first);
         p_.keepMemberBuilt(built[q].first, Parser::MemberBuilt{ built[q].second.first, built[q].second.second, false, false });
@@ -3871,10 +3874,23 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's.
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     const bool bare = own != readMembers_.end() && own->second.second.empty() && templatesOf(own->second.first).empty();
+    const auto ctorAt = [&](std::size_t close) {     // the `)` closing a constructor's parameters: `P(...)` or `P<M, N>(...)`
+        std::size_t o = close;
+        for (int parens = 0; o > start; o--)
+            if ((parens += p_.tokens_[o].is(")") ? 1 : p_.tokens_[o].is("(") ? -1 : 0) == 0) break;
+        return o > start + 1 && (p_.tokens_[o - 1].text == ownName || (o > 2 * params.size() + 2 && ownId(o - 2 - 2 * params.size()) == o - 1));
+    };
     for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
         if (depth == 1 && std::find(heads.begin(), heads.end(), t) != heads.end()) head = 1;
-        if (depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept")))
+        bool body = depth == 1 && k.is("{") && (was.is(")") || was.is("const") || was.is("volatile") || was.is("override") || was.is("noexcept"));
+        if (depth == 1 && k.is(":") && was.is(")") && ctorAt(t - 1))     // slice 3y: a constructor's mem-initialisers, its body's head
+            for (int parens = 0, braces = 0; t + 1 < p_.tokens_.size() && !body; t++) {
+                const Token &w = p_.tokens_[t + 1];
+                body = parens == 0 && braces == 0 && w.is("{") && (p_.tokens_[t].is(")") || p_.tokens_[t].is("}"));
+                parens += w.is("(") ? 1 : w.is(")") ? -1 : 0, braces += w.is("{") ? 1 : w.is("}") ? -1 : 0;
+            }
+        if (body)
             for (std::size_t inner = head = 0; t < p_.tokens_.size(); t++) {     // a member function's body, to its `}`
                 inner += p_.tokens_[t].is("{");
                 if (p_.tokens_[t].is("}") && --inner == 0) break;
@@ -4220,7 +4236,6 @@ std::string Templates::fromReadWhyNot(std::size_t start, const std::vector<Templ
         const Token &k = p_.tokens_[t];
         if (k.is("alignas")) return "replayed: alignas";
         if (depth == 0 && k.is("final")) return "replayed: a final class";
-        if (k.is("constexpr")) return "replayed: a constexpr member, whose body a constant compiles where it is needed";
         if (k.is("{")) depth++;
         else if (k.is("}") && --depth == 0) break;
     }
@@ -4578,6 +4593,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
             p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
         f.defined = f.used = false;
+        if (p_.constant_.constexprCtorSymbols_.count(a.symbol) != 0) p_.constant_.constexprCtorSymbols_.insert(f.symbol);     // 3y: as declared
         const std::string key = f.name == tag ? Parser::constructorKey(tag) : f.name[0] == '~' ? Parser::destructorKey(tag) : tag + "::" + f.name;
         at[a.symbol] = p_.lookup_.functions_.size();
         p_.lookup_.functionIndex_[key].push_back(p_.lookup_.functions_.size());
