@@ -186,7 +186,7 @@ public:
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
     // M8.4 slice 4a: a door with no reason line counted by why it falls back, "<door>: <why>" - each door's sum its count.
-    mutable std::map<std::string, long> fallbackCensus_;               // mutable: the class door's list (`listUnder`) is const
+    mutable std::map<std::string, long> fallbackCensus_;               // mutable: the class door's list (`idUnder`) is const
     mutable long deducedDefaults_ = 0;
     void countWhy(Door d, const std::string &why);
     void countDefault(const TemplateParam &p, bool deduced) const;     // a default template argument replayed, by kind
@@ -237,8 +237,7 @@ public:
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
                          std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
-    bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed
-    bool listUnder(const Substituted &s, const TemplateDecl &d, std::vector<TemplateArg> *args) const;     // its list laid by `d`'s
+    bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed, its list laid
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
     // then the carried parts substituted and `at` the part that failed. A class template-id: `s`'s own map (Mapped), the

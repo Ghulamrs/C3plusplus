@@ -503,7 +503,7 @@ static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
     return true;
 }
 
-// Slice 3t: a value written in a stand-in's list (`C<3>`), which listUnder laid as the bound template's argument.
+// Slice 3t: a value written in a stand-in's list (`C<3>`), which idUnder laid as the bound template's argument.
 static bool writtenValue(const TemplateArg &a) {
     return !a.isType && !a.isPack && !a.isTemplate && a.expr == nullptr && !a.isParam && !a.dependentValue;
 }
@@ -3693,30 +3693,11 @@ bool Templates::idUnder(const Substituted &s, const Type *e, std::string *name, 
     }
     if (!ttRefName(*name, &tt) || s.templates.count(tt) == 0) return true;
     *name = s.templates.at(tt);
-    return args == nullptr || listUnder(s, templates_.at(*name), args);
-}
-
-// Slice 3t: an alias template whose type-id is a class template's id over the alias's type parameters in order (`using A = B<T>;`):
-// that template, whose specialization the replay's `C<T>` reaches through the alias; end() for any other alias.
-std::map<std::string, TemplateDecl>::const_iterator Templates::aliasedClass(const TemplateDecl &a) const {
-    std::size_t t = a.aliasAt + (p_.tokens_[a.aliasAt].is("::") ? 1 : 0);
-    while (t + 2 < p_.tokens_.size() && p_.tokens_[t + 1].is("::")) t += 2;
-    const std::size_t n = a.params.size();
-    const std::map<std::string, TemplateDecl>::const_iterator c = p_.findTemplate(p_.tokens_[t].text);
-    if (c == templates_.end() || !c->second.isClass || c->second.isAlias || c->second.ttParam >= 0 || c->first != c->second.name ||
-        c->second.params.size() != n || t + 2 * n + 2 >= p_.tokens_.size() || !p_.tokens_[t + 1].is("<") || !p_.tokens_[t + 2 * n + 2].is(";"))
-        return templates_.end();
-    for (std::size_t q = 0; q < n; q++)
-        if (a.params[q].isPack || a.params[q].isTemplate || a.params[q].type != nullptr || c->second.params[q].isPack || c->second.params[q].isTemplate ||
-            c->second.params[q].type != nullptr || p_.tokens_[t + 2 + 2 * q].text != a.params[q].name || !p_.tokens_[t + 3 + 2 * q].is(q + 1 < n ? "," : ">"))
-            return templates_.end();
-    return c;
-}
-
-// Slice 3t: a stand-in's list, laid by the parameter's own (`C<int>` over `template <class...> class C`), as templateArguments lays
-// the bound template's: each pack's members one argument, a pack parameter takes the rest, a missing one its default
-// (defaultTemplateArgument, the deduced path's, with the ones before it bound); false where a member stays a parameter.
-bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vector<TemplateArg> *args) const {
+    if (args == nullptr) return true;
+    // 3t: the stand-in's list, laid by the bound template's own (`C<int>` over `template <class...> class C`) as templateArguments
+    // lays it: each pack's members one argument, a pack parameter takes the rest, a missing one its default (defaultTemplateArgument,
+    // the deduced path's, with the ones before it bound); false where a member stays a parameter.
+    const TemplateDecl &d = templates_.at(*name);
     std::vector<TemplateArg> flat, out;
     for (std::size_t j = 0; j < args->size(); j++) {
         TemplateArg a = (*args)[j];
@@ -3755,6 +3736,23 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
     if (k != flat.size()) return false;
     *args = out;
     return true;
+}
+
+// Slice 3t: an alias template whose type-id is a class template's id over the alias's type parameters in order (`using A = B<T>;`):
+// that template, whose specialization the replay's `C<T>` reaches through the alias; end() for any other alias.
+std::map<std::string, TemplateDecl>::const_iterator Templates::aliasedClass(const TemplateDecl &a) const {
+    std::size_t t = a.aliasAt + (p_.tokens_[a.aliasAt].is("::") ? 1 : 0);
+    while (t + 2 < p_.tokens_.size() && p_.tokens_[t + 1].is("::")) t += 2;
+    const std::size_t n = a.params.size();
+    const std::map<std::string, TemplateDecl>::const_iterator c = p_.findTemplate(p_.tokens_[t].text);
+    if (c == templates_.end() || !c->second.isClass || c->second.isAlias || c->second.ttParam >= 0 || c->first != c->second.name ||
+        c->second.params.size() != n || t + 2 * n + 2 >= p_.tokens_.size() || !p_.tokens_[t + 1].is("<") || !p_.tokens_[t + 2 * n + 2].is(";"))
+        return templates_.end();
+    for (std::size_t q = 0; q < n; q++)
+        if (a.params[q].isPack || a.params[q].isTemplate || a.params[q].type != nullptr || c->second.params[q].isPack || c->second.params[q].isTemplate ||
+            c->second.params[q].type != nullptr || p_.tokens_[t + 2 + 2 * q].text != a.params[q].name || !p_.tokens_[t + 3 + 2 * q].is(q + 1 < n ? "," : ">"))
+            return templates_.end();
+    return c;
 }
 
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
