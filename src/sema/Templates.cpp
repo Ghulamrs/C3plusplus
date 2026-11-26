@@ -496,14 +496,6 @@ static bool writtenValue(const TemplateArg &a) {
     return !a.isType && !a.isPack && !a.isTemplate && a.expr == nullptr && !a.isParam && !a.dependentValue;
 }
 
-// A specialization named over the parameters (`pair<const $T0,$T1>`) under `s`: the one the program declared by its key, or null.
-const Type *Templates::specializationUnder(const Substituted &s, const Type *o) const {
-    std::string name;
-    std::vector<TemplateArg> args;
-    if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args)) return nullptr;
-    return p_.lookup_.findTypedef(specializationKey(name, args));
-}
-
 // An id's arguments (idUnder's, of template `name`) under `s`: packs expanded, values folded, types substituted; false at one
 // that stays a parameter.
 bool Templates::argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const {
@@ -3662,7 +3654,8 @@ const Type *Templates::carriedId(const Substituted &s, const Type *e, const Subs
         for (std::size_t k = 0; k < early->from.size(); k++) if (early->from[k] == e) return early->to[k];
         return nullptr;
     }
-    const Type *real = specializationUnder(s, e);
+    const Substitution declared = substitute(s, e, Declared);
+    const Type *real = declared.carried() ? declared.type : nullptr;
     return real == nullptr || !real->isStructOrUnion() || p_.dependentType(real) || readIds_.count(real) != 0 || overParameters(real->tag()) ? nullptr : real;
 }
 
@@ -3923,7 +3916,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             open.pop_back();     // 3q: a `>` inside parentheses compares, `Max<(N > M ? N : M), Rest...>`
         std::size_t e = t + 1;
         while (e < p_.tokens_.size() && (p_.tokens_[e].is("&") || p_.tokens_[e].is("&&") || p_.tokens_[e].is("*"))) e++;
-        // ... or in a template-id's arguments, `X<Ts...>`, whose read id specializationUnder and earlyArgs expand (packUnder).
+        // ... or in a template-id's arguments, `X<Ts...>`, whose read id the kernel's id step and earlyArgs expand (packUnder).
         const bool expanded = !open.empty() && e < p_.tokens_.size() && p_.tokens_[e].is("...") && (open.back() == '(' || (open.back() == '<' && e == t + 1));
         // Slice 3q: or counted, `sizeof...(Ts)`, where the second scan finds a static's initialiser staticsFromRead reads bound.
         const bool counted = t > start + 2 && t + 1 < p_.tokens_.size() && p_.tokens_[t - 1].is("(") && p_.tokens_[t - 2].is("...") &&
@@ -4313,7 +4306,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
             if (own && early == nullptr) continue;
-            if (own) real = specializationUnder(*s, e);
+            if (own) { const Substitution declared = substitute(*s, e, Declared); if (declared.carried()) real = declared.type; }
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
             else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted)) {
                 if (!ahead && !behind) return "replayed: class template-ids made first for a data member and a member function's signature";
@@ -4768,7 +4761,7 @@ void Templates::idsInside(std::size_t start, const Signature &a, std::size_t pos
         e = e->unqualified();
         std::string name;
         std::vector<TemplateArg> args;
-        if (specializationUnder(*ids, e) != nullptr || !earlyArgs(*ids, e, readClass_.at(start), &name, &args, true)) continue;
+        if (substitute(*ids, e, Declared).carried() || !earlyArgs(*ids, e, readClass_.at(start), &name, &args, true)) continue;
         const Type *made = makeId(name, args, pos, nullptr);
         classCensus_["made inside the class, as its replay makes it: its own template under other arguments"]++;
         ids->from.push_back(e), ids->to.push_back(made);
