@@ -4116,8 +4116,9 @@ std::map<std::string, TemplateDecl>::const_iterator Templates::aliasedClass(cons
 
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
+// argsFirst: an argument that is such an id itself, carried or made first at Made by the id step, innermost first.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
-                          const std::vector<const Type *> *pending, bool base) const {
+                          const std::vector<const Type *> *pending, bool base, bool argsFirst) const {
     std::string written;
     if (!idUnder(s, e, name, args) || !readId(e, &written, nullptr)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
@@ -4153,37 +4154,15 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
         if (pending != nullptr && std::find(pending->begin(), pending->end(), u) != pending->end()) continue;     // made before it
         const Type *of = u->kind() == Kind::DependentMember ? u->pointee()->unqualified() : nullptr;     // `table::iterator`, table made first
         if (of != nullptr && pending != nullptr && std::find(pending->begin(), pending->end(), of) != pending->end()) continue;
+        const Type *w = of != nullptr ? of : u;     // slice 3o: `remove_cv<T>::type`, its class
+        std::string n;
+        std::vector<TemplateArg> g;
+        if (argsFirst && pending != nullptr && w != read && w->isStructOrUnion() && readId(w, nullptr, nullptr) &&
+            (readIds_.count(w) != 0 || overParameters(w->tag())) && (carriedId(s, w, nullptr) != nullptr || earlyArgs(s, w, read, &n, &g, false, pending, false, true)))
+            continue;
         if (p_.dependentType(a.type) || u->isFunction() || readIds_.count(u) != 0 || (u->isStructOrUnion() && overParameters(u->tag()))) return false;
     }
     return true;
-}
-
-// An id whose arguments are ids over the parameters (`__tree<pair<const $T0,$T1>, __map_key<$T0,$T1,$T2> >`): each argument's
-// carried class mapped in `s`, or the argument wanted at `*at`, innermost first, as the replay makes them reading the id.
-void Templates::argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const {
-    std::string name;
-    std::vector<TemplateArg> args;
-    if (!readId(e, &name, &args)) return;
-    for (const TemplateArg &a : args) {
-        if (!a.isType || a.type == nullptr || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) continue;
-        const Type *u = a.type;
-        while (u->unqualified() != u || u->isPointer() || u->isReference() || u->isArray())
-            u = u->unqualified() != u ? u->unqualified() : u->isReference() ? u->referent() : u->pointee();
-        if (u->kind() == Kind::DependentMember) u = u->pointee()->unqualified();     // slice 3o: `remove_cv<T>::type`, its class first
-        if (u == read || !u->isStructOrUnion() || substitute(*s, u).type != u || !readId(u, nullptr, nullptr)
-            || (readIds_.count(u) == 0 && !overParameters(u->tag()))) continue;
-        argsWanted(s, u, read, early, wanted, at);
-        const Type *real = carriedId(*s, u, early);
-        std::string n;
-        std::vector<TemplateArg> g;
-        if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
-        else if (wanted != nullptr && earlyArgs(*s, u, read, &n, &g, false, wanted)) {     // ahead of the id, moved from behind it
-            const std::vector<const Type *>::iterator from = wanted->begin() + static_cast<std::ptrdiff_t>(*at);
-            if (std::find(wanted->begin(), from, u) != from) continue;
-            if (std::find(from, wanted->end(), u) != wanted->end()) wanted->erase(std::find(from, wanted->end(), u));
-            wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>((*at)++), u);
-        }
-    }
 }
 
 // An id among the read's typedefs and signatures with the read class itself as an argument: made at Made once the tag is.
@@ -4507,14 +4486,13 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     for (const Type::BaseSpec &b : read->bases())
         if (overParameters(b.type->tag()) || readIds_.count(b.type) != 0) overBases.push_back(b.type);
     for (const Type *u : overBases) {
-        argsWanted(s, u, read, early, wanted, &baseIds);
         const Type *real = carriedId(*s, u, early);
         std::string name;
         std::vector<TemplateArg> args;
         if (real != nullptr && (real->kind() != Kind::Struct || !real->isComplete() || real->polymorphic() || real->hasVirtualBase() || real->isFinal()))
             return "replayed: a base over its parameters: a polymorphic, final, incomplete or union class, or one of a virtual base";
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
-        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted, true))
+        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted, true, true))
             wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(baseIds++), u);
         else return "replayed: a base: a class template-id over its parameters";
     }
@@ -4565,19 +4543,15 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (!m.type->isReference() && e->isReference()) return "replayed: a data member the binding makes a reference";
         const Type *u = e->unqualified();
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || overParameters(u->tag()));
-        std::size_t back = wanted != nullptr ? wanted->size() : 0;
-        const std::size_t had = back;
         if (over && wanted != nullptr && std::find(wanted->begin(), wanted->end(), u) != wanted->end()) continue;
-        if (over && u != read) argsWanted(s, u, read, early, wanted, &back);
-        if (wanted != nullptr && wanted->size() != had) dataAt.push_back(memberAt(m.name));     // where the replay makes them
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
         std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one wanted, made first at Made
         std::vector<TemplateArg> args;
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real), t = dataUnder(*s, m);
         else if (over) {
-            if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args, false, wanted))
+            if (wanted == nullptr || u == read || !readId(u, nullptr, nullptr) || !earlyArgs(*s, u, read, &name, &args, false, wanted, false, true))
                 return "replayed: a data member of a class the read named over its parameters";
-            if (wanted->size() == had) dataAt.push_back(memberAt(m.name));
+            dataAt.push_back(memberAt(m.name));     // where the replay makes them
             wanted->push_back(u);
             continue;
         }
@@ -4609,10 +4583,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             continue;
         }
         const bool id = e != read && (overParameters(e->tag()) || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
-        if (id) argsWanted(s, e, read, early, wanted, &first);
         const Type *real = id ? carriedId(*s, e, early) : nullptr;
         if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
-        else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted))
+        else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted, false, true))
             wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(first++), e);
     }
     // A signature declared before every data member wanting ids has its ids made ahead of theirs, one after them behind.
@@ -4643,12 +4616,6 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (overParameters(e->tag()) || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
-            const std::size_t had = wanted != nullptr ? wanted->size() : 0;
-            std::size_t back = ahead ? sigAt : had;     // its arguments' ids first, as for a data member's
-            if (id) argsWanted(s, e, read, early, wanted, &back);
-            if (ahead) sigAt = back;
-            if (!ahead && !behind && wanted != nullptr && wanted->size() != had)
-                return "replayed: class template-ids made first for a data member and a member function's signature";
             if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3z: a base made first
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
@@ -4656,7 +4623,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             if (own && early == nullptr) continue;
             if (own) { const Substitution declared = substitute(*s, e, Declared); if (declared.carried()) real = declared.type; }
             if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
-            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted)) {
+            else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted, false, true)) {
                 if (!ahead && !behind) return "replayed: class template-ids made first for a data member and a member function's signature";
                 wanted->insert(ahead ? wanted->begin() + static_cast<std::ptrdiff_t>(sigAt++) : wanted->end(), e);
             }

@@ -333,8 +333,7 @@ public:
     std::string classShape(std::size_t start, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, Substituted *s,
                            const Substituted *early = nullptr, std::vector<const Type *> *wanted = nullptr);     // early: ids carried before the replay
     bool earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself = false,
-                   const std::vector<const Type *> *pending = nullptr, bool base = false) const;     // pending: ids wanted first; base: 3z
-    void argsWanted(Substituted *s, const Type *e, const Type *read, const Substituted *early, std::vector<const Type *> *wanted, std::size_t *at) const;
+                   const std::vector<const Type *> *pending = nullptr, bool base = false, bool argsFirst = false) const;     // pending: ids wanted first; base: 3z
     bool readId(const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // its own id, or readIds_'s; earlyArgs: ids to make first
     bool namesItself(std::size_t start) const;     // an id the read names with its own class as an argument (deque's iterator)
     std::string classLaid(const Type *read, const Substituted &s, const Type *made) const;     // the read's members laid under `s`, against `made`
