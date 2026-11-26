@@ -15593,3 +15593,31 @@ refuses the new case and the three sources with that message; clang picks `f(con
   overload.sh 46 agreed; static gates rc 0 (exclusions, comment cap 0 over, memory gate lower, ast-residue, ide).
   g++ -Werror 0 warnings; cl /W4 /WX clean, about 10.5 minutes on the shared box - past the 9-minute cap, a defect of
   the box's load, not retried.
+
+## The fifth gate: `tools/replay-residue`, and the re-entries the census did not count, 2026-11-26
+
+Fable's M8 direction review (`boxkit/fable-m8-direction-review.md`, D12) found that M8's direction had reversed with
+no number to show it: between the plan's base and M8.3's close `Templates.cpp`'s token indices went 0 -> 146, its
+`p_.at_ =` jumps 7 -> 19, its `bindTemplateParameters(` lines 13 -> 22 and its `Parser::Trial`s 3 -> 6 - all four
+things M8.6 deletes. The owner's sixth decision of the restart made the count a gate (lane m8r0, step R0).
+
+- **The gate**: `tools/replay-residue --check`, the fifth in `make test` after `tools/ast-residue`, in ast-residue's
+  shape - `--count` per file and in all, `--check` against `tools/replay-residue.baseline`, `--record` that never
+  raises, and `tools/replay-residue.start` (R0's counts) against which a baseline raise needs the user's mark
+  (`user-approved YYYY-MM-DD`, written by the coordinator on the user's word). Four kinds in src/sema's code, comments
+  and literals skipped, a line once a kind, as the review's `grep -c` counted: `tokens` (`p_.tokens_[`), `at-jumps`
+  (`p_.at_ =`, not `==`), `binds` (`bindTemplateParameters(`, unbind and the declarations included - the review's 22),
+  `trials` (`Parser::Trial`). At 67fd80d9 (c9619846 + slice 4a): 150 / 19 / 26 / 6, Templates.cpp 146 / 19 / 22 / 6 -
+  slice 4a moved none of them.
+- **CLAUDE.md says "four gates"** and now undercounts; changing that sentence is the user's, not a lane's.
+- **The census's new lines** (counts only, under `-templates=subst`, after `falling back=`, never in `template-census:`
+  whose last key `by-substitution=0` is subst.sh:89's tombstone): `-check=templates reentry (N): <read|instantiation>
+  <door>: <bind | jump: what>`, the unit's `-check=templates reentries=N read= instantiation= binds= jumps=`, and one
+  `-check=templates reentered at: <file:line> | <door>` a template whose parameters an instantiation bound. A bind is
+  every `bindTemplateParameters` call; a jump is each `p_.at_` move in src/sema that starts a read (the restores are not
+  counted) and each held member body `replayInlineBodies` replays. The door is the innermost `Templates::DoorAt` open:
+  read, class, made class (and its staticsFromRead, templatesFromRead), function body, member body, member template,
+  SFINAE trial, constexpr-ahead, alias, default argument; a bind under none is "other". Read is a binding that binds a
+  parameter to a parameter, or the read's door.
+- **What must not change**: no emitted byte with or without the flag (identical.sh), no `.templates` record (the lines
+  print only under the flag), and the counters add no token index and no jump of their own.

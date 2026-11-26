@@ -6590,3 +6590,62 @@ then `falling back=`; M8.4's exit is the re-entries at 0. Every wave records sel
 `-templates=subst` (D10). **M8.6's row gains three dependencies** (D10): tms6747 makes nothing without replay until
 M6a.2 and M6d; `-check=templates`' oracle goes with the replay, so the shape predicates need another first; a made
 class's default arguments, member initialisers and held bodies are token indices until R3.
+
+## R0: the three counts the restart leads with - re-entries under a binding, definitions re-entered, self-host time; and the fifth gate (lane m8r0, 2026-11-26)
+
+Base 67fd80d9 (main c9619846 + slice 4a + the restart's decisions); commits 5173c055 (the counters), 65dcd0c1
+(`tools/replay-residue`, the fifth gate), and this entry with the history section. src/ 98,349 -> 98,413 lines
+(Templates.cpp +51, Templates.h +11, Constexpr.cpp +1, ParserTemplate.cpp +1, Parser.cpp 0 net). **Counts only**: no
+path changed; the new lines print under `-templates=subst` with the census (CXX1_TEMPLATE_CENSUS or -check=templates),
+after `falling back=`, and `template-census:` keeps `by-substitution=0` its last key (subst.sh:89's tombstone).
+
+**(a) Re-entries under a binding** (D5), per unit `-check=templates reentries=N read= instantiation= binds= jumps=`,
+its parts `-check=templates reentry (n): <read|instantiation> <door>: <bind | jump: what>`. A bind is every
+`bindTemplateParameters` call (the D5 counter - a body made from its read still binds, so it counts one); a jump is a
+`p_.at_` move in src/sema that starts a read (restores not counted) and each held member body `replayInlineBodies`
+replays. The door is the innermost `Templates::DoorAt`: read, class, made class (staticsFromRead, templatesFromRead -
+D1's), function body, member body, member template, SFINAE trial, constexpr-ahead, alias, default argument; a bind
+under none is "other". Read = a binding of a parameter to a parameter, or the read's door. Measured with the census,
+**no -check** (the check replays beside a made body, which is re-entries of its own):
+
+| `-templates=subst`, census, no check | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
+| --- | --- | --- | --- | --- |
+| **re-entries at instantiation** (binds + jumps) | **21,565** (14,035 + 7,530) | WIN_SI | **376,781** (218,592 + 158,189) | WIN_HI |
+| re-entries in the read | 54,093 | WIN_SR | 383,113 | WIN_HR |
+| all (binds / jumps) | 75,658 (42,582 / 33,076) | WIN_SA | 759,894 (545,224 / 214,670) | WIN_HA |
+| `falling back=` (4a's, beside it) | 6,768 over 1,026 units | WIN_SF | 89,097 | WIN_HF |
+
+The self-host's instantiation side by door (x86_64-linux): SFINAE trial binds 108,705; made class 153,263 -
+staticsFromRead's typedefs by path 53,500, statics 481, enumerations 531 and its bind 18,806, templatesFromRead's member
+template declarations 49,460 and its bind 30,485 (D1: every made class still re-reads, and it is the largest door);
+member body 80,066 (held bodies replayed 51,001, binds 29,065); function body 6,433 (1,204 replayed); "other" 20,087;
+member template 4,172; default argument 2,751; constexpr-ahead 1,304. The suite's largest: SFINAE trial 7,241, member
+body 5,443, made class 4,611.
+
+**(b) Distinct template definitions re-entered at instantiation** (D7), by declaration site (the file:line of the
+template's first parameter) and by door, one `-check=templates reentered at: <file:line> | <door>` a site and door in
+the unit, deduplicated across units with `sort -u`: suite x86_64-linux **1,200 definitions** (2,094 site-door pairs:
+function body 632, SFINAE trial 556, member body 315, other 205, made class staticsFromRead 154, member template 137,
+templatesFromRead 37, default argument 25, class 19, constexpr-ahead 8, alias 6); self-host x86_64-linux **185
+definitions** (341 pairs: function body 82, SFINAE trial 77, member body 58, member template 37, other 26,
+staticsFromRead 21, templatesFromRead 16, constexpr-ahead 16, default argument 8); x86_64-windows WIN_B. The reason
+here is the door; by the 4a `why` within a door is owed (the bind does not know it).
+
+**(c) Self-host wall time, plain against `-templates=subst`** (D10), stage 0 over all 102 sources, one run each, one
+after the other in one slot: Linux (x86_64-linux, `tools/self-host <dir> "" 0` against `"-templates=subst"`, -j2, the
+other slot busy with a census) plain **166 s**, flag **354 s** (2.13x); Windows (x86_64-windows, cxx3-msvc `-S` of the
+102, 8 at a time under /affinity 3FF, `boxkit/m8r0-wtime.sh`) plain **51 s**, flag **90 s** (1.76x). All four 102 of
+102. **Substitution is about twice as slow as replay** - a finding by the plan's own gate (row "compile time": a slower
+number is a finding); D10 names the suspects (`classShape`'s scan per specialization, `nestedAt(nestedByPath(start))`
+in loops); which of them it is was not measured here. The plan's row asks best of three at -O0 and -O2 (line 106): these are one run at the default
+level, the first number, not yet that row's.
+
+**The fifth gate**: `tools/replay-residue --check` in `make test` after ast-residue ("the replay residue rose - M8's
+restart lets it only go down"); start and baseline 150 / 19 / 26 / 6 (tokens, at-jumps, binds, trials) over src/sema,
+Templates.cpp **146 / 19 / 22 / 6 - the review's c9619846 numbers; slice 4a moved none** (and the counters add none).
+CLAUDE.md's "four gates" now undercounts: the user's sentence to change.
+
+**Re-measure**: `boxkit/m8r0-cen.sh <arch> m` (the measure) and `c` (-check=templates), `boxkit/m8r0-time.sh`,
+`boxkit/m8r0-wtime.sh`, `tools/replay-residue --count`.
+
+**Gates** (5173c055/65dcd0c1): GATES
