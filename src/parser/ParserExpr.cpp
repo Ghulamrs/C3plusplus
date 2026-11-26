@@ -3768,7 +3768,10 @@ ExprPtr Parser::unaryNode() {
             measured = operand->type();
         }
         // A read's body holds a dependent `sizeof` as a dependent value: its number is substitution's.
-        if (patternBody_ && dependentType(measured)) return (pendingSizeof_ = measured), zeroOf(dependentResult());
+        if (patternBody_ && dependentType(measured)) {
+            pendingSizeof_ = measured;
+            return zeroOf(dependentResult());
+        }
         // **A dependent `sizeof` outside a template argument or a `decltype`** - an array bound, a
         // `noexcept` - is the one the expression reader is not reached from.
         if (patternOnly_ && (measured->kind() == Kind::TemplateParam ||
