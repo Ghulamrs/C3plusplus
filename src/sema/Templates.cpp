@@ -1505,26 +1505,54 @@ private:
 };
 }
 
-void Templates::valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
-                           const Packs &packs, std::size_t pos, std::vector<std::string> *keys) {
+const char *Templates::trialSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
+                                        const std::vector<long long> &values, const Packs &packs, Substituted *s) {
     const char *why = decl.isMember ? "a member template's, its class's parameters numbered apart" : nullptr;
-    Substituted s;     // as defaultMade's: a value by its index, a template by its name, a type mapped
-    s.packs = packs;
+    s->packs = packs;     // as defaultMade's: a value by its index, a template by its name, a type mapped
     for (std::size_t k = 0; why == nullptr && k < decl.params.size(); k++) {
         const TemplateParam &q = decl.params[k];
-        s.values.push_back(k < values.size() ? values[k] : 0);
+        s->values.push_back(k < values.size() ? values[k] : 0);
         if (q.isPack || q.type != nullptr) continue;
         if (k >= binding.size() || binding[k] == nullptr) why = "a parameter unbound";
         else if (q.isTemplate) {
             std::map<std::string, TemplateDecl>::const_iterator t = templates_.end();
             if (binding[k]->isTemplateName()) t = p_.findTemplate(binding[k]->templateName());
             if (t == templates_.end()) why = "a template parameter bound to no template";
-            else s.templates[static_cast<int>(k)] = t->first;
+            else s->templates[static_cast<int>(k)] = t->first;
         } else {
-            s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
-            s.to.push_back(binding[k]);
+            s->from.push_back(p_.types_.templateParam(static_cast<int>(k)));
+            s->to.push_back(binding[k]);
         }
     }
+    return why;
+}
+
+std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
+                                         const std::vector<long long> &values, const Packs &packs) {
+    Substituted s;
+    const char *why = trialSubstituted(decl, binding, values, packs, &s);
+    std::string failed;
+    if (why == nullptr) {
+        try {
+            const Substitution r = substitute(s, decl.pattern, Declared);     // makes nothing: a class not yet made is the re-read's
+            why = r.carried() ? "formed: the specialization still declared by the replay" : r.why;
+            // [temp.deduct]/8: a complete class the binding carries that lacks the member type named, said as the replay says it.
+            const Type *cls = !r.carried() && r.at != nullptr && std::string(r.why) == "a member type its class lacks" ? substitute(s, r.at->pointee(), Declared).type : nullptr;
+            if (cls != nullptr && cls->isStructOrUnion() && cls->isComplete() && cls->findMember(r.at->tag()) == nullptr &&
+                !(cls->isSpecialization() && cls->findStaticMember(r.at->tag()) != nullptr))
+                failed = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
+        } catch (const SubstitutionFailure &) {
+            why = "a class the kernel made failed to substitute";      // the replay meets it again, and re-raises a refusal
+        }
+    }
+    sfinaeReport_[!failed.empty() ? std::string("substituted: a failed substitution") : std::string("re-read: ") + why]++;
+    return failed;
+}
+
+void Templates::valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                           const Packs &packs, std::size_t pos, std::vector<std::string> *keys) {
+    Substituted s;
+    const char *why = trialSubstituted(decl, binding, values, packs, &s);
     std::vector<const Type *> ids;
     if (why == nullptr) patternHolds(decl.pattern, 0, &ids);
     const TrialLeaf leaf(this, &s, pos, &p_.target_);
@@ -2382,6 +2410,8 @@ std::string Templates::builtReport() const {
         out += "-check=templates default (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, long>::const_iterator i = valueReport_.begin(); i != valueReport_.end(); ++i)
         out += "-check=templates value trial (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, long>::const_iterator i = sfinaeReport_.begin(); i != sfinaeReport_.end(); ++i)
+        out += "-check=templates sfinae trial (" + std::to_string(i->second) + "): " + i->first + "\n";
     const std::map<std::string, int>::const_iterator fm = replayCensus_.find("substituted with no replay"),
                                                      mm = replayCensus_.find("member: substituted with no replay");
     const long parts[] = { total - made, census_[FunctionBody] - (fm != replayCensus_.end() ? fm->second : 0),
@@ -5796,12 +5826,17 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         countWhy(SfinaeTrial, "a function template, " + shape);
         std::vector<std::string> folded;     // 4d: the trial still decides
         if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
+        // 4e: a signature of types the kernel shows cannot be formed drops the candidate with no re-read; the check replays it beside.
+        const std::string failed = substitute_ && (shape == "types alone" || shape == "a default") ? sfinaeSubstituted(decl, binding, values, packs) : std::string();
+        if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
         try {
             Parser::Trial trial(&p_);
             p_.instantiate(decl, binding, values, args, pos, packs);
             if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
+            if (!failed.empty()) sfinaeReport_["held: differ: substituted a failure, the replay formed it"]++;
         } catch (const SubstitutionFailure &f) {
             if (checkBodies_ && !folded.empty()) valueHeld(folded, false);
+            if (!failed.empty()) sfinaeReport_[f.why == failed ? "held: the replay's failure" : "held: both failed, in other words: " + f.why]++;
             count(SfinaeFailed);
             // This template does not apply; the others still might - unless
             // what stopped it was a feature this compiler has not built, which
