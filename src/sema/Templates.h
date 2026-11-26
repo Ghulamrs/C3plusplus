@@ -393,7 +393,12 @@ public:
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
                            const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
-                           const Packs &packs);
+                           const Substituted &s);
+    // R3 3R-h: a read member template under `tag` from its record, the class layer substituted and recorded; or why the read is not complete.
+    const char *templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
+                              const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out) const;
+    static const char *templateSame(const TemplateDecl &a, const TemplateDecl &b);     // under the check: the replay's against it
+    std::map<std::string, int> templatesCensus_;     // member templates of made classes: from the read, or why they are read again
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
     void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`

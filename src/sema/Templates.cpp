@@ -2129,6 +2129,8 @@ std::string Templates::bodiesReport() const {
         out += "-check=templates shell (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = madeCensus_.begin(); i != madeCensus_.end(); ++i)
         out += "-check=templates made (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = templatesCensus_.begin(); i != templatesCensus_.end(); ++i)
+        out += "-check=templates member template (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -4822,7 +4824,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
     p_.classStack_.push_back(type);     // the body's scope, as its member templates are declared in it
-    templatesFromRead(start, tag, decl, params, binding, values, args, s.packs);
+    templatesFromRead(start, tag, decl, params, binding, values, args, own);
     p_.classStack_.pop_back();
     const Type *made = p_.completeClass(type, tag, true, laid, pos);
     p_.namespaceStack_ = outerStack;
@@ -5180,18 +5182,79 @@ std::vector<const TemplateDecl *> Templates::templatesOf(const std::string &tag)
     return out;
 }
 
-// Work (1): the read's member templates declared under `tag` by the class body's own path (Parser::memberTemplate), each at its
-// `template` in the body's order, under the binding the replay's body records (instantiatingParams_), the class's parameters bound.
+// R3 3R-h: `mt`, read in the class's read, as the class body's path declares it under `tag`: its pattern's class layer substituted
+// by `s` (its own parameters, after the class's, back to themselves), the class's binding recorded on it as memberTemplate does.
+const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
+                                     const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out) const {
+    if (!mt.layered || mt.classParams.size() != params.size()) return "its pattern not read in two layers";
+    for (const TemplateParam &p : mt.params)
+        if (p.type != nullptr || p.isTemplate || p.defBegin != 0) return "a non-type, template or defaulted parameter of its own";
+    Substituted both = s;
+    for (std::size_t i = 0; i < mt.params.size(); i++) {
+        both.from.push_back(p_.types_.templateParam(static_cast<int>(params.size() + i)));
+        both.to.push_back(p_.types_.templateParam(static_cast<int>(i)));
+    }
+    const Substitution r = substitute(both, mt.pattern, Declared);
+    if (mt.pattern == nullptr || !r.carried()) return "a pattern the class layer does not carry";
+    *out = mt;
+    out->pattern = r.type;
+    out->layered = false;
+    out->ownerTag = tag;
+    if (mt.isConstructor) out->name = Parser::localOf(tag);
+    out->ns = p_.namespacePrefix();
+    out->classParams = params;
+    out->classBinding = binding;
+    out->classValues = values;
+    out->classPacks.assign(params.size(), PackMembers());     // as bindTemplateParameters binds a class pack
+    for (std::size_t k = 0; k < params.size(); k++)
+        if (params[k].isPack && k < binding.size() && binding[k] != nullptr && binding[k]->kind() == Kind::TemplateParam) {
+            out->classPacks[k] = PackMembers(std::vector<const Type *>(1, binding[k]));
+            if (params[k].type != nullptr) out->classPacks[k].values.assign(1, 0);
+        } else if (params[k].isPack && k < s.packs.size()) out->classPacks[k] = s.packs[k];
+    return nullptr;
+}
+
+// Under the check: `a`, from the read, against `b`, the class body's path's; null when they agree.
+const char *Templates::templateSame(const TemplateDecl &a, const TemplateDecl &b) {
+    if (a.start != b.start || a.afterParams != b.afterParams || a.pos != b.pos || a.declaredAt != b.declaredAt || a.defined != b.defined)
+        return "its place";
+    if (a.name != b.name || a.ns != b.ns || a.ownerTag != b.ownerTag || a.ownerLocal != b.ownerLocal || a.memberAccess != b.memberAccess ||
+        a.isConstructor != b.isConstructor || a.isExplicit != b.isExplicit || a.staticMember != b.staticMember || a.isMember != b.isMember)
+        return "its name or kind";
+    if (a.params.size() != b.params.size()) return "its parameters";
+    for (std::size_t i = 0; i < a.params.size(); i++)
+        if (a.params[i].name != b.params[i].name || a.params[i].isPack != b.params[i].isPack || a.params[i].pos != b.params[i].pos)
+            return "its parameters";
+    if (a.classParams.size() != b.classParams.size() || a.classBinding != b.classBinding || a.classValues != b.classValues) return "its class layer";
+    for (std::size_t k = 0; k < a.classPacks.size() && k < b.classPacks.size(); k++)
+        if (static_cast<const std::vector<const Type *> &>(a.classPacks[k]) != static_cast<const std::vector<const Type *> &>(b.classPacks[k]) ||
+            a.classPacks[k].values != b.classPacks[k].values)
+            return "its class pack";
+    if (a.classPacks.size() != b.classPacks.size()) return "its class pack";
+    if (a.pattern != b.pattern) return "its pattern";
+    return nullptr;
+}
+
+// Work (1): the read's member templates declared under `tag` from their records (3R-h); where a read is not complete, by the class
+// body's own path (Parser::memberTemplate) at each `template` under the class's binding - and under the check, held against it.
 void Templates::templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
                                   const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
-                                  const Packs &packs) {
+                                  const Substituted &s) {
+    const std::vector<const TemplateDecl *> read = templatesOf(readMembers_.at(start).first);
+    if (read.empty()) return;
+    std::vector<TemplateDecl> mine(read.size());
+    const char *why = nullptr;
+    for (std::size_t i = 0; i < read.size() && why == nullptr; i++) why = templateUnder(*read[i], tag, s, params, binding, values, &mine[i]);
+    templatesCensus_[why != nullptr ? why : "declared from the read"] += static_cast<int>(read.size());
+    if (why == nullptr) {
+        for (const TemplateDecl &mt : mine) memberTemplates_[tag + "::" + mt.name].push_back(mt);
+        return;
+    }
     std::vector<std::pair<std::size_t, std::pair<std::string, Access> > > at;
-    for (const TemplateDecl *mt : templatesOf(readMembers_.at(start).first))
-        at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
-    if (at.empty()) return;
+    for (const TemplateDecl *mt : read) at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
     std::vector<Shadow> undo;
     const DoorAt templatesDoor(this, "made class: templatesFromRead");
-    bindTemplateParameters(params, binding, values, packs.empty() ? Packs(params.size()) : packs, &undo);
+    bindTemplateParameters(params, binding, values, s.packs.empty() ? Packs(params.size()) : s.packs, &undo);
     const Parser::LocalsHidden hidden(&p_);
     const std::size_t resume = p_.at_, angle = p_.angleSplit_;
     const std::string inlineOwner = p_.inlineOwner_, outerNamespace = p_.instantiatingNamespace_;
@@ -5250,6 +5313,11 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
             if (b.classParams[k].isPack && (k >= s.packs.size() || static_cast<const std::vector<const Type *> &>(s.packs[k]) !=
                 static_cast<const std::vector<const Type *> &>(b.classPacks[k]) || s.packs[k].values != b.classPacks[k].values))
                 return "differ: a member template's class pack";
+        TemplateDecl d;     // R3 3R-h: the one templatesFromRead declares, its namespace the replay's (the door's is the class's)
+        if (templateUnder(a, tag, s, b.classParams, b.classBinding, b.classValues, &d) != nullptr) continue;
+        d.ns = b.ns;
+        const char *const apart = templateSame(d, b);
+        if (apart != nullptr) return std::string("differ: a member template from the read: ") + apart;
     }
     return std::string();
 }
