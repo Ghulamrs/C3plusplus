@@ -5407,5 +5407,5 @@ not run, and passed alone under -k, 977 same, 0 differ; the fixed point checked 
 by the check's templatesHeld, a `: C<int>` base kept by the read, a parameter bound to an array of scalars, a class
 template whose first base is polymorphic - its vtable seeded by layBases, a vtableHeld check, the Itanium primary base from
 the read) and m8-3bn (typedefByPath: ratio_divide, decay). **Class specializations made with no replay (exact census):
-suite 2,581 of 2,635 on the merged tree; self-host every class but none-to-three by the lanes' counts, 75,681 of 75,681.**
+suite 2,581 of 2,635 on the merged tree; self-host 75,681 of 75,681 - every class - by the lanes' counts.**
 Nothing changes without the flag.
