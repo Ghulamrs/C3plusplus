@@ -8496,7 +8496,8 @@ over on it). **The other ABI, census without the check x86_64-windows: self-host
 bind in the read 22 (m8r3rh2's 27,472 each), declared 44,356, the one shape 22; suite 1,383 units, 378 nonzero (the REF's),
 made-class 3,265, jump 37, bind 52, bind in the read 37, declared 761, the one shape 37; no differ.**
 **Owed:** identical at -O1 on all four targets, -O2 on all four (x86_64-linux -O2 under the flag was running at the hour), and
-plain on all four at all three levels; run.sh plain; the x86_64-windows censuses under the check (suite and self-host); the next
+plain on all four at all three levels; run.sh plain; the x86_64-windows self-host census under the check (its suite census under
+the check landed: 1,383 units, 379 nonzero, class differ 0, body differ lines 22, no REF line beside it); the next
 step - the 59 left: an id the substitution leaves parameter-free that the program has not made (made at first need where the replay
 reads it, needing a non-const door) and an id with a nested id or value among its arguments (argUnder under Pattern); then the
 re-read's deletion with replay-residue's baseline; **Windows: cl /W4 /WX, names.sh, overload.sh**. No probe (Linux has no clang for
