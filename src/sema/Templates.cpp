@@ -4450,6 +4450,9 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     std::vector<std::pair<std::size_t, std::size_t> > nested;     // slice 3v: read where the class is made, not held apart (no bodies)
     if (bodies != nullptr) nested = nestedByPath(start);
     if (statics.empty() && typedefs.empty() && enums.empty() && nested.empty()) return;
+    std::size_t classEnd = start;     // the class's `}`: its own held bodies lie before it
+    for (int depth = 0; classEnd < p_.tokens_.size(); classEnd++)
+        if ((depth += p_.tokens_[classEnd].is("{") ? 1 : p_.tokens_[classEnd].is("}") ? -1 : 0) == 0 && p_.tokens_[classEnd].is("}")) break;
     std::vector<std::pair<std::size_t, std::size_t> > order;     // each one's token, its static's index (statics.size(): an enum, + 1 a typedef)
     for (std::size_t i = 0; i < statics.size(); i++) {
         bool cx = false;
@@ -4482,7 +4485,9 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
             p_.at_ = o.first;
             p_.specifiers(&storage);
             p_.deferSpecializationBodies_ = wasDeferring, p_.inlineOwner_ = outerInline;
-            bodies->insert(bodies->end(), p_.pendingBodies_.begin(), p_.pendingBodies_.end());
+            std::vector<Parser::PendingBody>::iterator at = bodies->end();     // 3ac: before the class's bodies after its `}`, the replay's order
+            while (at != bodies->begin() && (at - 1)->start > o.first && (at - 1)->start < classEnd) --at;
+            bodies->insert(at, p_.pendingBodies_.begin(), p_.pendingBodies_.end());
             p_.pendingBodies_.swap(outerPending);
             continue;
         }
@@ -4911,8 +4916,8 @@ std::vector<std::size_t> Templates::memberEnums(std::size_t start, bool *other) 
 }
 
 // Slice 3v: each `struct N { ... };` staticsFromRead reads by the class body's path, as the replay reads it, by its key and `}`: in a struct
-// with no access label before it and no member function after it, N named nowhere else, nothing of it (or of a class it nests) out of
-// line, a static data member or a template.
+// with no access label before it and no member template after it, N named nowhere else, no template in it (3ac: its members defined
+// out of line, its static data members and enumerations are the same path's).
 std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedByPath(std::size_t start) const {
     std::vector<std::pair<std::size_t, std::size_t> > at;
     std::size_t open = start, end = start;
@@ -4935,20 +4940,14 @@ std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedByPath(std::s
         for (int inner = 0; close < end; close++)
             if ((inner += p_.tokens_[close].is("{") ? 1 : p_.tokens_[close].is("}") ? -1 : 0) == 0) break;
         bool plain = close + 1 < end && p_.tokens_[close + 1].is(";");
-        std::vector<int> classBody(1, 1);     // each brace open: a class's body (1; `struct M {` inside too), or a function's or an initialiser's
         for (std::size_t i = t + 3; i < close && plain; i++) {
             const Token &n = p_.tokens_[i];
-            if (n.is("{")) classBody.push_back(p_.tokens_[i - 1].kind == TokenKind::Ident && (p_.tokens_[i - 2].is("struct") || p_.tokens_[i - 2].is("class")));
-            if (n.is("}") && classBody.size() > 1) classBody.pop_back();
-            std::size_t e = i + 1;     // `static int f(...)`, a static member function; a static data member is defined out of line
-            while (n.is("static") && e < close && !p_.tokens_[e].is("(") && !p_.tokens_[e].is(";") && !p_.tokens_[e].is("=") && !p_.tokens_[e].is("{")) e++;
-            plain = !(n.is("template") || n.is("friend") || n.is("virtual") || (n.is("static") && !p_.tokens_[e].is("(")) || n.is("union") ||
-                      n.is("enum") || n.is("using") || n.is("default") || n.is("delete") || n.is("constexpr") ||
-                      ((n.is("struct") || n.is("class")) && !(p_.tokens_[i + 1].kind == TokenKind::Ident && p_.tokens_[i + 2].is("{"))) ||
-                      (classBody.back() != 0 && n.is(";") && (p_.tokens_[i - 1].is(")") || p_.tokens_[i - 1].is("const"))));     // `It(T);`: out of line
+            plain = !(n.is("template") || n.is("friend") || n.is("virtual") || n.is("union") || n.is("using") || n.is("default") ||
+                      n.is("delete") || n.is("constexpr") ||
+                      ((n.is("struct") || n.is("class")) && !(p_.tokens_[i + 1].kind == TokenKind::Ident && p_.tokens_[i + 2].is("{"))));
         }
         for (std::size_t i = open + 1; i < end && plain; i++) plain = (i > t && i <= close) || p_.tokens_[i].text != p_.tokens_[t + 1].text;
-        for (std::size_t i = close + 2; i < end && plain; i++) plain = !p_.tokens_[i].is("(") && !p_.tokens_[i].is("template");
+        for (std::size_t i = close + 2; i < end && plain; i++) plain = !p_.tokens_[i].is("template");     // 3ac: a function after it, held in place
         if (plain) at.push_back(std::make_pair(t, close));
         t = close;
     }
