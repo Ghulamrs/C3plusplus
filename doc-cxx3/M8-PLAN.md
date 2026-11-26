@@ -7440,7 +7440,8 @@ unit the +3 is **map-set-node-stability 402 -> 406** (its four tree bodies now r
 **Owed** (the wave's gate): identical at -O1 on four targets and plain at -O1 / -O2 (and on three targets at -O0), the
 x86_64-windows censuses, the self-host re-entries' +706 under the check, 49d6a1a8's own self-compile and run.sh plain (its chain
 reached its 25-minute timeout waiting for a slot), the gates on a0ba0409 itself beyond static (it moves one declaration); then **5b12ee6b again** (revert 71036e3b: idsBefore retired into Made - it moved none of the copies on its own, so
-with this mend its typed step should hold), argsWanted, earlyArgs (its token scan: replay-residue's baseline down in that
+with this mend its typed step holds: candidate d9b2dfb6 = 106c57c8 + 71036e3b reverted, g++ -Werror clean, -check=typed copy 0
+in all five at -O0 and -O2; nothing else run, not committed), argsWanted, earlyArgs (its token scan: replay-residue's baseline down in that
 commit) and carriedId's early branch. The mend asks R3 nothing: the records were complete, the binding's map was not.
 Re-measure: `boxkit/m8r1k-lbuild.sh <x>` (build, the five typed), `m8r1k-chain.sh <m|n>`, `m8r1k-lident.sh`, `m8r1k-lident2.sh`,
 `m8r1k-lcen.sh`, `m8r1k-reent.sh`, `m8r1k-static.sh`, `m8r1k-winbuild.sh <x> <rev>`, `m8r1k-wchain.sh <x>`.
