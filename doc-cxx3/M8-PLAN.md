@@ -8345,3 +8345,58 @@ subst.sh, and its static gates (exclusions failed on it: the stale citations abo
 output; Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
 `boxkit/m8r3ra-ship.sh <x> <commit>` (git archive -> `~/m8r3ra<x>`, built by `m8r3ra-lbuild.sh`), `m8r3ra-q.sh <x> <job>...` (runf
 runp subst static self, cen:<s|h>:<c|n>:<l|w>, id:<arch>:<level>:<p|f>; `m8r3ra-lcen.sh` sums the order line).
+
+## R3, slices 3R-b and 3R-c: positions and the nested class from the record (lane m8r3rb, 2026-11-27)
+
+Base 7b60b484 (m8-3ra, slice 3R-a). REF built from 7b60b484 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is
+owed. Commits **faafd2bc** (3R-b's record and its census beside the scanners), **78ca326f** (3R-b: the callers ask the record; the three
+scans deleted; replay-residue's baseline lowered; 26 ParserType.cpp citations moved with their lines), **fa108e12** (3R-c's record and its
+census beside nestedByPath's scan; 28 citations moved), this entry. src/ 99,182 -> 99,256 lines (+118 / -44 over the base: ParserType.cpp
++80 / -1, Templates.cpp +23 / -43, Entities.h +8, Parser.h +5, Templates.h +2; faafd2bc +106 / -2, 78ca326f to the base +63 / -44,
+fa108e12 +56 / -1).
+
+**THE MEASURE: `p_.tokens_[` in Templates.cpp 132 -> 116 (-16: staticAt 3, ownTypedefAt 7, typedefByPath's scan 6); replay-residue
+tokens 136 -> 120** (at-jumps 19, binds 26, trials 6; baseline lowered in 78ca326f). **The record against the scanners, both running
+(faafd2bc's census, `-check=templates position record asked= disagree= absent=`, every call of staticAt, ownTypedefAt and
+typedefByPath's scan): suite x86_64-linux asked 28,408 disagree 0 absent 0 (1,032 units), x86_64-windows 28,408 / 0 / 0 (1,013
+units); self-host x86_64-linux 1,277,785 / 0 / 0, x86_64-windows 1,277,461 / 0 / 0 (102 units each).** **3R-c's census (fa108e12, the
+same line, every call of nestedByPath): suite x86_64-linux 58,502 / 0 / 0, x86_64-windows 58,502 / 0 / 0; self-host x86_64-linux
+1,510,294 / 0 / 0; x86_64-windows not run (owed).** **R0's re-entries inside made classes not risen:** under the check (the census's
+counter with `-check=templates`) suite 3,118 / 3,114, the REF's exactly, on faafd2bc and fa108e12; self-host 74,770 / 74,748
+(faafd2bc), 74,824 (fa108e12, x86_64-linux) - its own src, so no REF number is the same input; the no-check census (R0's 5,264 /
+191,117) not run: owed.
+
+**The record.** 3R-b: each `MemberRecord` keeps, at the read, `placed` - each static data member its declaration declared (its name,
+the token after its name and bounds, the name's position, `constexpr`: `Parser::logStatic` beside `declareStaticMember`) - and
+`typedefsAt` - its `typedef`'s token with the two shapes staticsFromRead reads by path (one declarator ending in a name; `typedef
+head<...> name;` with the angles' tokens), `Parser::logTypedef` in the class body's typedef branch. staticAt answers from `placed`,
+ownTypedefAt from `typedefsAt` (the own template and the statics asked in Sema, by name), typedefByPath from `typedefsAt`'s first of one
+declarator; staticsFromRead's jumps stay (3R-d's). 3R-c (census only): `Parser::logNested`, at the read's `}`, puts each nested class
+staticsFromRead reads by path (its key and `}`, with 3v's and 3ac's shape) on the record that holds its key; nestedByPath compares the
+records' list with its scan. Plain is identical by construction: nothing logs without the flag.
+
+**Gates** (Linux, against the REF, on fa108e12's src; 78ca326f's is it less the census): **g++ -Werror clean** (faafd2bc, 78ca326f,
+fa108e12); **identical under the flag: x86_64-linux -O0 / -O2 1,031 / 0, x86_64-windows -O0 / -O2 2,062 / 0 (on Linux), tms6747 -O0
+1,031 / 0, arm64-darwin -O0 1,031 / 0** - no changed emitted output in any that ran; **run.sh -templates=subst 1,375 / 0** (1,019
+printed, 352 refused as recorded); **the FULL self-compile 102 of 102 (181 s)**; static: **exclusions rc 0 (129 sites, 0 uncited, 0
+stale; 554 / 4)**, comments 0 over, memory gate lower, ast-residue not raised, **replay-residue --check rc 0 at 120**, ide up to date;
+**census `-check=templates` = the REF's line for line: suite x86_64-linux 1,383 units, nonzero 355, class differ 0, body 23,
+re-entries under the check 27,079; x86_64-windows 379, 0, 22, 26,935 (faafd2bc and fa108e12 alike); self-host 102 units rc 0, class
+0, body 11 on both ABIs (faafd2bc), x86_64-linux (fa108e12).**
+
+**What must not change, and did not:** every door answer (the census's lines the REF's); staticsFromRead's order (its jumps, by the
+record's positions, equal by the census); 3ac's body order (3R-c changes no answer); no new `p_.tokens_[` or `p_.at_ =` in src/sema.
+Frozen: 4m-4s and R3's later slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** on the final commit; **3R-c's second step** (nestedByPath answers from the
+record, nestedAt reads it, tokens 116 -> **103**, replay-residue 120 -> 107) - written and not committed: its tree f61c8c46 was
+shipped but could not be built and gated inside the hour (the two slots shared with lane m8r3rh), so its jobs were stopped by PID and the
+change kept as `boxkit/m8r3rb-3rc2.diff` (86 lines; with it the census goes and Templates.cpp's three citations move back 2 lines) -
+the next lane's first commit, once fa108e12's x86_64-windows self-host census says 0. On Linux: identical plain (all 12) and under the
+flag at -O1 (four targets), tms6747 and arm64-darwin -O2 under the flag; run.sh plain; the no-check censuses; fa108e12's
+x86_64-windows self-host census (its run was lost: a second queue's copy of it cleared its directory - my two queues both held it -
+and both were stopped by PID at the hour). **subst.sh rc 0 on fa108e12** (run -O0 / -O2 1,375 / 0; typed 1,022 / 0 at both, 2 not
+for this host; 1,166 through the function door of 1,166 bodies). faafd2bc alone fails exclusions (its moved ParserType.cpp lines; fixed in 78ca326f). A probe of its own: none (no
+output changes; Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure: `boxkit/m8r3rb-ship.sh
+<x> <commit-or-tree>` (git archive -> `~/m8r3rb<x>`), the Linux scripts `m8r3rb-{lbuild,q,lcen,one,job,ident}.sh` (made from
+m8r3ra's; lcen sums the position line), `python3 boxkit/m8r3rb-excl.py <base tree> <new tree>` (citations moved by the diff).
