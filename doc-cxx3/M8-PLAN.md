@@ -7297,8 +7297,8 @@ default, value or sfinae differ** (6 failures held by the replay's words, 3 in o
 substituted and every one held; no class, default, value or sfinae differ** (body lines 11, R0's; failed 195). Windows (`work\m8r4e2x`, 309ef533): **cl /W4 /WX clean** (18:00:43-18:08:28, 7 min 45 s, beside the owed identicals,
 names.sh and a census - not alone); 08ce61ae's cl build passed the 9-minute cap beside the same jobs and was stopped by PID at 18:29,
 a defect recorded, not retried. **Not run in the hour** (the Linux slots were held by the wave gate and lane m8r1i - the lane's first
-build waited 12 minutes for one, its selfhost and run.sh 10 and never started): the FULL stage-0 self-compile, run.sh plain and
-under the flag, subst.sh, identical against 325b9818 on four targets, names.sh and overload.sh on the lane. Slices 4m-4s untouched;
+build waited 12 minutes for one, its run.sh 10 and never started; **the FULL stage-0 self-compile did run, 102 of 102 in 135 s**,
+18:42-18:45): run.sh plain and under the flag, subst.sh, identical against 325b9818 on four targets, names.sh and overload.sh on the lane. Slices 4m-4s untouched;
 no new src/sema function indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`.
 
 **Owed** (to the wave gate): all of "Not run in the hour" above on 08ce61ae; cl /W4 /WX alone on 08ce61ae; m8r4e's x86_64-windows
