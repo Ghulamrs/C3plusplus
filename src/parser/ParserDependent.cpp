@@ -31,6 +31,37 @@ bool Parser::dependentAhead(bool angle) const {
     return false;
 }
 
+// Slice 4g: whether the argument ahead is integer literals, non-type parameters and operators alone - what depFromSyntax carries.
+bool Parser::valueOperandsAhead() const {
+    static const char *const binary[] = { "+", "-", "*", "&", "|", "^", "&&", "||", "==", "!=" };
+    static const char *const inner[] = { "<", ">", "<=", ">=", "<<", ">>", "?", ":" };
+    std::size_t depth = 0;
+    for (std::size_t k = 0;; k++) {
+        const Token &t = peekAt(k);
+        const bool operand = k > 0 && (peekAt(k - 1).kind == TokenKind::Num || peekAt(k - 1).kind == TokenKind::Ident ||
+                                       peekAt(k - 1).is(")"));
+        if (depth == 0 && (t.is(",") || t.is(">") || t.is(">>"))) return operand;
+        if (t.kind == TokenKind::Num) {
+            if (operand || t.isFloat || t.isChar || t.suffixU || t.suffixL || t.suffixLL) return false;
+        } else if (t.kind == TokenKind::Ident) {
+            if (operand || packs_.count(t.text) != 0 || peekAt(k + 1).is("(") || peekAt(k + 1).is("::") || peekAt(k + 1).is("<") ||
+                (nonTypePatternParams_.count(t.text) == 0 && boundValueParams_.count(t.text) == 0))
+                return false;
+        } else if (t.is("(")) {
+            if (operand) return false;
+            depth++;
+        } else if (t.is(")")) {
+            if (depth == 0 || !operand) return false;
+            depth--;
+        } else {
+            bool ok = !operand && (t.is("-") || t.is("+") || t.is("!") || t.is("~"));
+            for (const char *b : binary) ok = ok || (operand && t.is(b));
+            for (const char *b : inner) ok = ok || (operand && depth > 0 && t.is(b));
+            if (!ok) return false;
+        }
+    }
+}
+
 const DepExpr *Parser::depNode(DepExpr e) { return types_.intern(std::move(e)); }
 
 void Parser::depRefuse(std::size_t pos, const std::string &what) {
@@ -116,7 +147,7 @@ const DepExpr *Parser::depBinary(int least, bool angle) {
 // A literal of type int or bool, a pattern's non-type parameter, a bound one's value, and the operators: what the reader made.
 const DepExpr *Parser::depFromSyntax(syntax::NodeId id) {
     if (!id.valid()) return nullptr;
-    const syntax::Node &s = syntaxTree_.node(id);
+    const syntax::Node s = syntaxTree_.node(id);
     const std::string &text = syntaxTree_.text(id);
     DepExpr n;
     std::vector<const DepExpr *> kids;

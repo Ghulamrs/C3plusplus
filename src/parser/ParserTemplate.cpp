@@ -1184,8 +1184,11 @@ void Parser::templateArguments(const TemplateDecl &decl,
             } else if (patternOnly_ && dependentAhead(true)) {
                 // **An argument that is an expression of the parameters** - `sizeof(T) == 4`,
                 // `N + M` - is kept as the tree the Itanium name spells, `X...E`, and folds nothing.
-                const std::size_t from = at_;
-                DepExpr tree = *dependentExpression(true, false);
+                const std::size_t from = at_, mark = syntaxTree_.size();
+                const DepExpr *read = valueOperandsAhead() ? depFromSyntax(syn(conditional())) : nullptr;     // 4g: the parser's path
+                syntaxTree_.kill(mark);
+                if (read == nullptr) at_ = from;
+                DepExpr tree = read != nullptr ? *read : *dependentExpression(true, false);
                 tree.text = depText(from, at_);
                 a.isType = false;
                 a.type = pt;

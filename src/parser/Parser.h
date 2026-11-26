@@ -1720,6 +1720,7 @@ private:
     const DepExpr *depNode(DepExpr e);
     // Slice 4g: the tree of an expression the parser's own path read, from its syntax node; null for a shape not carried.
     const DepExpr *depFromSyntax(syntax::NodeId id);
+    bool valueOperandsAhead() const;
     void depRefuse(std::size_t pos, const std::string &what);
     std::string depText(std::size_t from, std::size_t to) const;
     std::string spelledTokens(std::size_t from, std::size_t to) const;
