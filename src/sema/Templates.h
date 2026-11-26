@@ -255,7 +255,6 @@ public:
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
     std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params,
                                           Substitution *failed = nullptr) const;     // `Args...` expanded; the kernel's first failure
-    const Type *memberUnder(const Substituted &s, const Type *t) const;     // `X<T>::m` as the replay's lookup finds it, or `t`
     const Type *specializationUnder(const Substituted &s, const Type *o) const;     // `X<T>` the program declared under `s`, or null
     bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;

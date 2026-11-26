@@ -352,9 +352,13 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
         else r.type = t->isRValueReference() ? p_.types_.rvalueReferenceTo(u) : p_.types_.referenceTo(u);
         return r;
     }
-    if (t->kind() == Kind::DependentMember) {
-        const Type *m = memberUnder(s, t);
-        if (m == t) r.why = "a member type whose class the binding does not carry, or which its class lacks", r.at = t;
+    if (t->kind() == Kind::DependentMember) {     // `X<T>::m`: X<U> by its key (a cleared shallow by its kept id), m as memberTypeWalk finds it
+        const bool id = readId(t->pointee(), nullptr, nullptr);
+        const Substitution o = substituteIn(s, t->pointee(), id ? (ids == Made ? Made : Declared) : Mapped, maker, pos);
+        if ((id && !o.carried()) || o.type == nullptr || p_.dependentType(o.type) || !o.type->isStructOrUnion())
+            return r.why = "a member type whose class the binding does not carry", r.at = t, r;
+        const Type *m = p_.lookup_.lookupInClass(o.type, t->tag());
+        if (m == nullptr) return r.why = "a member type its class lacks", r.at = t, r;
         return r.type = m, r;
     }
     if (bound >= 0) return r.why = "an array bound over a non-type parameter the binding gives no value", r.at = t, r;
@@ -426,16 +430,6 @@ std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std
         }
     }
     return out;
-}
-
-// `X<T>::m` under the binding: the specialization X<U> the replay made (by the key it is declared under), and its member type
-// m as memberTypeWalk's lookup finds it; `t`, still dependent, where an argument is no type or the class was not made.
-const Type *Templates::memberUnder(const Substituted &s, const Type *t) const {
-    const Type *o = t->pointee();
-    o = readId(o, nullptr, nullptr) ? specializationUnder(s, o) : substitute(s, o).type;     // a cleared shallow by its kept id
-    if (o == nullptr || p_.dependentType(o) || !o->isStructOrUnion()) return t;
-    const Type *m = p_.lookup_.lookupInClass(o, t->tag());
-    return m != nullptr ? m : t;
 }
 
 // Slice 3g: the read laid `T a[N + 1]` with no bound; classShape folded it into `s.bounds`.
