@@ -242,7 +242,8 @@ public:
     // A specialization's binding as types: each of `from` (the pattern's parameters) is `to`; `values`, a class's by index, bound `T a[N]`.
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
-                         std::map<int, std::string> templates; };     // a template template parameter's index: the template bound
+                         std::map<int, std::string> templates;     // a template template parameter's index: the template bound
+                         std::vector<std::pair<const Type *, const Type *> > needed; };     // ids its door made at first need: the map's
     bool idUnder(const Substituted &s, const Type *e, std::string *name, std::vector<TemplateArg> *args) const;     // `$TT<i>` renamed, its list laid
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
@@ -330,6 +331,9 @@ public:
     // calls: callee and call nodes; values: 2f's folds, each + 2^31; members: a member call's function type, `this` first;
     // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
     std::map<std::string, Bound> bound_;
+    // While the function door asks a body's shape: its binding, and each id the id step made over it at first need (R1, m8r1k).
+    struct Needing { const Substituted *s; std::vector<std::pair<const Type *, const Type *> > made; };
+    Needing *needing_ = nullptr;
     std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
     // Step 4: the read's held member bodies with each one's symbol, by start; a class's door reason, by tag.
     std::map<std::size_t, std::vector<std::pair<PendingBody, std::string> > > readBodies_;

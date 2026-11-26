@@ -340,6 +340,8 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     }
     for (std::size_t k = 0; k < s.from.size(); k++)
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
+    for (std::size_t k = 0; k < s.needed.size(); k++)
+        if (t == s.needed[k].first) { r.type = s.needed[k].second; return r; }
     if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     // Keyed: a read id the map lacks is the program's class by its key (one made at first need included), never made here.
     if (ids == Keyed && readPartials_.count(t) == 0 && readId(t, nullptr, nullptr)) {
@@ -408,6 +410,7 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     if (real == nullptr && maker != nullptr && templates_.count(name) != 0) real = maker->makeId(name, args, pos, nullptr);
     if (real == nullptr) r.why = "a class template-id over the parameters the program has not made";
     else { r.type = real; r.at = nullptr; }
+    if (real != nullptr && maker != nullptr && needing_ != nullptr && needing_->s == &s) needing_->made.push_back(std::make_pair(o, real));
     return r;
 }
 
@@ -654,7 +657,11 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
         made.s.to.push_back(p_.types_.type(b.types[q]));
     }
     std::vector<syntax::NodeId> requests;
+    Needing needing = { &made.s, std::vector<std::pair<const Type *, const Type *> >() };
+    Needing *const outerNeeding = needing_;
+    needing_ = &needing;
     const std::string shape = substShape(read->second, made.s, &made.calls, &made.members, &made.assigns, &requests);
+    needing_ = outerNeeding;
     if (!shape.empty()) return *why = "replayed: " + shape, false;
     const std::string value = valueShape(read->second, sp, &made.values);
     if (!value.empty()) return *why = "replayed: " + value, false;
@@ -677,10 +684,13 @@ bool Templates::instantiate(std::size_t i, const Binding &b, std::string *why) {
     const Specialization outer = sp;
     for (std::size_t q = 0; q < requests.size(); q++) {
         std::size_t chosen = 0;
+        needing_ = &needing;
         const std::string asked = requestCall(outer, requests[q], made.s, made.calls, &chosen);
+        needing_ = outerNeeding;
         if (!asked.empty()) return *why = "replayed: " + asked, false;
         made.calls[requests[q].v] = made.calls[p_.syntaxTree_.child(requests[q], 0).v] = chosen;
     }
+    made.s.needed = needing.made;     // what the door made the body is typed and checked by, as the map answers it
     bound_[outer.symbol] = made;
     return *why = "covered: typed under the binding, the replay's frame kept", false;
 }
