@@ -383,10 +383,15 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
 
 // The id step: `X<$T0>` under `s`, the specialization the program declared by its key; where none is and `maker` is given, made
 // through makeClass as the class door makes it (makeId). Failure names an argument the binding does not carry, or no class.
+// At Made a partial's read class is no id (`array<$T0>`, its own parameters, not `array<$T0,0>`): the map's (readStands) or none.
 Templates::Substitution Templates::specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const {
     Substitution r = { o, nullptr, o };
     std::string name;
     std::vector<TemplateArg> args;
+    if (maker != nullptr && readPartials_.count(o) != 0) {
+        r.why = "a partial's read class, which the binding does not carry";
+        return r;
+    }
     if (!idUnder(s, o, &name, &args) || !argsUnder(s, o, name, &args, maker, pos)) {
         r.why = "a class template-id with an argument the binding does not carry";
         return r;
@@ -1585,6 +1590,7 @@ void Templates::readDeclaration(const TemplateDecl &decl, ReadDoor door, std::si
                     const std::size_t key = partial ? decl.partials[which].bodyAt : decl.afterParams;
                     readClass_[key] = made;
                     readOwn_[key] = own;
+                    if (partial) readPartials_.insert(made);
                     std::pair<std::string, std::vector<Signature> > &kept = readMembers_[key];
                     kept.first = readTag;
                     kept.second.clear();
