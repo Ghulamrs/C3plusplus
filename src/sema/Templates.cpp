@@ -1560,6 +1560,11 @@ std::string Templates::trialKind(const Type *e) const {
     return "a class template-id under a declarator";
 }
 
+// A leaf Made carries where Declared does not: an id under a declarator, its arguments then laid by the id step.
+bool Templates::madeAtUse(const Type *e) const {
+    return e != nullptr && trialKind(e) == "a class template-id under a declarator";
+}
+
 const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
     if (fn == nullptr || fn->kind() != Kind::Function) return "formed: no function type";
     if (!decl.defined) return "formed: a template declared and never defined";
@@ -1587,8 +1592,12 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
     *formed = nullptr;
     if (why == nullptr) {
         try {
-            Substitution r = substitute(s, decl.pattern, Declared);     // a qualifier's class not yet made: made at the use, as the replay makes it
-            if (!r.carried() && std::string(r.why) == "a member type whose class the binding does not carry") r = substitute(s, decl.pattern, At{ pos });
+            // A qualifier's class not yet made, or an id under a declarator (Declared lays the outermost only): made at the use, as
+            // the replay makes it reading the id.
+            Substitution r = substitute(s, decl.pattern, Declared);
+            if (!r.carried() && (std::string(r.why) == "a member type whose class the binding does not carry" ||
+                                 (std::string(r.why) == "a type over the parameters the binding does not carry" && madeAtUse(r.at))))
+                r = substitute(s, decl.pattern, At{ pos });
             why = r.carried() ? formedWhy(decl, r.type) : r.why;
             at = r.at;
             if (why == nullptr) *formed = r.type;
