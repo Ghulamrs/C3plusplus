@@ -4124,16 +4124,6 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
     const bool ownBase = base && !itself && *name == read->templateName();     // 3z: `Tuple<Rest...>`, made reading the head, as the replay
     if (d == templates_.end() || ((*name == read->templateName()) != itself && !ownBase) || d->second.isAlias || d->second.ttParam >= 0) return false;
-    // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
-    const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
-    std::vector<std::size_t> bodies(itself || ownBase ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
-    for (std::size_t q = 0; !itself && !ownBase && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
-    for (const std::size_t from : bodies)
-        for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
-            if (p_.tokens_[t].text == own) return false;
-            if (p_.tokens_[t].is("{")) depth++;
-            if ((p_.tokens_[t].is("}") && --depth == 0) || (depth == 0 && p_.tokens_[t].is(";"))) break;
-        }
     if (args->size() != d->second.params.size()) return false;
     for (std::size_t k = 0; k < args->size(); k++) {
         TemplateArg &a = (*args)[k];
