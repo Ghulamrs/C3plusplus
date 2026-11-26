@@ -8171,7 +8171,8 @@ no library name special-cased.
 `~/slot` behind lane m8r1n's jobs, and its first two census jobs ended on a wait count shorter than the build - restarted). 3R-a is
 the next lane's whole hour. **The census of da2e6ed2 without the patch on x86_64-linux (`m8r3a-cen.sh c0 x86_64-linux`) equals
 the patch's run line for line** - suite reentries 74,636, self-host 734,139, made-class doors 203,975 - so the patch printed only.
-Owed: the counting patch's run on x86_64-windows; the self-host wall time plain against the flag (D10) at da2e6ed2 (started at
-23:41, still in its second run at the hour, stopped by PID). No gate was run, as nothing in src/ changed. Re-measure:
+**Self-host wall time at da2e6ed2** (D10; `boxkit/m8r3a-time.sh`, stage 0 over the 102 sources, x86_64-linux, one run each in
+one slot, the other slot busy): **plain 175 s, `-templates=subst` 198 s (1.13x)**, both 102 of 102 - R0's 166 / 354 (2.13x) at
+67fd80d9; one run, not the row's best of three. Owed: the counting patch's run on x86_64-windows. No gate was run, as nothing in src/ changed. Re-measure:
 `boxkit/m8r3a-ship.sh <commit>`, `m8r3a-build.sh <tag>`, `m8r3a-cen.sh <tag> <arch>`, `m8r3a-sum.sh <tag> <arch>`,
 `m8r3a-inst.sh` (the counting patch, `m8r3a-inst.py`), and `python3 boxkit/m8r3a-fn.py <tree>`, `m8r3a-all.py`, `m8r3a-shape.py`.
