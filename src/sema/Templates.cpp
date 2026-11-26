@@ -2129,8 +2129,6 @@ std::string Templates::bodiesReport() const {
         out += "-check=templates shell (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = madeCensus_.begin(); i != madeCensus_.end(); ++i)
         out += "-check=templates made (" + std::to_string(i->second) + "): " + i->first + "\n";
-    for (std::map<std::string, int>::const_iterator i = templatesCensus_.begin(); i != templatesCensus_.end(); ++i)
-        out += "-check=templates member template (" + std::to_string(i->second) + "): " + i->first + "\n";
     return out;
 }
 
@@ -2604,6 +2602,8 @@ std::string Templates::builtReport() const {
     long all = 0;
     for (std::size_t i = 0; i < sizeof parts / sizeof parts[0]; i++) all += parts[i], sum += std::string(" ") + partNames[i] + "=" + std::to_string(parts[i]);
     out += "-check=templates falling back=" + std::to_string(all) + sum + "\n";
+    for (std::map<std::string, int>::const_iterator i = templatesCensus_.begin(); i != templatesCensus_.end(); ++i)     // R3 3R-h
+        out += "-check=templates member template (" + std::to_string(i->second) + "): " + i->first + "\n";
     // R0's measure (D5, D7): the unit's re-entries under a binding by kind, their sum, and each template re-entered by site.
     long reads = 0, insts = 0, binds = 0;
     for (std::map<std::string, long>::const_iterator i = reentries_.begin(); i != reentries_.end(); ++i) {
@@ -5242,16 +5242,20 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
                                   const Substituted &s) {
     const std::vector<const TemplateDecl *> read = templatesOf(readMembers_.at(start).first);
     if (read.empty()) return;
-    std::vector<TemplateDecl> mine(read.size());
-    const char *why = nullptr;
-    for (std::size_t i = 0; i < read.size() && why == nullptr; i++) why = templateUnder(*read[i], tag, s, params, binding, values, &mine[i]);
-    templatesCensus_[why != nullptr ? why : "declared from the read"] += static_cast<int>(read.size());
-    if (why == nullptr) {
-        for (const TemplateDecl &mt : mine) memberTemplates_[tag + "::" + mt.name].push_back(mt);
-        return;
-    }
     std::vector<std::pair<std::size_t, std::pair<std::string, Access> > > at;
-    for (const TemplateDecl *mt : read) at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
+    std::set<std::string> keys;
+    for (const TemplateDecl *mt : read) {
+        TemplateDecl mine;
+        const char *const why = templateUnder(*mt, tag, s, params, binding, values, &mine);
+        templatesCensus_[why != nullptr ? why : "declared from the read"]++;
+        if (why == nullptr) memberTemplates_[tag + "::" + mine.name].push_back(mine), keys.insert(tag + "::" + mine.name);
+        else at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
+    }
+    struct InOrder {     // a name's overloads in the body's order, those from the read beside those read again
+        std::map<std::string, std::vector<TemplateDecl> > &table; const std::set<std::string> &keys;
+        ~InOrder() { for (const std::string &k : keys) std::stable_sort(table[k].begin(), table[k].end(), [](const TemplateDecl &a, const TemplateDecl &b) { return a.start < b.start; }); }
+    } inOrder = { memberTemplates_, keys };
+    if (at.empty()) return;
     std::vector<Shadow> undo;
     const DoorAt templatesDoor(this, "made class: templatesFromRead");
     bindTemplateParameters(params, binding, values, s.packs.empty() ? Packs(params.size()) : s.packs, &undo);
@@ -5314,7 +5318,9 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
                 static_cast<const std::vector<const Type *> &>(b.classPacks[k]) || s.packs[k].values != b.classPacks[k].values))
                 return "differ: a member template's class pack";
         TemplateDecl d;     // R3 3R-h: the one templatesFromRead declares, its namespace the replay's (the door's is the class's)
-        if (templateUnder(a, tag, s, b.classParams, b.classBinding, b.classValues, &d) != nullptr) continue;
+        const char *const why = templateUnder(a, tag, s, b.classParams, b.classBinding, b.classValues, &d);
+        templatesCensus_[std::string("under the check: ") + (why != nullptr ? why : "declared from the read")]++;
+        if (why != nullptr) continue;
         d.ns = b.ns;
         const char *const apart = templateSame(d, b);
         if (apart != nullptr) return std::string("differ: a member template from the read: ") + apart;
