@@ -6610,10 +6610,10 @@ under none is "other". Read = a binding of a parameter to a parameter, or the re
 
 | `-templates=subst`, census, no check | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
 | --- | --- | --- | --- | --- |
-| **re-entries at instantiation** (binds + jumps) | **21,565** (14,035 + 7,530) | WIN_SI | **376,781** (218,592 + 158,189) | WIN_HI |
-| re-entries in the read | 54,093 | WIN_SR | 383,113 | WIN_HR |
-| all (binds / jumps) | 75,658 (42,582 / 33,076) | WIN_SA | 759,894 (545,224 / 214,670) | WIN_HA |
-| `falling back=` (4a's, beside it) | 6,768 over 1,026 units | WIN_SF | 89,097 | WIN_HF |
+| **re-entries at instantiation** (binds + jumps) | **21,565** (14,035 + 7,530) | **21,421** | **376,781** (218,592 + 158,189) | **376,687** |
+| re-entries in the read | 54,093 | 53,949 | 383,113 | 383,283 |
+| all (binds / jumps) | 75,658 (42,582 / 33,076) | 75,370 (42,294 / 33,076) | 759,894 (545,224 / 214,670) | 759,970 (545,297 / 214,673) |
+| `falling back=` (4a's, beside it) | 6,768 over 1,026 units | 6,768 over 1,007 units | 89,097 | 89,170 |
 
 The self-host's instantiation side by door (x86_64-linux): SFINAE trial binds 108,705; made class 153,263 -
 staticsFromRead's typedefs by path 53,500, statics 481, enumerations 531 and its bind 18,806, templatesFromRead's member
@@ -6628,7 +6628,10 @@ the unit, deduplicated across units with `sort -u`: suite x86_64-linux **1,200 d
 function body 632, SFINAE trial 556, member body 315, other 205, made class staticsFromRead 154, member template 137,
 templatesFromRead 37, default argument 25, class 19, constexpr-ahead 8, alias 6); self-host x86_64-linux **185
 definitions** (341 pairs: function body 82, SFINAE trial 77, member body 58, member template 37, other 26,
-staticsFromRead 21, templatesFromRead 16, constexpr-ahead 16, default argument 8); x86_64-windows WIN_B. The reason
+staticsFromRead 21, templatesFromRead 16, constexpr-ahead 16, default argument 8); x86_64-windows the same, 1,200 (2,094) and 185 (341), door by door. A member body or a made class's statics bind the
+class's list, so their site is the class template's: a "definition" is a template with the members it binds for. The
+self-host's 185 are library headers (`<algorithm>` 52, `<string>` 32, `<utility>` 25, `<vector>` 19, ...); the lists
+are `boxkit/m8r0-census/*.sites`, the doors `*.doors`. The reason
 here is the door; by the 4a `why` within a door is owed (the bind does not know it).
 
 **(c) Self-host wall time, plain against `-templates=subst`** (D10), stage 0 over all 102 sources, one run each, one
@@ -6648,4 +6651,21 @@ CLAUDE.md's "four gates" now undercounts: the user's sentence to change.
 **Re-measure**: `boxkit/m8r0-cen.sh <arch> m` (the measure) and `c` (-check=templates), `boxkit/m8r0-time.sh`,
 `boxkit/m8r0-wtime.sh`, `tools/replay-residue --count`.
 
-**Gates** (5173c055/65dcd0c1): GATES
+**Gates** (src at 5173c055; the later commits are docs and tools; the next wave gates fully): g++ -Werror clean
+(Linux); cl /W4 /WX clean (msvc\build.cmd, `_CL_=/MP2`, /affinity 3FF, 2 min 15 s); static on Linux: exclusions 129
+sites 0 uncited 0 stale after b5ec64ff re-pointed nine citations (lowering 0/0), comments 0 over the cap, memory-gate
+below its baseline, ast-residue not raised (ExprPtr 2012), **replay-residue at its baseline (+0 on every kind)**, ide up
+to date; **run.sh 1,368 passed 0 failed**, plain and with CXX1 carrying the flag; **subst.sh 0 failed** (run 1,368/0 at
+-O0 and -O2, typed 1,015/0, census 0 by substitution, bodies 1,012 of 1,012); **the full stage-0 self-compile 102 of
+102** (the timing's plain run); **-check=templates censuses**: no class differ on either ABI, suite or self-host
+(classes 2,638 made of 2,661; self 76,412 / 76,397 of the same), their `differ` lines (20 and 11 x86_64-linux, 19 and 11
+x86_64-windows) the check's own covered-and-replayed reasons, the suite's 14 units' held equal to the REF's line for
+line; **identical.sh** (Windows, cxx3-msvc REF 67fd80d9 against 65dcd0c1, -O0/-O1/-O2, census env unset):
+x86_64-linux plain 3,072 compared 0 differ, under the flag 3,072/0; and on Linux (g++ REF 67fd80d9 against 5173c055's
+tree): x86_64-windows both spellings plain 6,144/0 and under the flag 6,144/0, arm64-darwin plain 3,072/0 (-O2, then -O0
+-O1) and under the flag 3,072/0, tms6747 plain 3,072/0 and under the flag 3,072/0 - **0 differ on four targets at three
+levels, both ways**. Windows: overload.sh 46 agreed 0 differed, plain and under the flag; **names.sh plain 1,024 passed 0
+failed** (20 .nonames OPEN as recorded). **names.sh under the flag is owed**: run with CXX1="cxx3-msvc.exe
+-templates=subst" it reported 246 passed, 778 failed, and every failure read is the harness's - `tools/mangled-names:
+line 171: .../cxx3-msvc.exe -templates=subst: No such file or directory` (it quotes `$CXX1`); it wants a wrapper
+script as the Linux run.sh one, not a flag in CXX1 (m84b's run of it was cut before it said so).
