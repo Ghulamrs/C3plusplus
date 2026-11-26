@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""What is left of replay in src/sema, counted: D12 of Fable's M8 direction review (2026-11-26), M8's R0.
+
+    tools/replay-residue             every site, file:line and what it is
+    tools/replay-residue --count     the counts, per file and in all, one line a kind
+    tools/replay-residue --check     fail if any kind's total is above tools/replay-residue.baseline, or the baseline is
+                                     above tools/replay-residue.start on a line without the user's mark; print the delta
+    tools/replay-residue --record    write today's totals as the baseline; refused for any total above the baseline
+
+M8.6 deletes replay: a template's tokens indexed from Sema, the parser sent back into them, the parameters shadowed
+by name while it reads, and the trial that catches what a re-read refused. Until then each may only go down, as
+tools/ast-residue's kinds do for Ast.h. The kinds, each a spelling in the code of src/sema (comments, string and
+character literals skipped), counted in lines - a line once a kind, as the review's `grep -c` measured them:
+
+    tokens     `p_.tokens_[`                    a token read by index
+    at-jumps   `p_.at_ =` (not `p_.at_ ==`)     the parser moved: a re-entry, or the restore after one
+    binds      `bindTemplateParameters(`        a binding opened or (`unbind...`) closed, the declarations included
+    trials     `Parser::Trial`                  a re-read whose refusal is a substitution failure
+
+The start file holds R0's counts, written when M8 restarted and never edited inside the milestone. A baseline line
+above it must carry the user's mark, `user-approved YYYY-MM-DD` after the count; only the coordinator writes the mark,
+and only on the user's word in chat (decision 6 of the restart, 2026-11-26). --record never raises a count.
+"""
+import os
+import re
+import signal
+import sys
+
+if hasattr(signal, "SIGPIPE"): signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `| head` ends the listing quietly
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+SEMA = os.path.join(ROOT, "src", "sema")
+BASELINE = os.path.join(ROOT, "tools", "replay-residue.baseline")
+START = os.path.join(ROOT, "tools", "replay-residue.start")
+MARK = re.compile(r"\buser-approved \d{4}-\d{2}-\d{2}\b")
+KINDS = ("tokens", "at-jumps", "binds", "trials")
+SPELLED = (("tokens", re.compile(r"\bp_\.tokens_\[")), ("at-jumps", re.compile(r"\bp_\.at_ =(?!=)")),
+           ("binds", re.compile(r"bindTemplateParameters\(")), ("trials", re.compile(r"\bParser::Trial\b")))
+
+
+def code_only(text):
+    """The text with comments and literals blanked, line breaks kept (tools/ast-residue's reader)."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r"[^\n]", " ", text[i:j]))
+            i = j
+        elif c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            out.append(" " * (min(j + 1, n) - i))
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def sites():
+    found = []
+    for top, dirs, names in os.walk(SEMA):
+        dirs.sort()
+        for name in sorted(names):
+            if not name.endswith((".cpp", ".h")):
+                continue
+            path = os.path.join(top, name)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                code = code_only(f.read())
+            rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            for lineno, line in enumerate(code.split("\n"), 1):
+                for kind, spelled in SPELLED:
+                    if spelled.search(line):     # a line once a kind, as the review's `grep -c` counted
+                        found.append((rel, lineno, kind))
+    return found
+
+
+def counts(path):
+    """kind -> (count, the rest of its line); `#` lines are the file's record and are skipped."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            parts = line.split(None, 2)
+            if len(parts) >= 2 and not parts[0].startswith("#"):
+                out[parts[0]] = (int(parts[1]), parts[2].strip() if len(parts) > 2 else "")
+    return out
+
+
+def main(argv):
+    found = sites()
+    now = dict((k, 0) for k in KINDS)
+    per = {}
+    for rel, _, kind in found:
+        now[kind] += 1
+        per.setdefault(rel, dict((k, 0) for k in KINDS))[kind] += 1
+    if len(argv) == 1:
+        for rel, lineno, kind in found:
+            print("%s:%d: %s" % (rel, lineno, kind))
+        return 0
+    if argv[1] == "--count":
+        for rel in sorted(per):
+            print("%s: %s" % (rel, " ".join("%s %d" % (k, per[rel][k]) for k in KINDS)))
+        print("total: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--record":
+        was = counts(BASELINE)
+        up = [k for k in KINDS if k in was and now[k] > was[k][0]]
+        for k in up:
+            print("replay-residue: --record refused: %s %d is above the baseline's %d - a raise is the user's word, written"
+                  " by the coordinator as a marked line (see the header)" % (k, now[k], was[k][0]))
+        if up:
+            return 1
+        start = counts(START)
+        with open(BASELINE, "w") as f:
+            for k in KINDS:
+                keep = k in was and k in start and now[k] > start[k][0] and MARK.search(was[k][1])
+                f.write("%s %d%s\n" % (k, now[k], " " + was[k][1] if keep else ""))
+        print("replay-residue: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--check":
+        was, start = counts(BASELINE), counts(START)
+        for k in KINDS:
+            if k not in was:
+                print("replay-residue: %s is not in tools/replay-residue.baseline - a kind with no baseline fails" % k)
+        risen = [k for k in KINDS if now[k] > was.get(k, (-1, ""))[0]]
+        for k in (k for k in risen if k in was):
+            print("replay-residue: %s rose from %d to %d - M8 lets replay only go down" % (k, was[k][0], now[k]))
+        raised = [k for k in KINDS if k in was and k in start and was[k][0] > start[k][0] and not MARK.search(was[k][1])]
+        for k in raised:
+            print("replay-residue: the baseline's %s %d is above the start's %d with no user-approved mark - refused"
+                  % (k, was[k][0], start[k][0]))
+        print("replay-residue: against the start (tools/replay-residue.start): " +
+              " ".join("%s %d (%+d)" % (k, now[k], now[k] - start[k][0]) if k in start else "%s %d (no start)" % (k, now[k])
+                       for k in KINDS))
+        fallen = [k for k in KINDS if k in was and now[k] < was[k][0]]
+        if fallen and not risen:
+            print("replay-residue: lower than the baseline (" + ", ".join(fallen) + "); run --record to keep it")
+        return 1 if risen or raised else 0
+    sys.stderr.write(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

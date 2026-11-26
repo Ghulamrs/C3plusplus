@@ -1,0 +1,5 @@
+# R0 (lane m8r0, 2026-11-26): src/sema at 67fd80d9 (c9619846 + slice 4a), Templates.cpp 146 / 19 / 22 / 6 as the review measured it
+tokens 150
+at-jumps 19
+binds 26
+trials 6
