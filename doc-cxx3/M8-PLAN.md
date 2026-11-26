@@ -7427,3 +7427,37 @@ signature read with dependent operands, as a body is (`patternBody_`'s zeros of 
 `Call` and the qualified `Name` (a type operand recorded beside its node, as `literalTokens_` records a literal's token). Only
 then does the reader (ParserDependent.cpp's `dependentExpression` .. `depPrimary`, about 330 lines) go, and with it
 `valueOperandsAhead`. Re-measure: `boxkit/m8r4g-cen.sh <tag> <m|c>`, `m8r4g-gate.sh` (TREE=n|m), `m8r4g-wident2.sh`, `m8r4g-wnames.sh`.
+
+## R2: template-angle-split under the flag, and the chain's owed checks (lane m8r4fix, 2026-11-26)
+
+**The measure**: run.sh under -templates=subst at fa26aa95 1,372 passed, 1 failed (template-angle-split, "an array length must be
+positive, not -4" in `Y<char>`; m8r4g's, re-measured here: 1 failed) -> **1,374 passed, 0 failed** at c085a7fc (the probe the one
+more); subst.sh 2 failed (m8r4g's: run -O0 and -O2, the same case) -> **0 failed**; identical under the flag on x86_64-linux at
+-O0/-O1/-O2 against REF 24d17607 (m8r4g's 3,087/3, the same case) -> **3,090 compared, 0 differ**; replay-residue 150/19/26/6 +0.
+
+**The commit**: bisected on Linux, one build a commit, the case compiled under the flag: 08ce61ae (4e2's last) prints `2 1`;
+17b8ce64 (counts only) `2 1`; **049be1db** (4e3's c2, `madeAtUse`) refuses it, as does every commit after it to fa26aa95. **The root**: 049be1db
+asks a class template-id under a declarator again At the use (Made) from `sfinaeSubstituted`, which ran *before*
+`instantiateViableTemplates`' `Parser::Trial`. `X<Y<T>> *` with T = char made `Y<char>`, whose `U m[sizeof(U) - 5]` fails; outside a
+trial `Source::fail` is an error, where the replay, reading the same id inside its trial, gets a `SubstitutionFailure` and drops the
+candidate ([temp.deduct]/8) - so the ordinary `f(char, int)` was never reached. The internal catch ("a class the kernel made failed
+to substitute", then the re-read) could only be reached under an outer trial, and then it re-read with what the failed class read
+left (`at_`, the class stack, `>>`'s mark - readClassBody restores them only on its way out).
+
+**The mend** (c085a7fc, `src/sema/Templates.cpp` +20 -12): the loop's one `Parser::Trial` now covers the kernel's substitution as well
+as the replay - moved, not added (replay-residue trials 6 -> 6). A class made at the use that fails is counted ("substituted: a class
+made at the use failed") and rethrown to the loop's catch: the candidate fails, a refusal is re-raised there, and the trial puts the
+parser's state back. A formed signature is declared after the trial, under `Diagnosed`, as 4e2 has it. On the plain path the order is
+the replay's as before. Probe **template-subst-sfinaemade** (clang 19.1.5, Windows: `2 20 200` / `1 10 100`): an id under a pointer,
+a reference and an id inside an id, failing for the deduced argument, then forming; fa26aa95 refuses it under the flag with the same
+error; with the mend both ways right (census: 1 substituted as a class that failed, 4 formed).
+
+**Gates** (REF 24d17607, wave m6d-w53's tip, built on Linux; the lane on c085a7fc). Linux (g++, `~/m8r4fixn`): **g++ -Werror
+clean**; **the FULL stage-0 self-compile 102 of 102** (182 s); run.sh under the flag 1,374/0 and plain 1,374/0; subst.sh 0 failed (run -O0/-O2 1,374/0, typed 1,021/0 both levels, bodies
+1,018 of 1,018, self 102 of 102); identical x86_64-linux under the flag 3,090/0 and plain 3,090/0 at -O0/-O1/-O2 (no emitted file changed); the -check=templates suite census
+(1,382 units): x86_64-windows no class, default, value or sfinae differ, body differ lines 21 (REF's 21), 1,589 formed all held, 2
+"a class made at the use failed" (template-angle-split, the probe); x86_64-linux no class, default, value or sfinae differ, body
+22 (REF's 22). Static: exclusions 0/0 (three citations +1), comments 0 over, memory-gate lower, ast-residue not raised, replay-residue
+150/19/26/6 +0, ide up to date. MOREGATES
+
+**Owed.** OWED
