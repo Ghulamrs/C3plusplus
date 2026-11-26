@@ -2612,8 +2612,6 @@ std::string Templates::builtReport() const {
     }
     out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
-    out += "-check=templates position record asked=" + std::to_string(placeAsked_) + " disagree=" + std::to_string(placeDisagree_) +
-           " absent=" + std::to_string(placeAbsent_) + "\n";     // R3 3R-b: the record against staticAt's and the typedef scans
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -4838,80 +4836,26 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
 // A static data member's declarator in the class's own braces: the token after its name and bounds, 0 where none is; `cx`
 // whether `constexpr` is written on its declaration, `name` its name's position.
 std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const {
-    const std::size_t scanned = staticScanned(start, n, cx, name);
-    for (const MemberRecord &r : orderOf(start))
-        for (const StaticPlace &p : r.placed)
-            if (p.name == n) { placeCounted(start, p.after == scanned && p.cx == *cx && p.namePos == *name); return scanned; }
-    placeCounted(start, scanned == 0);
-    return scanned;
-}
-
-// R3 3R-b's census: one answer of the record against a scan, and whether the record was there at all.
-void Templates::placeCounted(std::size_t start, bool agree) const {
-    if (readOrder_.count(start) == 0) { placeAbsent_++; return; }
-    placeAsked_++;
-    if (!agree) placeDisagree_++;
-}
-
-std::size_t Templates::staticScanned(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const {
     *cx = false;
-    for (std::size_t t = start, braces = 0, parens = 0; t + 1 < p_.tokens_.size(); t++) {
-        const Token &k = p_.tokens_[t], &next = p_.tokens_[t + 1];
-        braces += k.is("{"), parens += k.is("(");
-        if ((k.is("}") && --braces == 0) || (braces == 0 && k.is(";"))) break;
-        if (k.is(")") && parens > 0) parens--;
-        if (braces != 1 || parens != 0) continue;
-        if (k.is(";") || k.is("{") || k.is("}") || k.is(":")) *cx = false;
-        *cx = *cx || k.is("constexpr");
-        if (k.text != n || !(next.is(";") || next.is(",") || next.is("[") || next.is("=") || next.is("{"))) continue;
-        *name = k.pos;
-        std::size_t at = t + 1;
-        while (at < p_.tokens_.size() && p_.tokens_[at].is("["))
-            for (int d = 0; at < p_.tokens_.size(); ) {
-                d += p_.tokens_[at].is("[") ? 1 : p_.tokens_[at].is("]") ? -1 : 0;
-                at++;
-                if (d == 0) break;
-            }
-        return at;
-    }
+    for (const MemberRecord &r : orderOf(start))     // R3 3R-b: as the read's order record took it
+        for (const StaticPlace &p : r.placed)
+            if (p.name == n) { *cx = p.cx, *name = p.namePos; return p.after; }
     return 0;
 }
 
 // `typedef X<num, den> n;` in the class's own braces, X its own template and an argument naming one of its static data members:
 // the `typedef`'s token, which staticsFromRead reads after them by the class body's path (the replay's place); 0 where none is.
 std::size_t Templates::ownTypedefAt(std::size_t start, const std::string &n) const {
-    const std::size_t scanned = ownTypedefScanned(start, n);
     const Type *read = readClass_.at(start);
     const std::size_t colon = read->templateName().rfind(':');
     const std::string own = read->templateName().substr(colon == std::string::npos ? 0 : colon + 1);
-    std::size_t placed = 0;
-    for (const MemberRecord &r : orderOf(start))
+    for (const MemberRecord &r : orderOf(start))     // R3 3R-b: as the read's order record took it
         for (const TypedefPlace &p : r.typedefsAt) {
             bool onStatic = false;
             for (const std::string &a : p.angled)
                 for (const Type::StaticMember &m : read->staticMembers()) onStatic = onStatic || a == m.name;
-            if (placed == 0 && p.head == own && onStatic && p.angledName == n) placed = p.at;
+            if (p.head == own && onStatic && p.angledName == n) return p.at;
         }
-    placeCounted(start, placed == scanned);
-    return scanned;
-}
-
-std::size_t Templates::ownTypedefScanned(std::size_t start, const std::string &n) const {
-    const Type *read = readClass_.at(start);
-    const std::size_t colon = read->templateName().rfind(':');
-    const std::string own = read->templateName().substr(colon == std::string::npos ? 0 : colon + 1);
-    for (std::size_t t = start, braces = 0; t + 3 < p_.tokens_.size(); t++) {
-        braces += p_.tokens_[t].is("{");
-        if (p_.tokens_[t].is("}") && --braces == 0) break;
-        if (braces != 1 || !p_.tokens_[t].is("typedef") || p_.tokens_[t + 1].text != own || !p_.tokens_[t + 2].is("<")) continue;
-        bool onStatic = false;
-        std::size_t e = t + 3;
-        for (int angles = 1; e < p_.tokens_.size() && angles > 0 && !p_.tokens_[e].is(";"); e++) {
-            angles += p_.tokens_[e].is("<") ? 1 : p_.tokens_[e].is(">") ? -1 : p_.tokens_[e].is(">>") ? -2 : 0;
-            for (const Type::StaticMember &m : read->staticMembers()) onStatic = onStatic || p_.tokens_[e].text == m.name;
-        }
-        if (onStatic && e + 1 < p_.tokens_.size() && p_.tokens_[e].text == n && p_.tokens_[e + 1].is(";")) return t;
-    }
     return 0;
 }
 
@@ -5551,33 +5495,9 @@ std::size_t Templates::typedefByPath(std::size_t start, const Substituted &s, co
     if (own != 0 || typedefCarried(start, bare, td.second, nullptr) || m == readMembers_.end() || !templatesOf(m->second.first).empty()) return own;
     for (const Signature &f : m->second.second)
         if (!f.implicit) return 0;
-    const std::size_t scanned = typedefScanned(start, td.first);
-    placeCounted(start, typedefInOrder(start, td.first) == scanned);
-    return scanned;
-}
-
-// R3 3R-b: typedefByPath's `typedef ... n;` with one declarator, the first in the read's order record; else 0.
-std::size_t Templates::typedefInOrder(std::size_t start, const std::string &n) const {
-    for (const MemberRecord &r : orderOf(start))
+    for (const MemberRecord &r : orderOf(start))     // R3 3R-b: the first `typedef ... n;` of one declarator in the order record
         for (const TypedefPlace &p : r.typedefsAt)
-            if (p.one && p.last == n) return p.at;
-    return 0;
-}
-
-std::size_t Templates::typedefScanned(std::size_t start, const std::string &n) const {
-    for (std::size_t t = start, braces = 0; t + 1 < p_.tokens_.size(); t++) {
-        braces += p_.tokens_[t].is("{");
-        if (p_.tokens_[t].is("}") && --braces == 0) break;
-        if (braces != 1 || !p_.tokens_[t].is("typedef")) continue;
-        std::size_t e = t + 1;
-        bool one = true;
-        for (int angles = 0; e < p_.tokens_.size() && !p_.tokens_[e].is(";"); e++) {
-            const Token &k = p_.tokens_[e];
-            angles += k.is("<") ? 1 : k.is(">") ? -1 : k.is(">>") ? -2 : 0;
-            one = one && !k.is("(") && !k.is("{") && !(angles == 0 && k.is(","));
-        }
-        if (one && e < p_.tokens_.size() && p_.tokens_[e - 1].text == n) return t;
-    }
+            if (p.one && p.last == td.first) return p.at;
     return 0;
 }
 

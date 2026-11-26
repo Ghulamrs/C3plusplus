@@ -382,12 +382,6 @@ public:
                               const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
     std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const;     // a static member's declarator
     std::size_t ownTypedefAt(std::size_t start, const std::string &n) const;     // `typedef X<num, den> n;`, X its own template
-    std::size_t staticScanned(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const;     // 3R-b's census: the scans
-    std::size_t ownTypedefScanned(std::size_t start, const std::string &n) const;
-    std::size_t typedefScanned(std::size_t start, const std::string &n) const;
-    std::size_t typedefInOrder(std::size_t start, const std::string &n) const;     // typedefByPath's `typedef ... n;`, from the record
-    void placeCounted(std::size_t start, bool agree) const;
-    mutable std::size_t placeAsked_ = 0, placeDisagree_ = 0, placeAbsent_ = 0;
     bool typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const;
     std::size_t typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const;     // slice 3u
     std::string staticShape(std::size_t start, const Substituted &s) const;     // what keeps the read's static data members from the read

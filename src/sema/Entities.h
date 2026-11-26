@@ -157,12 +157,13 @@ struct Signature {
 // One step of a frame's layout as the parser takes it (Parser::logFrame), for M8.2 2c's check of a frame laid from a read.
 struct FrameEvent { char kind; const Type *type; int align, offset, serial; std::string name; bool param; int block; };
 
-// R3 3R-a: one member declaration of a read class body (Parser::memberLog_); kind by branch, the first class key and `enum` its
-// decl-specifiers read (npos if none), and what it added to each table (its sizes before, until the next declaration).
 // R3 3R-b: a static data member's declarator as the read took it (the token after its name and bounds), and a typedef's
 // `typedef` with its two shapes: one declarator ending in `last`, and `typedef head<angled...> angledName;`.
 struct StaticPlace { std::string name; std::size_t after, namePos; bool cx; };
 struct TypedefPlace { std::size_t at; bool one; std::string last, head, angledName; std::vector<std::string> angled; };
+
+// R3 3R-a: one member declaration of a read class body (Parser::memberLog_); kind by branch, the first class key and `enum` its
+// decl-specifiers read (npos if none), and what it added to each table (its sizes before, until the next declaration).
 struct MemberRecord {
     enum Kind { Declaration, Template, Using, Friend } kind;
     std::size_t start, classKeyAt, enumAt;
