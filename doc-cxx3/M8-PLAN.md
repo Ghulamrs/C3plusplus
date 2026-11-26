@@ -7907,3 +7907,54 @@ g++ -Werror clean on c7c78bed; the x86_64-linux self-host census under -check=te
 ways, subst.sh, the full self-compile, static gates, identical on four targets both ways, the suite censuses, the x86_64-windows
 censuses, names/overload, cl /W4 /WX (no Windows job ran: GATE-WINDOWS-BUSY.txt stood, then the box went unreachable);
 argsWanted, earlyArgs and carriedId's early branch not reached.
+
+## R1, thirteenth lane: argsWanted, earlyArgs, carriedId (lane m8r1m, 2026-11-27)
+
+Base 23e0e204 (wave m6d-w54). REF built from 24d17607 on Linux. **Linux only** (the user: the Windows box unreachable): every
+Windows check is owed. Commit **f781321d** - argsWanted retired; this entry. earlyArgs and carriedId's early branch not
+reached (below: what each needs).
+
+**THE MEASURE: substitution helpers left with callers 5 -> 4** (`git grep -o '\bNAME(' -- src`, definition and declaration not
+counted): carriedId 7 -> 7 (argsWanted's call goes, one comes in earlyArgs), idUnder 3 -> 3, earlyArgs 10 -> 10 (argsWanted's call
+goes, earlyArgs' own recursion comes), **argsWanted 5 -> 0**, typedefCarried 2 -> 2; call sites 27 -> 22. **replay-residue 150 / 19 /
+26 / 6, +0** (argsWanted read no token). Slices 4m-4s untouched.
+
+**(0) m8r1l's owed, on 23e0e204** (c7c78bed's line, with m8-4fix and gate-winparts), against the REF: **g++ -Werror clean**;
+**identical x86_64-linux at -O0, -O1 and -O2, plain and under -templates=subst: 1,027 compared, 0 differ each**; **run.sh
+-templates=subst 1,374 / 0**; **subst.sh rc 0** (run -O0 / -O2 1,374 / 0, typed 1,021 / 0 at both); **the FULL self-compile 102
+of 102 (161 s)**; **census suite -check: x86_64-linux 1,382 units, class differ 0, body differ 22; x86_64-windows class 0, body
+21** - the brief's 20 / 19 were 1,377-unit trees (the base's new units), and the candidate's are the same unit for unit. No
+difference found, so nothing to fix. Not reached: run.sh plain, static, identical on three targets, the self-host censuses (each
+chain's timeout 1500 counts its slot wait, and three chains ended in the queue).
+
+**argsWanted, retired.** It walked an id's arguments (`__tree<pair<const $T0,$T1>, __map_key<$T0,$T1,$T2> >`) and either mapped
+each carried one in `s` or inserted it into `wanted` ahead of the id, innermost first. Now `earlyArgs` with `argsFirst` (the four
+classShape sites that called argsWanted: a base, a data member, a typedef's id, a signature's id) accepts an argument that is itself
+an id over the parameters when the program declared it (carriedId, Declared) or it may be made ahead (earlyArgs again, recursively),
+and the id alone goes into `wanted`: makeClass's `substitute(s, e, At{pos})` makes its argument ids first through the kernel's id
+step (argsUnder at Made), in the order argsWanted laid them. The bookkeeping that counted argsWanted's insertions goes with it
+(a data member's `had` / `back`, a signature's `back` and the refusal for arguments wanted between the data members' ids). src/
+99,128 -> 99,094 lines (Templates.cpp +13 / -46, Templates.h +1 / -2). **Gates on f781321d's src** (Linux): **g++ -Werror
+clean**; **identical against the REF under the flag: x86_64-linux -O0 1,027 / 0, tms6747 -O0 1,027 / 0** (plain identical by
+construction: classShape runs only under -templates=subst); **run.sh plain 1,374 / 0**; **the FULL self-compile 102 of 102 (156
+s)**; static: exclusions 0 / 0 (no citation moves), comments 0 over, memory gate lower, ast-residue not raised, replay-residue
++0, ide up to date; **censuses -check: suite x86_64-linux class 0 body 22, x86_64-windows class 0 body 21 (= 23e0e204's, unit
+for unit); self-host x86_64-linux class 0 body 11, x86_64-windows class 0 body 11 (REF 11 both)**. Re-entries at instantiation
+under the check, suite: x86_64-linux 27,080 -> 27,076, x86_64-windows 26,936 -> 26,932 (-4 each); self-host x86_64-linux 466,205
+(c7c78bed 465,644; 23e0e204's own not measured - owed).
+
+**What the rest need.** **earlyArgs** (10: classShape 8, its own recursion 1, idsInside 1) is classShape's filter on whether an id
+may be made ahead; retiring it is classShape asking the kernel at Made itself (it holds no `pos` today: makeClass's, passed in) where
+it now pushes onto `wanted`, and its token scan (`p_.tokens_[t]`, the named template's bodies naming the read's own template) then
+goes, replay-residue's `tokens` -1. **carriedId's early branch** (the classes declared before the replay, asked by the
+post-make classShape at makeClass's `held`) answers only `early`'s map; a Declared answer there would see classes the replay made and
+change `held` / coveredClass_ - it goes when that question is asked of the kernel's Keyed with the replay's own classes told apart
+(a mark on the made class), not before. **idUnder** (3: specializationIn, earlyArgs, its own) folds into specializationIn when
+earlyArgs goes. **typedefCarried** waits for R3's complete records (m8r1c's reason, unchanged).
+
+**Owed** (the wave's gate): cl /W4 /WX, names.sh, overload.sh (Windows, both trees); on f781321d **run.sh -templates=subst
+and tests/subst.sh** (queued, never given a slot in the hour), identical under the flag at -O1 / -O2 on four targets and at -O0
+on arm64-darwin and x86_64-windows; on 23e0e204 run.sh plain, static, identical on three targets, its self-host censuses and
+re-entries. No changed emitted output in what ran (every identical 0 differ). No accepted lines, no wave-expected rows.
+Re-measure: `boxkit/m8r1m-lbuild.sh <x>`, `m8r1m-q.sh <x> <job>...` (runf runp subst static self, cen:<s|h>:<c|n>:<l|w>,
+id:<arch>:<level>:<p|f>), `m8r1m-cmp.sh`.
