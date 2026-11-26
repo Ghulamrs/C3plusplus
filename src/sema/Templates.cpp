@@ -1527,10 +1527,28 @@ const char *Templates::trialSubstituted(const TemplateDecl &decl, const std::vec
     return why;
 }
 
+// A pointer to member or a pack's expansion, whose parts dependentType does not walk (`int (template parameter S::*)`, check-held).
+static bool partsUnwalked(const Type *t, int depth = 0) {
+    for (; t != nullptr && depth < 64; depth++) {
+        if (t->unqualified() != t) { t = t->unqualified(); continue; }
+        if (t->isMemberPointer() || t->kind() == Kind::PackExpansion) return true;
+        if (t->kind() == Kind::Function) {
+            for (const Type *q : t->params())
+                if (partsUnwalked(q, depth + 1)) return true;
+            t = t->returns();
+            continue;
+        }
+        if (!t->isPointer() && !t->isReference() && !t->isArray()) return false;
+        t = t->pointee();
+    }
+    return false;
+}
+
 const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
     if (fn == nullptr || fn->kind() != Kind::Function) return "formed: no function type";
     if (!decl.defined) return "formed: a template declared and never defined";
     if (p_.dependentType(fn)) return "formed: a signature still over the parameters";
+    if (partsUnwalked(fn)) return "formed: a pointer to member or a pack expansion, its parts the kernel's";
     return mentionsDeduced(fn->returns()) ? "formed: a deduced return type" : nullptr;
 }
 
