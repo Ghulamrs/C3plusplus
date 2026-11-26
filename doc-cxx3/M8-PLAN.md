@@ -7231,3 +7231,63 @@ the flag ran for 4ddf92ae, with the switch on and off; x86_64-linux -O0 under th
 names.sh and overload.sh (Windows); the self-host census with the switch off and both censuses on x86_64-linux; re-entries. No changed emitted output found (x86_64-windows -O0
 under the flag, switch off). Slices 4m-4s untouched. Re-measure: `boxkit/m8r1g-wcen.sh <r|g|s> <arch> <0|1> <P> [s]`,
 `boxkit/m8r1g-wident.sh <arch> <level> <jobs> <p|f|e> [g|s]` (Windows trees work\m8r1gr, m8r1gg, m8r1gs).
+
+## R1, eighth lane: Mapped by key, and first need shipped (lane m8r1h, 2026-11-26)
+
+Base 0ed6414f (m8-r1g on wave m6d-w52 501e2819). Commit 7cac2415 (the Keyed mend and the refusals), and this entry. src/ 98,631 -> 98,648 lines (+29 / -12: Templates.cpp +23 / -7,
+Templates.h +4 / -3, Typing.cpp +2 / -2). **First need is not shipped**: its census is back to the REF's with the
+switch on (below) and (b) ran run.sh 0 failed under the shipped form, but identical with the switch on and run.sh on the committed
+tree (c) were not reached inside the hour (the Linux box's two slots were held by other jobs for the lane's last 25 minutes).
+
+**What was tried, in order, each measured** (the switch as `boxkit/m8r1e-switch3.diff`, `CXX1_FIRST_NEED=1` = the shipped form;
+REF 501e2819):
+
+| tree | run.sh -templates=subst, switch off | the shipped form | x86_64-windows suite census, body differ / class differ units |
+| --- | --- | --- | --- |
+| m8r1g (0ed6414f) | 1,369 / 0 | 1,361 / **8 failed** | 30 / 0 (switch on) |
+| (a) Mapped answers a read id by key under every declarator (0aecb903) | 1,356 / **13 failed** | 1,356 / 13 failed | not run |
+| (b) (a) + substShape's class-object refusals without a class bound (ec0b7738) | **1,369 / 0** | **1,369 / 0** | 23 / **4** (off and on alike) |
+| (c) Mapped kept the map's; **Keyed** for the typer; (b)'s refusals (829e2609, the commit) | owed (queued) | owed (queued) | **19 / 0** (off and on alike) |
+
+**(a)'s 13** (`std::operator+<char>`: "a class local initialised from another type", "a 'assign' the typer did not type"): with
+a read id answered by key, substShape's doors (Mapped while the switch is off) let `basic_string<C> r(a); r += b; return r;` with
+C = char through - no class is bound, so the class-object refusals (classBound) never ran - and the typer cannot type a
+constructor from `const C *` or an operator over the class. **(b)** holds those refusals without a class bound where the read's
+type is over the parameters (`overRead`: dependent, or a cleared read id): a class an id answers is one the binding made, reached
+by reference, never built, copied or operated on in a made body. That also clears m8r1g's 8 under the shipped form. **(b)'s 4
+class differ units** are "the class skip before the replay and after it": `classShape`'s `dataUnder` and `idsBefore` ask Mapped
+and keep the order the map gives (m8r1f's idsBefore family); a keyed answer differs before the replay (the id not declared yet)
+and after it. So **(c)**: Mapped stays the map's alone until idsBefore's family retires, and the kernel's fourth answer `Keyed`
+(the map first, then the program's class by its key, under every declarator, never made; a partial's read class not asked -
+readPartials_' refusal kept) is what the typer asks (`Typing.cpp:1037`, `:1094`). One recursion, one id step
+(`specializationIn` with no maker); when classShape and idsBefore ask at Made or Keyed, Mapped folds into Keyed.
+
+**THE MEASURE** (-check=templates census, x86_64-windows, 3f3ef250 = 7cac2415 + the env switch, `boxkit/m8r1h-wcen.sh`):
+suite (1,377 units) **body differ 19, class differ 0, with the switch off and with it on** - the REF's 19, reason for reason
+(return type 6, decltype return 5, exception specification 4, block table 2, shell 1, ...); m8r1g's switch-on 30 (sret 10,
+then "a slot given back" 10) are gone. Self-host (102 sources): 10 lines at 100 of 102 units on both (REF 11), class differ 0;
+the run was stopped at the hour before its last units. x86_64-linux censuses not run (owed). **identical x86_64-windows -O0
+under the flag, switch off, 7cac2415's tree against the REF: 0 DIFFERS** (both spellings, stopped at the hour part-way).
+
+**The frame's next step** ("the read's a slot given back where the replay has a slot no local names", m8r1g's 10 suite / 95
+self-host): not reached this lane. By reading: the read logs `f` at a scope's close where the replay first lays an anonymous
+slot (`allocateFrameSlot`, `a`), which the parser lays for a class temporary - a call returning a class by value
+(`ParserExprCall.cpp:738`), an argument of class type (`:744`) - that the read, its callee dependent, never lays. (b)'s refusals
+keep a made body from operating on a class over the parameters: with them the suite census has none left with the switch on.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. **replay-residue 150 / 19 / 26 / 6, +0**. Re-entries not re-measured.
+
+**Gates** (a coding lane's): Windows **cl /W4 /WX clean** on 501e2819 and 0667c65e (two at once, 16:57:36-17:01:52, 4 min 16 s),
+on f880406b (**CAPPED at 9 minutes**, 17:10:28-17:19:29 beside the coordinator's gate, the exe linked at 17:19 - a defect, not
+retried) and on 3f3ef250 (7cac2415 + the switch, 17:29:56-17:36:41, 6 min 45 s, no warning). Linux on ec0b7738 ((b): the same
+src as 7cac2415 but Mapped by key in place of Keyed): **g++ -Werror clean; run.sh -templates=subst 1,369 / 0, and 1,369 / 0 under
+the shipped form; static: exclusions 0 uncited 0 stale, comments 0 over, memory gate lower, ast-residue not raised,
+replay-residue +0, ide up to date; the FULL stage-0 self-compile 102 of 102 (183 s)**. **Owed on 7cac2415 itself**: g++, run.sh
+plain and under the flag, the shipped form's run.sh, subst.sh, the self-compile, static gates (its EXCLUSIONS citations are
+ec0b7738's: Templates.cpp 3289 / 2590 / 2538, no line moved since), identical on four targets at three levels plain, under the
+flag and with the switch on, names.sh and overload.sh, the x86_64-linux censuses and the self-host census to 102, re-entries.
+No changed emitted output found (x86_64-windows -O0 under the flag, part-way). Slices 4m-4s untouched. **Next**: those gates,
+then ship first need (`boxkit/m8r1f-shipped-form.diff` applies with `-C1`; EXCLUSIONS' three Templates.cpp lines move +11), then
+idsBefore's family - and with it classShape asking Keyed, so Mapped folds in. Re-measure: `boxkit/m8r1h-wcen.sh <r|h> <arch>
+<0|1> <P> [s]`, `boxkit/m8r1h-wident.sh <arch> <level> <jobs> <p|f|e>`, `boxkit/m8r1h-lgate.sh <c|h>`, `boxkit/m8r1h-lcen.sh <0|1>`.
