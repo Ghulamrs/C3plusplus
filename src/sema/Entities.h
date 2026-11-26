@@ -159,11 +159,17 @@ struct FrameEvent { char kind; const Type *type; int align, offset, serial; std:
 
 // R3 3R-a: one member declaration of a read class body (Parser::memberLog_); kind by branch, the first class key and `enum` its
 // decl-specifiers read (npos if none), and what it added to each table (its sizes before, until the next declaration).
+// R3 3R-b: a static data member's declarator as the read took it (the token after its name and bounds), and a typedef's
+// `typedef` with its two shapes: one declarator ending in `last`, and `typedef head<angled...> angledName;`.
+struct StaticPlace { std::string name; std::size_t after, namePos; bool cx; };
+struct TypedefPlace { std::size_t at; bool one; std::string last, head, angledName; std::vector<std::string> angled; };
 struct MemberRecord {
     enum Kind { Declaration, Template, Using, Friend } kind;
     std::size_t start, classKeyAt, enumAt;
     bool enumPlain, enumNamed, enumsOther;     // `enum [E] { ... };` alone, as a class body's enumeration; a second `enum` read
     std::size_t members, statics, enumerators, functions, typedefs;
+    std::vector<StaticPlace> placed;     // 3R-b: each static data member it declared
+    std::vector<TypedefPlace> typedefsAt;
 };
 
 struct TypedefName {

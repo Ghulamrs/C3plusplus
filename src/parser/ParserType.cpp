@@ -148,6 +148,43 @@ bool Parser::plainEnum(std::size_t at) const {
            tokens_[close + 1].is(";");
 }
 
+// R3 3R-b: the static data member just declared, its name before `at_` and any bounds, as staticsFromRead reads it.
+void Parser::logStatic(const std::string &name, bool cx) {
+    std::size_t at = at_;
+    while (at > 0 && tokens_[at - 1].is("]"))
+        for (int depth = 0; at > 0; ) {
+            at--;
+            depth += tokens_[at].is("]") ? 1 : tokens_[at].is("[") ? -1 : 0;
+            if (depth == 0) break;
+        }
+    logging_->placed.push_back(StaticPlace{ name, at_, at > 0 ? tokens_[at - 1].pos : 0, cx });
+}
+
+// R3 3R-b: the `typedef` of the declaration being read, from its record's start, with the two shapes staticsFromRead reads by path.
+void Parser::logTypedef() {
+    std::size_t t = logging_->start;
+    while (t < at_ && !tokens_[t].is("typedef")) t++;
+    if (t >= at_) return;
+    TypedefPlace p{ t, true, std::string(), std::string(), std::string(), {} };
+    std::size_t e = t + 1;
+    for (int angles = 0; e < tokens_.size() && !tokens_[e].is(";"); e++) {
+        const Token &k = tokens_[e];
+        angles += k.is("<") ? 1 : k.is(">") ? -1 : k.is(">>") ? -2 : 0;
+        p.one = p.one && !k.is("(") && !k.is("{") && !(angles == 0 && k.is(","));
+    }
+    if (e < tokens_.size()) p.last = tokens_[e - 1].text;
+    if (t + 3 < tokens_.size() && tokens_[t + 2].is("<")) {
+        p.head = tokens_[t + 1].text;
+        std::size_t a = t + 3;
+        for (int angles = 1; a < tokens_.size() && angles > 0 && !tokens_[a].is(";"); a++) {
+            angles += tokens_[a].is("<") ? 1 : tokens_[a].is(">") ? -1 : tokens_[a].is(">>") ? -2 : 0;
+            p.angled.push_back(tokens_[a].text);
+        }
+        if (a + 1 < tokens_.size() && tokens_[a + 1].is(";")) p.angledName = tokens_[a].text;
+    }
+    logging_->typedefsAt.push_back(p);
+}
+
 // `#pragma pack(n)` caps an alignment at n; 0 is no pack.
 namespace { struct Packed { static int to(int a, int cap) { return cap != 0 && a > cap ? cap : a; } }; }
 
@@ -590,7 +627,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             logged();
             const std::size_t none = static_cast<std::size_t>(-1);
             log->push_back(MemberRecord{ MemberRecord::Declaration, at_, none, none, false, false, false, members.size(), type->staticMembers().size(),
-                                         lookup_.enums_.size(), lookup_.functions_.size(), lookup_.typedefs_.size() });
+                                         lookup_.enums_.size(), lookup_.functions_.size(), lookup_.typedefs_.size(), {}, {} });
             logging_ = &log->back();
         }
 
@@ -895,6 +932,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (tag.empty())
                 src_.fail(peek().pos, "a typedef needs a class with a name - "
                                       "this one is anonymous");
+            if (logging_ != nullptr) logTypedef();
             do {
                 Declared td = declarator(base);
                 typedefFunctionSuffix(td);
@@ -1106,6 +1144,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // **A static member is not part of the object**, so it leaves the
             // layout untouched and the cursor where it was.
             if (msc == StorageStatic && !peek().is("(")) {
+                if (logging_ != nullptr) logStatic(d.name, mquals.isConstexpr);
                 declareStaticMember(tag, type, d, access, mquals.isVolatile, mquals.isThreadLocal,
                                     mquals.isConstexpr);
                 if (!consume(",")) break;

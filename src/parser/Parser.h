@@ -1905,6 +1905,10 @@ private:
         else logging_->enumsOther = true;
     }
     bool plainEnum(std::size_t at) const;
+    typedef sema::StaticPlace StaticPlace;
+    typedef sema::TypedefPlace TypedefPlace;
+    void logStatic(const std::string &name, bool cx);     // R3 3R-b: into `logging_`, at the read
+    void logTypedef();
     int alignasSpecifier();
     void refuseWeakAlignas(int asked, const Type *t, std::size_t pos);
     void declareStaticLocal(const std::string &name, const Type *type,
