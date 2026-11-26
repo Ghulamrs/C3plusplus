@@ -7129,7 +7129,10 @@ site: a door makes the class, and a later const question asks the map the door d
 because the frame that differs is then not taken (the body falls to its replay, which is the program's). **The mend for the
 next lane**, measured, not by construction: either the frame's two sites ask at `Declared` (the made class is declared by its
 key), or - the one-implementation form - `need()` hands back what it made and the door enters it in its binding's map, so
-every later `Mapped` question (memberSymbol's included) reads one answer.
+every later `Mapped` question (memberSymbol's included) reads one answer. **The first is ruled out by measure**: the switch
+with both frame sites at `Declared` (`boxkit/m8r1f-frame-declared.diff`) left the x86_64-windows suite census as it was - body
+differ 36, "typed apart" 17, class differ 0 (its self-host cut at the hour) - so the made class is not what `Declared` finds by
+key either; the second form, or which `Type` the replay's local holds, is the next lane's.
 
 **Re-entries under a binding** (R0's measure: census, no check, suite, -arch x86_64-linux; `boxkit/m8r1f-wre.sh`): switch on
 **21,569 at instantiation, 54,161 in the read** (binds 42,647, jumps 33,083, over 1,027 units; classes 2,640 made of 2,663,
