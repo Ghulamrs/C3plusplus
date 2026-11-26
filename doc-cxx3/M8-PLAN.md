@@ -8400,3 +8400,62 @@ for this host; 1,166 through the function door of 1,166 bodies). faafd2bc alone 
 output changes; Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure: `boxkit/m8r3rb-ship.sh
 <x> <commit-or-tree>` (git archive -> `~/m8r3rb<x>`), the Linux scripts `m8r3rb-{lbuild,q,lcen,one,job,ident}.sh` (made from
 m8r3ra's; lcen sums the position line), `python3 boxkit/m8r3rb-excl.py <base tree> <new tree>` (citations moved by the diff).
+
+## R3, slices 3R-c (second step) and 3R-d: the nested class and static data members from their records (lane m8r3rc, 2026-11-27)
+
+Base 25a482a3 (m8-3rb). REF built from 25a482a3 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **9ecf8f1c** (3R-c's second step: nestedByPath answers from the record; nestedScanned and its census deleted; replay-residue's
+baseline lowered; three Templates.cpp citations moved), **749e1ca2** (3R-d's first commit: each static's initialiser kept as its node
+on its record, and a census folding it beside staticsFromRead's re-read), this entry. src/ 99,256 -> 99,245 lines (9ecf8f1c +2 / -45:
+Templates.cpp +2 / -43, Templates.h -2; 749e1ca2 +42 / -10: Templates.cpp +27 / -3, ParserClass.cpp +5 / -2, Templates.h +4 / -1,
+ParserConst.cpp +2 / -1, Entities.h +2 / -1, Parser.h and ParserType.cpp +1 / -1).
+
+**THE MEASURE: `p_.tokens_[` in Templates.cpp 116 -> 103 (nestedByPath's scan, 13); replay-residue tokens 120 -> 107** (at-jumps 19,
+binds 26, trials 6; baseline lowered in 9ecf8f1c; 749e1ca2 +0). **3R-c's census on fa108e12's src, the owed run: self-host
+x86_64-windows -check, nested asked 1,509,951 disagree 0 absent 0** (102 units rc 0, class 0, body 11; the REF exe, which carries
+fa108e12's census) - so 3R-c is 0 / 0 on the suite and the self-host, both ABIs, and its second step went in. **R0's re-entries
+inside made classes, census without the check (9ecf8f1c, x86_64-linux suite): 5,264 (= 3R-a's REF), "a static data member" 777** -
+3R-d's door is not removed this lane (its commit 2 is owed), so it stands at 777 / 481 (self-host -check 481 on both the REF and
+749e1ca2). Self-host no-check and x86_64-windows no-check: owed.
+
+**3R-d's first commit: the record and its census.** At the read (`Parser::logging_` set), `declareStaticMember` puts the initialiser's
+node on the record's `StaticPlace::init` - the `conditional()` node of a read's `static const T v = e;` of a dependent type, or the node
+`constantExpression` now hands back (`node` out-parameter) - so the node is the read's pattern node, never rewound (the syntax tree
+has no rewind). `staticAt` returns it; staticsFromRead, after its re-read's `declareStaticMember`, calls `staticAgainst`: the replay's
+`folded` and `value` on `owner` against the node folded by `foldUnder` (2f's int fold) under the binding's non-type values, counted
+as `-check=templates static record asked= disagree= absent= unfolded=` (absent: no node where the replay folded; disagree: a node
+the replay did not fold, or another value; unfolded: a node foldUnder does not take). **Suite x86_64-linux asked 777 disagree 0 absent
+0 unfolded 468 (91 units hold one); x86_64-windows 777 / 0 / 0 / 468; self-host x86_64-linux 481 / 0 / 0 / 277; x86_64-windows
+481 / 0 / 0 / 275** (sums over the units' lines; the census script's own sum printed 477 asked on the self-host). So the record holds every static the walk asks (absent 0) and every value foldUnder reaches is the replay's (disagree 0); but
+**60% of the initialisers are shapes 2f's fold does not take** - in the library's statics (read, not traced unit by unit): `true` /
+`false` (`<limits>`, `<chrono>`), `sizeof(T)` (`<deque>`'s block), `?:` and another class's static (`<ratio>`'s `A < 0 ? -A : A`,
+`__gcd<N, D>::value`). Commit 2
+(staticsFromRead declaring each static from the folded node, staticShape and staticInit deleted) therefore needs the constant
+evaluator over the node under the binding (`Constexpr::fold` on the typed node with the parameters bound, as the replay's
+`constantExpression` folds the tokens), not foldUnder; that is 3R-d's next step, with `unfolded` 0 as its census's proof. carriedId's
+early branch not reached.
+
+**Gates** (Linux, against the REF). **9ecf8f1c** (its tree c21d6851, built as `a`): **g++ -Werror clean**; **identical under the flag
+x86_64-linux -O2 1,031 / 0, tms6747 -O0 1,031 / 0, arm64-darwin -O0 1,031 / 0**; static: **exclusions rc 0 (554 / 4), comments 0
+over, memory gate lower, ast-residue not raised, replay-residue --check rc 0 at 107**, ide up to date; **census suite -check
+x86_64-linux 1,383 units, nonzero 355, class differ 0, body 23, re-entries under the check 27,079, made-class 3,118; x86_64-windows
+379 / 0 / 22 / 26,935 / 3,114 = the REF's (3R-a's) line for line**. **749e1ca2** (tree 0d8c3324, built as `b`, which holds 9ecf8f1c):
+**g++ -Werror clean**; **the FULL self-compile 102 of 102 (183 s)**; **identical under the flag x86_64-linux -O0 1,031 / 0,
+x86_64-windows -O0 2,062 / 0 (on Linux); x86_64-linux -O1 / -O2 1,031 / 0, x86_64-windows -O1 / -O2 2,062 / 0, tms6747 -O0
+1,031 / 0, arm64-darwin -O0 1,031 / 0; plain x86_64-linux -O0 1,031 / 0**; **run.sh plain 1,375 / 0**; **run.sh -templates=subst 1,375 / 0** (1,019 printed, 352 refused as recorded); **subst.sh rc 0** (run -O0 / -O2 1,375 / 0, typed 1,022 / 0 at both, 2 not for this host);
+static as 9ecf8f1c's (exclusions rc 0 after the six moves, replay-residue 107); **censuses -check: suite 355 / 0 / 23 / 27,079 /
+3,118 and 379 / 0 / 22 / 26,935 / 3,114 (= REF); self-host x86_64-linux 102 rc 0, class 0, body 11 (made-class 74,824),
+x86_64-windows 102 rc 0, class 0, body 11 (made-class 74,802 = the REF's 74,802)**. No changed emitted output in any identical that
+ran, at any level (plain is identical by construction: nothing logs or folds without the flag).
+
+**What must not change, and did not:** every door answer (the census's lines the REF's); 3ac's body order (the record's list is the
+scan's, by 3R-c's census); [class.static.data]/3, `folded` and `value` as the replay sets them (749e1ca2 only reads them); no new
+`p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** on the final commit; on Linux, for 749e1ca2: identical under the flag at -O1 / -O2 on tms6747 and arm64-darwin, plain at -O1 /
+-O2 and on the other three targets; the no-check censuses on the self-host (both ABIs) and the suite on x86_64-windows, and the
+REF's; **3R-d's commit 2** (the fold by the constant evaluator, `unfolded` 0, then staticShape and staticInit deleted: tokens 103 ->
+about 85, "a static data member" 777 / 481 -> 0); carriedId's early branch. No accepted lines, no wave-expected rows. A probe:
+none (no output changes; Linux has no clang for a .expected). Re-measure: `boxkit/m8r3rc-ship.sh <x> <commit-or-tree>`, the Linux
+scripts `m8r3rc-{lbuild,q,lcen,one,job,ident}.sh` (from m8r3rb's; lcen also sums the static door and the `static record` line - its
+`unfolded` by `grep -o 'static record asked=.*'` over the census directory).
