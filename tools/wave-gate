@@ -334,6 +334,9 @@ cycles_join() {   # $1 the box that runs the check: both boxes' tms2 cycles.txt,
     cj_t=0; while :; do cj_n=0     # (w21g: a shared t made linux_leg's chain "asm2 240", and cycles lost its verdict)
         for cj_f in linux windows; do awk -F'\t' '$1 ~ /^tms2(@|$)/ { f = 1 } END { exit !f }' "$OUT/$cj_f.verdicts" 2>/dev/null && cj_n=$((cj_n + 1)); done
         cj_w=0; has linux && cj_w=$((cj_w + 1)); has windows && cj_w=$((cj_w + 1)); [ "$(boxof tms2)" = split ] || cj_w=1; [ $cj_n -ge $cj_w ] && break
+        cj_a="linux windows"; [ "$(boxof tms2)" = split ] || cj_a=$(boxof tms2)
+        for cj_f in $cj_a; do has $cj_f && [ -e "$OUT/$cj_f.ended" ] && ! awk -F'\t' '$1 ~ /^tms2(@|$)/ { f = 1 } END { exit !f }' "$OUT/$cj_f.verdicts" 2>/dev/null &&
+            { bverdict $1 cycles "NOT RUN" "the $cj_f leg ended with no tms2 verdict (m6dw53g waited 50 minutes on it), nothing to join"; return 1; }; done
         [ $cj_t -ge 3600 ] && { bverdict $1 cycles "NOT RUN" "tms2's halves: $cj_n of $cj_w reported within an hour, nothing to join"; return 1; }
         sleep 60; cj_t=$((cj_t + 60)); done
     : > "$OUT/cycles-joined.txt"
@@ -488,8 +491,9 @@ if [ -z "$REPORT" ]; then
     echo "wave-gate: the fixed point ${FIXED_OWED:+is owed: $FIXED_OWED}$([ -n "$FIXED_OWED" ] || echo "is not owed: its steps NOT RUN, checked")"
     for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
     echo "wave-gate: idle steps, to the first box free: $(group idle)"
-    has linux && linux_leg &
-    has windows && windows_leg &
+    rm -f "$OUT/linux.ended" "$OUT/windows.ended"      # a leg's end, however it ended: cycles_join stops waiting on it
+    has linux && { linux_leg; : > "$OUT/linux.ended"; } &
+    has windows && { windows_leg; : > "$OUT/windows.ended"; } &
     has mac && mac_leg
     wait
     echo "wave-gate: wall time $(( ($(date +%s) - T0) / 60 )) minutes" | tee "$OUT/wall"
