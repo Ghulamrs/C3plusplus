@@ -324,7 +324,7 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
 }
 
 // The kernel's one recursion: each of `from` is `to` under any declarator, a member type through its class, a function's
-// parameters through paramsUnder (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
+// parameters through the list form (a pack one per member); a leaf over the parameters `s` does not map is the failure named.
 Templates::Substitution Templates::substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const {
     Substitution r = { t, nullptr, nullptr };
     if (t == nullptr) return r;
@@ -372,8 +372,9 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     if (r.why != nullptr) r.at = t;
     if (bound >= 0 || !t->isFunction()) return r;
     r = substituteIn(s, t->returns(), Mapped, maker, pos);
-    const std::vector<const Type *> params = paramsUnder(s, t->params(), r.carried() ? &r : nullptr);
-    r.type = p_.types_.functionType(r.type, params, t->isVariadicFn());
+    const Substitutions params = substitute(s, t->params());
+    if (r.carried()) r.why = params.why, r.at = params.at;
+    r.type = p_.types_.functionType(r.type, params.types, t->isVariadicFn());
     return r;
 }
 
@@ -415,9 +416,11 @@ const Type *Templates::makeId(const std::string &name, const std::vector<Templat
 }
 
 // A parameter list under `s`: a read's `Args... a` (or `const Args &...`) is one parameter per member of the pack `s` binds, made
-// as Parser::packParameter makes them for the replay; kept as written where `s` binds no packs. `failed`: the kernel's first.
-std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std::vector<const Type *> &params, Substitution *failed) const {
-    std::vector<const Type *> out;
+// as Parser::packParameter makes them for the replay; kept as written where `s` binds no packs. The kernel's pack step: its first failure.
+Templates::Substitutions Templates::substitute(const Substituted &s, const std::vector<const Type *> &params) const {
+    Substitutions list;
+    list.why = nullptr, list.at = nullptr;
+    std::vector<const Type *> &out = list.types;
     Substitution r = { nullptr, nullptr, nullptr };
     for (const Type *t : params) {
         const Type *q = t->kind() == Kind::PackExpansion ? t->pointee() : nullptr;
@@ -426,7 +429,7 @@ std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std
         if (q == nullptr || q->kind() != Kind::TemplateParam || static_cast<std::size_t>(q->length()) >= s.packs.size()) {
             r = substitute(s, t);
             out.push_back(r.type);
-            if (failed != nullptr && failed->carried()) failed->why = r.why, failed->at = r.at;
+            if (list.why == nullptr) list.why = r.why, list.at = r.at;
             continue;
         }
         const PackMembers &members = s.packs[static_cast<std::size_t>(q->length())];
@@ -435,10 +438,10 @@ std::vector<const Type *> Templates::paramsUnder(const Substituted &s, const std
             one.from.insert(one.from.begin(), q), one.to.insert(one.to.begin(), members[k]);
             r = substitute(one, t->pointee());
             out.push_back(p_.types_.withoutConst(r.type));
-            if (failed != nullptr && failed->carried()) failed->why = r.why, failed->at = r.at;
+            if (list.why == nullptr) list.why = r.why, list.at = r.at;
         }
     }
-    return out;
+    return list;
 }
 
 // Slice 3g: the read laid `T a[N + 1]` with no bound; classShape folded it into `s.bounds`.
@@ -3900,7 +3903,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             k += p_.tokens_[from].is("<") && angle == 1 ? 1 : angle <= 0 && k == 1 ? 1 : 0;
         }
     }
-    std::vector<char> open;     // the brackets around a token: a pack expanded in a parameter list, `R(Args...)`, is paramsUnder's
+    std::vector<char> open;     // the brackets around a token: a pack expanded in a parameter list, `R(Args...)`, is the kernel's list form's
     std::vector<std::size_t> sized;
     for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t], &was = p_.tokens_[t > 0 ? t - 1 : 0];
@@ -4796,8 +4799,8 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         f.name = memberName(a, r.first, tag, s);
         f.owner = tag;
         f.returns = substitute(s, a.returns).type;
-        f.params = paramsUnder(s, a.params);
-        f.written = paramsUnder(s, a.written);
+        f.params = substitute(s, a.params).types;
+        f.written = substitute(s, a.written).types;
         f.symbol = memberSymbol(a, f.name, s, tag);
         if (p_.defaultArgs_.count(a.symbol) != 0)     // its defaults' tokens, kept by the read's symbol as declareMember keeps them
             p_.defaultArgs_[f.symbol] = p_.defaultArgs_.at(a.symbol), p_.defaultArgNamespace_[f.symbol] = p_.defaultArgNamespace_[a.symbol];
@@ -4814,7 +4817,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
             if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
     }
     for (VSlot &v : own ? p_.classes_.vtables_[tag] : none) {     // each slot's signature under `s`, a deleting destructor this tag's
-        v.params = paramsUnder(s, v.params);
+        v.params = substitute(s, v.params).types;
         if (v.returns != nullptr) v.returns = substitute(s, v.returns).type;
         if (v.name == "~$deleting" || (v.name == "~" && p_.target_.microsoftNames())) v.symbol = p_.linkage_.deletingDestructorSymbol(tag);
     }
@@ -4970,8 +4973,8 @@ std::string Templates::classMembers(std::size_t start, Substituted s, const Type
         const Signature &a = *mine[i], &b = *theirs[i];
         const std::string name = memberName(a, readTag, tag, s);
         if (name != b.name) return "differ: a member function's name: " + name + " for " + b.name;
-        if (substitute(s, a.returns).type != b.returns || paramsUnder(s, a.params).size() != b.params.size()) return "differ: a member function's return type or arity";
-        if (paramsUnder(s, a.params) != b.params) return "differ: a member function's parameter type";
+        if (substitute(s, a.returns).type != b.returns || substitute(s, a.params).types.size() != b.params.size()) return "differ: a member function's return type or arity";
+        if (substitute(s, a.params).types != b.params) return "differ: a member function's parameter type";
         if (a.variadic != b.variadic || a.constThis != b.constThis || a.access != b.access || a.isVirtual != b.isVirtual || a.isExplicit != b.isExplicit ||
             a.isStaticMember != b.isStaticMember || a.isNoexcept != b.isNoexcept || a.inlineBody != b.inlineBody || a.refThis != b.refThis)
             return "differ: a member function's qualifiers, access or kind";
@@ -5012,7 +5015,7 @@ std::string Templates::vtableHeld(const std::string &readTag, const std::string 
 // A read member function's name for the real tag from its signature under `s`, as the parser and Classes spell it on each ABI.
 std::string Templates::memberSymbol(const Signature &a, const std::string &name, const Substituted &s, const std::string &tag) const {
     {
-        const std::vector<const Type *> params = paramsUnder(s, a.params);
+        const std::vector<const Type *> params = substitute(s, a.params).types;
         const Type *fn = p_.types_.functionType(substitute(s, a.returns).type, params, a.variadic), *cls = p_.lookup_.findTypedef(tag);
         std::string symbol, why;
         if (!p_.target_.microsoftNames()) {
@@ -5022,7 +5025,7 @@ std::string Templates::memberSymbol(const Signature &a, const std::string &name,
         } else {
             // The written parameters under the binding stand where manglingType reads them; Classes names an implicit one public.
             const std::vector<const Type *> keptWritten = p_.writtenParams_, keptFor = p_.writtenFor_;
-            p_.writtenParams_ = paramsUnder(s, a.written);
+            p_.writtenParams_ = substitute(s, a.written).types;
             p_.writtenFor_ = a.written.empty() ? std::vector<const Type *>() : params;
             const char code = a.isVirtual ? 'U' : a.implicit ? 'Q' : a.access == Access::Public ? 'Q' : a.access == Access::Protected ? 'I' : 'A';
             if (name == tag) microsoftConstructorName(tag, cls, p_.linkage_.manglingType(fn), code, &symbol, &why);

@@ -253,8 +253,8 @@ public:
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args) const;
     const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
     const Type *dataUnder(const Substituted &s, const Member &m) const;     // a read data member's type under `s`, its bound too
-    std::vector<const Type *> paramsUnder(const Substituted &s, const std::vector<const Type *> &params,
-                                          Substitution *failed = nullptr) const;     // `Args...` expanded; the kernel's first failure
+    struct Substitutions { std::vector<const Type *> types; const char *why; const Type *at; };
+    Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
     bool packUnder(const Substituted &s, TemplateArg *a) const;     // a read pack argument (`X<Ts...>`) expanded under `s`
     const Type *carriedId(const Substituted &s, const Type *e, const Substituted *early) const;
     const Type *valueUnder(const Substituted &s, const Type *t) const;      // an expression's: a reference reads as its referent
