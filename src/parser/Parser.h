@@ -330,8 +330,10 @@ private:
     bool functionExplicitSpecialization(std::size_t pos);
     // A deduction left parameter `i` unbound: its default, if it has one, replayed with the earlier ones bound.
     bool defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
-                                 std::vector<const Type *> *binding, std::vector<long long> *values);
+                                 std::vector<const Type *> *binding, std::vector<long long> *values, bool deduced = false);
     const Type *typeDefaultRead(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool makesNothing);     // R2, 4b
+    const Type *defaultReadAs(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool names, long long *value);
+    void otherDefaultRead(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool names, bool folds, const std::string &spelled);
     // Reads the initialiser to learn its type, puts the tokens back, and
     // answers the declared type with `auto` replaced.
     const Type *deduceAuto(const Type *declared, const std::string &name,

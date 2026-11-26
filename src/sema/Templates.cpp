@@ -1362,7 +1362,8 @@ void Templates::countDefault(const TemplateParam &p, bool deduced) const {
     if (p.defBegin == 0) return;
     deducedDefaults_ += deduced ? 1 : 0;
     if (defaultMade_) {
-        defaultReport_[std::string("made: a type") + (deduced ? ", deduced" : ", the class door's list")]++;
+        defaultReport_[std::string("made: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") +
+                       (deduced ? ", deduced" : ", the class door's list")]++;
         defaultMade_ = false;
         return;
     }
@@ -1370,28 +1371,52 @@ void Templates::countDefault(const TemplateParam &p, bool deduced) const {
                     (deduced ? ", deduced" : ", the class door's list")]++;
 }
 
-const Type *Templates::defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding) {
+const Type *Templates::defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding,
+                                   const std::vector<long long> &values, long long *value) {
     const TemplateParam &p = decl.params[i];
-    const char *why = p.defPattern == nullptr ? (p.defUnread != nullptr ? p.defUnread : "not read at its declaration") : nullptr;
+    const std::string kind = p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value";
+    const bool read = p.type != nullptr && !p.isTemplate ? p.defExpr != nullptr || p.defValued : p.defPattern != nullptr;
+    const char *why = !read ? (p.defUnread != nullptr ? p.defUnread : "not read at its declaration") : nullptr;
     if (why == nullptr && decl.isMember) why = "a member template's, its class's parameters numbered apart";
-    Substituted s;
+    Substituted s;     // 4c: a value before it by its index, a template by its name, a type mapped
     for (std::size_t k = 0; why == nullptr && k < i; k++) {
+        const TemplateParam &q = decl.params[k];
         if (binding[k] == nullptr) why = "a parameter before it unbound";
+        s.values.push_back(k < values.size() ? values[k] : 0);
+        if (why != nullptr || q.type != nullptr) continue;
+        if (q.isTemplate) {
+            std::map<std::string, TemplateDecl>::const_iterator t = templates_.end();
+            if (binding[k]->isTemplateName()) t = p_.findTemplate(binding[k]->templateName());
+            if (t == templates_.end()) why = "a template parameter before it bound to no template";
+            else s.templates[static_cast<int>(k)] = t->first;
+            continue;
+        }
         s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
         s.to.push_back(binding[k]);
     }
     const Type *made = nullptr;
-    if (why == nullptr) {
+    if (why == nullptr && p.isTemplate) {
+        made = p.defPattern;
+    } else if (why == nullptr && p.type != nullptr) {     // as the replay: the declared type under the binding, the value folded
+        made = Parser::paramTypeIn(p, binding), *value = p.defValue;
+        if (p.defExpr != nullptr && !foldArg(p.defExpr, s.values, value)) why = "a value over the parameters before it the fold does not carry";
+    } else if (why == nullptr) {
         const Substitution r = substitute(s, p.defPattern, At{ p.defBegin });
         made = r.type, why = r.why;
+        // [temp.deduct]/7: a class the binding carries that lacks the member type named is a failed substitution, said as the replay says it.
+        const Type *cls = why != nullptr && std::string(why) == "a member type its class lacks" ? substitute(s, r.at->pointee(), Declared).type : nullptr;
+        if (cls != nullptr && cls->isStructOrUnion() && cls->findMember(r.at->tag()) == nullptr &&
+            !(cls->isSpecialization() && cls->findStaticMember(r.at->tag()) != nullptr))
+            defaultFailure_ = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
     }
-    if (why != nullptr) defaultReport_[std::string("replayed: a type: ") + why]++;
+    if (why != nullptr && defaultFailure_.empty()) defaultReport_["replayed: " + kind + ": " + why]++;
     return why == nullptr ? made : nullptr;
 }
 
-bool Templates::defaultHeld(const Type *made, const Type *replayed) {
-    if (made == replayed) return true;
-    defaultReport_["replayed: a type: differ: made " + made->describe() + ", replayed " +
+bool Templates::defaultHeld(const TemplateParam &p, const Type *made, const Type *replayed, long long value, long long replayedValue) {
+    if (made == replayed && (p.type == nullptr || p.isTemplate || value == replayedValue)) return true;
+    defaultReport_[std::string("replayed: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") + ": differ: made " +
+                   made->describe() + (p.type != nullptr ? " " + std::to_string(value) : std::string()) + ", replayed " +
                    (replayed != nullptr ? replayed->describe() : std::string("nothing"))]++;
     return false;
 }
@@ -2959,13 +2984,19 @@ bool Templates::deduceTemplateArguments(const TemplateDecl &decl,
         bool took = false;
         try {
             Parser::Trial trial(&p_);
-            took = p_.defaultTemplateArgument(decl, i, binding, values);
+            took = p_.defaultTemplateArgument(decl, i, binding, values, true);
         } catch (const SubstitutionFailure &f) {
-            countDefault(decl.params[i], true);
+            const bool made = !defaultFailure_.empty() && f.why == defaultFailure_;     // 4c: the kernel's failure, held under the check
+            if (!made && !defaultFailure_.empty()) defaultReport_["replayed: a type: differ: made a failure, replayed " + f.why]++;
+            if (made) defaultReport_["made: a failed substitution, deduced"]++;
+            else countDefault(decl.params[i], true);
+            defaultFailure_.clear();
             if (f.unsupported) p_.src_.fail(f.pos, f.why);
             *why = "the default argument of '" + decl.params[i].name + "' does not substitute: " + f.why;
             return false;
         }
+        if (!defaultFailure_.empty()) defaultReport_["replayed: a type: differ: made a failure, the replay took it"]++;
+        defaultFailure_.clear();
         if (took) countDefault(decl.params[i], true);
         if (!took) {
             *why = "'" + decl.params[i].name + "' appears in no parameter, so "

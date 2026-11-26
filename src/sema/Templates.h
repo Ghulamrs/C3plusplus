@@ -191,10 +191,13 @@ public:
     void countWhy(Door d, const std::string &why);
     void countDefault(const TemplateParam &p, bool deduced) const;     // a default template argument replayed, by kind
     // R2, slice 4b: a type default made by the kernel from its declaration's read (null: replayed, the reason counted), and
-    // under the check held against its replay; `defaultMade_` the last default's way, `defaultReport_` by reason.
-    const Type *defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding);
-    bool defaultHeld(const Type *made, const Type *replayed);
+    // under the check held against its replay; `defaultMade_` the last default's way, `defaultReport_` by reason. 4c: a value's
+    // (into `value`, its type as declared) and a template's too.
+    const Type *defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding,
+                            const std::vector<long long> &values, long long *value);
+    bool defaultHeld(const TemplateParam &p, const Type *made, const Type *replayed, long long value, long long replayedValue);
     mutable bool defaultMade_ = false;
+    std::string defaultFailure_;     // 4c: the kernel's answer that the default does not substitute, in the replay's words
     mutable std::map<std::string, long> defaultReport_;
     void countAhead(const std::string &tag, bool constructor);         // constexpr-ahead, by whether its class was made
     std::string trialShape(const TemplateDecl &decl, bool defaulted) const;
