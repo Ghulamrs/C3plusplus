@@ -333,10 +333,10 @@ public:
     // calls: callee and call nodes; values: 2f's folds, each + 2^31; members: a member call's function type, `this` first;
     // assigns: `a.m = b.m`'s operator= (Parser::assignCalls_'s fact), by the value's node
     std::map<std::string, Bound> bound_;
+    std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
     // While the function door asks a body's shape: its binding, and each id the id step made over it at first need (R1, m8r1k).
     struct Needing { const Substituted *s; std::vector<std::pair<const Type *, const Type *> > made; };
     Needing *needing_ = nullptr;
-    std::map<std::string, Substituted> coveredClass_;      // slice 3b, step 2: a covered class's binding, by its tag
     // Step 4: the read's held member bodies with each one's symbol, by start; a class's door reason, by tag.
     std::map<std::size_t, std::vector<std::pair<PendingBody, std::string> > > readBodies_;
     std::map<std::string, std::string> classWhy_;
