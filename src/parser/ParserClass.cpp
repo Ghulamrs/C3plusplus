@@ -1894,8 +1894,9 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
     if (consume("=")) {
+        syntax::NodeId init;
         if (patternBody_ && d.type->isConst() && dependentType(d.type)) {    // a read's `static const T value = v;`: folded to nothing
-            conditional();
+            init = syn(conditional());
             s.folded = true;
         } else if (!d.type->isConst() || !d.type->isInteger())
             src_.fail(d.pos, "'" + cls + "::" + d.name + "' is initialised "
@@ -1904,8 +1905,10 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
                              "definition outside the class instead");
         if (!s.folded) {
             s.folded = true;
-            s.value = constantExpression("a static member's value");
+            s.value = constantExpression("a static member's value", nullptr, &init);
         }
+        if (logging_ != nullptr && !logging_->placed.empty() && logging_->placed.back().name == d.name)
+            logging_->placed.back().init = init.v;     // R3 3R-d: the read's node, folded under the binding in the walk
     } else if (d.type->isArray() && d.type->length() < 0) {
         src_.fail(d.pos, "'" + cls + "::" + d.name + "' has no length, and a "
                          "static member cannot take one from its definition - "

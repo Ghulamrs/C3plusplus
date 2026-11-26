@@ -2612,6 +2612,8 @@ std::string Templates::builtReport() const {
     }
     out += "-check=templates reentries=" + std::to_string(reads + insts) + " read=" + std::to_string(reads) + " instantiation=" +
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
+    out += "-check=templates static record asked=" + std::to_string(staticAsked_) + " disagree=" + std::to_string(staticDisagree_) +
+           " absent=" + std::to_string(staticAbsent_) + " unfolded=" + std::to_string(staticUnfolded_) + "\n";     // R3 3R-d's census
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -4835,12 +4837,32 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
 
 // A static data member's declarator in the class's own braces: the token after its name and bounds, 0 where none is; `cx`
 // whether `constexpr` is written on its declaration, `name` its name's position.
-std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const {
+std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name, std::uint32_t *init) const {
     *cx = false;
     for (const MemberRecord &r : orderOf(start))     // R3 3R-b: as the read's order record took it
         for (const StaticPlace &p : r.placed)
-            if (p.name == n) { *cx = p.cx, *name = p.namePos; return p.after; }
+            if (p.name == n) {
+                if (init != nullptr) *init = p.init;
+                *cx = p.cx, *name = p.namePos;
+                return p.after;
+            }
     return 0;
+}
+
+// R3 3R-d's census: the read's node for a static's initialiser folded under the binding, against what the replay just set on `owner`.
+void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const std::vector<TemplateParam> &params,
+                              const std::vector<long long> &values) const {
+    const Type::StaticMember *m = owner->findStaticMember(n);
+    if (m == nullptr) return;
+    std::map<std::string, int> named;
+    for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
+        if (params[q].type != nullptr) named[params[q].name] = static_cast<int>(values[q]);
+    long long v = 0;
+    staticAsked_++;
+    if (init == 0) staticAbsent_ += m->folded;
+    else if (!m->folded) staticDisagree_++;
+    else if (!foldUnder(syntax::NodeId(init), named, std::map<std::string, int>(), 0, &v)) staticUnfolded_++;
+    else staticDisagree_ += v != m->value;
 }
 
 // `typedef X<num, den> n;` in the class's own braces, X its own template and an argument naming one of its static data members:
@@ -5012,9 +5034,11 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         const Type::StaticMember &m = statics[o.second];
         bool cx = false;
         std::size_t name = 0;
-        p_.at_ = staticAt(start, m.name, &cx, &name);
+        std::uint32_t init = 0;
+        p_.at_ = staticAt(start, m.name, &cx, &name, &init);
         reentered("jump: a static data member");
         p_.declareStaticMember(tag, owner, Parser::Declared(m.name, need(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
+        staticAgainst(init, owner, m.name, params, values);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;

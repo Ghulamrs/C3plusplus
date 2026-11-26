@@ -2498,7 +2498,7 @@ private:
     // How many potentially-throwing things the expression being parsed has
     // reached. `noexcept(e)` reads it; nothing else does.
     int mayThrow_ = 0;
-    long long constantExpression(const char *what, bool *dependent = nullptr);
+    long long constantExpression(const char *what, bool *dependent = nullptr, syntax::NodeId *node = nullptr);
 
     void typedefFunctionSuffix(Declared &td);
 

@@ -380,7 +380,10 @@ public:
     const Type *classFromRead(const TemplateDecl &decl, const std::string &tag, bool partial, std::size_t start,
                               const std::vector<TemplateArg> &args, const Substituted &s, std::size_t pos, std::vector<PendingBody> *bodies,
                               const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding, const std::vector<long long> &values);
-    std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name) const;     // a static member's declarator
+    std::size_t staticAt(std::size_t start, const std::string &n, bool *cx, std::size_t *name, std::uint32_t *init = nullptr) const;     // a static member's declarator
+    void staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const std::vector<TemplateParam> &params,
+                       const std::vector<long long> &values) const;     // 3R-d's census: the read's node folded, against the replay
+    mutable std::size_t staticAsked_ = 0, staticDisagree_ = 0, staticAbsent_ = 0, staticUnfolded_ = 0;
     std::size_t ownTypedefAt(std::size_t start, const std::string &n) const;     // `typedef X<num, den> n;`, X its own template
     bool typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const;
     std::size_t typedefByPath(std::size_t start, const Substituted &s, const std::pair<std::string, const Type *> &td) const;     // slice 3u

@@ -324,9 +324,10 @@ void Parser::refuseVirtSpecifiers(const char *what) {
                              " cannot be virtual");
 }
 
-long long Parser::constantExpression(const char *what, bool *dependent) {
+long long Parser::constantExpression(const char *what, bool *dependent, syntax::NodeId *node) {
     std::size_t pos = peek().pos;
     ExprPtr e = decay(conditional());
+    if (node != nullptr) *node = syn(e);
     long long v;
     const bool standIn = valueDependentRead(syn(e));
     // [temp.dep.constexpr]/2: a type-dependent one (`sizeof(T) * 2`, the read's zero of a dependent type) is value-dependent too.
