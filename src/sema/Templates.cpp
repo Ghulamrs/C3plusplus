@@ -3562,15 +3562,16 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
-                          const std::vector<const Type *> *pending) const {
+                          const std::vector<const Type *> *pending, bool base) const {
     std::string written;
     if (!idUnder(s, e, name, args) || !readId(e, &written, nullptr)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
-    if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
+    const bool ownBase = base && !itself && *name == read->templateName();     // 3x: `Tuple<Rest...>`, made reading the head, as the replay
+    if (d == templates_.end() || ((*name == read->templateName()) != itself && !ownBase) || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
     const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
-    std::vector<std::size_t> bodies(itself ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
-    for (std::size_t q = 0; !itself && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
+    std::vector<std::size_t> bodies(itself || ownBase ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
+    for (std::size_t q = 0; !itself && !ownBase && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
     for (const std::size_t from : bodies)
         for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
             if (p_.tokens_[t].text == own) return false;
@@ -3645,7 +3646,7 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
     for (const Type *e : wanted) {
         std::string name;
         std::vector<TemplateArg> args;
-        if (!earlyArgs(s, e, readClass_.at(start), &name, &args)) continue;
+        if (!earlyArgs(s, e, readClass_.at(start), &name, &args) && !earlyArgs(s, e, readClass_.at(start), &name, &args, false, nullptr, true)) continue;
         const std::string tag = specializationKey(name, args);
         const Type *had = p_.lookup_.findTypedef(tag);
         if (had != nullptr) { s.from.push_back(e), s.to.push_back(had); continue; }     // an id's argument, as the next one reads it
@@ -3866,7 +3867,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         }
         return false;
     };
-    // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's.
+    // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's;
+    // 3x: beside one, over a non-type parameter alone, which marks a body's read of it value-dependent (memberShape replays it).
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     const bool bare = own != readMembers_.end() && own->second.second.empty() && templatesOf(own->second.first).empty();
     for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
@@ -3888,7 +3890,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         sized.erase(std::remove(sized.begin(), sized.end(), t), sized.end());
         if (bare && t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size() && inEnum(t); q++)
-            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name) return "replayed: a member enumeration naming a template parameter";
+            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name && (params[q].type == nullptr || params[q].isPack))
+                return "replayed: a member enumeration naming a type or pack parameter, beside a member function";
+        if (t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
                 !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
@@ -3969,7 +3973,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (real != nullptr && (real->kind() != Kind::Struct || !real->isComplete() || real->polymorphic() || real->hasVirtualBase() || real->isFinal()))
             return "replayed: a base over its parameters: a polymorphic, final, incomplete or union class, or one of a virtual base";
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
-        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted))
+        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted, true))
             wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(baseIds++), u);
         else return "replayed: a base: a class template-id over its parameters";
     }
@@ -4104,6 +4108,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             if (ahead) sigAt = back;
             if (!ahead && !behind && wanted != nullptr && wanted->size() != had)
                 return "replayed: class template-ids made first for a data member and a member function's signature";
+            if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3x: a base made first
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
