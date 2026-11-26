@@ -339,7 +339,7 @@ Templates::Substitutions Templates::need(const Substituted &s, const std::vector
 Templates::Substitution Templates::substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const {
     Substitution r = { t, nullptr, nullptr };
     if (t == nullptr) return r;
-    const Ids below = maker != nullptr ? Made : ids == Keyed ? Keyed : Mapped;
+    const Ids below = maker != nullptr ? Made : ids == Keyed || ids == Pattern ? ids : Mapped;
     if (ids == Declared && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     if (t->unqualified() != t) {
         r = substituteIn(s, t->unqualified(), below, maker, pos);
@@ -350,7 +350,12 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
     for (std::size_t k = 0; k < s.needed.size(); k++)
         if (t == s.needed[k].first) { r.type = s.needed[k].second; return r; }
-    if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
+    if ((ids == Made || ids == Pattern) && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos, ids == Pattern);
+    if (ids == Pattern && t->kind() == Kind::PackExpansion) {     // 3R-h: `_Args &&...`, its own pack kept a pattern's
+        r = substituteIn(s, t->pointee(), Pattern, maker, pos);
+        r.type = p_.types_.packExpansion(r.type);
+        return r;
+    }
     // Keyed: a read id the map lacks is the program's class by its key (one made at first need included), never made here.
     if (ids == Keyed && readPartials_.count(t) == 0 && readId(t, nullptr, nullptr)) {
         const Substitution d = specializationIn(s, t, nullptr, pos);
@@ -393,7 +398,7 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     if (r.why != nullptr) r.at = t;
     if (bound >= 0 || !t->isFunction()) return r;
     r = substituteIn(s, t->returns(), below, maker, pos);
-    const Substitutions params = substituteList(s, t->params(), maker, pos);
+    const Substitutions params = substituteList(s, t->params(), maker, pos, below);
     if (r.carried()) r.why = params.why, r.at = params.at;
     r.type = p_.types_.functionType(r.type, params.types, t->isVariadicFn());
     return r;
@@ -402,7 +407,7 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
 // The id step: `X<$T0>` under `s`, the specialization the program declared by its key; where none is and `maker` is given, made
 // through makeClass as the class door makes it (makeId). Failure names an argument the binding does not carry, or no class.
 // At Made a partial's read class is no id (`array<$T0>`, its own parameters, not `array<$T0,0>`): the map's (readStands) or none.
-Templates::Substitution Templates::specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const {
+Templates::Substitution Templates::specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos, bool pattern) const {
     Substitution r = { o, nullptr, o };
     std::string name;
     std::vector<TemplateArg> args;
@@ -415,6 +420,11 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
         return r;
     }
     const Type *real = p_.lookup_.findTypedef(specializationKey(name, args));
+    bool over = pattern && templates_.count(name) != 0 && p_.dependentArgs(args);     // 3R-h: each a parameter or no parameter at all
+    for (std::size_t k = 0; over && k < args.size(); k++)
+        over = args[k].isType && !args[k].isPack && !args[k].isTemplate && args[k].expr == nullptr && !args[k].isParam && args[k].type != nullptr &&
+               (args[k].type->unqualified()->kind() == Kind::TemplateParam || !p_.dependentType(args[k].type));
+    if (real == nullptr && over) real = shallowId(templates_.at(name), specializationKey(name, args), args);
     if (real == nullptr && maker != nullptr && templates_.count(name) != 0) {
         real = maker->makeId(name, args, pos, nullptr);
         maker->classCensus_["made at first need: a class template-id at a door"]++;
@@ -423,6 +433,19 @@ Templates::Substitution Templates::specializationIn(const Substituted &s, const 
     else { r.type = real; r.at = nullptr; }
     if (real != nullptr && maker != nullptr && needing_ != nullptr && needing_->s == &s) needing_->made.push_back(std::make_pair(o, real));
     return r;
+}
+
+// Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler and deduction read only its name and
+// arguments. Registered so that `Box<T>::get` reads (the declarator's path looks the class up by name); its `$` collides with nothing.
+const Type *Templates::shallowId(const TemplateDecl &decl, const std::string &tag, const std::vector<TemplateArg> &args) const {
+    Type *shallow = p_.types_.structType(Kind::Struct, tag);
+    if (!shallow->isSpecialization()) {
+        shallow->setSpecialization(decl.name, args);
+        shallow->setTemplateNamespace(decl.ns);
+        if (classDoor_) readShallow_.push_back(shallow);
+    }
+    p_.lookup_.declareTypeName(tag, shallow);
+    return shallow;
 }
 
 // The tag `name<args>` names: the class the program declared, or one made now through makeClass under the nesting bound, as the
@@ -457,8 +480,8 @@ Templates::Substitutions Templates::substitute(const Substituted &s, const std::
 
 // The list form's one loop, each parameter at Mapped or (with `maker`) at Made.
 Templates::Substitutions Templates::substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker,
-                                                   std::size_t pos) const {
-    const Ids ids = maker != nullptr ? Made : Mapped;
+                                                   std::size_t pos, Ids below) const {
+    const Ids ids = maker != nullptr ? Made : below == Pattern ? Pattern : Mapped;
     Substitutions list;
     list.why = nullptr, list.at = nullptr;
     std::vector<const Type *> &out = list.types;
@@ -3871,19 +3894,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
     // and deduction read only its name and arguments. An argument list that mentions no
     // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
-    if (p_.patternOnly_ && p_.dependentArgs(args)) {
-        Type *shallow = p_.types_.structType(Kind::Struct, tag);
-        if (!shallow->isSpecialization()) {
-            shallow->setSpecialization(decl.name, args);
-            shallow->setTemplateNamespace(decl.ns);
-            if (classDoor_) readShallow_.push_back(shallow);
-        }
-        // Registered so that `Box<T>::get` reads: the declarator's qualified
-        // path looks the class up by name, and this is the only name it has.
-        // The tag holds a `$` and so cannot collide with anything written.
-        p_.lookup_.declareTypeName(tag, shallow);
-        return shallow;
-    }
+    if (p_.patternOnly_ && p_.dependentArgs(args)) return shallowId(decl, tag, args);
 
     if (const Type *had = p_.lookup_.findTypedef(tag)) {
         asked(tag, pos);
@@ -5198,7 +5209,7 @@ const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &
         both.from.push_back(p_.types_.templateParam(static_cast<int>(params.size() + i)));
         both.to.push_back(p_.types_.templateParam(static_cast<int>(i)));
     }
-    const Substitution r = substitute(both, mt.pattern, Declared);
+    const Substitution r = substitute(both, mt.pattern, Pattern);     // an id over its own parameters the shallow one the replay reads
     if (mt.pattern == nullptr) return "no pattern read";
     if (!r.carried() && shape != nullptr) *shape = std::string(r.why) + ": " + trialKind(r.at);     // the census's split, by the leaf
     if (!r.carried()) return r.why;     // the census counts the substitution's own reason
