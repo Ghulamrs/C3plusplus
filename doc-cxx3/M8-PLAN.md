@@ -6549,7 +6549,7 @@ build): **subst.sh 0 failed** (run and typed at -O0/-O2 1,368/0 and 1,015/0, cen
 ceilings 17 of 17 and 26 of 26, no record re-recorded); **run.sh 1,368 passed 0 failed**, plain and with CXX1 carrying the
 flag; **the full stage-0 self-compile 102 of 102** (150 s). Not finished inside the hour, owed to the wave gate unless the
 handover's last lines carry them: identical x86_64-windows (both spellings) and tms6747 plain, the four under the flag past
-x86_64-linux; names.sh and overload.sh (Windows, both ways). **The `-check=templates` censuses** (Linux, `-templates=subst`):
+x86_64-linux; names.sh under the flag and overload.sh both ways (names.sh plain: 1,024 passed, 0 failed). **The `-check=templates` censuses** (Linux, `-templates=subst`):
 no class differ on either ABI, suite or self-host - x86_64-linux nonzero 354, classes 2,638 made of 2,661, self 76,051 of
 76,051; x86_64-windows nonzero 378, self 76,036 of 76,036; their `made (N): differ: replayed: ...` lines are the check's own
 covered-and-replayed reasons m84a counted, none of 4a's lines. The Linux REF
