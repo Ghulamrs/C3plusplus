@@ -2615,7 +2615,8 @@ std::string Templates::builtReport() const {
     out += "-check=templates static record asked=" + std::to_string(staticAsked_) + " disagree=" + std::to_string(staticDisagree_) +
            " absent=" + std::to_string(staticAbsent_) + " unfolded=" + std::to_string(staticUnfolded_) + "\n";     // R3 3R-d's census
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i)
-        out += "-check=templates static unfolded (" + std::to_string(i->second) + "): " + i->first + "\n";
+        out += "-check=templates static " + std::string(i->first[0] == '~' ? "disagree (" : "unfolded (") + std::to_string(i->second) + "): " +
+               i->first.substr(i->first[0] == '~' ? 11 : 0) + "\n";
     for (std::map<std::size_t, std::set<std::string> >::const_iterator i = reenteredAt_.begin(); i != reenteredAt_.end(); ++i) {
         const std::string where = p_.src_.where(i->first);
         for (const std::string &door : i->second)
@@ -4853,24 +4854,24 @@ std::size_t Templates::staticAt(std::size_t start, const std::string &n, bool *c
 
 // R3 3R-d's census: the read's node for a static's initialiser folded under the binding, against what the replay just set on `owner`.
 void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const Substituted &s,
-                              const std::vector<TemplateParam> &params, const std::vector<long long> &values) {
+                              const std::vector<TemplateParam> &params, const std::vector<long long> &values, const std::string &enums) {
     const Type::StaticMember *m = owner->findStaticMember(n);
     if (m == nullptr) return;
-    std::map<std::string, int> named;
+    std::map<std::string, long long> named;     // `ratio<1, 3600000000000>`'s: no int holds it
     for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
-        if (params[q].type != nullptr) named[params[q].name] = static_cast<int>(values[q]);
+        if (params[q].type != nullptr) named[params[q].name] = values[q];
     long long v = 0;
     staticAsked_++;
     if (init == 0) staticAbsent_ += m->folded;
-    else if (!m->folded) staticDisagree_++;
-    else if (!staticFolded(syntax::NodeId(init), owner, s, params, named, &v)) staticUnfolded_++;
-    else staticDisagree_ += v != m->value;
+    else if (!m->folded) staticDisagree_++, staticWhy_["~disagree: " + n + ", the replay's not folded"]++;
+    else if (!staticFolded(syntax::NodeId(init), owner, s, params, named, enums, &v)) staticUnfolded_++;
+    else if (v != m->value) staticDisagree_++, staticWhy_["~disagree: " + n + " " + std::to_string(v) + ", the replay's " + std::to_string(m->value)]++;
 }
 
 // 3R-d: a static's initialiser by the constant evaluator over its read node typed under `s`, each value-dependent name of a
 // non-type parameter at `named`'s value; false at any other dependent leaf (a `sizeof` of a parameter, another class's static).
 bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                             const std::map<std::string, int> &named, long long *out) {
+                             const std::map<std::string, long long> &named, const std::string &enums, long long *out) {
     const syntax::Tree &st = p_.syntaxTree_;
     Bound under;
     under.s = s, under.folds = true;
@@ -4892,20 +4893,24 @@ bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Subst
             continue;
         }
         const bool sizeOf = n.kind == syntax::Kind::Sizeof && p_.sizeofTypes_.count(id.v) != 0;
-        if (!sizeOf && ((n.marks & (syntax::ValueDependent | syntax::TypeDependent | syntax::DependentName | syntax::Unfound)) == 0 ||
-                        (through && n.count != 0)))
-            continue;
+        const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator res = p_.resolutions_.find(id.v);
+        const bool member = res != p_.resolutions_.end() && res->second.what == Parser::Resolved::StaticMember;     // unmarked: `size * 2`
+        const bool marked = (n.marks & (syntax::ValueDependent | syntax::TypeDependent | syntax::DependentName | syntax::Unfound)) != 0;
+        if (!sizeOf && !(n.kind == syntax::Kind::Name && member) && (!marked || (through && n.count != 0))) continue;
         const Type::StaticMember *own = n.kind == syntax::Kind::Name ? owner->findStaticMember(text) : nullptr;
         if (own != nullptr && own->folded) {     // one of the class's own, declared before this one in the walk's order
             under.values[id.v] = static_cast<std::size_t>(own->value + 2147483648LL);
             continue;
         }
+        if (!sizeOf && !marked) continue;     // another class's static, named unqualified: its record's value
         const std::unordered_map<std::uint32_t, std::pair<const Type *, std::string> >::const_iterator c = p_.scopedStatics_.find(id.v);
         if (c != p_.scopedStatics_.end()) {     // `C<N>::v`: C the program's under `s` by its key - none made here (the census's)
             const Substitution r = substitute(s, c->second.first, Declared);
             const Type *u = r.carried() && r.type != nullptr ? r.type->unqualified() : nullptr;
             const Type::StaticMember *sm = u != nullptr && u->isStructOrUnion() ? u->findStaticMember(c->second.second) : nullptr;
-            if (sm == nullptr || !sm->folded) return staticWhy_["another class's static, its class not made or the static no constant"]++, false;
+            if (sm == nullptr || !sm->folded)
+                return staticWhy_[std::string(u == nullptr ? "another class's static, its class not made: '" : sm == nullptr ?
+                                  "another class's static it does not declare: '" : "another class's static, no constant: '") + text.substr(0, 40) + "'"]++, false;
             under.values[id.v] = static_cast<std::size_t>(sm->value + 2147483648LL);
             continue;
         }
@@ -4915,7 +4920,13 @@ bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Subst
             under.values[id.v] = static_cast<std::size_t>(sized->size(p_.target_) + 2147483648LL);
             continue;
         }
-        const std::map<std::string, int>::const_iterator q = n.kind == syntax::Kind::Name ? named.find(st.text(id)) : named.end();
+        const std::unordered_map<std::string, std::size_t>::const_iterator en =
+            n.kind == syntax::Kind::Name ? p_.lookup_.enumIndex_.find(enums + text) : p_.lookup_.enumIndex_.end();
+        if (en != p_.lookup_.enumIndex_.end() && !p_.lookup_.enums_[en->second].valueDependent) {     // the class's own, read before
+            under.values[id.v] = static_cast<std::size_t>(p_.lookup_.enums_[en->second].value + 2147483648LL);
+            continue;
+        }
+        const std::map<std::string, long long>::const_iterator q = n.kind == syntax::Kind::Name ? named.find(st.text(id)) : named.end();
         if (q == named.end()) return staticWhy_[std::string("a dependent ") + syntax::kindName(n.kind) + " '" + st.text(id).substr(0, 40) + "'"]++, false;
         under.values[id.v] = static_cast<std::size_t>(q->second + 2147483648LL);
     }
@@ -5102,7 +5113,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         p_.at_ = staticAt(start, m.name, &cx, &name, &init);
         reentered("jump: a static data member");
         p_.declareStaticMember(tag, owner, Parser::Declared(m.name, need(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
-        staticAgainst(init, owner, m.name, s, params, values);
+        staticAgainst(init, owner, m.name, s, params, values, tag + (enumScope != scope ? "::$held::" : "::"));
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
