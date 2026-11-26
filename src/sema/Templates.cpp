@@ -3870,7 +3870,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         return false;
     };
     // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's;
-    // 3z: beside one, over a non-type parameter alone, which marks a body's read of it value-dependent (memberShape replays it).
+    // 3z: beside one, over a non-type parameter, which marks a body's read of it value-dependent (memberShape replays it); 3aa: a type one too.
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     const bool bare = own != readMembers_.end() && own->second.second.empty() && templatesOf(own->second.first).empty();
     for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
@@ -3892,8 +3892,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         sized.erase(std::remove(sized.begin(), sized.end(), t), sized.end());
         if (bare && t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size() && inEnum(t); q++)
-            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name && (params[q].type == nullptr || params[q].isPack))
-                return "replayed: a member enumeration naming a type or pack parameter, beside a member function";
+            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name && params[q].isPack)
+                return "replayed: a member enumeration naming a pack parameter, beside a member function";
         if (t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
@@ -5115,10 +5115,17 @@ void Templates::readStands(std::size_t start, const Type *made, Substituted *s) 
     s->to.push_back(made);
     bool apartEnum = false;     // slice 3r: each named member enumeration the made class's, once staticsFromRead declared it
     for (const std::size_t e : memberEnums(start, &apartEnum)) {
-        const Type *mine = nullptr;     // the read's, by a data member of it
+        const Type *mine = nullptr;     // the read's, by a data member of it or (3aa) a member function's return or parameter
         const std::string end = "::" + p_.tokens_[e + 1].text;
-        for (const Member &m : readClass_.at(start)->members()) {
-            const Type *u = m.type->unqualified();
+        std::vector<const Type *> carried;
+        for (const Member &m : readClass_.at(start)->members()) carried.push_back(m.type);
+        for (std::size_t f = 0; k != readMembers_.end() && f < k->second.second.size(); f++) {
+            carried.push_back(k->second.second[f].returns);
+            carried.insert(carried.end(), k->second.second[f].params.begin(), k->second.second[f].params.end());
+        }
+        for (const Type *c : carried) {
+            const Type *u = c == nullptr ? nullptr : c->unqualified();
+            if (u == nullptr) continue;
             if (p_.tokens_[e + 1].kind == TokenKind::Ident && u->isEnumeration() && u->tag().size() > end.size() &&
                 u->tag().compare(u->tag().size() - end.size(), end.size(), end) == 0) mine = u;
         }

@@ -16,7 +16,7 @@ template <class T, int N> struct traits {
     static const int both = bytes + scaled;
 };
 
-// One with a member function keeps its replay: its body could read the enumerator.
+// One with a member function: the enumerator is value-dependent in the read, so the body reading it replays by name (3aa).
 template <class T> struct sized {
     enum { bytes = sizeof(T) * 2 };
     int get() const { return bytes + 1; }

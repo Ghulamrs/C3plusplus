@@ -329,7 +329,8 @@ long long Parser::constantExpression(const char *what, bool *dependent) {
     ExprPtr e = decay(conditional());
     long long v;
     const bool standIn = valueDependentRead(syn(e));
-    if (dependent != nullptr) *dependent = standIn;
+    // [temp.dep.constexpr]/2: a type-dependent one (`sizeof(T) * 2`, the read's zero of a dependent type) is value-dependent too.
+    if (dependent != nullptr) *dependent = standIn || (patternBody_ && e && dependentType(e->type()));
     const sema::Constexpr::StandIn hold(constant_, standIn);
     if (!constant_.fold(*e, &v, pos))
         src_.fail(pos, std::string("expected ") + what + ", and this is not an integer constant expression");
