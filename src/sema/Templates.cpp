@@ -1628,6 +1628,43 @@ std::string Templates::formedHeld(const TemplateDecl &decl, const Type *formed, 
     return p_.patternNoexcept_ != decl.patternNoexcept ? "held: differ: the replay's noexcept" : "held: formed as the replay read it";
 }
 
+// A return type's leaf under its cv, pointers and references - where a `decltype` return is.
+static const Type *returnLeaf(const Type *r) {
+    while (r != nullptr && (r->unqualified() != r || r->isPointer() || r->isReference())) r = r->unqualified() != r ? r->unqualified() : r->isPointer() ? r->pointee() : r->referent();
+    return r;
+}
+
+// `decltype(t.f())` or `decltype(T().f())`: the object a function parameter or a value-initialised `T` under `s`, its class complete,
+// and `f` its one member function of that name, public, of no parameters or ref-qualifier, callable on the object's cv.
+const char *Templates::decltypeUnder(const Substituted &s, const Type *fn, const Type *leaf, std::size_t pos, const Type **out) {
+    const DepExpr *e = leaf->dependentExpr();
+    *out = nullptr;
+    if (e->op != DepExpr::Call || e->kids.size() != 1 || (e->kids[0]->op != DepExpr::Member && e->kids[0]->op != DepExpr::Arrow))
+        return "a 'decltype' of no member call without arguments";
+    const DepExpr *object = e->kids[0]->kids[0];
+    Substitution r = { nullptr, "a 'decltype' over an object neither a function parameter nor `T()`", nullptr };
+    if (object->op == DepExpr::FunctionParam && object->index >= 0 && static_cast<std::size_t>(object->index) < fn->params().size())
+        r = substitute(s, fn->params()[static_cast<std::size_t>(object->index)], At{ pos });
+    else if (object->op == DepExpr::CastList && object->kids.empty() && e->kids[0]->op == DepExpr::Member)
+        r = substitute(s, object->type, At{ pos });
+    if (!r.carried() || r.type == nullptr) return r.why != nullptr ? r.why : "a 'decltype' over an object the binding does not carry";
+    const Type *o = r.type->isReference() ? r.type->referent() : r.type;
+    if (e->kids[0]->op == DepExpr::Arrow) o = o->unqualified()->isPointer() ? o->unqualified()->pointee() : nullptr;
+    const Type *cls = o != nullptr ? o->unqualified() : nullptr;
+    if (cls == nullptr || !cls->isStructOrUnion() || !cls->isComplete() || p_.dependentType(cls)) return "a 'decltype' over an object no complete class";
+    if (o != cls && o != p_.types_.withConst(cls)) return "a 'decltype' over a volatile object";
+    const std::string key = cls->tag() + "::" + e->kids[0]->name;
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
+    if (set == nullptr || set->size() != 1 || memberTemplates_.count(key) != 0) return "a 'decltype' of a member call not one function";
+    const Signature &f = p_.lookup_.functions_[(*set)[0]];
+    if (!f.params.empty() || f.variadic || f.refThis != RefQual::None || f.deleted || f.access != Access::Public || f.returns == nullptr ||
+        (o->isConst() && !f.constThis && !f.isStaticMember) || p_.dependentType(f.returns) ||
+        (f.returns->unqualified() != f.returns && !f.returns->isStructOrUnion()))
+        return "a 'decltype' of a member call the read would rank";
+    *out = f.returns;
+    return nullptr;
+}
+
 std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
                                          const std::vector<long long> &values, const Packs &packs, std::size_t pos,
                                          const Type **formed) {
@@ -1640,7 +1677,11 @@ std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::ve
         try {
             // A qualifier's class not yet made, or an id under a declarator (Declared lays the outermost only): made at the use, as
             // the replay makes it reading the id, in the caller's trial.
-            Substitution r = substitute(s, decl.pattern, Declared);
+            const Type *const dt = decl.pattern->kind() == Kind::Function ? returnLeaf(decl.pattern->returns()) : nullptr;
+            const Type *typed = nullptr;     // 4f: a return `decltype` typed under the binding is the map's, as an id made at first need
+            const char *const untyped = dt != nullptr && dt->dependentExpr() != nullptr ? decltypeUnder(s, decl.pattern, dt, pos, &typed) : nullptr;
+            if (typed != nullptr) s.needed.push_back(std::make_pair(dt, typed));
+            Substitution r = untyped != nullptr ? Substitution{ nullptr, untyped, dt } : substitute(s, decl.pattern, Declared);
             if (!r.carried() && (std::string(r.why) == "a member type whose class the binding does not carry" ||
                                  (std::string(r.why) == "a type over the parameters the binding does not carry" && madeAtUse(r.at))))
                 r = substitute(s, decl.pattern, At{ pos });
@@ -2269,8 +2310,7 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
     g.setBlocks(blocks, opens);
     g.setSymbol(sp.symbol);
     if (f == nullptr) return "no function read";
-    const Type *r = f->returns();
-    while (r != nullptr && (r->unqualified() != r || r->isPointer() || r->isReference())) r = r->unqualified() != r ? r->unqualified() : r->isPointer() ? r->pointee() : r->referent();
+    const Type *r = returnLeaf(f->returns());
     if (r != nullptr && r->dependentExpr() != nullptr) return "a decltype return, which the replay works out";
     if (returns == nullptr || p_.dependentType(returns)) return "a return type the binding does not carry";
     if (f->isNoexcept() || !f->exceptionSpec().empty() || f->hasLandingPads()) return "an exception specification or landing pads";
@@ -5970,7 +6010,7 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
             {
                 // The kernel's ids made at the use inside the replay's trial: a class that cannot be made is a failure, its read put back.
                 Parser::Trial trial(&p_);
-                if (substitute_ && (shape == "types alone" || shape == "a default")) failed = sfinaeSubstituted(decl, binding, values, packs, pos, &formed);
+                if (substitute_ && (shape == "types alone" || shape == "a default" || shape == "a 'decltype'")) failed = sfinaeSubstituted(decl, binding, values, packs, pos, &formed);
                 if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
                 declare = formed != nullptr && !checkBodies_;
                 if (!declare) {
