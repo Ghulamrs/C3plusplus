@@ -1034,7 +1034,7 @@ TypeId Typer::boundValue(TypeId t) const {
 }
 
 TypeId Typer::bound(TypeId t) const {
-    return binding_.empty() ? t : TypeTable::id(p_.tmpl_.substitute(p_.tmpl_.bound_.at(binding_).s, p_.types_.type(t)).type);
+    return binding_.empty() ? t : TypeTable::id(p_.tmpl_.substitute(p_.tmpl_.bound_.at(binding_).s, p_.types_.type(t), Templates::Keyed).type);
 }
 
 // Every fact of a typed node the lowering reads, but its syntax and declaration ids: the two bodies' own nodes.
@@ -1091,7 +1091,7 @@ TypeId Typer::declaredReturnOf(syntax::NodeId fn, const std::string &symbol) con
     const TypeId declared = declaredReturn(fn);
     const std::map<std::string, Templates::Bound>::const_iterator b = p_.tmpl_.bound_.find(symbol);
     if (declared.valid() && b != p_.tmpl_.bound_.end() && fn.v == b->second.read.v)
-        return TypeTable::id(p_.tmpl_.substitute(b->second.s, p_.types_.type(declared)).type);
+        return TypeTable::id(p_.tmpl_.substitute(b->second.s, p_.types_.type(declared), Templates::Keyed).type);
     return declared;
 }
 

@@ -247,9 +247,9 @@ public:
     std::map<std::string, TemplateDecl>::const_iterator aliasedClass(const TemplateDecl &alias) const;     // `using A = B<T>;`'s B
     // **R1's kernel** (D6): `t` under `s`, total - `why` names the first part `s` cannot carry, empty when it carries all; `type` is
     // then the carried parts substituted and `at` the part that failed. A class template-id: `s`'s own map (Mapped), the
-    // program's by its key (Declared), or made on demand through makeClass (Made, the non-const one).
+    // program's by its key (Declared; Keyed the map first, under every declarator), or made through makeClass (Made, non-const).
     struct Substitution { const Type *type; const char *why; const Type *at; bool carried() const { return why == nullptr; } };
-    enum Ids { Mapped, Declared, Made };
+    enum Ids { Mapped, Declared, Made, Keyed };
     Substitution substitute(const Substituted &s, const Type *t, Ids ids = Mapped) const;
     struct At { std::size_t pos; };
     Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
@@ -283,7 +283,8 @@ public:
                                 std::size_t *chosen, const Type **full);     // why `o.f(x)` replays, or empty
     std::string valueCast(syntax::NodeId id, const Substituted &s);     // why a cast to no reference replays, or empty
     std::string boundClass(const Type &t) const;       // why a class bound to a type parameter replays, or empty: a class
-    bool boundObject(syntax::NodeId id, const Substituted &s) const;       // an lvalue of a bound class, by its name or a pointer's
+    bool boundObject(syntax::NodeId id, const Substituted &s, bool classBound) const;     // an lvalue of a bound class, by its name or a pointer's
+    bool overRead(const Type *read) const;     // a read type over the parameters: a class it names comes from the binding
     // Slice 2f: each value-dependent name of a read worth its value under `values`, by node; why it is not, or empty.
     std::string valueShape(syntax::NodeId body, const Specialization &sp, std::map<std::uint32_t, std::size_t> *values) const;
     bool foldUnder(syntax::NodeId id, const std::map<std::string, int> &params, const std::map<std::string, int> &consts,

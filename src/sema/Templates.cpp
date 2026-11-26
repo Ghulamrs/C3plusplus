@@ -315,6 +315,8 @@ bool Templates::memberIsUsed(const std::string &key) const {
     return false;
 }
 
+static bool overParameters(const std::string &tag);
+
 Templates::Substitution Templates::substitute(const Substituted &s, const Type *t, Ids ids) const {
     return substituteIn(s, t, ids == Made ? Declared : ids, nullptr, static_cast<std::size_t>(-1));
 }
@@ -329,7 +331,7 @@ Templates::Substitution Templates::substitute(const Substituted &s, const Type *
 Templates::Substitution Templates::substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const {
     Substitution r = { t, nullptr, nullptr };
     if (t == nullptr) return r;
-    const Ids below = maker != nullptr ? Made : Mapped;
+    const Ids below = maker != nullptr ? Made : ids == Keyed ? Keyed : Mapped;
     if (ids == Declared && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
     if (t->unqualified() != t) {
         r = substituteIn(s, t->unqualified(), below, maker, pos);
@@ -339,6 +341,12 @@ Templates::Substitution Templates::substituteIn(const Substituted &s, const Type
     for (std::size_t k = 0; k < s.from.size(); k++)
         if (t == s.from[k]) { r.type = s.to[k]; return r; }
     if (ids == Made && readId(t, nullptr, nullptr)) return specializationIn(s, t, maker, pos);
+    // Keyed: a read id the map lacks is the program's class by its key (one made at first need included), never made here.
+    if (ids == Keyed && readPartials_.count(t) == 0 && readId(t, nullptr, nullptr)) {
+        const Substitution d = specializationIn(s, t, nullptr, pos);
+        if (d.carried() && d.type->isStructOrUnion() && !p_.dependentType(d.type) && readIds_.count(d.type) == 0 && !overParameters(d.type->tag()))
+            return d;
+    }
     const int bound = t->isArray() ? t->boundParam() : -1;
     if (t->isPointer() || (t->isArray() && bound < 0)) {
         r = substituteIn(s, t->pointee(), below, maker, pos);
@@ -1074,11 +1082,18 @@ std::string Templates::boundClass(const Type &t) const {
     return std::string();
 }
 
+bool Templates::overRead(const Type *read) const {
+    const Type *e = read;
+    while (e->isReference() || e->isPointer() || e->isArray()) e = e->isReference() ? e->referent() : e->pointee();
+    return p_.dependentType(read) || readIds_.count(e->unqualified()) != 0;
+}
+
 // `t`, `*p`, `p[i]` or `(t)` where `t` names a bound class (a reference to one) and `p` a pointer to one: no copy is made of it.
-bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
+// Without a class bound, the class is one the read named over the parameters (`basic_string<C> &`), which an id answers.
+bool Templates::boundObject(syntax::NodeId id, const Substituted &s, bool classBound) const {
     const syntax::Tree &st = p_.syntaxTree_;
     const syntax::Node n = st.node(id);
-    if (n.kind == syntax::Kind::Paren && n.count == 1) return boundObject(st.child(id, 0), s);
+    if (n.kind == syntax::Kind::Paren && n.count == 1) return boundObject(st.child(id, 0), s, classBound);
     const bool deref = (n.kind == syntax::Kind::Unary && st.text(id) == "*" && n.count == 1) || (n.kind == syntax::Kind::Subscript && n.count == 2);
     const syntax::NodeId named = deref ? st.child(id, 0) : id;
     const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(named.v);
@@ -1086,7 +1101,7 @@ bool Templates::boundObject(syntax::NodeId id, const Substituted &s) const {
     const Type *t = substitute(s, r->second.type).type;
     if (t->isReference()) t = t->referent();
     if (deref) t = t->isPointer() ? t->pointee() : nullptr;
-    return t != nullptr && t->unqualified()->isStructOrUnion();
+    return t != nullptr && t->unqualified()->isStructOrUnion() && (classBound || overRead(r->second.type));
 }
 
 // `(T)e`, `T(e)` or `static_cast<T>(e)` to an arithmetic type or void, its record the read's under the binding (castRecord),
@@ -1214,12 +1229,12 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
         const syntax::Node n = p_.syntaxTree_.node(id);       // a copy: a reference to `Node` reads as Ast residue
         for (std::uint32_t c = 0; c < n.count; c++) work.push_back(p_.syntaxTree_.child(id, c));
         if ((n.marks & syntax::Unfound) != 0) return "a name no scope declares";
-        if (pass == 1 && classBound) {
+        if (pass == 1) {
             // A bound class is reached, never copied: no operator, assignment or return over its object, no local of a class by value.
             const bool op = n.kind == Kind::Binary || n.kind == Kind::Assign || n.kind == Kind::Postfix || n.kind == Kind::Return ||
                             (n.kind == Kind::Unary && p_.syntaxTree_.text(id) != "&");
             for (std::uint32_t c = 0; op && c < n.count; c++)
-                if (boundObject(p_.syntaxTree_.child(id, c), s)) return "an operator, an assignment or a return over a class's object";
+                if (boundObject(p_.syntaxTree_.child(id, c), s, classBound)) return "an operator, an assignment or a return over a class's object";
             const std::unordered_map<std::uint32_t, const Type *>::const_iterator v =
                 n.kind == Kind::Var ? p_.declaredTypes_.find(id.v) : p_.declaredTypes_.end();
             const Type *by = v != p_.declaredTypes_.end() ? substitute(s, v->second).type : nullptr;
@@ -1229,7 +1244,8 @@ std::string Templates::substShape(syntax::NodeId body, const Substituted &s, std
                 for (std::size_t k = 0; boundTo(s.to[q])->isStructOrUnion() && k < boundTo(s.to[q])->bases().size(); k++)
                     if (boundTo(s.to[q])->bases()[k].type->unqualified() == at && boundTo(s.to[q])->bases()[k].offset != 0) return "a reference or pointer to a bound class's base at a nonzero offset, whose conversion the replay lays a slot for";
             while (by != nullptr && by->isArray()) by = by->pointee();
-            if (by != nullptr && by->unqualified()->isStructOrUnion()) return "a local or a parameter of a class by value, which its constructor builds";
+            if (by != nullptr && by->unqualified()->isStructOrUnion() && (classBound || overRead(v->second)))
+                return "a local or a parameter of a class by value, which its constructor builds";
         }
         if (pass == 1) {
             switch (n.kind) {
