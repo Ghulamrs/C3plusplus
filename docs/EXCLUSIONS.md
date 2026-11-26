@@ -180,14 +180,14 @@ is left:
   and **a function template's explicit specialization declared without its
   body** - give it the body there. `src/parser/ParserTemplate.cpp:736`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:1809`,
-  `src/parser/ParserTemplate.cpp:1863`, `src/parser/ParserTemplate.cpp:1948`
+  that was only declared** - `src/parser/ParserTemplate.cpp:1807`,
+  `src/parser/ParserTemplate.cpp:1861`, `src/parser/ParserTemplate.cpp:1946`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1952`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1950`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:2022`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:2020`; **a member class template** -
   `src/parser/ParserType.cpp:64`; **an out-of-line member template
   definition of a class template's member, or of a constructor template** (a
   non-template class's other member templates are defined out of line) -

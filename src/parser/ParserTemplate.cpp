@@ -1572,10 +1572,7 @@ const Type *Parser::typeDefaultRead(const std::vector<TemplateParam> &earlier, T
     if (p.defUnread != nullptr) return nullptr;
     std::vector<const Type *> stand;
     for (std::size_t k = 0; k < earlier.size(); k++) stand.push_back(types_.templateParam(static_cast<int>(k)));
-    struct Pop {
-        sema::Lookup &l; sema::Lookup::Layer was;
-        ~Pop() { l.popLayer(was); }
-    } pop{ lookup_, lookup_.pushLayer() };
+    sema::Lookup::Layer layer = lookup_.pushLayer();
     const sema::Templates::DoorAt reading(&tmpl_, "read");
     const Type *read = nullptr;
     try {
@@ -1600,6 +1597,7 @@ const Type *Parser::typeDefaultRead(const std::vector<TemplateParam> &earlier, T
     } catch (const SubstitutionFailure &) {
         read = nullptr, p.defUnread = "the declaration's read refused it";
     }
+    lookup_.popLayer(layer);
     return read;
 }
 
