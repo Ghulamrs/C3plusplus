@@ -7237,3 +7237,145 @@ ways (the box carried m8r4c's owed x86_64-windows levels this hour); names.sh pl
 unfinished at the hour); overload.sh plain; cl /W4 /WX alone; the self-host censuses on the lane (0 value trials by 4a's split).
 Re-measure: `boxkit/m8r4d-cen.sh <r|b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4d-wcen.sh <b|x> <arch> <m|c> s`
 (Windows), `boxkit/m8r4d-owed.sh`, `boxkit/m8r4d-gate.sh`, `boxkit/m8r4d-wident.sh`.
+
+## R1, sixth lane: classes made at first need (lane m8r1f, 2026-11-26)
+
+Base 501e2819 (wave m6d-w52: main c60ed082 + m8-r1d + m8-r1e + m8-4b2). **No src/ commit**: src/ is 501e2819's, 0 added, 0
+deleted; this entry is the lane's one commit. **The switch is not shipped**: emitted output holds on four targets, but the
+-check=templates census and the re-entries rise under it (below), and the brief ships only with both held.
+
+**The measure** - m8r1e's switch (`boxkit/m8r1e-switch3.diff`, applies to 501e2819 unchanged; the switched tree is the stash
+object ea641785), identical.sh, NEW under -templates=subst with `CXX1_FIRST_NEED=1` against a REF built from 501e2819 (the
+switch absent), classified by `boxkit/m8r1c-order.py`; all on the Windows box (cxx3-msvc, both built by cl, the Linux box's two
+slots held throughout by the coordinator's coordw52 and lane m8r4c):
+
+| target | -O0 | -O1 | -O2 | content | order only |
+| --- | --- | --- | --- | --- | --- |
+| x86_64-windows (both spellings) | 2,050 / 0 | 2,050 / 0 | 2,050 / 0 | 0 | 0 |
+| x86_64-linux | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+| tms6747 | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+| arm64-darwin | 1,025 / 0 | 1,025 / 0 | 1,025 / 0 | 0 | 0 |
+
+**Content 0 and order-only 0 on all four targets at all three levels**: making at first need moves no emitted byte, so the
+restart's question 7 (a golden re-record for order) does not arise from R1 at all.
+
+**The censuses with the switch on** (-check=templates, census env, `CXX1_FIRST_NEED=1` on both sides, the 501e2819 tree's
+tests/cases and 102 sources; `boxkit/m8r1f-wcen.sh` and `m8r1f-wcenl.sh` on Windows):
+
+| | REF 501e2819 | switch on |
+| --- | --- | --- |
+| x86_64-windows suite (1,377 units, 378 nonzero rc on both sides): class differ / body differ lines | 0 / **19** | 0 / **36** |
+| x86_64-windows self-host (102 units, rc 0): class differ / body differ lines | 0 / **11** | 0 / **112** |
+| x86_64-linux suite (354 nonzero rc) / self-host: class differ, body differ lines | 0, 20 / 0, 11 (m8r4b's c1 and R0's) | 0, **37** / 0, **112** |
+
+**No class differ on either ABI, but the body differ lines rise past the REF's: +17 suite, +101 self-host on each ABI, every
+new one "frame: a local: typed apart"** (17 and 101 such lines under the switch, none in the REF's) (m8r1c's +16 / +101, which m8r1d and m8r1e's mends left standing). **The root, by reading**: `layFrame`
+(Templates.cpp:1848, const, the check's frame) and the made body's frame beside it (:1973) substitute each read local's type
+at `Mapped` - `substitute(s, r.type)` - and a class `need()` made at first need is in no map, so the local keeps the read's
+shallow (`X<$T0>`) where the replay's local is the made class. It is memberSymbol's shape (m8r1e's 14f84e75) at a second
+site: a door makes the class, and a later const question asks the map the door did not fill. Emitted output does not move
+because the frame that differs is then not taken (the body falls to its replay, which is the program's). **The mend for the
+next lane**, measured, not by construction: either the frame's two sites ask at `Declared` (the made class is declared by its
+key), or - the one-implementation form - `need()` hands back what it made and the door enters it in its binding's map, so
+every later `Mapped` question (memberSymbol's included) reads one answer. **The first is ruled out by measure**: the switch
+with both frame sites at `Declared` (`boxkit/m8r1f-frame-declared.diff`) left the x86_64-windows suite census as it was - body
+differ 36, "typed apart" 17, class differ 0 (its self-host cut at the hour) - so the made class is not what `Declared` finds by
+key either; the second form, or which `Type` the replay's local holds, is the next lane's.
+
+**Re-entries under a binding** (R0's measure: census, no check, suite, -arch x86_64-linux; `boxkit/m8r1f-wre.sh`): switch on
+**21,569 at instantiation, 54,161 in the read** (binds 42,647, jumps 33,083, over 1,027 units; classes 2,640 made of 2,663,
+none made at a door); REF 501e2819 **21,549 and 54,151** (binds 42,617, jumps 33,083). **The switch raises them +20 at
+instantiation, +10 in the read (+30 binds)** - the same frame: with no check beside it, `layFrame`'s shallow answers "a type
+the binding does not carry" and the body falls back to its replay, a re-entry. A second reason not to ship it; the mend above
+answers both. (R0's 21,565 / 54,093 were measured at its base; the base has moved since.) **replay-residue** is 501e2819's, 150 / 19 / 26 / 6 (no src change).
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7,
+idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. `idsBefore`, `argsWanted`, `earlyArgs` retire only after
+the switch ships (step 2 of the brief), so none moved. After this lane: **idsBefore** - with Made at first need shipped, the
+const shape questions it serves (classShape, classBefore, typedefsCarried) must ask at Made or read `why`, so it needs those
+three made non-const first; **argsWanted** and **earlyArgs** (its token scan of the template's bodies, `p_.tokens_[t]`, goes
+with it: replay-residue -1 or more) are the order idsBefore keeps and go with it, now that order is shown not to matter.
+**carriedId** - its `early` branch is that order's own map and goes with argsWanted; its Declared branch's filter (not
+dependent, not a read shallow, no `$` tag) is the kernel's Declared answering "not carried" for a key over the parameters,
+measured. **idUnder** - the kernel's template template parameter step already; its second caller is earlyArgs, so it is
+single-use when earlyArgs goes. **typedefCarried** - R3's complete records, unchanged by this lane.
+
+**Gates**: no src change, so 501e2819's stand (the wave gate m6dw52g's). The switched tree builds clean under g++ -Werror
+(Linux, ~/m8r1f-m.exe, 0 warnings) and cl /W4 /WX (Windows, the REF and the switched tree built at once, 15:05:28-15:07:58,
+2 min 30 s, no warning). No changed emitted output at -O0, -O1 or -O2 on any target (the table). Slices 4m-4s untouched.
+**Owed** (to the lane that mends the frame): the switch's plain run on four targets (the shipped form's plain:
+`boxkit/m8r1f-wpid.sh`, `m8r1f-lchain2.sh`, neither run inside the hour), the x86_64-linux REF census at 501e2819 itself, and then the
+shipped form (`boxkit/m8r1f-shipped-form.diff`: need() at Made unconditionally, its census key renamed; EXCLUSIONS' three
+Templates.cpp citations 3264, 2565, 2513 move +11 with it) under the full gate. Re-measure: `boxkit/m8r1f-wident.sh <arch>
+<level> <jobs>` and `m8r1f-wcen.sh <r|m> <P>` (Windows, trees work\m8r1fr and work\m8r1fm), `boxkit/m8r1f-wre.sh`.
+
+## R1, seventh lane: the frame, and classes made at first need shipped (lane m8r1g, 2026-11-26)
+
+Base b56606bc (m8-r1f on wave m6d-w52 501e2819). Commits 4ddf92ae (the frame at Made) and 78d57478 (the sret step), and this entry. src/
+98,621 -> 98,631 lines (4ddf92ae +8/-8 in Templates.cpp/.h; the sret mend +18/-8: ParserTopLevel.cpp +3/-2, Templates.cpp
++15/-6). **The switch is not shipped**: the frame mended exposes the next two places that ask the map (below).
+
+**THE MEASURE** (-check=templates census, x86_64-windows, the suite's 1,377 units and the 102 sources, `CXX1_FIRST_NEED=1`,
+the switch as `boxkit/m8r1e-switch3.diff`; `boxkit/m8r1g-wcen.sh`; REF 501e2819 re-measured here: suite **19**, self-host 11
+(m8r1f's; this lane's REF self-host run was stopped at 83 units, 10 lines)):
+
+| tree, switch on | suite body differ | of which "a local: typed apart" | self-host body differ | of which typed apart |
+| --- | --- | --- | --- | --- |
+| 501e2819 + switch (m8r1f) | 36 | 17 | 112 | 101 |
+| + 4ddf92ae (the frame at Made) | **30** | **0** | **118** | **0** |
+| + the sret mend (78d57478) | **30** | 0 | **113** (95 "a slot given back", 8 "a declaration it made") | 0 |
+
+**"A local: typed apart" is gone on both** (17 -> 0, 101 -> 0), class differ 0 throughout - but the body differ lines stay above
+the REF's, because each mend lets the frame walk one step further: at 4ddf92ae the first step apart is **"the read's a local
+where the replay has the sret slot"** (10 suite, 98 self-host); with the sret mend it is **"the read's a slot given back where
+the replay has a slot no local names"** (10 suite), and 1 "a declaration or specialization it made". The other 19 are the
+REF's own, reason for reason (return type 6, decltype return 5, exception specification 4, block table 2, shell 2). **With the
+switch off, 78d57478's suite census is the REF's: 19 body differ lines, the same reasons, class differ 0.**
+
+**The root of typed apart, by reading and measure.** `layFrame` (Templates.cpp:1848) and `madeFromRead` (:1973) typed a
+read local at Mapped; a class made at first need is in no binding's map. m8r1f's Declared try moved nothing because **Declared
+is the top level's alone** - `substituteIn`'s `below` is Mapped without a maker - so `const basic_string<$T0> &`, a
+parameter (the census's "a 'var' typed apart from its replay" lines name `const basic_string<$T0> &`, `const map<$T0,$T1,$T2> &`, `X<Y<$T0>> *`), fell to
+Mapped under Declared too. 4ddf92ae asks both sites at Made (`substitute(s, r.type, At{ p_.at_ })`, the kernel's own answer the
+doors' `need()` got: the map first, then the id step by key, made only where nothing is); both functions lose `const`. Where
+Mapped carried, Made's answer is the same Type, so with the switch off nothing should move: **identical x86_64-windows -O0
+under -templates=subst, switch off, 0 DIFFERS** (both spellings, cut at the 23-minute cap with about 2,020 of 2,050 outputs
+compared).
+
+**The sret mend** (78d57478, `boxkit/m8r1g-sret-mend.diff`): a read's function returning its dependent class by value logged no
+step (ParserTopLevel.cpp:1588, "the instance's to say"), so the read's frame had nothing where the replay's has `S`. The read
+now logs `R` there (the type, and whether a member returns it); `layFrame` lays it as `S` where the bound class returns
+indirectly and as no step where it does not (the replay's index kept apart from the read's), and `madeFromRead` takes the sret
+slot from it and its return type at Made. Suite census: sret 10 -> 0.
+
+**Why the switch cannot ship yet - two measures.** With the frame holding, bodies that used to fall back at the frame are made
+from the read, and the **typer under the binding asks Mapped** (`Typing.cpp:1037`, `:1094`: `substitute(bound_.at(binding).s,
+...)`) - so a made body's parameter is `basic_string<$T0>` where its frame's is `basic_string<wchar_t>`: **run.sh
+-templates=subst on the shipped form (f852cc97: 4ddf92ae + `m8r1f-shipped-form.diff` + the frame through need()) 1,361 passed,
+8 FAILED** (include-string, library-cppparse-pieces, library-self-compile-pieces-2, map-set-comparator,
+map-set-node-stability, ssa-conversion-string-local, ssa-return-braces-nullptr, wstring: "outside the SSA lowering: a
+reference parameter bound to another type", `std::operator==<wchar_t>`), and **identical x86_64-windows -O0 with the switch on:
+14 DIFFERS, all content** (those refused compiles; m8r1f's 0 was the frame hiding them). This is m8r1f's "a door makes the
+class, and a later const question asks the map the door did not fill" at its third and fourth sites. **The next lane's mend,
+one implementation:** Mapped itself answers a read id the map lacks by the id step's key lookup (no making), under every
+declarator - then layFrame, madeFromRead, memberSymbol and the typer read one answer, and the frame's Made becomes Mapped again;
+Declared folds into it. readPartials_' refusal must then hold at Mapped too (51ac9940's partial read classes). Measure it with
+the switch off first (identical 0, census not above 19 / 11), then on. **The frame's own next step** (switch on, 10 suite, 95
+self-host): the replay lays a slot no local names (`a`) where the read gives one back (`f`) - not read yet.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`): **6 -> 6** - carriedId 7, idUnder 2, earlyArgs 12, argsWanted 5, idsBefore
+1, typedefCarried 2; step (3) waits on the switch. **Re-entries**: not re-measured (owed); **replay-residue 150 / 19 / 26 / 6,
++0** (Linux, f852cc97; the sret mend adds no `p_.tokens_[`, `p_.at_ =`, bind or trial).
+
+**Gates** (a coding lane's): Windows **cl /W4 /WX clean** on 501e2819 and 1a14c52b (4ddf92ae + the env switch), two at once,
+16:06:49-16:12:50 (6 min), and on d3448414 (+ the sret mend), 16:24:54-16:33:09 (8 min 15 s beside two identicals and a census);
+Linux on f852cc97 (the shipped form): **g++ -Werror clean**, **static: exclusions 0 uncited 0 stale, comments 0 over, memory gate
+lower, ast-residue not raised, replay-residue +0, ide up to date**, **the FULL stage-0 self-compile 102 of 102** (179 s), run.sh
+under the flag 8 failed (above). Linux on ~/m8r1gc (78d57478's src): **g++ -Werror clean**; **run.sh -templates=subst 1,369
+passed 0 failed**; **subst.sh 0 failed** (run -O0 and -O2 1,369 / 0); **exclusions 0 uncited 0 stale, comments 0 over, memory
+gate lower, ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide up to date**; **the FULL stage-0 self-compile 102 of 102** (173 s; the parser changed); **run.sh plain 1,369 passed 0 failed**.
+**Owed**: identical on four targets at three levels plain and under the flag for both commits (only x86_64-windows -O0 under
+the flag ran for 4ddf92ae, with the switch on and off; x86_64-linux -O0 under the flag for 78d57478 was started and cut at the hour);
+names.sh and overload.sh (Windows); the self-host census with the switch off and both censuses on x86_64-linux; re-entries. No changed emitted output found (x86_64-windows -O0
+under the flag, switch off). Slices 4m-4s untouched. Re-measure: `boxkit/m8r1g-wcen.sh <r|g|s> <arch> <0|1> <P> [s]`,
+`boxkit/m8r1g-wident.sh <arch> <level> <jobs> <p|f|e> [g|s]` (Windows trees work\m8r1gr, m8r1gg, m8r1gs).

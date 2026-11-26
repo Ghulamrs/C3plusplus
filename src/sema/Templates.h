@@ -389,7 +389,7 @@ public:
     // Slice 2c, step 1: a read's frame steps by its `afterParams`; the frame they lay under a binding against the replay's.
     std::map<std::size_t, std::vector<FrameEvent> > readFrames_;
     std::map<std::string, int> frameCensus_;
-    std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laid) const;
+    std::string layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laid);
     // Step 2: a Function's shell, from the laid `d`, `S`, `V` and `e` steps - held against the replay's function.
     std::map<std::string, int> shellCensus_;
     std::string shellApart(const Function &g, const Function &f) const;
@@ -402,7 +402,7 @@ public:
     std::set<std::size_t> throwsBefore_;
     bool wrapInherited(const PendingBody &body) const;
     std::map<std::string, int> madeCensus_;
-    std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const;
+    std::string madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out);
     std::string madeApart(const Function &g, const Function &f) const;
     // A covered body's constants as the Typer reads them under `symbol`'s binding, against its replay's: apart fails the unit.
     void constantsHeld(const std::string &symbol, syntax::NodeId replay, std::size_t start);
