@@ -476,6 +476,8 @@ if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate
 if [ -z "$REPORT" ]; then
     WT=$OUT/tree; T0=$(date +%s)
     if [ -n "$KEEP" ] && [ -s "$OUT/commit" ]; then      # -k: the trees on the boxes are the first run's
+        # an idle step claimed by a run that ended before its verdict is free again (m6dw53g's asm2 and cycles were skipped)
+        for c in "$OUT"/claim/*; do [ -d "$c" ] && ! done_ "${c##*/}" && rmdir "$c"; done
         [ "$(git -C "$ROOT" rev-parse "$COMMIT")" = "$(cat "$OUT/commit")" ] || echo "wave-gate: -k keeps the trees of $(cat "$OUT/commit"); $COMMIT is not what runs"
     else
         [ "$COMMIT" != HEAD ] || [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ] || echo "wave-gate: the working tree has uncommitted edits - the gate is of HEAD, not of them"
