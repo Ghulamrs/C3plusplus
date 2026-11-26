@@ -7100,3 +7100,69 @@ plain at -O1/-O2; run.sh plain (its run was mis-launched, rc 127); names.sh unde
 the hour) and plain; and the -check=templates census on x86_64-windows and on the self-host (both ABIs; the
 self-host's measure was not taken - 4b's 949 self-host type defaults are member templates', which this slice leaves to 4h); cl /W4 /WX with cl alone. Re-measure: `boxkit/m8r4c-wcen.sh <v|x> <arch> <m|c> s` (Windows),
 `boxkit/m8r4c-cen.sh`, `boxkit/m8r4c-owed.sh`, `boxkit/m8r4c-lean.sh`, `boxkit/m8r4c-wident.sh`.
+
+## R2, slice 4d: a dependent value folded by substitution (lane m8r4d, 2026-11-26)
+
+Base 6903a031 (m8-4c). Commit 9d5f2003 (the slice, its probe `template-subst-valuetrial` with clang 19.1.5's answer from the
+Windows box, `4 0 1 2 -1 6`, `tests/open/value-member-in-signature`, three EXCLUSIONS citations into Templates.cpp re-pointed
++97, each checked against 6903a031's line) and this entry. src/ 98,704 -> 98,816 lines (129 added, 17 deleted: Templates.cpp
++122/-17, Templates.h +7). **Nothing changes without the flag**, and the trial still decides under it (4e moves it).
+
+**THE MEASURE** (census, `-templates=subst`, no check, suite; before = 6903a031 on Linux, g++, `boxkit/m8r4d-cen.sh b base`;
+after = 9d5f2003's src, cxx3-msvc on Windows, `boxkit/m8r4d-wcen.sh x`; the lane's suite holds the probe, whose 12 value trials
+all fold, so like for like is the lane less 12):
+
+| suite | 4a's "a value over the parameters" trials | folded by substitution | stay replayed, by reason | SFINAE-trial door re-entries (instantiation / read binds) | `falling back=` |
+| --- | --- | --- | --- | --- | --- |
+| before, x86_64-linux | 70 function + 23 member | 0 | all 93 | 7,248 / 8,467 | 6,725 over 1,028 units |
+| after, x86_64-linux | 70 (+12 probe) + 23 | **53** (+12) | member template 23 (its class's parameters numbered apart - 4h's two layers); a value the fold does not carry 16 (template-sfinae-expression, template-sfinae-misc); a size of a type neither scalar nor a complete class 1 | 7,260 / 8,479 = **7,248 / 8,467** less the probe's 12 | 6,743 over 1,029 (= 6,725 + the probe's 18) |
+| after, x86_64-windows | the same | **53** (+12) | the same 23 / 16 / 1 | 7,116 / 8,335 | 6,743 over 1,010 |
+
+**Self-host: 0 value trials on either ABI** (4a's split: its 33,892 trials are types alone, a default and member templates), so
+0 folded; its SFINAE door (6903a031, -check=templates) 109,780 / 244,586. The door's re-entries do not move: the fold binds
+nothing and jumps nowhere; the trial's replay still runs (4e's to take). **Replay-residue 150 / 19 / 26 / 6, +0 on every kind.**
+
+**What it does.** Under `-templates=subst`, a trial whose kept pattern (4a's `patternHolds`, which now also collects each
+class template-id holding a value) is "a value over the parameters" has each such id laid by `idUnder` and its arguments
+taken under the deduced binding (`Templates::valueTrial`; a `Substituted` as `defaultMade` builds it: types mapped, values by
+index, templates by name, packs): a value through **the kernel's value step**, `argValued`, whose `foldArg` now takes a
+`FoldLeaf` - with one, `bool` literals, `!`, `== != < > <= >=`, `&&` and `||` fold too, and its two leaves go to the trial:
+`sizeof` a type under the binding (a scalar or a complete class, at the target's size) and a class's folded static constant
+(`is_int<T>::value`, its class made through the kernel At the use, as the replay makes it); a type argument beside it through
+`argUnder` at Mapped. Without a leaf foldArg is unchanged, so the class doors and 4c's defaults fold as before. Under
+`-check=templates` each folded id's key is held after the replay against the program's: found = "held: the replay's
+constant" (or "..., the replay failed": `enable_if<false, int>` made and lacking `type`); a key the replay did not make, after
+a replay that succeeded, is a differ. The Itanium name is still spelled from the unfolded pattern (L2): the replay makes the
+Signature. Census lines `-check=templates value trial (n): folded | held | replayed: <why>`; no `template-census:` key.
+
+**Found, not mended**: `tests/open/value-member-in-signature` - `enable_if<is_int<T>::value, int>::type` is refused in the read
+("names a member of a class whose arguments depend on 'T' ... write 'typename is_int<T>::value'"), plain and under the flag,
+at 6903a031 and here; [temp.res]/3 makes it a value, and clang prints `1 2`. A refusal stricter than the standard; so the
+static-member leaf is reached by no suite case yet, and the probe holds sizes and a non-type parameter.
+
+**m8r4c's owed checks, on 6903a031** against a REF built from 321d1ba2 (Linux g++ `~/m8r4dr`/`~/m8r4db`,
+`boxkit/m8r4d-owed.sh`; Windows cl `work\m8r4dr`/`work\m8r4db`): **cl /W4 /WX alone clean** (msvc\build.cmd, `_CL_=/MP2`,
+/affinity 3FF, 16:01:37-16:05:22, 3 min 45 s); **identical x86_64-linux plain -O1/-O2 2,052 compared 0 differ**; **run.sh
+plain 1,370 passed 0 failed**; **-check=templates self-host censuses: no class differ on either ABI** (x86_64-linux 76,412 of
+76,412, x86_64-windows 76,397 of 76,397, body differ lines 11 each - R0's covered-and-replayed reasons - no default differ),
+and **the suite's on x86_64-windows** (no class differ, 19 body lines, no default differ); **identical x86_64-windows -O0 both
+spellings, under the flag 2,052/0 and plain 2,052/0** (cxx3-msvc, JOBS=4, two at once - 25 minutes a level beside each
+other). No difference, so nothing to fix. **Still owed** of m8r4c's list: identical x86_64-windows -O1/-O2 (running at the
+hour), arm64-darwin and tms6747 both ways at -O0/-O1/-O2, names.sh plain and under the flag on 6903a031.
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4dn`, 9d5f2003's src, g++): **g++ -Werror clean**;
+**static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0), comments 0 over the cap, memory-gate lower, ast-residue not
+raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **the FULL stage-0 self-compile 102 of 102** (165 s);
+**run.sh -templates=subst 1,371 passed 0 failed, plain 1,371/0**; **subst.sh 0 failed** (run 1,371/0 at -O0 and -O2, typed
+1,018/0 x2, census 0 by substitution, bodies 1,015 of 1,015); **identical x86_64-linux -O0/-O1/-O2 against 6903a031 under the
+flag 3,081 compared 0 differ, plain 3,081/0** (the probe is the three new files); **the probe** right on Linux plain and under the flag and
+under the check on Windows (12 folded, 12 held). Windows (`work\m8r4dx`, the same src): **cl /W4 /WX clean** (16:11:43-16:20:14,
+8 min 31 s - beside two identicals, not alone); **-check=templates suite censuses, both ABIs: no class differ, no default differ,
+no value differ** (65 folded and 65 held: 55 by the replay's constant, 10 by its failure; body lines 21 / 20, the base's 20 / 19
+and the probe's one covered-and-replayed line); **overload.sh 46 agreed 0 differed under the flag**. No changed emitted output
+at -O0, -O1 or -O2 on x86_64-linux, either way. Slices 4m-4s untouched; no new src/sema function indexes `p_.tokens_` or
+moves `p_.at_`, and none opens a `Parser::Trial`. **Owed** (to the wave gate): identical against 6903a031 on x86_64-windows,
+arm64-darwin and tms6747 both ways (arm64-darwin and tms6747 under the flag running at the hour); names.sh plain and under the flag (under the
+flag running at the hour); cl /W4 /WX alone; the self-host censuses on the lane (0 value trials by 4a's split).
+Re-measure: `boxkit/m8r4d-cen.sh <r|b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4d-wcen.sh <b|x> <arch> <m|c> s`
+(Windows), `boxkit/m8r4d-owed.sh`, `boxkit/m8r4d-gate.sh`, `boxkit/m8r4d-wident.sh`.
