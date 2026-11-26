@@ -7341,7 +7341,14 @@ under the flag and plain; names.sh and overload.sh; then idsBefore's family. Re-
 Base 39a28fda (m8-r1i: 68185444 ships classes made at first need under -templates=subst). REF 501e2819 on both boxes. Commits:
 **cdf13d12** - classShape, classBefore, typedefsCarried and classSkip (typedefsCarried's other caller) non-const, so the class
 door's shape questions may ask the kernel at Made: 8 lines changed in place, no line moved, identical by construction.
-@IDSBEFORE@
+**5b12ee6b, reverted by 71036e3b** - idsBefore retired: makeClass asks classBefore for the wanted ids and makes each, in the same
+order, by `substitute(s, e, At{pos})` (specializationIn, makeId) instead of earlyArgs' laying and makeId. It held g++ -Werror, cl
+/W4 /WX (linked), run.sh -templates=subst 1,369 / 0, run.sh plain 1,369 / 0, the FULL self-compile 102 of 102 (184 s), static
+(replay-residue +0), identical x86_64-linux -O0 plain and under the flag 1,025 / 0, the x86_64-linux census suite class 0 body 20
+and self-host class 0 body 11 (= REF), re-entries 21,553 (unchanged), and every unit's class census the same but for the key
+("made before the class" 859 -> "made at first need" 859). **But tests/subst.sh's typed step failed 5 at -O0 and -O2**
+(include-string, map-set-comparator, map-set-node-stability, ssa-conversion-string-local, wstring: `-check=typed` copies records,
+copy != 0) - so reverted. Whether 68185444's own tree fails these five too was being measured at the hour (`boxkit/m8r1j-typed1.sh`).
 
 **(0) m8r1i's owed, on 68185444's tree** (39a28fda; `boxkit/m8r1j-lgate.sh a 1|2`, `boxkit/m8r1j-wchain.sh a`): **g++ -Werror
 clean; cl /W4 /WX clean** (work\m8r1jr and work\m8r1ja, two at once, 18:48:41-18:52:41, 4 min); x86_64-windows census suite 1,377
@@ -7349,16 +7356,21 @@ units, **class differ 0, body differ 19 (REF 19)** - return type 6, decltype ret
 shell 2; self-host 102 units, **class 0, body 11 (REF 11)**, exception specification 11; x86_64-linux census suite **class 0, body
 20 (REF 20)** (return type 6, decltype return 5, exception specification 4, block table 2, shell 2, frame size 1), self-host **class
 0, body 11 (REF 11)**; re-entries at instantiation under the check 26,961 suite, 464,938 self-host. **identical against the REF
-under the flag, the shipped form's gaps: tms6747 -O1 1,025 / 0, tms6747 -O2 1,025 / 0**@ZERO@. **names.sh plain 1,025 passed, 0
-failed** (20 .nonames rows open, the register's)@ZEROB@. No difference found to fix: first need stays shipped.
+under the flag, the shipped form's gaps: tms6747 -O1 1,025 / 0, tms6747 -O2 1,025 / 0**; x86_64-windows -O2 stopped by its own 23-minute
+timeout part-way, 0 DIFFERS in what ran; plain, tms6747 -O0 1,025 / 0. **names.sh plain 1,025 passed, 0 failed** (20 .nonames rows
+open, the register's). **run.sh -templates=subst 1,369 / 0; static clean** (exclusions 0 / 0, comments 0 over, memory gate lower,
+ast-residue not raised, replay-residue 150 / 19 / 26 / 6 +0, ide up to date); **FULL self-compile 102 of 102 (174 s)**. subst.sh and
+run.sh plain on this tree were running at the hour. No difference found to fix in what finished: first need stays shipped.
 
 **Re-entries** (suite x86_64-linux, census without the check): **21,553** at instantiation on 68185444 - R0 21,549, m8r1i's A
 (the switch off) 21,550: the +3 is first need's own (the same suite, the same tree but for the switch), a cause and not a probe;
 not traced to its three bodies.
 
-**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): @HELPERS@
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6**, call
+sites 29 -> 29 - carriedId 7, idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2 (cdf13d12 takes none; 5b12ee6b
+took idsBefore 1 -> 0 and earlyArgs 12 -> 10, 5 helpers / 26 sites, and was reverted). replay-residue 150 / 19 / 26 / 6, +0.
 
-**What the rest need.** `argsWanted` (5: its own recursion 1, classShape 4) and `earlyArgs` (@EA@) are the order the wanted ids
+**What the rest need.** `argsWanted` (5: its own recursion 1, classShape 4) and `earlyArgs` (12: idsBefore 2, argsWanted 1, classShape 8, idsInside 1) are the order the wanted ids
 keep and the filter on whether one may be made ahead: retiring them means classShape making at Made where it now pushes onto
 `wanted` - eight sites (the bases, a data member's class and its `C<T>::type` owner, a typedef's id and owner, a signature's id and
 owner, and `own`), and the `placed` / `ahead` / `behind` refusals that order the data members' ids against the signatures' go with
@@ -7368,4 +7380,10 @@ them; the token scan in earlyArgs (`p_.tokens_[t]` over the named template's bod
 folds into specializationIn when earlyArgs goes. `typedefCarried` waits for R3's complete records (m8r1c's reason, unchanged).
 Slices 4m-4s untouched.
 
-**Gates**: @GATES@
+**Gates**: src/ 98,661 -> 98,661 lines (cdf13d12 +8 / -8). g++ -Werror clean on cdf13d12; its cl /W4 /WX build at /MP1 beside
+nine of this lane's processes linked after 15 minutes (18:53:37-19:08), past the 9-minute cap - a defect recorded, not retried; no
+warning (the exe links only under /WX clean). The Linux slots were held by gate m6dw53g and lane m8r4e3 most of the hour (a's
+run.sh waited 23 minutes). **Owed** (the wave's gate): subst.sh and run.sh plain on 68185444 and cdf13d12; identical x86_64-windows
+-O2 under the flag and plain on four targets at three levels (tms6747 -O0 done); names.sh under the flag, overload.sh; the five
+typed cases on 68185444; then idsBefore's retirement with the typed step's copies traced. Re-measure: `boxkit/m8r1j-lgate.sh <a|b|c>
+<1|2>`, `boxkit/m8r1j-wchain.sh`, `m8r1j-wident.sh`, `m8r1j-wcen.sh`, `m8r1j-wnames.sh`, `m8r1j-winbuild.sh`, `m8r1j-typed1.sh`.
