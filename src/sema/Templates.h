@@ -186,10 +186,10 @@ public:
     void count(Door d, std::size_t n = 1) { census_[d] += static_cast<long>(n); }
     std::string censusLine() const;
     // M8.4 slice 4a: a door with no reason line counted by why it falls back, "<door>: <why>" - each door's sum its count.
-    std::map<std::string, long> fallbackCensus_;
-    long deducedDefaults_ = 0;
+    mutable std::map<std::string, long> fallbackCensus_;               // mutable: the class door's list (`listUnder`) is const
+    mutable long deducedDefaults_ = 0;
     void countWhy(Door d, const std::string &why);
-    void countDefault(const TemplateParam &p, bool deduced);           // a default template argument replayed, by kind
+    void countDefault(const TemplateParam &p, bool deduced) const;     // a default template argument replayed, by kind
     void countAhead(const std::string &tag, bool constructor);         // constexpr-ahead, by whether its class was made
     std::string trialShape(const TemplateDecl &decl, bool defaulted) const;
     std::set<std::size_t> memberTemplateRead_;                         // a member template's body the read read, by `afterParams`

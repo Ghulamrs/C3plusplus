@@ -1245,7 +1245,7 @@ void Templates::countWhy(Door d, const std::string &why) {
     fallbackCensus_[std::string(doorNames[d]) + ": " + why]++;
 }
 
-void Templates::countDefault(const TemplateParam &p, bool deduced) {
+void Templates::countDefault(const TemplateParam &p, bool deduced) const {
     if (p.defBegin == 0) return;
     deducedDefaults_ += deduced ? 1 : 0;
     fallbackCensus_[std::string("default: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") +
