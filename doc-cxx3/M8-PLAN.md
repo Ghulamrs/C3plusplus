@@ -7416,9 +7416,10 @@ lower, **ast-residue not raised at c2** (c1 alone raised node-refs 298 -> 299 by
 **cl /W4 /WX clean** on both (1 min 15 s on fc034c2d, no other job of the lane's on the box; 3 min 16 s on e403be17 beside the tests); **names.sh plain 1029 passed,
 0 failed** (Itanium and Microsoft; 20 .nonames open as recorded).
 **Not done in the hour**: identical x86_64-windows plain at -O0/-O1/-O2 in one run passed the 25-minute cap (rc 124, a defect, as
-m8r4e3's; -O0 alone was started at 20:25 - its answer, if any, is in boxkit/m8r4g-handover.md); identical under the flag on
-x86_64-windows; names.sh under the flag and overload.sh (running at the hour's end, see the
-handover); the -check=templates censuses over the whole suite and the self-host (only the 22 default cases were run).
+m8r4e3's); -O0 alone then gave **2058 compared, 0 differ** (JOBS=4, 8 min), so x86_64-windows plain -O1 and -O2 are owed;
+identical under the flag on x86_64-windows; the -check=templates censuses over the whole suite and the self-host (only the 22
+default cases were run). Done on Windows at the end: **names.sh under the flag 1028/1**, the one template-angle-split (refused by
+the flag, as at REF), and **overload.sh plain 46 agreed, 0 differed**; overload.sh under the flag owed.
 
 **Owed and next.** The two remaining sites - `decltype` (ParserExpr.cpp:2396) and the template argument's other kinds - need the
 signature read with dependent operands, as a body is (`patternBody_`'s zeros of a dependent type, M8.1): then `sizeof(T)`, `T(x)`,
