@@ -80,16 +80,22 @@ const DepExpr *Parser::depAssignment(bool angle) {
     return lhs;
 }
 
+// The Itanium codes of the binary and prefix operators, which the reader and depFromSyntax both spell.
+namespace {
+struct Op { const char *token; const char *code; int prec; };
+const Op ops[] = {
+    { "||", "oo", 1 }, { "&&", "aa", 2 }, { "|", "or", 3 }, { "^", "eo", 4 },
+    { "&", "an", 5 }, { "==", "eq", 6 }, { "!=", "ne", 6 }, { "<", "lt", 7 },
+    { ">", "gt", 7 }, { "<=", "le", 7 }, { ">=", "ge", 7 }, { "<<", "ls", 8 },
+    { ">>", "rs", 8 }, { "+", "pl", 9 }, { "-", "mi", 9 }, { "*", "ml", 10 },
+    { "/", "dv", 10 }, { "%", "rm", 10 },
+};
+const char *const prefix[][2] = { { "-", "ng" }, { "!", "nt" }, { "~", "co" }, { "&", "ad" },
+                                  { "*", "de" }, { "+", "ps" }, { "++", "pp" }, { "--", "mm" } };
+}   // namespace
+
 // Left-associative, the tree clang builds: `sizeof(T) - 1 - 2` is `mimistT_Li1ELi2E`.
 const DepExpr *Parser::depBinary(int least, bool angle) {
-    struct Op { const char *token; const char *code; int prec; };
-    static const Op ops[] = {
-        { "||", "oo", 1 }, { "&&", "aa", 2 }, { "|", "or", 3 }, { "^", "eo", 4 },
-        { "&", "an", 5 }, { "==", "eq", 6 }, { "!=", "ne", 6 }, { "<", "lt", 7 },
-        { ">", "gt", 7 }, { "<=", "le", 7 }, { ">=", "ge", 7 }, { "<<", "ls", 8 },
-        { ">>", "rs", 8 }, { "+", "pl", 9 }, { "-", "mi", 9 }, { "*", "ml", 10 },
-        { "/", "dv", 10 }, { "%", "rm", 10 },
-    };
     const DepExpr *lhs = depUnary(angle);
     for (;;) {
         const Op *found = nullptr;
@@ -107,11 +113,64 @@ const DepExpr *Parser::depBinary(int least, bool angle) {
     }
 }
 
+// A literal of type int or bool, a pattern's non-type parameter, a bound one's value, and the operators: what the reader made.
+const DepExpr *Parser::depFromSyntax(syntax::NodeId id) {
+    if (!id.valid()) return nullptr;
+    const syntax::Node &s = syntaxTree_.node(id);
+    const std::string &text = syntaxTree_.text(id);
+    DepExpr n;
+    std::vector<const DepExpr *> kids;
+    for (std::uint32_t c = 0; c < s.count; c++) {
+        kids.push_back(depFromSyntax(syntaxTree_.child(id, c)));
+        if (kids.back() == nullptr) return nullptr;
+    }
+    switch (s.kind) {
+    case syntax::Kind::IntLit: {
+        const std::unordered_map<std::uint32_t, std::size_t>::const_iterator lit = literalTokens_.find(id.v);
+        if (lit == literalTokens_.end()) return nullptr;
+        const Token &t = tokens_[lit->second];
+        if (t.isFloat || t.isChar || t.suffixU || t.suffixL || t.suffixLL || t.value < 0 || t.value > 2147483647LL) return nullptr;
+        n.type = types_.get(Kind::Int), n.value = t.value;
+        return depNode(n);
+    }
+    case syntax::Kind::WordLit:
+        if (text != "true" && text != "false") return nullptr;
+        n.type = types_.get(Kind::Bool), n.value = text == "true";
+        return depNode(n);
+    case syntax::Kind::Name: {
+        const std::map<std::string, int>::const_iterator np = nonTypePatternParams_.find(text);
+        if (np != nonTypePatternParams_.end()) {
+            n.op = DepExpr::TemplateParam, n.index = np->second;
+            return depNode(n);
+        }
+        const EnumConst *e = boundValueParams_.count(text) != 0 ? lookup_.findEnum(text) : nullptr;
+        if (e == nullptr || e->paramType == nullptr || !e->paramType->isInteger()) return nullptr;
+        n.type = e->paramType, n.value = e->value;
+        return depNode(n);
+    }
+    case syntax::Kind::Paren:
+        return s.count == 1 ? kids[0] : nullptr;
+    case syntax::Kind::Unary:
+        for (const auto &p : prefix)
+            if (text == p[0] && s.count == 1) n.code = p[1];
+        break;
+    case syntax::Kind::Binary:
+        for (const Op &o : ops)
+            if (text == o.token && s.count == 2) n.code = o.code;
+        break;
+    case syntax::Kind::Conditional:
+        if (s.count == 3) n.code = "qu";
+        break;
+    default:
+        break;
+    }
+    if (n.code.empty()) return nullptr;
+    n.op = DepExpr::Operator, n.kids = kids;
+    return depNode(n);
+}
+
 const DepExpr *Parser::depUnary(bool angle) {
     const std::size_t pos = peek().pos;
-    static const char *const prefix[][2] = { { "-", "ng" }, { "!", "nt" }, { "~", "co" },
-                                             { "&", "ad" }, { "*", "de" }, { "+", "ps" },
-                                             { "++", "pp" }, { "--", "mm" } };
     for (const auto &p : prefix)
         if (peek().is(p[0])) {
             at_++;

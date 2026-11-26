@@ -1617,9 +1617,11 @@ const Type *Parser::defaultReadAs(const std::vector<TemplateParam> &earlier, Tem
             got = declarator(base, true).type;
         } else if (names) {
             const std::size_t from = at_;
-            DepExpr e = *dependentExpression(true, false);
+            const DepExpr *read = depFromSyntax(syn(conditional()));     // slice 4g: read once, by the parser's own path
+            DepExpr e = read != nullptr ? *read : DepExpr();
             e.text = depText(from, at_);
-            p.defExpr = types_.intern(e), got = p.type;
+            if (read != nullptr) p.defExpr = types_.intern(e), got = p.type;
+            else p.defUnread = "a value past the literals, parameters and operators depFromSyntax carries";
         } else {
             *value = constantExpression("a default template argument"), got = p.type;
         }
