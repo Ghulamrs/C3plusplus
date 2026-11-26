@@ -5442,3 +5442,12 @@ carry, named; **substitution helpers left with callers 11 -> 6** (`substituted`,
 replay-residue 150 / 19 / 26 / 6; a class made at first need measured - 51 outputs differ, all content, none order-only
 (question 7 not reached). The measuring run before the gate: identical under -templates=subst 0 differ on both x86
 targets, the -check=templates censuses no class differ on both ABIs. Nothing changes without the flag.
+
+**m6d-w52's wave landed, 2026-11-26 (gate m6dw52g at 501e2819 against main c60ed082: 40 passed, 0 failed, no rows,
+after a -k rerun of winpass2 - its gnu half capped at 25 minutes under lane load, 0 differ in what ran - and names, which
+wrote no count line; the fixed point checked not owed).** R1's fourth and fifth lanes (m8-r1d, m8-r1e: a class made at
+first need answers as the binding's map does - pair, std::function, an array's N rooted; the switch differs in 0
+outputs on x86_64-linux, none order-only) and R2's slice 4b (m8-4b2: a type parameter's default read once and
+substituted on the kernel). **Suite falling back= 6,768 -> 6,747; re-entries under a binding at instantiation 21,565 ->
+21,549; suite type defaults made 0 -> 28 of 184;** substitution helpers with callers 6; replay-residue 150 / 19 / 26 / 6.
+Nothing changes without the flag.
