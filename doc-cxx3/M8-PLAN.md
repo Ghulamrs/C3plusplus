@@ -6948,3 +6948,72 @@ tms6747, arm64-darwin and x86_64-windows both ways (by construction they hold: n
 -check=templates censuses (Linux and Windows). No changed emitted output at -O0, -O1 or -O2
 (identical 0 differ x86_64-linux at all three, both ways). Slices 4m-4s untouched. Re-measure: `boxkit/m8r1d-fn2.sh <tag> <n|m>`
 over a tree holding `boxkit/m8r1d-fn2.diff` (applied to 92e10dd2), `boxkit/m8r1d-errs.sh`, `boxkit/m8r1c-order.py`.
+
+## R1, fifth lane: one id, one Type (lane m8r1e, 2026-11-26)
+
+Base 3259e466 (m8-r1d on wave m6d-w51 92e10dd2). Commits f011a479, 51ac9940, 14f84e75 (the three roots, one each), 945813f3
+(three EXCLUSIONS citations re-pointed, +7 each) and this entry. src/ 98,507 -> 98,522 lines (25 added, 10 deleted:
+Templates.cpp +22/-10, Templates.h +3).
+
+**The measure** - m8r1d's switch (`boxkit/m8r1d-switch-only.diff` on 3259e466; `boxkit/m8r1e-switch3.diff` on 14f84e75, one
+context line re-spelled), identical.sh x86_64-linux -O0/-O1/-O2, NEW under -templates=subst with `CXX1_FIRST_NEED=1`, against
+a REF built from 3259e466, classified by `boxkit/m8r1c-order.py`:
+
+| tree under the switch | compared | differ | content | order only |
+| --- | --- | --- | --- | --- |
+| 3259e466 (before) | 3,072 | 48 (16 cases x 3) | 48 (45 refused compiles, ownid's 3) | 0 |
+| + f011a479, 51ac9940 | 3,072 | 3 | 3 (template-subst-ownid's symbol, x3 levels) | 0 |
+| + 14f84e75 | 3,072 | **0** | **0** | **0** |
+
+**The content count fell 48 -> 0, order-only 0 -> 0.** Question 7's number is therefore 0 with no example to give: under the
+switch nothing differs at all on x86_64-linux at the three levels, so making at first need is not even reordering there. The
+switch is not committed (four targets and the censuses unmeasured under it).
+
+**The roots: one id, two Types, and who made the second.**
+
+- **pair's own-id copy constructor** (f011a479; 10 cases): the partial `pair<const T1, T2>`'s read class is tagged in the
+  primary's form, `pair<$T0,$T1>$readN` (readDeclaration lays every read's tag over its own parameters in order; the partial's
+  written key, `pair<const $T0,$T1>`, is readPattern_'s). readStands' `apart` - the class the program declared under the read's
+  tag less `$readN`, there for `inner<$T0>` read inside `outer` - therefore found `pair<$T0,$T1>`, the shallow the partial's read
+  declared for `pair<T1, T2>`, and mapped it to the made partial. So the made `pair<const int,int>` declared `pair(const
+  pair<const int,int> &)`, a second copy constructor, and the replay's `pair(const pair<int,int> &)` matched no member
+  (ParserTopLevel.cpp:1054). Shipped Mapped hid it: idsInside inserts the made `pair<int,int>` at the front of the map; the
+  switch's idsInside makes the id at Made, maps nothing, and readStands' wrong entry answered. readOwn_ now keeps the read's
+  own key (readPattern_'s) and readStands asks that: for a primary it is the same string, for a partial the written one.
+- **std::function's primary and array's N** (51ac9940; 4 + 1 cases): a partial's read class is a specialization over the
+  partial's own parameters (`array<$T0>` for `array<T, 0>`, `function<$T0,{$T1...}>` for `function<R(Args...)>`), so where a
+  map did not carry it (`swap(array &)`, `function(const function &)` under classShape's map in idsInside) the id step at Made
+  read it as an id and made `array<int>` (N past the values: 139,711,303,634,144 elements) and `function<int,{int}>` (no partial
+  matches: the primary's static_assert). readPartials_ names those classes; at Made specializationIn answers "a partial's read
+  class, which the binding does not carry" - as Mapped answers - and the map that carries it (readStands) still does. With
+  maker null nothing changes: identical by construction.
+- **ownid's symbol** (14f84e75; 3 outputs): memberSymbol (const, Mapped) substituted the read's signature a second time beside
+  membersFromRead's own substitution, so where the declaration's types were made at first need the symbol kept
+  `Two<const $T0,$T1>` (`_ZN3TwoIicEC1ERK18Two<const $T0,$T1>`). The symbol is now spelled from the signature membersFromRead
+  declared; classMembers' check substitutes once and passes it. Mapped is pure: identical by construction.
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **helpers left with callers 6 ->
+6** - carriedId 7, idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. None moved: step (3) retires
+idsBefore, argsWanted and earlyArgs into Made only with the switch committed, and the switch is committed only with identical
+0 under it on four targets and every census holding - not measured inside the hour (owed below).
+
+**Re-entries and replay-residue**: replay-residue's --check runs in the gate's static step (owed below with it); no replay
+was added or removed by the three changes (none adds a door, a jump or a replay). Re-entries under a binding were not re-measured: f011a479 is the one shipped
+change (a partial's `apart`), and identical plain and under the flag holds it; R0's 21,565 at instantiation and 54,093 read stand.
+
+**Gates** (a coding lane's; the next wave gates it whole). The Linux gate chain on a clean tree of 14f84e75 never got a
+~/slot in 23 minutes (the coordinator's m6dw51g and lane m8r4b held both) and was stopped unstarted; what stands instead:
+**g++ -Werror clean** on 14f84e75's code (the fn4 build: 14f84e75 with the env-gated switch added, rc 0); **identical
+x86_64-linux -O0/-O1/-O2 against the REF 3259e466, no CXX1_FIRST_NEED (the switch inert), plain 3,072/0, under
+-templates=subst 3,072/0**; static on 945813f3 (Linux): **exclusions 0 uncited, 0 stale; comment cap 0 over; memory gate
+lower; ast-residue not raised; replay-residue 150 / 19 / 26 / 6, +0 on every kind; ide up to date**. Windows, 14f84e75 in
+work\m8r1ex: **cl /W4 /WX clean** (14:32:41-14:36:42, 4 min 1 s, cl alone, no warning); **overload.sh 46/0 plain and under
+the flag**; **names.sh 1024/0 plain and under the flag** (the flag through a wrapper as CXX1); **identical x86_64-windows -O0 against a
+REF 3259e466 built there, under the flag and plain, each cut at its 7-minute cap with 1,997 of 2,048 outputs (both spellings)
+compared and 0 DIFFERS**. Linux, the fn4 exe with the switch inert: **the FULL stage-0 self-compile, 102 of 102** (133 s).
+**Owed** (the hour): run.sh plain and under the flag; subst.sh; identical on tms6747 and arm64-darwin both ways, x86_64-windows at -O1/-O2 and the
+rest of -O0; the -check=templates censuses over tests/cases and the self-host on Linux and Windows (`boxkit/m8r1e-cen.sh`,
+written, not run); the switch on four targets with the censuses, then step (3)'s retirement of idsBefore, argsWanted, earlyArgs.
+Changed emitted outputs: none at -O0, -O1 or -O2 on x86_64-linux, both ways (identical 0); none found among the x86_64-windows
+-O0 outputs compared. Slices 4m-4s untouched. Re-measure: `boxkit/m8r1e-fn.sh <tag> <m|c|n>` over a tree holding
+`boxkit/m8r1e-switch3.diff` (on 14f84e75), `boxkit/m8r1e-errs.sh`, `boxkit/m8r1c-order.py`.
