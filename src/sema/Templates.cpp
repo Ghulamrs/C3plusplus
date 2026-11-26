@@ -1831,9 +1831,9 @@ static const char *frameStepName(char kind) {
 }
 
 // **Slice 2c**: the frame the read's steps lay under `s` from `start`, the parser's frameAlign_ before it - held against the
-// replay's step by step: kind, type, offset - and in `raised` the widest slot past the alignment it started at, outside a nested
-// function: what allocateFrameSlot records in frameAligns_. Nothing but the check reads the replay's steps.
-std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laidOut) const {
+// replay's step by step: kind, type (at Made, the kernel's answer a door got) and offset - and in `raised` the widest slot past
+// the alignment it started at, outside a nested function: what allocateFrameSlot records. Only the check reads the replay's.
+std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::vector<FrameEvent> &replay, const Substituted &s, int start, int *raised, std::vector<int> *laidOut) {
     struct Frame { int size, align; std::vector<Parser::FreeSlot> free; };
     Frame now = { 0, 16, std::vector<Parser::FreeSlot>() };
     int nested = 0;
@@ -1845,7 +1845,7 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
         const FrameEvent &r = read[k], &y = held ? replay[k] : read[k];
         const std::string step = frameStepName(r.kind);
         if (held && r.kind != y.kind) return "the read's " + step + " where the replay has " + frameStepName(y.kind);
-        const Type *t = substitute(s, r.type).type;
+        const Type *t = substitute(s, r.type, At{ p_.at_ }).type;
         if (held && t != y.type) return step + ": typed apart";
         if (t != nullptr && p_.dependentType(t)) return step + ": a type the binding does not carry";
         const Type *stored = t != nullptr && t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
@@ -1954,7 +1954,7 @@ void Templates::memberFrame(const PendingBody &body, const Substituted &s, const
 // **Step 2's shell**: a Function's records, made from the read's steps as laid - a parameter's and a
 // local's from its `d` (name, stored type, offset, scope, alignment, serial), the sret slot, the save area and the frame's size -
 // and the rest from the function the read made at its declaration, as the replay's definition path sets it for a free function.
-std::string Templates::madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) const {
+std::string Templates::madeFromRead(const Specialization &sp, const Substituted &s, const std::vector<FrameEvent> &read, const std::vector<int> &laid, std::vector<Function> *out) {
     std::vector<Param> params;
     std::vector< ::Local> locals;
     std::vector<int> blocks(1, 0);      // the block table -g reads, from topLevel's outermost block as enterBlock adds to it
@@ -1970,7 +1970,7 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
         else if (r.kind == 'V') save = laid[k];
         else if (r.kind == 'e') size = laid[k];
         if (r.kind != 'd') continue;
-        const Type *t = substitute(s, r.type).type, *stored = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
+        const Type *t = substitute(s, r.type, At{ p_.at_ }).type, *stored = t->isReference() ? p_.types_.pointerTo(t->referent()) : t;
         // A member's `this` is declared after its parameters and is its first (definition's paramSlots).
         if (r.param) params.insert(r.name == "this" ? params.begin() : params.end(), Param{ stored, laid[k] });
         locals.push_back(::Local(r.name, stored, laid[k], r.param, std::string(), r.block));
