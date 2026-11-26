@@ -7393,3 +7393,57 @@ run.sh waited 23 minutes). src/ at e560d8e7 is 7cac2415's with cdf13d12's eight 
 -O2 under the flag and plain on four targets at three levels (tms6747 -O0 done); names.sh under the flag, overload.sh; the five
 typed cases on 68185444; then idsBefore's retirement with the typed step's copies traced. Re-measure: `boxkit/m8r1j-lgate.sh <a|b|c>
 <1|2>`, `boxkit/m8r1j-wchain.sh`, `m8r1j-wident.sh`, `m8r1j-wcen.sh`, `m8r1j-wnames.sh`, `m8r1j-winbuild.sh`, `m8r1j-typed1.sh`.
+
+## R1, eleventh lane: the five typed copies (lane m8r1k, 2026-11-26)
+
+Base 4786245e (m8-r1j: src = 7cac2415 + cdf13d12, first need reverted). REF 501e2819. Commits: **49d6a1a8** - the mend;
+**35daf100** - e560d8e7 reverted, so classes are made at first need again (68185444's src); **a0ba0409** - the sink's declaration
+moved below `coveredClass_` (make comments' cap); this entry. src/ 98,648 -> 98,675 lines (+43 / -16: the mend Templates.cpp +10,
+Templates.h +5 / -1; first need back Templates.cpp +26 / -15, Templates.h +2).
+
+**THE MEASURE: tests/subst.sh's typed step with first need on, 5 failed -> 0** (typed 1,016 passed, 0 failed at -O0 and -O2;
+include-string, map-set-comparator, map-set-node-stability, ssa-conversion-string-local, wstring: `-check=typed` copy 2 / 2 / 4 / 1 /
+2 -> 0 / 0 / 0 / 0 / 0 at both levels, on 39a28fda + the mend's src and on the mend with first need off alike).
+
+**The root (one, all five).** Every copy was "the record's fields" on a parameter `name` - `a` and `b` in `operator!=(const
+basic_string<C> &a, const C *b) { return !(a == b); }` (include/string:511-512), the trees' `operator==` / `operator<`
+(map:141, :145, set:96). Under first need the function door's shape questions (`need`, Made at `p_.at_`) make or find
+`basic_string<char>`, `map<...>`, `set<...>` for the read id `basic_string<$T0>`, so these bodies are read instead of replayed
+("a 'name' the read resolved to a type the binding does not carry" no longer fires). The Typer then types each record under the
+binding by **Keyed** (the map, then the class by its key: `Typing.cpp:1037`), while `recordDiffers` asks **Mapped** (the map
+alone): the parser's `const basic_string<$T0> &` came back dependent from one and as the class from the other. Not a second Type,
+not a body typed twice: one class, and a binding whose map did not hold what its door had made. **The mend, in the kernel**: while
+`instantiate` asks the body's shape and its requests, a sink (`Templates::Needing`, the binding by address) takes each id the id
+step (`specializationIn` with a maker) answers over that binding; once bound, they are the binding's `Substituted::needed`, which
+`substituteIn` asks right after `from` / `to`. So Mapped, Keyed and Made answer the same class for it, the check unchanged. With
+first need off nothing reaches Made over the door's binding inside that window, so `needed` stays empty: identical by
+construction (`needed` is never one of `to`'s bound classes, so `classBound`, `boundObjectClass`, `offsetUnder`'s `from.back()`
+and `cvOverReference` see the binding as before).
+
+**Gates.** Linux: **g++ -Werror clean** on 49d6a1a8's src and on 39a28fda + it (n); **run.sh -templates=subst 1,369 / 0** on both;
+**subst.sh rc 0 on n** (run -O0 / -O2 1,369 / 0, typed 1,016 / 0 at both, census 1,133 bodies through the function door, bodies
+1,013 of 1,013, self); static on a0ba0409: exclusions 0 uncited 0 stale (rc 0), comments 0 over (35daf100 had 1 - a0ba0409),
+memory gate lower, ast-residue not raised, **replay-residue 150 / 19 / 26 / 6, +0**, ide up to date. Windows: **cl /W4 /WX clean on
+49d6a1a8** (20:00:17-20:02:17, 2 min, build.cmd's own /MP) **and on 35daf100** (20:06:57-20:11:13, 4 min 16 s). On n also
+**the FULL stage-0 self-compile 102 of 102 (164 s)** and **run.sh plain 1,369 / 0**; on 49d6a1a8's src (first need off) run.sh
+-templates=subst 1,369 / 0 and subst.sh rc 0. **identical against a REF built from 501e2819, n under the flag: x86_64-linux -O0
+1,025 / 0, -O2 1,025 / 0; plain -O0 1,025 / 0; arm64-darwin and tms6747 -O0 and -O2 1,025 / 0 each; x86_64-windows -O0 and -O2
+2,050 / 0 each (both spellings)** - byte for byte, so no changed emitted output at -O0 or -O2; -O1 was cut by the chain's own
+timeout. **names.sh on 35daf100 (Windows): plain 1,025 / 0, under the flag 1,025 / 0** (20 .nonames open, the register's);
+**overload.sh 46 agreed, 0 differed**. **Census x86_64-linux on n**: suite 1,377 units, **class differ 0, body
+differ 20 (REF 20**, the same reasons: return type 6, decltype return 5, exception specification 4, block table 2, shell 2, frame
+size 1); self-host 102 units, **class differ 0, body differ 11 (REF 11**: exception specification 7, frame size 4); re-entries under
+the check 26,961 suite (= 68185444's), **465,644 self-host (68185444: 464,938, +706 - not traced: owed)**. **Re-entries** (suite, no check): 21,553 on n, 21,550 with first need off and the mend (m) - unchanged by the mend; per
+unit the +3 is **map-set-node-stability 402 -> 406** (its four tree bodies now read, their classes made at the door) and
+**template-angle-split 8 -> 7**, every other unit the same: first need's, named.
+
+**Owed** (the wave's gate): identical at -O1 on four targets and plain at -O1 / -O2 (and on three targets at -O0), the
+x86_64-windows censuses, the self-host re-entries' +706 under the check, 49d6a1a8's own self-compile and run.sh plain (its chain
+reached its 25-minute timeout waiting for a slot), the gates on a0ba0409 itself beyond static (it moves one declaration); then **5b12ee6b again** (revert 71036e3b: idsBefore retired into Made - it moved none of the copies on its own, so
+with this mend its typed step should hold), argsWanted, earlyArgs (its token scan: replay-residue's baseline down in that
+commit) and carriedId's early branch. The mend asks R3 nothing: the records were complete, the binding's map was not.
+Re-measure: `boxkit/m8r1k-lbuild.sh <x>` (build, the five typed), `m8r1k-chain.sh <m|n>`, `m8r1k-lident.sh`, `m8r1k-lident2.sh`,
+`m8r1k-lcen.sh`, `m8r1k-reent.sh`, `m8r1k-static.sh`, `m8r1k-winbuild.sh <x> <rev>`, `m8r1k-wchain.sh <x>`.
+
+**Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
+earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. Slices 4m-4s untouched. No accepted lines, no wave-expected rows.
