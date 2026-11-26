@@ -8018,7 +8018,9 @@ and templatesFromRead's).
 
 **(b) Re-entries under a binding inside made classes, by function** (R0's counter, `-templates=subst` with the census, no check;
 the wave gate's census of 23e0e204, `~/coordw54-cen-<arch>-m.log` by `boxkit/coord-cen2.sh`; da2e6ed2 adds only 4f's `decltype`
-step, which no made class reaches; this lane's own census of da2e6ed2, `boxkit/m8r3a-cen.sh c0 <arch>`, below where it landed):
+step, which no made class reaches. **This lane's census of da2e6ed2 on x86_64-windows, `boxkit/m8r3a-cen.sh c0 x86_64-windows`, is
+the same door by door** - suite 1,383 units (nonzero 378, the `.error` set), classes 2,652 made of 2,676; self-host 102 units rc 0,
+76,903 of 76,903; x86_64-linux at da2e6ed2 below the table):
 
 | made class: function: part | suite x86_64-linux | suite x86_64-windows | self-host x86_64-linux | self-host x86_64-windows |
 | --- | --- | --- | --- | --- |
@@ -8033,9 +8035,11 @@ step, which no made class reaches; this lane's own census of da2e6ed2, `boxkit/m
 | **all, inside made classes** | **5,467** (4,615 at instantiation) | **5,467** | **203,975** (154,227 at instantiation) | **203,917** |
 | for scale: all re-entries in the unit (read + instantiation) | 74,600 | 74,312 | 733,932 | 733,944 |
 
-Definitions re-entered (R0's sites, deduplicated): suite staticsFromRead 156, templatesFromRead 37; self-host 21 and 16. Every
-made class still re-reads: the two largest numbers of the self-host, typedefs by path and member template declarations, are
-`ratio`'s and `duration`'s typedefs and every class template's member function templates (`vector::emplace_back`, `function`'s).
+Definitions re-entered (R0's sites, deduplicated; `boxkit/m8r3a-sum.sh c0 x86_64-windows`, `~/m8r3ac-c0-x86_64-windows-h.msites`):
+suite 193 site-door pairs (166 units hold a made-class re-entry); self-host **37** - staticsFromRead 21 (`<type_traits>` 10,
+`<ratio>` 4, `<iterator>` 3, `<functional>`, `<string>`, `<deque>`, OptCore.h:56) and templatesFromRead 16 (the containers,
+`<string>`, `<memory>`, `<utility>`, `<chrono>`, `<functional>`, `<iterator>`, `__hash_table`, OptCore.h:119); 101 of the 102
+units hold one. So R3's self-host work is 37 library and OptCore definitions, every one re-read in nearly every unit.
 
 **(c) What the read's records lack that a scanner fetches from tokens, by kind** (a record is readClass_'s pattern Type,
 readMembers_'s Signatures, readTypedefs_'s Types, readBodies_'s held bodies, memberTemplates_'s TemplateDecls; the syntax tree has
