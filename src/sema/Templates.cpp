@@ -3562,15 +3562,16 @@ bool Templates::listUnder(const Substituted &s, const TemplateDecl &d, std::vect
 // An id over the parameters the program had not declared, its arguments under `s`: of another template's type parameters alone,
 // each argument a type the binding carries (no class the read named over its parameters); false where the door cannot make it.
 bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read, std::string *name, std::vector<TemplateArg> *args, bool itself,
-                          const std::vector<const Type *> *pending) const {
+                          const std::vector<const Type *> *pending, bool base) const {
     std::string written;
     if (!idUnder(s, e, name, args) || !readId(e, &written, nullptr)) return false;
     const std::map<std::string, TemplateDecl>::const_iterator d = templates_.find(*name);
-    if (d == templates_.end() || (*name == read->templateName()) != itself || d->second.isAlias || d->second.ttParam >= 0) return false;
+    const bool ownBase = base && !itself && *name == read->templateName();     // 3z: `Tuple<Rest...>`, made reading the head, as the replay
+    if (d == templates_.end() || ((*name == read->templateName()) != itself && !ownBase) || d->second.isAlias || d->second.ttParam >= 0) return false;
     // One whose body names the read's own template is made inside the class the replay has begun: the replay's, not before it.
     const std::string own = read->templateName().substr(read->templateName().rfind(':') == std::string::npos ? 0 : read->templateName().rfind(':') + 1);
-    std::vector<std::size_t> bodies(itself ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
-    for (std::size_t q = 0; !itself && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
+    std::vector<std::size_t> bodies(itself || ownBase ? 0 : 1, d->second.afterParams);     // the primary's body and each partial's, which makeClass may choose
+    for (std::size_t q = 0; !itself && !ownBase && q < d->second.partials.size(); q++) bodies.push_back(d->second.partials[q].bodyAt);
     for (const std::size_t from : bodies)
         for (std::size_t t = from, depth = 0; t < p_.tokens_.size(); t++) {
             if (p_.tokens_[t].text == own) return false;
@@ -3645,7 +3646,7 @@ std::string Templates::idsBefore(std::size_t start, const std::vector<TemplatePa
     for (const Type *e : wanted) {
         std::string name;
         std::vector<TemplateArg> args;
-        if (!earlyArgs(s, e, readClass_.at(start), &name, &args)) continue;
+        if (!earlyArgs(s, e, readClass_.at(start), &name, &args) && !earlyArgs(s, e, readClass_.at(start), &name, &args, false, nullptr, true)) continue;
         const std::string tag = specializationKey(name, args);
         const Type *had = p_.lookup_.findTypedef(tag);
         if (had != nullptr) { s.from.push_back(e), s.to.push_back(had); continue; }     // an id's argument, as the next one reads it
@@ -3866,7 +3867,8 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         }
         return false;
     };
-    // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's.
+    // Slice 3n: in a class of no member function an enumerator over a parameter is read under the binding, and nothing reads the read's;
+    // 3z: beside one, over a non-type parameter alone, which marks a body's read of it value-dependent (memberShape replays it).
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator own = readMembers_.find(start);
     const bool bare = own != readMembers_.end() && own->second.second.empty() && templatesOf(own->second.first).empty();
     for (std::size_t t = start, depth = 0, head = 0; t < p_.tokens_.size(); t++) {
@@ -3888,7 +3890,9 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         sized.erase(std::remove(sized.begin(), sized.end(), t), sized.end());
         if (bare && t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size() && inEnum(t); q++)
-            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name) return "replayed: a member enumeration naming a template parameter";
+            if (!params[q].name.empty() && p_.tokens_[t].text == params[q].name && (params[q].type == nullptr || params[q].isPack))
+                return "replayed: a member enumeration naming a type or pack parameter, beside a member function";
+        if (t < p_.tokens_.size() && inEnum(t)) continue;
         for (std::size_t q = 0; q < params.size() && t < p_.tokens_.size(); q++)
             if (params[q].type != nullptr && !params[q].name.empty() && p_.tokens_[t].text == params[q].name &&
                 !(was.is("[") && t + 1 < p_.tokens_.size() && p_.tokens_[t + 1].is("]") && q < s->values.size() && s->values[q] > 0) && !idArg(t) &&
@@ -3969,7 +3973,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         if (real != nullptr && (real->kind() != Kind::Struct || !real->isComplete() || real->polymorphic() || real->hasVirtualBase() || real->isFinal()))
             return "replayed: a base over its parameters: a polymorphic, final, incomplete or union class, or one of a virtual base";
         if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
-        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted))
+        else if (wanted != nullptr && earlyArgs(*s, u, read, &name, &args, false, wanted, true))
             wanted->insert(wanted->begin() + static_cast<std::ptrdiff_t>(baseIds++), u);
         else return "replayed: a base: a class template-id over its parameters";
     }
@@ -4104,6 +4108,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             if (ahead) sigAt = back;
             if (!ahead && !behind && wanted != nullptr && wanted->size() != had)
                 return "replayed: class template-ids made first for a data member and a member function's signature";
+            if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3z: a base made first
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
             // Its own template under other arguments: made inside the class where the replay makes it (idsInside), the program's after.
@@ -4180,6 +4185,8 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
     if (laid->members.empty() && cursor == 0 && bases.sizeFloor == 0) laid->size = 1, laid->align = 1;
 }
 
+static bool nestedAt(const std::vector<std::pair<std::size_t, std::size_t> > &nested, std::size_t t, bool within = false);
+
 // What a class made from the read cannot carry yet, by name: a pack, a member initialiser over a parameter, alignas, final.
 std::string Templates::fromReadWhyNot(std::size_t start, const std::vector<TemplateParam> &params) const {
     if (p_.src_.packAt(p_.tokens_[start].pos) != 0) return "replayed: under '#pragma pack'";
@@ -4203,8 +4210,8 @@ std::string Templates::fromReadWhyNot(std::size_t start, const std::vector<Templ
     for (const Signature &f : readMembers_.at(start).second) {
         written[f.symbol] = !f.implicit;
     }
-    for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start))
-        if (!written[h.second]) return "replayed: a held body of no written member";
+    for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start))     // a nested class's: its own path's (3v)
+        if (!written[h.second] && !nestedAt(nestedByPath(start), h.first.start, true)) return "replayed: a held body of no written member";
     for (std::size_t t = start, depth = 0; t < p_.tokens_.size(); t++) {
         const Token &k = p_.tokens_[t];
         if (k.is("alignas")) return "replayed: alignas";
@@ -4249,7 +4256,7 @@ const Type *Templates::classFromRead(const TemplateDecl &decl, const std::string
         if (typedefByPath(start, s, td) == 0) p_.lookup_.declareTypeName(tag + "::" + td.first, substituted(own, td.second));
     p_.lookup_.declareTypeName(tag, type);
     membersFromRead(start, tag, s, type, bodies, pos);
-    staticsFromRead(start, decl, tag, s, type, type, params, binding, values);
+    staticsFromRead(start, decl, tag, s, type, type, params, binding, values, bodies);
     Substituted laidAs = s;     // slice 3r: its named member enumerations declared now
     readStands(start, type, &laidAs);
     ClassLaidOut laid;
@@ -4403,14 +4410,16 @@ std::string Templates::staticShape(std::size_t start, const Substituted &s) cons
 // its name in the body under the binding and in `scope`'s braces, so an initialiser in the class is evaluated as the replay does.
 void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, const std::string &tag, const Substituted &s, Type *owner,
                                 const Type *scope, const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
-                                const std::vector<long long> &values) {
+                                const std::vector<long long> &values, std::vector<Parser::PendingBody> *bodies) {
     const std::vector<Type::StaticMember> &statics = readClass_.at(start)->staticMembers();
     std::vector<std::size_t> typedefs;     // typedefByPath's, among the statics; held apart under the check (`owner` no `scope`)
     for (const std::pair<std::string, const Type *> &td : readTypedefs_.at(start))
         if (typedefByPath(start, s, td) != 0) typedefs.push_back(typedefByPath(start, s, td));
     bool other = false;
     const std::vector<std::size_t> enums = memberEnums(start, &other);     // slice 3m: read in the body's order among the statics
-    if (statics.empty() && typedefs.empty() && enums.empty()) return;
+    std::vector<std::pair<std::size_t, std::size_t> > nested;     // slice 3v: read where the class is made, not held apart (no bodies)
+    if (bodies != nullptr) nested = nestedByPath(start);
+    if (statics.empty() && typedefs.empty() && enums.empty() && nested.empty()) return;
     std::vector<std::pair<std::size_t, std::size_t> > order;     // each one's token, its static's index (statics.size(): an enum, + 1 a typedef)
     for (std::size_t i = 0; i < statics.size(); i++) {
         bool cx = false;
@@ -4419,6 +4428,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     }
     for (const std::size_t e : enums) order.push_back(std::make_pair(e, statics.size()));
     for (const std::size_t t : typedefs) order.push_back(std::make_pair(t, statics.size() + 1));
+    for (const std::pair<std::size_t, std::size_t> &n : nested) order.push_back(std::make_pair(n.first, statics.size() + 2));
     std::sort(order.begin(), order.end());
     const Type *enumScope = owner == scope || enums.empty() ? scope : p_.types_.structType(Kind::Struct, tag + "::$held");
     std::vector<Shadow> undo;
@@ -4432,6 +4442,20 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
     const std::vector<std::string> outerStack = p_.namespaceStack_;
     if (!decl.ns.empty()) p_.namespaceStack_ = Parser::namespacePathStack(decl.ns);
     for (const std::pair<std::size_t, std::size_t> &o : order) {
+        if (o.second == statics.size() + 2) {     // slice 3v: `struct N { ... };` as the class body reads it, its bodies held with the class's
+            std::vector<Parser::PendingBody> outerPending;
+            outerPending.swap(p_.pendingBodies_);
+            const bool wasDeferring = p_.deferSpecializationBodies_;
+            const std::string outerInline = p_.inlineOwner_;
+            p_.deferSpecializationBodies_ = true, p_.inlineOwner_.clear();
+            Parser::StorageClass storage = Parser::StorageNone;
+            p_.at_ = o.first;
+            p_.specifiers(&storage);
+            p_.deferSpecializationBodies_ = wasDeferring, p_.inlineOwner_ = outerInline;
+            bodies->insert(bodies->end(), p_.pendingBodies_.begin(), p_.pendingBodies_.end());
+            p_.pendingBodies_.swap(outerPending);
+            continue;
+        }
         if (o.second == statics.size() + 1) {
             p_.at_ = o.first;
             Parser::StorageClass storage = Parser::StorageNone;
@@ -4575,6 +4599,7 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
             if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
+        if (nestedAt(nestedByPath(start), h.first.start, true)) continue;     // staticsFromRead's, by the nested class's path
         bodies->push_back(h.first);
         bodies->back().key = bodyKey(start, h, tag, s);
         bodies->back().tag = retagged(h.first.tag, r.first, tag);
@@ -4799,6 +4824,7 @@ std::string Templates::classBeyond(std::size_t start) const {
     for (std::size_t f = 0; own != readMembers_.end() && f < own->second.second.size(); f++) written = written || !own->second.second[f].implicit;
     for (const std::size_t e : enums)
         if (written && p_.tokens_[e + 1].kind == TokenKind::Ident) return "replayed: a member enumeration with a name, beside a member function";
+    const std::vector<std::pair<std::size_t, std::size_t> > nested = nestedByPath(start);
     std::size_t t = start;
     while (t < p_.tokens_.size() && !p_.tokens_[t].is("{") && !p_.tokens_[t].is(";")) t++;
     for (int depth = 0; t < p_.tokens_.size(); t++) {
@@ -4808,7 +4834,7 @@ std::string Templates::classBeyond(std::size_t start) const {
         else if (depth != 1) continue;
         else if (k.is("using") && !(p_.tokens_[t + 1].kind == TokenKind::Ident && p_.tokens_[t + 2].is("=")))
             return "replayed: a using-declaration";     // a member typedef or alias is the read's, readTypedefs_
-        else if (k.is("enum")) continue;     // memberEnums', read by staticsFromRead
+        else if (k.is("enum") || nestedAt(nested, t)) continue;     // memberEnums' and nestedByPath's, read by staticsFromRead
         else if (k.is("struct") || k.is("class") || k.is("union")) return "replayed: a nested or elaborated class";
         else if (k.is("friend")) return "replayed: a friend";
         else if (k.is("template"))     // a member function template: its parameter list passed, its body at depth 2
@@ -4843,6 +4869,58 @@ std::vector<std::size_t> Templates::memberEnums(std::size_t start, bool *other) 
         else *other = true;
     }
     return at;
+}
+
+// Slice 3v: each `struct N { ... };` staticsFromRead reads by the class body's path, as the replay reads it, by its key and `}`: in a struct
+// with no access label before it and no member function after it, N named nowhere else, nothing of it (or of a class it nests) out of
+// line, a static data member or a template.
+std::vector<std::pair<std::size_t, std::size_t> > Templates::nestedByPath(std::size_t start) const {
+    std::vector<std::pair<std::size_t, std::size_t> > at;
+    std::size_t open = start, end = start;
+    while (open < p_.tokens_.size() && !p_.tokens_[open].is("{") && !p_.tokens_[open].is(";")) open++;
+    if (!p_.tokens_[start].is("struct") || open >= p_.tokens_.size() || !p_.tokens_[open].is("{")) return at;
+    for (int depth = 0; end < p_.tokens_.size(); end++)
+        if ((depth += p_.tokens_[end].is("{") ? 1 : p_.tokens_[end].is("}") ? -1 : 0) == 0 && end > open) break;
+    bool label = false;
+    for (std::size_t t = open + 1; t < end; t++) {
+        const Token &k = p_.tokens_[t];
+        if (k.is("{") || k.is("(") || k.is("[")) {     // a member function's body or an initialiser: not this level
+            for (int depth = 0; t < end; t++)
+                if ((depth += p_.tokens_[t].is("{") || p_.tokens_[t].is("(") || p_.tokens_[t].is("[") ? 1 :
+                              p_.tokens_[t].is("}") || p_.tokens_[t].is(")") || p_.tokens_[t].is("]") ? -1 : 0) == 0) break;
+            continue;
+        }
+        label = label || k.is("public") || k.is("private") || k.is("protected");
+        if (!(k.is("struct") || k.is("class")) || label || p_.tokens_[t + 1].kind != TokenKind::Ident || !p_.tokens_[t + 2].is("{")) continue;
+        std::size_t close = t + 2;
+        for (int inner = 0; close < end; close++)
+            if ((inner += p_.tokens_[close].is("{") ? 1 : p_.tokens_[close].is("}") ? -1 : 0) == 0) break;
+        bool plain = close + 1 < end && p_.tokens_[close + 1].is(";");
+        std::vector<int> classBody(1, 1);     // each brace open: a class's body (1; `struct M {` inside too), or a function's or an initialiser's
+        for (std::size_t i = t + 3; i < close && plain; i++) {
+            const Token &n = p_.tokens_[i];
+            if (n.is("{")) classBody.push_back(p_.tokens_[i - 1].kind == TokenKind::Ident && (p_.tokens_[i - 2].is("struct") || p_.tokens_[i - 2].is("class")));
+            if (n.is("}") && classBody.size() > 1) classBody.pop_back();
+            std::size_t e = i + 1;     // `static int f(...)`, a static member function; a static data member is defined out of line
+            while (n.is("static") && e < close && !p_.tokens_[e].is("(") && !p_.tokens_[e].is(";") && !p_.tokens_[e].is("=") && !p_.tokens_[e].is("{")) e++;
+            plain = !(n.is("template") || n.is("friend") || n.is("virtual") || (n.is("static") && !p_.tokens_[e].is("(")) || n.is("union") ||
+                      n.is("enum") || n.is("using") || n.is("default") || n.is("delete") || n.is("constexpr") ||
+                      ((n.is("struct") || n.is("class")) && !(p_.tokens_[i + 1].kind == TokenKind::Ident && p_.tokens_[i + 2].is("{"))) ||
+                      (classBody.back() != 0 && n.is(";") && (p_.tokens_[i - 1].is(")") || p_.tokens_[i - 1].is("const"))));     // `It(T);`: out of line
+        }
+        for (std::size_t i = open + 1; i < end && plain; i++) plain = (i > t && i <= close) || p_.tokens_[i].text != p_.tokens_[t + 1].text;
+        for (std::size_t i = close + 2; i < end && plain; i++) plain = !p_.tokens_[i].is("(") && !p_.tokens_[i].is("template");
+        if (plain) at.push_back(std::make_pair(t, close));
+        t = close;
+    }
+    return at;
+}
+
+// Whether token `t` is the key of one of nestedByPath's classes, or (within) inside one's braces.
+static bool nestedAt(const std::vector<std::pair<std::size_t, std::size_t> > &nested, std::size_t t, bool within) {
+    for (const std::pair<std::size_t, std::size_t> &n : nested)
+        if (within ? t > n.first && t < n.second : t == n.first) return true;
+    return false;
 }
 
 // Step (1)'s door, asked before any replay: the shape, nothing beyond data members and member functions, the read's records kept.
@@ -4914,13 +4992,17 @@ std::string Templates::classSkip(std::size_t start, const std::string &tag, cons
     const std::map<std::size_t, std::vector<std::pair<Parser::PendingBody, std::string> > >::const_iterator r = readBodies_.find(start);
     const std::map<std::size_t, std::pair<std::string, std::vector<Signature> > >::const_iterator m = readMembers_.find(start);
     if (r == readBodies_.end() || m == readMembers_.end() || readTypedefs_.count(start) == 0) return "differ: no held member bodies kept from the read";
-    if (r->second.size() != bodies.size()) return "differ: the number of held member bodies";
-    for (std::size_t i = 0; i < bodies.size(); i++) {
-        const Parser::PendingBody &a = r->second[i].first, &b = bodies[i];
-        const std::string key = bodyKey(start, r->second[i], tag, coveredClass_.at(tag)), owner = retagged(a.tag, m->second.first, tag);
+    std::vector<std::pair<Parser::PendingBody, std::string> > reads;     // a nested class's, read by its path, are the replay's (3v)
+    std::vector<Parser::PendingBody> replays;
+    for (const std::pair<Parser::PendingBody, std::string> &h : r->second) if (!nestedAt(nestedByPath(start), h.first.start, true)) reads.push_back(h);
+    for (const Parser::PendingBody &b : bodies) if (!nestedAt(nestedByPath(start), b.start, true)) replays.push_back(b);
+    if (reads.size() != replays.size()) return "differ: the number of held member bodies";
+    for (std::size_t i = 0; i < replays.size(); i++) {
+        const Parser::PendingBody &a = reads[i].first, &b = replays[i];
+        const std::string key = bodyKey(start, reads[i], tag, coveredClass_.at(tag)), owner = retagged(a.tag, m->second.first, tag);
         if (a.start != b.start || a.freeFunction != b.freeFunction || key != b.key || owner != b.tag || a.local != b.local)
             return "differ: a held member body's place, key, class or name";
-        const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(r->second[i].second);
+        const std::map<std::string, std::string>::const_iterator f = readSymbol_.find(reads[i].second);
         if (b.which >= p_.lookup_.functions_.size() || f == readSymbol_.end() || f->second != p_.lookup_.functions_[b.which].symbol)
             return "differ: a held member body's function";
     }
