@@ -6749,3 +6749,46 @@ spellings, plain and under the flag (the Windows run under the flag, beside name
 this lane's split, not a result); names.sh plain and under the flag (still running at the hour, through a wrapper script
 `work\m8r1ay\cxx3-subst` as R0 asked); the -check=templates census on x86_64-windows; cl /W4 /WX on 234d8a29 (its change is
 statements only); the self-host measure on one corpus against the REF; whether `Made` at first need keeps identical.
+
+## R1, second lane: ids, lists and packs - `paramsUnder`, `packUnder`, `listUnder` retired into the kernel (lane m8r1b, 2026-11-26)
+
+Base 7aae2b6b (m8-r1a, on wave m6d-w50 4a127f66). Commits 4f4bc60e (`paramsUnder`), 4c3dc87c (`packUnder`), a64267e6
+(`listUnder`), 64129950 (three EXCLUSIONS citations re-pointed), and this entry. src/ 98,477 -> 98,479 lines (64 added, 62 deleted: Templates.cpp +59/-56, Templates.h +5/-6).
+**No path changed**: each moved site asks what the helper it replaced answered.
+
+**The measure** (`git grep -o '\bNAME(' -- src/sema`, a helper's definition and declaration not counted): `paramsUnder` 8 ->
+**0**, `packUnder` 3 -> **0**, `listUnder` 1 -> **0**. **Helpers left with callers, of the eleven: 9 -> 6**: carriedId 7,
+idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2 (unchanged). **Re-entries under a binding were not measured** (the census was stopped with the lane); no
+moved site indexes a token or moves `p_.at_`, and **replay-residue** is 150 / 19 / 26 / 6, +0 on every kind.
+
+**What each became.** `paramsUnder` is the kernel's list form, `Substitutions substitute(const Substituted &, const
+std::vector<const Type *> &) const` -> `{ types, why, at }` (a pack parameter one per member, the first failure named): the
+kernel's function step reads its failure, and the 7 other sites (the made class's signatures and slots, the check's arity and
+types, memberSymbol) read `.types`. `packUnder` is the pack branch of the kernel's one argument step, `argUnder(s, a, bound)` -
+argsUnder's loop body, so the id step's packs, values, class templates and types are one function; listUnder and earlyArgs
+call it for a pack (`argUnder` of a pack that is not a template is exactly `packUnder`: every other branch refuses a pack, and
+a failed pack leaves the argument untouched). `listUnder` is folded into its one caller `idUnder`, the kernel's template
+template parameter step: the stand-in renamed and its list laid by the bound template's parameters in one function.
+
+**What stays, and why** (each call site read): `idUnder` - the kernel's id step (specializationIn) and earlyArgs; it is
+substitution, already one implementation, and its second caller goes with earlyArgs. `carriedId` - all 7 calls sit in the
+replay-order machinery beside argsWanted and earlyArgs (argsWanted's recursion, classBefore's bases, data members, typedefs
+and signatures); its `early` branch is that order's own map, and its Declared branch filters what the kernel answers (a class
+not dependent, not a read shallow, not over parameters) - folding that filter into the kernel's Declared would change the
+DependentMember step and specializationUnder's three old sites, so it is not identical by construction; it retires with the
+order helpers (m8r1c's measurement of `Made` at first need), not before. `earlyArgs`, `argsWanted`, `idsBefore` are m8r1c's;
+`typedefCarried` is R3's. No caller moved to `Made`.
+
+**m8r1a's owed checks on 7aae2b6b** (REF 4a127f66): **cl /W4 /WX clean** (Windows, cl alone, 12:33:52-12:35:52, 2 min);
+**names.sh under -templates=subst 1,024 passed 0 failed** (through a wrapper script as CXX1, written in the lane's own tree;
+the harness unchanged; JOBS=4, 8 min); **identical x86_64-windows under the flag at -O0: 2,048 compared, 0 differ**. Owed
+still: identical x86_64-windows under the flag at -O1 and -O2 and plain at all three (one level a run, ~7 min each on Windows),
+names.sh plain, the x86_64-windows -check=templates census.
+
+**Gates** (on a64267e6, Linux; the lane was handed back before the hour, so most are owed): **g++ -Werror clean** (and on
+7aae2b6b, the REF); **static**: exclusions 0 uncited 0 stale (after 64129950; three citations moved +5), comments 0 over the
+cap, memory-gate lower, ast-residue not raised (ExprPtr 2012), replay-residue +0 on every kind, ide up to date; **the FULL
+stage-0 self-compile 102 of 102** (175 s - cxx3 compiles the new lines). **Owed** (to the wave gate): identical on four targets
+at -O0/-O1/-O2 plain and under the flag against a REF of 7aae2b6b; run.sh plain and under the flag; subst.sh; the
+-check=templates censuses (suite and self-host, both ABIs) and the re-entry measure; names.sh and overload.sh; cl /W4 /WX on
+a64267e6. No changed emitted output is known, because none was compared.
