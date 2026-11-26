@@ -128,6 +128,8 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
             p.defBegin = at_;
             int depth = 0;
             bool names = false, angled = false;     // an earlier parameter named; a `<` (a template-id the read could make)
+            bool folds = true, onlyValues = true;   // 4c: literals, names and arithmetic; every name a value parameter before it
+            std::string spelled;                    // 4c: a template's name, `A::B`
             for (;;) {
                 const Token &t = peek();
                 if (t.kind == TokenKind::End) break;
@@ -135,7 +137,14 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
                 if (t.is("<") || t.is("(") || t.is("[")) depth++;
                 else if (depth > 0 && (t.is(">") || t.is(")") || t.is("]"))) depth--;
                 angled = angled || t.is("<");
-                for (std::size_t k = 0; t.kind == TokenKind::Ident && k < params.size(); k++) names = names || params[k].name == t.text;
+                bool param = false;
+                for (std::size_t k = 0; t.kind == TokenKind::Ident && k < params.size(); k++)
+                    if (params[k].name == t.text) param = true, onlyValues = onlyValues && params[k].type != nullptr && !params[k].isPack;
+                names = names || param;
+                onlyValues = onlyValues && (t.kind != TokenKind::Ident || param);
+                spelled = t.kind == TokenKind::Ident || t.is("::") ? spelled + t.text : std::string("<");
+                folds = folds && ((t.kind == TokenKind::Num && !t.isFloat && !t.isChar) || (t.kind == TokenKind::Ident && !peekAt(1).is("(")) ||
+                                  t.is("+") || t.is("-") || t.is("*") || t.is("/") || t.is("%") || t.is("(") || t.is(")"));
                 at_++;
             }
             p.defEnd = at_;
@@ -143,6 +152,8 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
                 src_.fail(peek().pos, "a default template argument has no value");
             if (tmpl_.substitute_ && p.type == nullptr && !p.isTemplate && !p.isPack)
                 p.defPattern = typeDefaultRead(params, p, names || !angled);
+            else if (tmpl_.substitute_ && !p.isPack)
+                otherDefaultRead(params, p, names, folds && (!names || onlyValues), spelled);
         }
         for (std::size_t i = 0; i < params.size(); i++)
             if (!p.name.empty() && params[i].name == p.name)
@@ -1562,19 +1573,26 @@ bool Parser::expandPackValues(TemplateArg &a) {
     return true;
 }
 
-// R2, slice 4b: type default `p`, just skipped, read once as a pattern - in its template's scope, the earlier parameters (all
-// types) standing for themselves, in a layer of its own; null with `p.defUnread` the reason where it is left to the replay.
+// R2, slice 4b: type default `p`, just skipped, read once as a pattern - in its template's scope, the earlier parameters (4c:
+// values and templates too) standing for themselves, in a layer of its own; null with `p.defUnread` the reason where it is not.
 const Type *Parser::typeDefaultRead(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool makesNothing) {
     for (std::size_t k = 0; k < earlier.size() && p.defUnread == nullptr; k++)
-        if (earlier[k].type != nullptr || earlier[k].isTemplate || earlier[k].isPack) p.defUnread = "a parameter before it is not a type";
+        if (earlier[k].isPack) p.defUnread = "a pack before it";
     if (!makesNothing) p.defUnread = "a template-id naming no parameter before it, made where the replay makes it";
     if (!classStack_.empty() || patternOnly_) p.defUnread = "read inside a class or a pattern, its parameters numbered apart";
     if (p.defUnread != nullptr) return nullptr;
+    return defaultReadAs(earlier, p, false, nullptr);
+}
+
+// The read both slices share, at the default in its template's scope, the parameters before it bound to themselves in a layer of
+// its own, inside a Trial: a type, or with `value` a value's (`p.type`; into `p` a tree over `names`, else a constant); null where
+// it refused or stopped short, `p.defUnread` saying which.
+const Type *Parser::defaultReadAs(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool names, long long *value) {
     std::vector<const Type *> stand;
     for (std::size_t k = 0; k < earlier.size(); k++) stand.push_back(types_.templateParam(static_cast<int>(k)));
     sema::Lookup::Layer layer = lookup_.pushLayer();
     const sema::Templates::DoorAt reading(&tmpl_, "read");
-    const Type *read = nullptr;
+    const Type *got = nullptr;
     try {
         Trial trial(this);       // `at_` back past the default, and the pattern mode with it
         std::vector<Shadow> undo;
@@ -1589,31 +1607,70 @@ const Type *Parser::typeDefaultRead(const std::vector<TemplateParam> &earlier, T
         } inArgs{ inTemplateArgs_, inTemplateArgs_ };
         inTemplateArgs_ = patternOnly_ = true;
         at_ = p.defBegin;
-        StorageClass sc;
-        Qualifiers quals;
-        const Type *base = specifiers(&sc, &quals);
-        read = declarator(base, true).type;
-        if (at_ != p.defEnd) read = nullptr, p.defUnread = "the read stopped short of the default's end";
+        if (value == nullptr) {
+            StorageClass sc;
+            Qualifiers quals;
+            const Type *base = specifiers(&sc, &quals);
+            got = declarator(base, true).type;
+        } else if (names) {
+            const std::size_t from = at_;
+            DepExpr e = *dependentExpression(true, false);
+            e.text = depText(from, at_);
+            p.defExpr = types_.intern(e), got = p.type;
+        } else {
+            *value = constantExpression("a default template argument"), got = p.type;
+        }
+        if (at_ != p.defEnd) got = nullptr, p.defUnread = "the read stopped short of the default's end";
     } catch (const SubstitutionFailure &) {
-        read = nullptr, p.defUnread = "the declaration's read refused it";
+        got = nullptr, p.defUnread = "the declaration's read refused it";
     }
     lookup_.popLayer(layer);
-    return read;
+    return got;
+}
+
+// Slice 4c: value or template default `p`, just skipped, read once - a constant folded here, a value over the values before it
+// kept as the tree the fold reads at the use, a template by its name; `p.defUnread` the reason where it is left to the replay.
+void Parser::otherDefaultRead(const std::vector<TemplateParam> &earlier, TemplateParam &p, bool names, bool folds, const std::string &spelled) {
+    for (std::size_t k = 0; k < earlier.size() && p.defUnread == nullptr; k++)
+        if (earlier[k].isPack) p.defUnread = "a pack before it";
+    if (!classStack_.empty() || patternOnly_) p.defUnread = "read inside a class or a pattern, its parameters numbered apart";
+    if (p.isTemplate) {
+        std::map<std::string, TemplateDecl>::const_iterator it = tmpl_.templates_.end();
+        if (!names && !spelled.empty() && spelled[0] != '<') it = findTemplate(spelled);
+        std::string why;
+        std::size_t at = 0;
+        if (it == tmpl_.templates_.end() || !it->second.isClass || it->second.ttParam >= 0 || !tmpl_.templateTemplateMatches(p.inner, it->second.params, &why, &at))
+            p.defUnread = p.defUnread != nullptr ? p.defUnread : "not a class template's name the declaration finds";
+        if (p.defUnread == nullptr) p.defPattern = templateNameTypeOf(it->second);
+        return;
+    }
+    if (!folds) p.defUnread = "not literals, names and arithmetic the fold reads";
+    if (p.typeOf >= 0 || !p.type->isInteger()) p.defUnread = "a value whose type is not an integer as written";
+    if (p.defUnread != nullptr) return;
+    long long v = 0;
+    const bool got = defaultReadAs(earlier, p, names, &v) != nullptr;
+    if (!got) p.defExpr = nullptr;
+    p.defValue = v, p.defValued = got && !names;
 }
 
 // [temp.param]/9 on the deduced path: a parameter the call could not work out takes its
 // default, replayed with every parameter before it bound - `class U = T` reads T's binding.
 bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
                                      std::vector<const Type *> *binding,
-                                     std::vector<long long> *values) {
+                                     std::vector<long long> *values, bool deduced) {
     const TemplateParam &p = decl.params[i];
     if (p.defBegin == 0) return false;
     tmpl_.defaultMade_ = false;
     const sema::Templates::DoorAt defaultDoor(&tmpl_, "default argument");
     // Under the flag, the kernel's under the binding so far; -check=templates replays it beside and keeps the replay's.
-    const Type *made = tmpl_.substitute_ && p.type == nullptr && !p.isTemplate ? tmpl_.defaultMade(decl, i, *binding) : nullptr;
+    long long value = 0;
+    tmpl_.defaultFailure_.clear();
+    const Type *made = tmpl_.substitute_ ? tmpl_.defaultMade(decl, i, *binding, *values, &value) : nullptr;
+    if (!deduced) tmpl_.defaultFailure_.clear();     // the class door's list replays it, as before
+    if (!tmpl_.defaultFailure_.empty() && !tmpl_.checkBodies_) throw SubstitutionFailure(tmpl_.defaultFailure_);
     if (made != nullptr && !tmpl_.checkBodies_) {
         (*binding)[i] = made;
+        if (p.type != nullptr) (*values)[i] = value;
         tmpl_.defaultMade_ = true;
         return true;
     }
@@ -1655,11 +1712,11 @@ bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
         Qualifiers quals;
         const Type *base = specifiers(&sc, &quals);
         (*binding)[i] = declarator(base, true).type;
-        if (made != nullptr) tmpl_.defaultMade_ = tmpl_.defaultHeld(made, (*binding)[i]);
     } else {
         (*binding)[i] = paramTypeIn(p, *binding);
         (*values)[i] = constantExpression("a default template argument");
     }
+    if (made != nullptr) tmpl_.defaultMade_ = tmpl_.defaultHeld(p, made, (*binding)[i], value, (*values)[i]);
     at_ = saved;
     return true;
 }

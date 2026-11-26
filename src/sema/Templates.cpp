@@ -497,24 +497,35 @@ static bool foldBound(const std::vector<Token> &k, std::size_t *t, std::size_t e
     return true;
 }
 
-// Slice 3h: the read's DepExpr of an argument (`X<N + 1>`) folded under `values` as foldBound folds a bound's tokens.
-static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long long *out) {
+// Slice 3h: the read's DepExpr of an argument (`X<N + 1>`) folded under `values` as foldBound folds a bound's tokens. 4d: with
+// `wide`, a `bool` literal, `!`, the comparisons and `&&` `||` as well, and a size or a static member through `wide`'s leaf.
+static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long long *out, const Templates::FoldLeaf *wide = nullptr) {
     long long a = 0, b = 0;
-    if (e->op == DepExpr::Literal) return !e->floating && e->type != nullptr && e->type->kind() == Kind::Int && (*out = e->value) >= 0;
+    if (e->op == DepExpr::Literal)
+        return !e->floating && e->type != nullptr && (e->type->kind() == Kind::Int || (wide != nullptr && e->type->kind() == Kind::Bool)) &&
+               (*out = e->value) >= 0;
+    if (wide != nullptr && (e->op == DepExpr::SizeofType || e->op == DepExpr::QualifiedParamName)) return wide->leaf(e, out);
     if (e->op == DepExpr::TemplateParam)
         return e->index >= 0 && static_cast<std::size_t>(e->index) < values.size() && ((*out = values[static_cast<std::size_t>(e->index)]), true);
-    if (e->op != DepExpr::Operator || e->kids.empty() || e->kids.size() > 2 || !foldArg(e->kids[0], values, &a)) return false;
-    if (e->kids.size() == 1) return (e->code == "ng" || e->code == "ps") && ((*out = e->code == "ng" ? -a : a), true);
-    if (!foldArg(e->kids[1], values, &b) || ((e->code == "dv" || e->code == "rm") && (b <= 0 || a < 0))) return false;
+    if (e->op != DepExpr::Operator || e->kids.empty() || e->kids.size() > 2 || !foldArg(e->kids[0], values, &a, wide)) return false;
+    if (e->kids.size() == 1)
+        return (e->code == "ng" || e->code == "ps" || (wide != nullptr && e->code == "nt")) && ((*out = e->code == "ng" ? -a : e->code == "nt" ? !a : a), true);
+    if (!foldArg(e->kids[1], values, &b, wide) || ((e->code == "dv" || e->code == "rm") && (b <= 0 || a < 0))) return false;
+    static const char *const tests[] = { "eq", "ne", "lt", "gt", "le", "ge", "aa", "oo" };
+    for (std::size_t i = 0; wide != nullptr && i < sizeof tests / sizeof tests[0]; i++)
+        if (e->code == tests[i]) {
+            *out = i == 0 ? a == b : i == 1 ? a != b : i == 2 ? a < b : i == 3 ? a > b : i == 4 ? a <= b : i == 5 ? a >= b : i == 6 ? a && b : a || b;
+            return true;
+        }
     *out = e->code == "pl" ? a + b : e->code == "mi" ? a - b : e->code == "ml" ? a * b : e->code == "dv" ? a / b : a % b;
     return (e->code == "pl" || e->code == "mi" || e->code == "ml" || e->code == "dv" || e->code == "rm") && *out >= INT_MIN && *out <= INT_MAX;
 }
 
 // Slice 3f: a non-type argument under `s`: the class's parameter `$P<i>` at its value, or (3h) its expression folded; a written
-// one (a read class's are its stand-ins), no.
-static bool argValued(const Templates::Substituted &s, TemplateArg *a) {
+// one (a read class's are its stand-ins), no. 4d: `wide` folds as foldArg's.
+static bool argValued(const Templates::Substituted &s, TemplateArg *a, const Templates::FoldLeaf *wide = nullptr) {
     long long v = 0;
-    if (!a->isType && !a->isPack && !a->isTemplate && a->expr != nullptr && a->dependentValue && foldArg(a->expr, s.values, &v) && v >= 0)
+    if (!a->isType && !a->isPack && !a->isTemplate && a->expr != nullptr && a->dependentValue && foldArg(a->expr, s.values, &v, wide) && v >= 0)
         return a->expr = nullptr, a->dependentValue = false, a->value = v, true;
     if (a->isType || a->isPack || a->isTemplate || a->expr != nullptr || a->dependentValue || !a->isParam) return false;
     if (a->paramIndex < 0 || static_cast<std::size_t>(a->paramIndex) >= s.values.size()) return false;
@@ -1367,7 +1378,8 @@ void Templates::countDefault(const TemplateParam &p, bool deduced) const {
     if (p.defBegin == 0) return;
     deducedDefaults_ += deduced ? 1 : 0;
     if (defaultMade_) {
-        defaultReport_[std::string("made: a type") + (deduced ? ", deduced" : ", the class door's list")]++;
+        defaultReport_[std::string("made: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") +
+                       (deduced ? ", deduced" : ", the class door's list")]++;
         defaultMade_ = false;
         return;
     }
@@ -1375,28 +1387,52 @@ void Templates::countDefault(const TemplateParam &p, bool deduced) const {
                     (deduced ? ", deduced" : ", the class door's list")]++;
 }
 
-const Type *Templates::defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding) {
+const Type *Templates::defaultMade(const TemplateDecl &decl, std::size_t i, const std::vector<const Type *> &binding,
+                                   const std::vector<long long> &values, long long *value) {
     const TemplateParam &p = decl.params[i];
-    const char *why = p.defPattern == nullptr ? (p.defUnread != nullptr ? p.defUnread : "not read at its declaration") : nullptr;
+    const std::string kind = p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value";
+    const bool read = p.type != nullptr && !p.isTemplate ? p.defExpr != nullptr || p.defValued : p.defPattern != nullptr;
+    const char *why = !read ? (p.defUnread != nullptr ? p.defUnread : "not read at its declaration") : nullptr;
     if (why == nullptr && decl.isMember) why = "a member template's, its class's parameters numbered apart";
-    Substituted s;
+    Substituted s;     // 4c: a value before it by its index, a template by its name, a type mapped
     for (std::size_t k = 0; why == nullptr && k < i; k++) {
+        const TemplateParam &q = decl.params[k];
         if (binding[k] == nullptr) why = "a parameter before it unbound";
+        s.values.push_back(k < values.size() ? values[k] : 0);
+        if (why != nullptr || q.type != nullptr) continue;
+        if (q.isTemplate) {
+            std::map<std::string, TemplateDecl>::const_iterator t = templates_.end();
+            if (binding[k]->isTemplateName()) t = p_.findTemplate(binding[k]->templateName());
+            if (t == templates_.end()) why = "a template parameter before it bound to no template";
+            else s.templates[static_cast<int>(k)] = t->first;
+            continue;
+        }
         s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
         s.to.push_back(binding[k]);
     }
     const Type *made = nullptr;
-    if (why == nullptr) {
+    if (why == nullptr && p.isTemplate) {
+        made = p.defPattern;
+    } else if (why == nullptr && p.type != nullptr) {     // as the replay: the declared type under the binding, the value folded
+        made = Parser::paramTypeIn(p, binding), *value = p.defValue;
+        if (p.defExpr != nullptr && !foldArg(p.defExpr, s.values, value)) why = "a value over the parameters before it the fold does not carry";
+    } else if (why == nullptr) {
         const Substitution r = substitute(s, p.defPattern, At{ p.defBegin });
         made = r.type, why = r.why;
+        // [temp.deduct]/7: a class the binding carries that lacks the member type named is a failed substitution, said as the replay says it.
+        const Type *cls = why != nullptr && std::string(why) == "a member type its class lacks" ? substitute(s, r.at->pointee(), Declared).type : nullptr;
+        if (cls != nullptr && cls->isStructOrUnion() && cls->findMember(r.at->tag()) == nullptr &&
+            !(cls->isSpecialization() && cls->findStaticMember(r.at->tag()) != nullptr))
+            defaultFailure_ = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
     }
-    if (why != nullptr) defaultReport_[std::string("replayed: a type: ") + why]++;
+    if (why != nullptr && defaultFailure_.empty()) defaultReport_["replayed: " + kind + ": " + why]++;
     return why == nullptr ? made : nullptr;
 }
 
-bool Templates::defaultHeld(const Type *made, const Type *replayed) {
-    if (made == replayed) return true;
-    defaultReport_["replayed: a type: differ: made " + made->describe() + ", replayed " +
+bool Templates::defaultHeld(const TemplateParam &p, const Type *made, const Type *replayed, long long value, long long replayedValue) {
+    if (made == replayed && (p.type == nullptr || p.isTemplate || value == replayedValue)) return true;
+    defaultReport_[std::string("replayed: ") + (p.isTemplate ? "a template" : p.type == nullptr ? "a type" : "a value") + ": differ: made " +
+                   made->describe() + (p.type != nullptr ? " " + std::to_string(value) : std::string()) + ", replayed " +
                    (replayed != nullptr ? replayed->describe() : std::string("nothing"))]++;
     return false;
 }
@@ -1407,24 +1443,27 @@ void Templates::countAhead(const std::string &tag, bool constructor) {
                                  (c == specializationCensus_.end() ? "not in the census" : c->second.compare(0, 4, "made") == 0 ? "made from the read" : "replayed"));
 }
 
-// What a kept pattern signature holds beyond types the binding carries: 1 a `decltype`, 2 a value over the parameters.
-static int patternHolds(const Type *t, int depth = 0) {
+// What a kept pattern signature holds beyond types the binding carries: 1 a `decltype`, 2 a value over the parameters (4d: each
+// id holding one into `ids`).
+static int patternHolds(const Type *t, int depth = 0, std::vector<const Type *> *ids = nullptr) {
     int held = 0;
     for (; t != nullptr && depth < 64; depth++) {
         if (t->kind() == Kind::DependentExpr) return held | 1;
         if (t->unqualified() != t) { t = t->unqualified(); continue; }
         if (t->kind() == Kind::Function) {
-            for (const Type *q : t->params()) held |= patternHolds(q, depth + 1);
+            for (const Type *q : t->params()) held |= patternHolds(q, depth + 1, ids);
             t = t->returns();
             continue;
         }
         if (t->isStructOrUnion()) {
+            bool value = false;
             for (std::size_t i = 0; t->isSpecialization() && i < t->templateArgs().size(); i++) {
                 const TemplateArg &a = t->templateArgs()[i];
-                if (!a.isType && (a.isParam || a.dependentValue || a.expr != nullptr)) held |= 2;
-                if (a.isType) held |= patternHolds(a.type, depth + 1);
-                for (const Type *m : a.pack) held |= patternHolds(m, depth + 1);
+                if (!a.isType && (a.isParam || a.dependentValue || a.expr != nullptr)) held |= 2, value = true;
+                if (a.isType) held |= patternHolds(a.type, depth + 1, ids);
+                for (const Type *m : a.pack) held |= patternHolds(m, depth + 1, ids);
             }
+            if (value && ids != nullptr) ids->push_back(t);
             return held;
         }
         if (t->kind() == Kind::DependentMember || t->kind() == Kind::PackExpansion || t->isPointer() || t->isReference() || t->isArray()) {
@@ -1440,6 +1479,87 @@ std::string Templates::trialShape(const TemplateDecl &decl, bool defaulted) cons
     if (decl.pattern == nullptr) return "no pattern signature kept";
     const int held = patternHolds(decl.pattern);
     return (held & 1) != 0 ? "a 'decltype'" : (held & 2) != 0 ? "a value over the parameters" : defaulted ? "a default" : "types alone";
+}
+
+namespace {
+// 4d: a trial fold's leaf under the binding - `sizeof` a complete type, a class's static constant - its class made as the replay makes it.
+class TrialLeaf : public Templates::FoldLeaf {
+public:
+    TrialLeaf(Templates *t, const Templates::Substituted *s, std::size_t pos, const Target *target)
+        : why(nullptr), t_(t), s_(s), pos_(pos), target_(target) {}
+    bool leaf(const DepExpr *e, long long *out) const {
+        const bool size = e->op == DepExpr::SizeofType;
+        const Templates::Substitution r = t_->substitute(*s_, e->type, Templates::At{ pos_ });
+        const Type *u = r.carried() && r.type != nullptr ? r.type->unqualified() : nullptr;
+        if (u != nullptr && u->isReference()) u = u->referent()->unqualified();
+        if (u == nullptr) why = size ? "a size of a type the binding does not carry" : "a static member of a class the binding does not carry";
+        else if (size && !u->isScalar() && !(u->isStructOrUnion() && u->isComplete())) why = "a size of a type neither scalar nor a complete class";
+        else if (!size && !u->isStructOrUnion()) why = "a static member of a type no class";
+        if (u == nullptr || why != nullptr) return false;
+        const Type::StaticMember *m = size ? nullptr : u->findStaticMember(e->name);
+        if (!size && (m == nullptr || !m->folded)) { why = "a static member no constant"; return false; }
+        *out = size ? u->size(*target_) : m->value;
+        return true;
+    }
+    mutable const char *why;
+private:
+    Templates *t_;
+    const Templates::Substituted *s_;
+    std::size_t pos_;
+    const Target *target_;
+};
+}
+
+void Templates::valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                           const Packs &packs, std::size_t pos, std::vector<std::string> *keys) {
+    const char *why = decl.isMember ? "a member template's, its class's parameters numbered apart" : nullptr;
+    Substituted s;     // as defaultMade's: a value by its index, a template by its name, a type mapped
+    s.packs = packs;
+    for (std::size_t k = 0; why == nullptr && k < decl.params.size(); k++) {
+        const TemplateParam &q = decl.params[k];
+        s.values.push_back(k < values.size() ? values[k] : 0);
+        if (q.isPack || q.type != nullptr) continue;
+        if (k >= binding.size() || binding[k] == nullptr) why = "a parameter unbound";
+        else if (q.isTemplate) {
+            std::map<std::string, TemplateDecl>::const_iterator t = templates_.end();
+            if (binding[k]->isTemplateName()) t = p_.findTemplate(binding[k]->templateName());
+            if (t == templates_.end()) why = "a template parameter bound to no template";
+            else s.templates[static_cast<int>(k)] = t->first;
+        } else {
+            s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
+            s.to.push_back(binding[k]);
+        }
+    }
+    std::vector<const Type *> ids;
+    if (why == nullptr) patternHolds(decl.pattern, 0, &ids);
+    const TrialLeaf leaf(this, &s, pos, &p_.target_);
+    try {
+        for (std::size_t i = 0; why == nullptr && i < ids.size(); i++) {
+            std::string name;
+            std::vector<TemplateArg> args;
+            if (!idUnder(s, ids[i], &name, &args)) why = "a class template-id the kernel does not lay";
+            for (std::size_t k = 0; why == nullptr && k < args.size(); k++) {
+                TemplateArg &a = args[k];
+                const bool value = !a.isType && !a.isPack && !a.isTemplate && (a.isParam || a.dependentValue || a.expr != nullptr);
+                if (value && !argValued(s, &a, &leaf)) why = leaf.why != nullptr ? leaf.why : "a value the fold does not carry";
+                else if (!value && !argUnder(s, &a, false)) why = "an argument beside it the binding does not carry";
+            }
+            if (why == nullptr) keys->push_back(specializationKey(name, args));
+        }
+    } catch (const SubstitutionFailure &) {
+        why = "a class the leaf made failed to substitute";
+    }
+    valueReport_[why == nullptr ? std::string("folded: a function template") : std::string("replayed: ") + why]++;
+    if (why != nullptr) keys->clear();
+}
+
+void Templates::valueHeld(const std::vector<std::string> &keys, bool replayed) {
+    for (const std::string &k : keys)
+        if (p_.lookup_.findTypedef(k) == nullptr) {
+            valueReport_[replayed ? "held: differ: " + k + " not made by the replay" : std::string("held: not, the replay failed before it")]++;
+            return;
+        }
+    valueReport_[replayed ? "held: the replay's constant" : "held: the replay's constant, the replay failed"]++;
 }
 
 void Templates::holdBodies(std::size_t mark) {
@@ -2267,6 +2387,8 @@ std::string Templates::builtReport() const {
     }
     for (std::map<std::string, long>::const_iterator i = defaultReport_.begin(); i != defaultReport_.end(); ++i)
         out += "-check=templates default (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, long>::const_iterator i = valueReport_.begin(); i != valueReport_.end(); ++i)
+        out += "-check=templates value trial (" + std::to_string(i->second) + "): " + i->first + "\n";
     const std::map<std::string, int>::const_iterator fm = replayCensus_.find("substituted with no replay"),
                                                      mm = replayCensus_.find("member: substituted with no replay");
     const long parts[] = { total - made, census_[FunctionBody] - (fm != replayCensus_.end() ? fm->second : 0),
@@ -2966,13 +3088,19 @@ bool Templates::deduceTemplateArguments(const TemplateDecl &decl,
         bool took = false;
         try {
             Parser::Trial trial(&p_);
-            took = p_.defaultTemplateArgument(decl, i, binding, values);
+            took = p_.defaultTemplateArgument(decl, i, binding, values, true);
         } catch (const SubstitutionFailure &f) {
-            countDefault(decl.params[i], true);
+            const bool made = !defaultFailure_.empty() && f.why == defaultFailure_;     // 4c: the kernel's failure, held under the check
+            if (!made && !defaultFailure_.empty()) defaultReport_["replayed: a type: differ: made a failure, replayed " + f.why]++;
+            if (made) defaultReport_["made: a failed substitution, deduced"]++;
+            else countDefault(decl.params[i], true);
+            defaultFailure_.clear();
             if (f.unsupported) p_.src_.fail(f.pos, f.why);
             *why = "the default argument of '" + decl.params[i].name + "' does not substitute: " + f.why;
             return false;
         }
+        if (!defaultFailure_.empty()) defaultReport_["replayed: a type: differ: made a failure, the replay took it"]++;
+        defaultFailure_.clear();
         if (took) countDefault(decl.params[i], true);
         if (!took) {
             *why = "'" + decl.params[i].name + "' appears in no parameter, so "
@@ -5676,11 +5804,16 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
                                      &why))
             continue;
         const std::vector<TemplateArg> args = argumentsFromBinding(decl.params, binding, values, packs);
-        countWhy(SfinaeTrial, "a function template, " + trialShape(decl, deducedDefaults_ != defaultsBefore));
+        const std::string shape = trialShape(decl, deducedDefaults_ != defaultsBefore);
+        countWhy(SfinaeTrial, "a function template, " + shape);
+        std::vector<std::string> folded;     // 4d: the trial still decides
+        if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
         try {
             Parser::Trial trial(&p_);
             p_.instantiate(decl, binding, values, args, pos, packs);
+            if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
         } catch (const SubstitutionFailure &f) {
+            if (checkBodies_ && !folded.empty()) valueHeld(folded, false);
             count(SfinaeFailed);
             // This template does not apply; the others still might - unless
             // what stopped it was a feature this compiler has not built, which
@@ -5752,7 +5885,10 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
     std::vector<std::size_t> uses;
     std::vector<std::size_t> *const wasUses = p_.candidateUses_;
     p_.candidateUses_ = &uses;
-    countWhy(SfinaeTrial, "a member template, " + trialShape(mt, defaulted));
+    const std::string shape = trialShape(mt, defaulted);
+    countWhy(SfinaeTrial, "a member template, " + shape);
+    std::vector<std::string> folded;     // 4d: counted by why; a member template's two layers are 4h's
+    if (substitute_ && shape == "a value over the parameters") valueTrial(mt, binding, values, packs, pos, &folded);
     try {
         Parser::Trial trial(&p_);
         const Signature *made = instantiateMemberTemplate(mt, binding, values, args, pos);

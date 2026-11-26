@@ -239,6 +239,11 @@ struct TemplateParam {
     // themselves; null with `defUnread` the reason where it was not, and the default is replayed at its use.
     const Type *defPattern = nullptr;
     const char *defUnread = nullptr;
+    // Slice 4c: a value default read so - `defExpr` over the parameters before it, folded at the use, or a constant `defValue`;
+    // a template default's template is `defPattern`, its name type.
+    const DepExpr *defExpr = nullptr;
+    long long defValue = 0;
+    bool defValued = false;
 };
 
 // What is known about a name that names a template. `start` is the
