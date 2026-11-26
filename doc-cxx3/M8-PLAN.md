@@ -6554,3 +6554,39 @@ no class differ on either ABI, suite or self-host - x86_64-linux nonzero 354, cl
 76,051; x86_64-windows nonzero 378, self 76,036 of 76,036; their `made (N): differ: replayed: ...` lines are the check's own
 covered-and-replayed reasons m84a counted, none of 4a's lines. The Linux REF
 build never got a slot in 25 minutes beside m6dw49g, which is why identical ran on Windows.
+
+## M8 restarted by Fable's direction review: the route changed, all of M8 kept (coordinator, 2026-11-26)
+
+Fable 5.2 read `c9619846` with `m8-4b` beside it (`boxkit/fable-m8-direction-review.md`, findings D1-D14). Its
+measure, from `src/sema/Templates.cpp`: `p_.tokens_[` 0 -> 146, `p_.at_ =` re-entries 7 -> 19,
+`bindTemplateParameters(` 13 -> 22, `Parser::Trial` 3 -> 6 between the plan's base and M8.3's close - every count
+M8.6 takes to zero rose. The owner's seven questions were taken at the recommended option under the user's standing
+rule (via the relay, 2026-11-26):
+
+1. **M8.3's close reads "class shells closed; member bodies (15%) and aliases carried to M8.4".** The shells are
+   2,636 of 2,661 (suite) and every self-host class; member bodies made are 806 of 4,625 and 8,807 of 59,558; alias
+   type-ids 21 of 21 replayed; a made class's own re-entries were not counted (D1, D5).
+2. **The restart order R0-R6 replaces the slice order** (the review's table): R0 counts only; R1 one total
+   `substitute(Type, Binding)` that makes a class on demand and reports failure, the eleven partial helpers retired
+   into it (D6); R2 slices 4b-4g on the kernel; R3 the pattern's records made complete and the class door walking
+   them, the token scanners deleted (D2, D3); R4 = M8.5; R5 the body instantiator by node kind (D4); R6 = M8.6.
+   **Frozen until R3 and R5:** slices 4m-4s as written, and any new `src/sema` function that indexes `p_.tokens_` or
+   moves `p_.at_`.
+3. **M8.5 (R4) comes before the body work (R5)** (D9); cpp11's `tests/conformance` `p144` and `p150` are its cases.
+4. **R5 is shared with M6d:** an M6d slice that frees an action family of `ExprPtr` also gives it the signature the
+   instantiator calls (M6-PLAN records the requirement).
+5. **The references are oracles and corpora, not upstream code** (Q1): cpp11 1.83's `tests/conformance` is a census
+   on the Windows box, never a gate yet and never merged into `tests/cases`; one measuring lane for cppparse 6.0 (no
+   mending lane without the user's word, the 11-25 rule); headers only after R3 and the missing type-trait
+   built-ins, each after a census of what it needs (D13, D14).
+6. **A fifth gate in `make test`: `tools/replay-residue --check`** - `p_.tokens_[`, `p_.at_ =`,
+   `bindTemplateParameters(` and `Parser::Trial` in `src/sema`, only down, a raise the user's word (D12).
+7. **A golden re-record for order** is decided only if R5's first lane reports that the identical gate forces the
+   replay's order; until then the gate stays.
+
+**M8.4's measures, from R0 on** (D7): each entry leads with **re-entries under a binding** per unit (read /
+instantiation, by door) and **distinct template definitions with any fallback** (by declaration site, by reason),
+then `falling back=`; M8.4's exit is the re-entries at 0. Every wave records self-host wall time plain against
+`-templates=subst` (D10). **M8.6's row gains three dependencies** (D10): tms6747 makes nothing without replay until
+M6a.2 and M6d; `-check=templates`' oracle goes with the replay, so the shape predicates need another first; a made
+class's default arguments, member initialisers and held bodies are token indices until R3.

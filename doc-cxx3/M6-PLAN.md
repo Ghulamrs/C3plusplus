@@ -5409,3 +5409,8 @@ template whose first base is polymorphic - its vtable seeded by layBases, a vtab
 the read) and m8-3bn (typedefByPath: ratio_divide, decay). **Class specializations made with no replay (exact census):
 suite 2,581 of 2,635 on the merged tree; self-host 75,681 of 75,681 - every class - by the lanes' counts.**
 Nothing changes without the flag.
+
+**M6d gains a requirement from M8's restart, 2026-11-26 (Fable's M8 direction review, D4; the owner's question 4 at
+the recommended option).** An M6d slice that frees a parser action family of `ExprPtr` also gives that family the
+signature M8's body instantiator (M8-PLAN, restart step R5) calls with typed operands, so the parser and the
+instantiator call one action and the family is rewritten once. A slice that cannot is written down with why.
