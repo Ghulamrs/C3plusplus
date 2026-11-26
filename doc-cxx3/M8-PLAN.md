@@ -8345,3 +8345,50 @@ subst.sh, and its static gates (exclusions failed on it: the stale citations abo
 output; Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
 `boxkit/m8r3ra-ship.sh <x> <commit>` (git archive -> `~/m8r3ra<x>`, built by `m8r3ra-lbuild.sh`), `m8r3ra-q.sh <x> <job>...` (runf
 runp subst static self, cen:<s|h>:<c|n>:<l|w>, id:<arch>:<level>:<p|f>; `m8r3ra-lcen.sh` sums the order line).
+
+## R3, slice 3R-h: member templates as their own reads (lane m8r3rh, 2026-11-27)
+
+Base 7b60b484 (m8-3ra). REF built from 7b60b484 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **409ff1d3** (the slice, all-or-nothing a class), **3c1754a3** (28 EXCLUSIONS.md citations moved +2 with their lines: 25
+ParserType.cpp, 3 Templates.cpp), this entry. src/ +86 / -10 over the base (Templates.cpp +76 / -8, Templates.h +6 / -1,
+ParserType.cpp +3 / -1, Entities.h +1).
+
+**THE MEASURE (census without the check, x86_64-linux; R0's counter, the `made class: templatesFromRead` parts).** REF 7b60b484:
+suite jump 782, bind 582, bind in the read 778 (made-class all 5,264); self-host jump 44,392, bind 27,906, bind in the read 44,392
+(made-class all 191,117; 102 units rc 0). **409ff1d3: self-host jump 44,370, bind 27,884, bind in the read 44,370** (made-class
+191,053, 102 rc 0): a class's member templates go from the read only when every one of them does, and 22 do. **The measure
+is not met**: per class, nearly every libc++ class holds one member template whose read is not complete. The next step,
+`boxkit/m8r3rh-c.diff` (not committed: built rc 0 on Linux, never measured - the slots were full), declares a template at a time
+(the incomplete ones read again, each name's overloads sorted back to the body's order) and prints the census line without the
+check too (409ff1d3 prints it only in bodiesReport, under the check, where the door does not run - so its reasons were never
+counted: owed).
+`p_.at_ =` and `bindTemplateParameters(` in Templates.cpp unchanged (19 and the base's): the re-read stays for the templates whose
+read is not complete, so replay-residue's baseline is not lowered.
+
+**The slice.** The read's own class body (Parser::logging_ set: the outermost read under the flag) reads each member template's
+pattern with its own parameters after the class's, `templateParam(classParams.size() + i)` (`TemplateDecl::layered`), as
+readMemberTemplates already binds them; nothing else of the read changes and plain logs nothing, so plain is identical by
+construction. `templateUnder` makes the made class's TemplateDecl from the read's: the class layer substituted by the door's `s`
+(the read class standing for the made one) with the own parameters mapped back to `templateParam(i)` - so `mt.pattern`, the
+Itanium name's, is the replay's own read - `ownerTag` the made tag, a constructor's name `localOf(tag)`, `ns` the door's
+namespacePrefix, and `classParams`/`classBinding`/`classValues`/`classPacks` the door's binding as `bindTemplateParameters` binds
+it (4h's first layer); `start`, `afterParams`, `declaredAt`, `defined`, `staticMember`, the parameters themselves copied, so
+`memberTemplateMade_`'s key (`tag::display@declaredAt`) is the replay's. **Not complete, read again by the class body's path and
+counted by reason** (`-check=templates member template (n): <reason>` beside `falling back=`): a read not in two layers, an own
+non-type, template template or defaulted parameter (its type, `defPattern` and `defExpr` are read over the class's stand-ins at
+the same indices as its own), a pattern the class layer does not carry. **Under `-check=templates`** the door does not run (the
+replay beside is the program's): templatesHeld makes each complete one by templateUnder and holds it against the replay's
+(`templateSame`: place, name and kind, parameters, class layer and packs, the pattern's pointer), `differ: a member template from
+the read: <part>` failing the class.
+
+**Gates on 409ff1d3** (Linux, against the REF): **g++ -Werror clean; the FULL self-compile 102 of 102 (stage 0 179 s);
+identical under the flag x86_64-windows -O0 / -O2 2,062 / 0; subst.sh rc 0** (run -O0 / -O2 1,375 / 0, typed 1,022 / 0 at
+both, 2 not for this host, 1,166 through the function door); **census self-host `-check=templates` x86_64-linux 102 rc 0, class
+differ 0, body differ 11 (m8r3ra's REF 11), no `a member template from the read` differ**; census self-host without the check
+above. No changed emitted output in what ran. **Owed (the hour ran out; slots shared with m8r3rb):** identical x86_64-linux,
+tms6747 and arm64-darwin at -O0/-O1/-O2 both ways, x86_64-windows -O1 under the flag and all three plain; run.sh both ways; the
+suite censuses with and without the check, both ABIs; the self-host censuses on x86_64-windows; the static gates (exclusions on
+3c1754a3, comments, memory gate, ast-residue, replay-residue - not lowered, unchanged counts); **Windows: cl /W4 /WX, names.sh,
+overload.sh**. No probe (Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
+`boxkit/m8r3rh-ship.sh <x> <commit|tree>` (m8r3ra's scripts renamed on Linux), `m8r3rh-q.sh <x> <job>...`, `m8r3rh-mt.sh <census
+dir>` (made-class parts and the member template census).
