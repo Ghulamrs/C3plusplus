@@ -6872,3 +6872,77 @@ identical by construction would have been held only by gates this lane could not
 **Gates**: no src/ change, so 7aae2b6b's stand (m8r1a's entry) and its owed list is unchanged (lane m8r1b's); slices 4m-4s
 untouched; replay-residue 150/19/26/6. Re-measure: `boxkit/m8r1c-fnchain.sh` (the diff applied in a copy, built, then
 identical and the census), `boxkit/m8r1c-cen.sh`, `boxkit/m8r1c-order.py`; the outputs were removed with the trees.
+
+## R1, fourth lane: the id step answers as the map does (lane m8r1d, 2026-11-26)
+
+Base 92e10dd2 (wave m6d-w51: main 87cfca1e + m8-r1a, m8-r1b, m8-r1c). Commits ab5d0613, 7d2ecb43 (the kernel, one a shape),
+f7dc0cbb (three EXCLUSIONS citations re-pointed, +23), c7f7258a and its revert e587d0ea (a third shape that measured nothing),
+and this entry. src/ 98,479 -> 98,507 lines (48 added, 20 deleted: Templates.cpp +41/-18, Templates.h +7/-2); src/ at the
+lane's end is 7d2ecb43's. **No shipped path changed**: every change is on
+the kernel's `Made` path (a maker given), which no shipped caller reaches (`substitute(s, t, At)` has no caller), so the
+shipped code - Mapped and Declared - is identical by construction; the switch is the measuring instrument, never committed.
+
+**The measure** - m8r1c's refined switch (`need()` at the eleven single-type door sites, `Made` at first need under
+`CXX1_FIRST_NEED`), rebased onto 92e10dd2 and widened to the three list sites r1b's list form now serves (membersFromRead's
+`f.params`, `f.written`, the vtable slots' `v.params`): `boxkit/m8r1d-fn2.diff` (on 92e10dd2: the switch with ab5d0613 and
+7d2ecb43), `boxkit/m8r1d-switch3.diff` (on c7f7258a). identical.sh x86_64-linux
+-O0/-O1/-O2, NEW under -templates=subst with the switch, against a REF built from 92e10dd2, classified by
+`boxkit/m8r1c-order.py`:
+
+| tree under the switch | compared | differ | content | order only |
+| --- | --- | --- | --- | --- |
+| 92e10dd2 (before) | 3,072 | 48 (16 cases x 3) | 48 (every one a refused compile) | 0 |
+| + ab5d0613, 7d2ecb43 | 3,072 | 48 | 48 (45 refused; template-subst-ownid now compiles, 3 content) | 0 |
+| + c7f7258a (reverted) | 3,072 | 48 | 48 (the same 45 refused, ownid's 3) | 0 |
+
+**The content count did not fall: 48 -> 48, order-only 0 -> 0.** One shape moved (ownid compiles now; its 3 left are one
+symbol, `_ZN3TwoIicEC1ERK18Two<const $T0,$T1>`, which memberSymbol - const, Mapped, not a switched site - mangles from a map the
+switch leaves without the id idsInside used to map: an artefact of the instrument, not of the kernel). Three shapes stand, their
+root not found inside the hour: pair's partial (`pair(const pair<T1, T2> &p)`: "'pair<const int,int>' declares no member
+'pair<const int,int>' with these parameters and qualifiers", 10 cases), std::function's primary chosen (its static_assert, 4) and
+array's `T elems_[N]` laid with N an unset value (139,720,235,404,512 elements, 1). **Ruled out** by measure: an argument not
+carried passed on (ab5d0613), Made stopping at the first declarator or the list form (7d2ecb43), and a program's own class
+re-keyed at Made (c7f7258a, reverted: 48 the same). Next: read where the made pair's member signature and its body's key part
+(classMembers / memberShape against `memberName`), and which door asks `std::function<R(Args...)>` with what arguments, by
+-dump of the one case each (range-for-vector, std-function, array-header). **Question 7 does not arise yet** - nothing is
+order-only - so no switch is committed and `idsBefore`, `argsWanted`, `earlyArgs` stay.
+
+**The shapes, and what in the kernel answered by key where the map answered:**
+
+- **An argument not carried, passed on** (ab5d0613): the argument step substituted each type at Mapped and kept it whatever
+  its `why`, so the id step at Made could make `X<$T0>`'s class over a dependent argument. argsUnder/argUnder now take the id
+  step's maker; `argTypeUnder` substitutes at Made under it (an id among the arguments made too) and fails the id where the
+  argument is not carried. With maker null it is the old call.
+- **A class's own template under other arguments** (7d2ecb43): at Made the recursion fell back to Mapped below the first
+  declarator, the function step's parameters and the list form were Mapped only, and the id step ran before the cv strip and
+  the map. So `Two<int,char>(const Two<const $T0,$T1> &)` kept its parameter (the made `Two<const int,char>` in no map, the
+  list form never asked): ownid's "candidate: Two<int,char>(const struct Two<const $T0,$T1> &)". Made is now carried under every
+  declarator, asks the map first and strips the cv first (Declared keeps its place), and the list form has a Made form
+  (`substituteList`, `substitute(s, params, At)`).
+- **A program's own class re-keyed** (c7f7258a, reverted by e587d0ea): Made took the id step for every specialization, a
+  declared non-dependent class among them; restricting it to ids over the parameters (readIds_, a `$` tag) left the 48 as they
+  were, so the change was taken back rather than kept unmeasured.
+
+**The helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **helpers left with callers 6 ->
+6** - carriedId 7, idUnder 2, earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2, none moved (step 2 of the brief needs
+the content count at 0 first). What each needs: `carriedId` - the kernel's Declared answering "not carried" for a key over the
+parameters (the filter it adds: not dependent, not a read shallow, no `$` tag), which changes Declared's three old
+specializationUnder sites and so is measured, not by construction; its `early` branch is the order's own map and goes with the
+order helpers. `idUnder` - already the kernel's template template parameter step inside specializationIn; its second caller is
+earlyArgs, so it goes with earlyArgs. `typedefCarried` - R3's complete records (m8r1c's reading stands).
+
+**Re-entries and replay-residue**: replay-residue 150 / 19 / 26 / 6, +0 on every kind (c7f7258a; src at e587d0ea is 7d2ecb43's). Re-entries under a binding
+were not re-measured: the shipped code is identical by construction (no shipped caller reaches Made), so R0's 21,565 at
+instantiation and 54,093 read stand; identical x86_64-linux plain and under the flag holds it.
+
+**Gates** (a coding lane's; the next wave gates it whole). On 7d2ecb43 (Linux, ~/m8r1dc; its src/ is the lane's last,
+e587d0ea's): **g++ -Werror clean**; **identical x86_64-linux -O0/-O1/-O2 against the REF 92e10dd2: plain 3,072/0,
+under -templates=subst 3,072/0**; **FULL stage-0 self-compile 102 of 102** (181 s); **run.sh -templates=subst 1368/0**;
+**subst.sh 0 failed** (run 1368/0 x2, typed 1015/0 x2, bodies 1012/1012). On f7dc0cbb (Windows, work\m8r1dx): **cl /W4 /WX clean**
+(13:27:23-13:29:08, 1 min 45 s, cl alone, no warning); **overload.sh 46/0 plain and under the flag**; **names.sh 1024/0 plain and
+under the flag** (the flag through a wrapper script as CXX1). Static on f7dc0cbb, whose src/ and docs/ e587d0ea restores (Linux): exclusions 0 uncited, 0 stale; comment
+cap 0 over; memory gate lower; ast-residue not raised; replay-residue +0; ide up to date. **Owed** (the hour): identical on
+tms6747, arm64-darwin and x86_64-windows both ways (by construction they hold: no shipped path changed); run.sh plain; the
+-check=templates censuses (Linux and Windows). No changed emitted output at -O0, -O1 or -O2
+(identical 0 differ x86_64-linux at all three, both ways). Slices 4m-4s untouched. Re-measure: `boxkit/m8r1d-fn2.sh <tag> <n|m>`
+over a tree holding `boxkit/m8r1d-fn2.diff` (applied to 92e10dd2), `boxkit/m8r1d-errs.sh`, `boxkit/m8r1c-order.py`.
