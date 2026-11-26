@@ -5433,3 +5433,12 @@ at instantiation, suite 21,565, self-host 376,781 (x86_64-linux); distinct templ
 self-host 185; self-host wall time plain against -templates=subst 166 s / 354 s (Linux), 51 s / 90 s (Windows)**;
 `tools/replay-residue` the fifth gate of `make test` at 150 / 19 / 26 / 6, and wave-gate's static step running it and
 ast-residue by name. Nothing changes without the flag. Owed: names.sh under the flag (its harness quotes `$CXX1`).
+
+**m6d-w51's wave landed, 2026-11-26 (gate m6dw51g at 92e10dd2 against main 87cfca1e: 40 passed, 0 failed, no rows;
+the fixed point checked not owed; 66 minutes).** M8's restart, R1's first three lanes (m8-r1a, m8-r1b, m8-r1c): the one
+total substitution kernel `Templates::substitute(Substituted, Type)` answering the type or the part the binding cannot
+carry, named; **substitution helpers left with callers 11 -> 6** (`substituted`, `memberUnder`, `specializationUnder`,
+`paramsUnder`, `packUnder`, `listUnder` retired); re-entries under a binding at instantiation unchanged, suite 21,565;
+replay-residue 150 / 19 / 26 / 6; a class made at first need measured - 51 outputs differ, all content, none order-only
+(question 7 not reached). The measuring run before the gate: identical under -templates=subst 0 differ on both x86
+targets, the -check=templates censuses no class differ on both ABIs. Nothing changes without the flag.
