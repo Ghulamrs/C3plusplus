@@ -6542,6 +6542,12 @@ included).
 
 **Gates** (e90358a0; the next wave gates fully): cl /W4 /WX clean (msvc\build.cmd, 4 min 16 s beside a census); g++ -Werror
 clean (Linux); static on Linux: exclusions 129 sites 0 uncited 0 stale (lowering 0/0), comments 0 over the cap, memory-gate
-below its baseline, ast-residue not raised (ExprPtr 2012), ide up to date. identical.sh, run.sh both ways, subst.sh, the
-full self-compile, the check censuses, names.sh and overload.sh: as the handover boxkit/m84b-handover.md's last lines say -
-each one not listed there was cut by the hour and is owed to the wave gate.
+below its baseline, ast-residue not raised (ExprPtr 2012), ide up to date. **identical.sh** (on Windows, cxx3-msvc REF
+fa983239 against e90358a0, -O0/-O1/-O2, the census env unset - a census line is not output): x86_64-linux plain 3,072 compared
+0 differ, x86_64-linux with NEW under `-templates=subst` 3,072/0, arm64-darwin plain 3,072/0; the rest below. Linux (g++
+build): **subst.sh 0 failed** (run and typed at -O0/-O2 1,368/0 and 1,015/0, census 0 by substitution, bodies 1,012 of 1,012,
+ceilings 17 of 17 and 26 of 26, no record re-recorded); **run.sh 1,368 passed 0 failed**, plain and with CXX1 carrying the
+flag; **the full stage-0 self-compile 102 of 102** (150 s). Not finished inside the hour, owed to the wave gate unless the
+handover's last lines carry them: identical x86_64-windows (both spellings) and tms6747 plain, the four under the flag past
+x86_64-linux; the `-check=templates` censuses on both ABIs; names.sh and overload.sh (Windows, both ways). The Linux REF
+build never got a slot in 25 minutes beside m6dw49g, which is why identical ran on Windows.
