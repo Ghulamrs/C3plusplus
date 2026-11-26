@@ -7448,3 +7448,21 @@ Re-measure: `boxkit/m8r1k-lbuild.sh <x>` (build, the five typed), `m8r1k-chain.s
 
 **Helpers** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted): **6 -> 6** - carriedId 7, idUnder 2,
 earlyArgs 12, argsWanted 5, idsBefore 1, typedefCarried 2. Slices 4m-4s untouched. No accepted lines, no wave-expected rows.
+
+## R1, twelfth lane: idsBefore's family retired (lane m8r1l, 2026-11-26)
+
+Base 64ddc778 (m8-r1k). REF 501e2819. Commit **c7c78bed** - idsBefore retired: 5b12ee6b redone by hand over 49d6a1a8's mend
+(its src diff is byte for byte d9b2dfb6's, read with `git show`, never applied from the stash): makeClass asks classBefore for the
+wanted ids and makes each at Made (`substitute(s, e, At{pos})`, the kernel's id step) in the same order, an id it carried mapped
+for the next; the census key "made before the class, as its replay makes it" goes with it (m8r1j: the same units count it as "made
+at first need"). src/ 98,675 -> 98,663 lines (Templates.cpp +21 / -31, Templates.h -2). EXCLUSIONS' Templates.cpp citations sit
+above the change: none moves.
+
+**THE MEASURE: helpers left with callers 6 -> 5** (`git grep -o '\bNAME(' -- src/sema`, definition and declaration not counted):
+carriedId 7, idUnder 2, **earlyArgs 12 -> 10** (idsBefore's two calls), argsWanted 5, **idsBefore 1 -> 0**, typedefCarried 2.
+**Gates, as far as they ran before an API network error ended the lane (the coordinator, from boxkit/m8r1l-handover.md):**
+g++ -Werror clean on c7c78bed; the x86_64-linux self-host census under -check=templates: 102 units, class differ 0, body differ
+11 = the REF's, re-entries under the check 465,644 (= m8r1k's - the retirement moves none). **Owed to the wave:** run.sh both
+ways, subst.sh, the full self-compile, static gates, identical on four targets both ways, the suite censuses, the x86_64-windows
+censuses, names/overload, cl /W4 /WX (no Windows job ran: GATE-WINDOWS-BUSY.txt stood, then the box went unreachable);
+argsWanted, earlyArgs and carriedId's early branch not reached.
