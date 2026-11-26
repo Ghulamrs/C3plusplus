@@ -7379,3 +7379,296 @@ the flag ran for 4ddf92ae, with the switch on and off; x86_64-linux -O0 under th
 names.sh and overload.sh (Windows); the self-host census with the switch off and both censuses on x86_64-linux; re-entries. No changed emitted output found (x86_64-windows -O0
 under the flag, switch off). Slices 4m-4s untouched. Re-measure: `boxkit/m8r1g-wcen.sh <r|g|s> <arch> <0|1> <P> [s]`,
 `boxkit/m8r1g-wident.sh <arch> <level> <jobs> <p|f|e> [g|s]` (Windows trees work\m8r1gr, m8r1gg, m8r1gs).
+
+## R2, slice 4e: SFINAE as a failed substitution (lane m8r4e, 2026-11-26)
+
+Base 0c30afec (m8-4d). Commits 0562bf6e (the slice and its probe `template-subst-sfinaefail`), 47d12e4b (a qualifier's class
+made at the use, and a qualifier that is no class; the probe extended - clang 19.1.5 on the Windows box, `1 2 3 120` / `4 5 6 7`),
+45e00858 (EXCLUSIONS: three Templates.cpp citations re-pointed +38, each the same refusal at its new line) and this entry.
+src/ 98,816 -> 98,866 lines (58 added, 8 deleted: Templates.cpp +51/-8, Templates.h +7). **Nothing changes without the flag.**
+
+**THE MEASURE** (census, `-templates=subst`, no check; before = 0c30afec, after = 47d12e4b's src, both g++ on Linux,
+`boxkit/m8r4e-cen.sh`; the lane's suite holds the probe - 12 trials, 6 of them failed and all 6 substituted - so like for like is
+the lane less those):
+
+| x86_64-linux | function-template trials of types alone or a default | failed, substituted (no re-read) | re-read, by reason | `sfinae-failed` | SFINAE-door re-entries (instantiation / read binds) |
+| --- | --- | --- | --- | --- | --- |
+| suite, before | 1,426 (1,407 + 19) | 0 | all | 29 (23 + 4d's probe 6) | 7,260 / 8,479 |
+| suite, after | 1,438 = 1,426 + the probe's 12 | **2** (template-sfinae's `Value<double>::type` and `T::type` with T = double) + the probe's 6 | formed 1,228 (the specialization still declared by the replay); a type over the parameters the kernel does not carry 200; a member type whose class it does not carry 2 (template-nondependent-argument, template-sfinae-misc) | 35 = 29 + the probe's 6 (**unchanged**) | 7,264 / 8,491 = **7,258 / 8,479** less the probe's 6 / 12 |
+| suite x86_64-windows, before / after | the same | 0 / **2** + the probe's 6 | the same 1,228 / 200 / 2 | 29 / 35 = 29 + 6 | 7,116 / 8,335 -> 7,120 / 8,347 = **7,114 / 8,335** less the probe's |
+| self-host, before | (33,987 trials of every shape) | 0 | all | 195 | 108,999 / 244,002 |
+| self-host, after | (34,009: the input grew by this slice's own lines) | **0** | formed 16,988; a type over the parameters the kernel does not carry 13,436 | **195** | 109,086 / 244,223 (the input's growth; not like for like) |
+
+So 4e takes **the suite's 2 type-alone failures from the re-read** (2 of 4a's 1,874 trials; the other 21 of the suite's 23 failures
+are a value over the parameters, a `decltype` or a member template's - 4d's, the trial's and 4h's), and the door's instantiation
+side falls by them. The 1,228 that form still re-read: the trial's `p_.instantiate` declares the specialization (its Signature and
+the Itanium name from the pattern), which a substituted signature does not yet do - the next step of 4e. **`Parser::Trial` in
+Templates.cpp 6 -> 6** (the trial opens one for every candidate that forms). **Replay-residue 150 / 19 / 26 / 6, +0.**
+
+**What it does.** `Templates::sfinaeSubstituted`, under the flag, for a free function template whose trial shape is types alone or
+a default: the kept pattern under the deduced binding (`trialSubstituted`, valueTrial's binding loop, now shared) through the kernel
+at Declared - it makes nothing; where the answer is "a member type whose class the binding does not carry" it is asked again At the
+use, which makes a qualifier's class as the replay would. A complete class it carries that lacks the member type named (not a data
+member, not a static member reached through the id) is the failed substitution in the replay's words (`'X' has no member type called
+'m'`); so is a qualifier that is no class. The candidate drops and `sfinae-failed` counts it, with no replay. A refusal by name
+re-raises: a `SubstitutionFailure` the kernel meets sends the candidate to the replay, which raises it as before. Under
+`-check=templates` the replay runs beside every substituted failure and the two are held: `held: the replay's failure` (its words
+equal), `held: both failed, in other words` (the replay's parse words for a non-class qualifier, `expected a name`), or `held: differ:
+substituted a failure, the replay formed it` (the replay's answer kept). Census lines `-check=templates sfinae trial (n): substituted:
+... | re-read: <why> | held: ...`; no `template-census:` key.
+
+**m8r4d's owed checks, on 0c30afec** against a REF built from 6903a031 (Windows, cl, `work\m8r4er` / `work\m8r4eb`): **cl /W4 /WX
+alone clean** (msvc\build.cmd, `_CL_=/MP2`, /affinity 3FF, 16:56:16-17:00:31, 4 min 15 s with the ship); **overload.sh plain 46
+agreed 0 differed**; **names.sh plain 1,027 passed 0 failed** (20 .nonames OPEN as recorded); **identical x86_64-windows -O0
+under the flag 2,054 compared 0 differ, plain 2,054/0** (cxx3-msvc, JOBS=3, the two at once, about 22 minutes), **-O1 under the
+flag 2,054/0, plain 2,054/0**; -O2 both ways stopped at its start at the hour; **names.sh under the flag 1,027 passed 0 failed** (through a wrapper script as CXX1). No difference, so nothing to fix.
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4en`, 47d12e4b's src with 45e00858's EXCLUSIONS, g++):
+**g++ -Werror clean**; **static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0) after 45e00858 (3 stale on 47d12e4b alone),
+comments 0 over the cap, memory-gate lower, ast-residue not raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date;
+**the FULL stage-0 self-compile 102 of 102** (178 s); **run.sh -templates=subst 1,372 passed 0 failed, plain 1,372/0**; **subst.sh 0
+failed** (run 1,372/0 at -O0 and -O2, typed 1,019/0 x2, census 0 by substitution, bodies 1,016 of 1,016, self 102 of 102);
+**identical x86_64-linux -O0/-O1/-O2 against 0c30afec under the flag 3,084 compared 0 differ** (the probe is the three new files);
+plain 3,084/0; **arm64-darwin and tms6747 the same, under the flag 3,084/0 and plain 3,084/0 each**; **the probe** right plain and under the flag on Linux; **-check=templates suite censuses, both ABIs: no class differ, no
+default, value or sfinae differ** (8 substituted failures held: 6 by the replay's words, 2 in other words; body differ lines 21, the
+base's 20 and the probe's covered-and-replayed line); **the self-host's on x86_64-linux: 102 units rc 0, no class differ, no
+default, value or sfinae differ** (body lines 11, R0's; 0 substituted - the library's failures are not of these two shapes); (`work\m8r4ex`, 45e00858): **cl /W4 /WX clean**
+(17:28:01-17:34:47, 6 min 46 s, beside the owed identicals and names.sh - not alone; the first lane build, of 0562bf6e, passed the
+9-minute cap beside the same jobs and was stopped at 17:17, a defect recorded); **overload.sh 46 agreed 0 differed under the flag and plain**.
+No changed emitted output at -O0, -O1 or -O2 on x86_64-linux, arm64-darwin or tms6747, either way. Slices 4m-4s untouched; no new src/sema function
+indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`. **Owed** (to the wave gate): identical against 0c30afec
+on x86_64-windows both ways, split by level; names.sh plain and under the flag on the lane; cl /W4 /WX alone on the lane; the self-host -check=templates census on x86_64-windows; m8r4d's
+x86_64-windows -O1/-O2 identicals (stopped at the hour). **Next for 4e**: the 1,228 that form - the specialization declared from
+the substituted signature (Microsoft spelled from it, Itanium from the pattern) instead of the trial's `p_.instantiate`, which is
+where `Parser::Trial` falls; the 200 "a type over the parameters the kernel does not carry" (13,436 in the self-host) named by kind.
+Re-measure: `boxkit/m8r4e-cen.sh <b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4e-wcen.sh`, `boxkit/m8r4e-gate.sh`,
+`boxkit/m8r4e-wident.sh`, `boxkit/m8r4e-wnames.sh`.
+
+## R2, slice 4e, second step: a candidate that forms, declared from its substituted signature (lane m8r4e2, 2026-11-26)
+
+Base 325b9818 (m8-4e). Commits 309ef533 (the step, its probe `template-subst-sfinaeform` - clang 19.1.5 on the Windows box,
+`6 4 12 1` / `6 9 5 104 1` - and 18 EXCLUSIONS citations re-pointed, ParserTemplate.cpp +3 and Templates.cpp +20, each the same
+refusal at its new line), 08ce61ae (a formed signature holding a pointer to member or a pack expansion keeps the re-read, named -
+the suite's one check differ; three Templates.cpp citations +18) and this entry. src/ 98,866 -> 98,931 (77 added, 12 deleted:
+Templates.cpp +60/-5, ParserTemplate.cpp +8/-5, Templates.h +4/-1, Entities.h +3, Parser.h +2/-1). **Nothing changes without the flag.**
+
+**What it does.** Where `sfinaeSubstituted` finds the whole kept pattern substituted under the deduced binding and it forms,
+`Parser::instantiate` is handed that signature in place of `readTemplateDeclaration`'s re-read - the one declaration path the
+trial's replay reaches (the key, the Itanium name from the pattern, the Microsoft name from the substituted signature, the two
+index keys, the Signature), not a copy of it - with what the read would have left: the pattern's default arguments (token
+indices; a list with none leaves `pendingDefaults_` as it was) and its bare `noexcept`, now kept on the `TemplateDecl` at the
+declaration's own read (`patternDefaults`, `patternNoexcept`). No `Parser::Trial` opens and no token is re-read; a failure inside
+the declaration (a name the linker cannot hold, the depth refusal) is still an answer, under Source's trial alone (`Diagnosed`),
+and a refusal by name still re-raises in the same catch. Still re-read, named (`formedWhy`): a template declared and never
+defined, a signature still over the parameters, a deduced return type, and a pointer to member or a pack expansion - parts
+`dependentType` does not walk (`mem(T S::*)` formed `int (template parameter S::*)` where the replay read `int (int S::*)`).
+Under `-check=templates` the trial replays every formed one and holds it: `held: formed as the replay read it`, or `held:
+differ:` the signature, the defaults, the `noexcept`, or a replay that failed. No `template-census:` key.
+
+**THE MEASURE** (census, `-templates=subst`, no check; before = 325b9818 as m8r4e measured it, after = 08ce61ae, g++ on Linux,
+`boxkit/m8r4e2-cen.sh`; the lane's suite holds its probe - 10 trials, 8 formed, 1 failed, 1 not carried):
+
+| x86_64-linux | trials of types alone or a default | formed, declared from the substituted signature | formed, still re-read | not carried (types / a member's class) | failed, substituted | `sfinae-failed` | SFINAE-door re-entries (instantiation / read binds) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| suite, before | 1,438 | 0 | 1,228 | 200 / 2 | 8 | 35 | 7,264 / 8,491 |
+| suite, after | 1,448 = 1,438 + the probe's 10 | **1,234 = 1,226 + the probe's 8** | **2** (a pointer to member: function-template-partial-ordering's `mem`) | 201 / 2 (the probe's 1) | 9 (the probe's 1) | 36 = 35 + 1 (**unchanged**) | **6,037** / 8,502 |
+| self-host, before | (34,009) | 0 | 16,988 | 13,436 | 0 | 195 | 109,086 / 244,223 |
+| self-host, after | (34,020 trials of every shape: the input grew by this step's lines) | **16,988 - every one** | **0** | 13,447 | 0 | **195** | **92,146** / 244,365 |
+
+So the formed trials leave the re-read: **suite 1,226 of 1,228, self-host 16,988 of 16,988**, and the door's instantiation side
+falls by them (suite 7,264 -> 6,037, self-host 109,086 -> 92,146; the read side is deduction's own read of the pattern, which this
+step does not touch, and grew with the input). The census's `sfinae-trial` total is 1,916 = 1,906 + the probe's 10 (a trial nested
+in a re-read signature no longer runs twice). x86_64-windows, the suite at 309ef533 (cl, Windows): 1,226 formed substituted of the
+same 1,228 + 8, the door 7,120 -> 5,891 - its two pointer-to-member trials still declared from the substitution there (08ce61ae, its cl build
+capped, measured with g++ `-arch x86_64-windows` under the check: the self-host's 17,856 formed every one substituted, 0 re-read). **`Parser::Trial` in Templates.cpp 6 -> 6**: the trial still opens
+under `-check=templates`, for "a value over the parameters", "a 'decltype'", a member template's (4h) and the not-carried shapes,
+so no caller substitutes in every case yet. **Replay-residue 150 / 19 / 26 / 6, +0.**
+
+**Not carried, by kind, for the kernel's next lane**: suite 200 and self-host 13,447 answer "a type over the parameters the binding
+does not carry" (the kernel's first unsubstituted part - the census does not yet split it by kind; `r.at`'s kind is where to
+count), 2 "a member type whose class the binding does not carry" (template-nondependent-argument, template-sfinae-misc).
+
+**Check** (`-check=templates`, the suite on x86_64-windows at 309ef533, cl): 1,387 of 1,388 formed held as the replay read them; the
+one differ is 08ce61ae's pointer to member (now re-read, named); no class, default or value differ; 6 failures held by the replay's
+words, 3 in other words.
+
+**m8r4e's owed checks, on 325b9818** against a REF built from 0c30afec (Windows, cl, `work\m8r4e2r` / `work\m8r4e2b`): **cl /W4 /WX
+alone clean** (17:50:18-17:52:03, 1 min 45 s with the ship); **identical x86_64-windows under the flag -O0 2,056 compared 0 differ,
+-O1 2,056/0** (JOBS=2, each beside the other); plain -O0 and -O1 stopped by PID at the hour, unfinished; -O2 both ways not started (the gate's
+GATE-WINDOWS-BUSY.txt appeared at 18:33); **names.sh plain 1,028 passed 0 failed** (20 .nonames OPEN as recorded); **names.sh under
+the flag 1,028 passed 0 failed** (through a wrapper script as CXX1); **the self-host -check=templates census on x86_64-windows: 102 units rc 0, no class, default, value or sfinae
+differ** (body lines 11, R0's; formed 17,856, not carried 13,485, failed 195). No difference, so nothing to fix.
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4e2n`, 08ce61ae's tree, g++): **g++ -Werror clean**;
+**static**: exclusions 0 uncited 0 stale (lowering 554/95 0/0), comments 0 over the cap, memory-gate lower, ast-residue not raised
+(ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **the probes right plain and under the flag** (`6 4 12 1` /
+`6 9 5 104 1`; `1 2 3 120` / `4 5 6 7`); the census under the flag compiled **all 102 sources with rc 0**, x86_64-linux;
+**-check=templates over the suite on x86_64-windows (08ce61ae, g++): 1,386 formed, every one held as the replay read it; no class,
+default, value or sfinae differ** (6 failures held by the replay's words, 3 in other words); **the self-host's on x86_64-windows: 102 units rc 0, 17,856 formed - every one
+substituted and every one held; no class, default, value or sfinae differ** (body lines 11, R0's; failed 195). Windows (`work\m8r4e2x`, 309ef533): **cl /W4 /WX clean** (18:00:43-18:08:28, 7 min 45 s, beside the owed identicals,
+names.sh and a census - not alone); 08ce61ae's cl build passed the 9-minute cap beside the same jobs and was stopped by PID at 18:29,
+a defect recorded, not retried. **Not run in the hour** (the Linux slots were held by the wave gate and lane m8r1i - the lane's first
+build waited 12 minutes for one, its run.sh 10 and never started; **the FULL stage-0 self-compile did run, 102 of 102 in 135 s**,
+18:42-18:45): run.sh plain and under the flag, subst.sh, identical against 325b9818 on four targets, names.sh and overload.sh on the lane. Slices 4m-4s untouched;
+no new src/sema function indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`.
+
+**Owed** (to the wave gate): all of "Not run in the hour" above on 08ce61ae; cl /W4 /WX alone on 08ce61ae; m8r4e's x86_64-windows
+-O2 identicals both ways (0c30afec vs 325b9818). **Next for 4e**: the pointer to member and pack expansion `dependentType` does not
+walk, so their formed signatures can leave the re-read; the 200 / 13,447 not-carried types counted by `r.at`'s kind; then the
+trial's `Parser::Trial` in `instantiateViableTemplates` falls where every shape substitutes (4d's values, 4h's member templates).
+Re-measure: `boxkit/m8r4e2-cen.sh <b|n> <tag> <arch> <m|c> <s|h>` (Linux), `boxkit/m8r4e2-wcen.sh`, `boxkit/m8r4e2-gate.sh`,
+`boxkit/m8r4e2-gate2.sh`, `boxkit/m8r4e2-wident.sh`, `boxkit/m8r4e2-wnames.sh`.
+
+## R2, slice 4e, third step: the types the kernel did not carry (lane m8r4e3, 2026-11-26)
+
+Base 0a2662e6 (m8-4e2). Commits 17b8ce64 (the census split: `trialKind`, the not-carried leaf's kind on the trial's line -
+counts only, no `template-census:` key), 049be1db (a class template-id under a declarator asked again At the use), 77268ba1 (an
+id the read cleared, the same), 22478f5d (a template template parameter's id, the same), 317fa8f7 (EXCLUSIONS: three Templates.cpp
+citations at their lines - each commit re-pointed them, and c2-c4 counted one line too many; 0 uncited 0 stale after) and this
+entry. src/ 98,931 -> 98,963 (35 added, 3 deleted: Templates.cpp +35/-3, Templates.h +2). **Nothing changes without the flag.**
+
+**What it does.** `substitute(s, pattern, Declared)` lays the outermost id only; under a declarator ids are Mapped, so every
+`const vector<T> &` in a trial's signature answered "a type over the parameters the binding does not carry". `madeAtUse`: where
+that answer's leaf is a class template-id under a declarator, one the read cleared (`readIds_`) or `$TT<i>`'s, the trial asks the
+kernel again At the use (Made - carried under every declarator, the id step making the class through makeClass as the replay makes
+it reading the id; `idUnder` renames `$TT<i>`). The path is the member-type retry 4e already had, not a copy. What still fails
+re-reads, named by kind.
+
+**THE MEASURE** (census, `-templates=subst`, no check; before = 0a2662e6 as m8r4e2 measured it at 08ce61ae's src; after =
+049be1db, x86_64-linux g++ on Linux, x86_64-windows cl on Windows; `boxkit/m8r4e3-cen.sh`, `m8r4e3-wcen.sh`):
+
+| | not carried, a type (by kind after) | formed, declared from the substitution | SFINAE-door re-entries (instantiation / read) | `sfinae-failed` |
+| --- | --- | --- | --- | --- |
+| suite x86_64-linux, before | 201 (not split) + 2 a member's class | 1,234 | 6,037 / 8,502 | 36 |
+| suite x86_64-linux, after c2 | **30**: 19 an id the read cleared, 11 a template template parameter's id; + 2 a member's class, 1 an id with an argument not carried | **1,402** | **5,867** / 8,500 | 35 |
+| suite x86_64-windows, after c2 | the same 30 + 2 + 1 | 1,402 | 5,723 / 8,356 | 35 |
+| self-host x86_64-linux, before / after c2 | 13,447 -> **320**, all an id the read cleared | 16,988 -> **30,122** | 92,146 -> **79,047** / 244,483 | 195 / **195** |
+| self-host x86_64-windows, before / after c2 | 13,485 -> **319**, the same | 17,856 -> **30,187** | -> **78,933** / 244,633 | 195 / **195** |
+
+So the largest kind - a class template-id under a declarator - was nearly all of it: suite 168 and self-host 13,127 carried, every one
+formed and declared from its substitution. `decltype` (4f's): 0 in this answer, suite and self-host (no 'decltype' kind line is left after c2, and c2 carried only ids; the
+trial's own "a 'decltype'" shape is counted apart, before the kernel). c3 and c4 take the last 30 of the suite (19 ids the read
+cleared, 11 `$TT<i>` ids): under the check at 22478f5d, g++ on Linux, both ABIs, the suite's formed rise 1,554 -> **1,584** and
+**no "a type over the parameters" answer is left** - suite 201 -> 0; what still re-reads is 2 a member's class, 1 an id with an
+argument not carried and 2 a pointer to member. The self-host's 320 read-cleared ids at c4 are **not measured** (owed). The suite's trials of this shape 1,448 -> 1,446 and `sfinae-trial`
+1,916 -> 1,914, `sfinae-failed` 36 -> 35: two trials nested in a signature that is no longer re-read run once, as m8r4e2 saw; under
+`-check=templates` (every one replayed) `sfinae-failed` is 35 as well, and no sfinae line differs - which nested failure the 36
+counted twice is owed by name. **`Parser::Trial` in Templates.cpp 6 -> 6** (the trial still opens for a value over the parameters,
+a 'decltype', a member template's and the not-carried kinds above, so none of its uses is retired). **Replay-residue 150 / 19 / 26 / 6, +0.**
+
+**Check** (`-check=templates`, the suite, c2, cl on Windows, x86_64-windows): **1,554 formed, every one held as the replay read it**;
+no class, default, value or sfinae differ (6 failures held by the replay's words, 3 in other words; body differ lines 21, the base's).
+At 22478f5d (g++, Linux) over the suite on x86_64-windows and x86_64-linux: **1,584 formed, every one held**, the same 9 failures
+held, no class, default, value or sfinae differ (body 21). The self-host under the check: not run (owed).
+
+**m8r4e2's owed checks, on 0a2662e6** against REFs built from 325b9818 and 0c30afec (Windows, cl, `work\m8r4e3a`, `b`, `r`):
+**cl /W4 /WX alone clean** (18:48:13-18:51:43, 3 min 30 s with the ship); **overload.sh plain 46 agreed 0 differed, under the flag
+46/0**; names.sh plain started 19:29 and was stopped by PID unfinished at the hour. **Not done**: names.sh both ways; identical x86_64-windows 325b9818 vs 0a2662e6 - at JOBS=2 beside
+the lane's builds and censuses on the shared box, flag -O0 and plain -O1 each ran out their 25 minutes unfinished, and plain -O0
+and flag -O2 were stopped by PID at the hour (a defect: split finer, or run them alone); m8r4e's -O2 against 0c30afec not started;
+the Linux owed chain (run.sh plain and under the flag, subst.sh, identical on x86_64-linux, arm64-darwin and tms6747 against
+325b9818) waited in `~/slot` behind the wave gate m6dw53g and lane m8r1j until its own `timeout 1500` ended it - nothing of it
+ran (a defect: the wait belongs outside the timeout).
+
+**Gates** (a coding lane's; the next wave gates it whole). Linux (`~/m8r4e3n`, 22478f5d, g++): **g++ -Werror clean**; **static**:
+exclusions 0 uncited 0 stale after 317fa8f7 (lowering 554/95 0/0), comments 0 over the cap, memory-gate lower, ast-residue not
+raised (ExprPtr 2012), **replay-residue 150/19/26/6 +0**, ide up to date; **the FULL stage-0 self-compile 102 of 102** (160 s). Windows (`work\m8r4e3x`, 049be1db):
+**cl /W4 /WX clean** (19:02:27-19:10:28, 8 min, beside the owed identicals - not alone); 22478f5d's cl build passed the 9-minute
+cap beside the same jobs and was stopped by PID at 19:24, a defect recorded, not retried. **Not run in the hour**: identical.sh
+against 0a2662e6 on four targets, run.sh plain and under the flag, subst.sh, names.sh and overload.sh on the lane, cl alone on the
+lane, the self-host censuses at c4 (measure and check). No emitted output is known changed: none was compared. Slices 4m-4s
+untouched; no new src/sema function indexes `p_.tokens_` or moves `p_.at_`, and none opens a `Parser::Trial`.
+
+**Owed** (to the wave gate): all of "Not run in the hour" and m8r4e2's owed above that were not done; which nested trial's failure
+the base counted twice (`sfinae-failed` 36 -> 35). **Next for 4e**: the 2 member-class and 1 id-argument answers, the 2 pointers
+to member (`dependentType` does not walk them); then the trial's `Parser::Trial` in `instantiateViableTemplates` falls where
+every shape substitutes (4d's values, 4f's `decltype`, 4h's member templates). Re-measure: `boxkit/m8r4e3-cen.sh <a|b|m|n> <tag>
+<arch> <m|c> <s|h|sh>` (Linux), `boxkit/m8r4e3-wcen.sh` (Windows), `boxkit/m8r4e3-gate.sh`, `m8r4e3-wident.sh`, `m8r4e3-wnames.sh`.
+
+## R2, slice 4g: one reader of a dependent expression (lane m8r4g, 2026-11-26)
+
+**The measure** (`wc -l src/parser/ParserDependent.cpp`; the token reader `dependentExpression`'s call sites outside its file): at
+4ab0bcba 478 lines, 3 sites (`decltype` in a pattern, ParserExpr.cpp:2396; a template argument over the parameters,
+ParserTemplate.cpp:1188; 4c's value default over the parameters before it, ParserTemplate.cpp:1620). c1 623aa80e: 537, 2 sites;
+c2 e403be17: 568, 2 sites. **The file grew**: the reader cannot go whole in an hour, and the two kinds moved are the ones the parser's
+own path reads with no dependent operand. The slice goes on kind by kind; the row's "about 130" is reached only when the last site moves.
+
+**What it does.** `Parser::depFromSyntax` makes the pattern's `DepExpr` from the syntax node the parser's own expression path made -
+an integer literal of type int (`literalTokens_`'s token: no suffix, not a character, at most INT_MAX), `true`/`false`, a name that is
+a pattern's non-type parameter (`T_`) or an enclosing template's bound value (its literal, as the reader spelled it), a parenthesis,
+the prefix and binary operators (one table of Itanium codes now, shared with the reader) and `?:` - and null for anything else.
+(c1) 4c's value default over earlier parameters (flag path only) is read by `conditional()` and made so; a shape it does not carry
+is `defUnread` "a value past the literals, parameters and operators depFromSyntax carries" (0 over the 22 cases below). (c2) **On the plain
+path**: a template argument over the parameters whose tokens are integer literals, non-type parameters (no pack, no call, no `::` or
+`<` after them) and operators alone (`valueOperandsAhead`: binary + - * & | ^ && || == !=, the relations, shifts and `?:` only inside
+parentheses, prefix - + ! ~) is read by `conditional()` - its nodes killed after, as the reader's were never live - and its
+`DepExpr` made from the syntax node; anything else, or a node the converter declines, rewinds and goes to the reader. **Which kinds
+stay with the reader**, by reason: `sizeof` of a type or an expression, casts (`T(x)`, C-style, `static_cast`), a function
+parameter, member access, calls and `T::name` - each needs the reader's own typing of a dependent operand (the parser's path in a
+signature has no dependent operands: `patternBody_` is off there), so they move when the signature is read the way a body is;
+and `decltype`'s site whole, for the same reason. Literals with a suffix or past INT_MAX go to the reader (their type ladder is
+`primary`'s, not repeated here).
+
+**Shown**: under gdb on a probe of seven forms (`XplT_Li1EE`, `XqugtT_Li2ELi1ELi0EE`, `XmimlT_T0_Li1EE`, `XplngT_Li4EE`,
+`XorlsT_Li2ELi1EE`, `XntT_E`, and `XplstT_Li1EE` left to the reader) depFromSyntax ran 76 times and the reader 16; the `.s` the same
+as 4ab0bcba's, byte for byte, and the program prints g++'s answers. -check=templates over the 22 suite cases that write a default:
+every default line as 4ab0bcba's (measure: value made 15 class list + 3 deduced; check: 12 + 3; 0 default, class, value or
+sfinae differ).
+
+**Gates** (REF 4ab0bcba built on each box; the lane measured on fc034c2d, c2's tree before its last two edits - a `syntax::Node` held
+by copy, not reference, and EXCLUSIONS - both of which change no emitted byte). Linux (g++, `~/m8r4gm`): **g++ -Werror clean** (c1 and
+c2); **the FULL stage-0 self-compile 102 of 102** (156 s); **identical plain 0 differ** x86_64-linux 3087/0, tms6747 3087/0 and arm64-darwin 3087/0 at
+-O0/-O1/-O2; under the flag 3087/3 on each of the three, every differ template-angle-split at -O0/-O1/-O2, the case below; run.sh plain 1373/0; run.sh under the flag 1372/1 and subst.sh 2 failed (run -O0, -O2), all three the one case
+template-angle-split ("an array length must be positive, not -4" in `Y<char>`), which REF 4ab0bcba refuses the same under the flag:
+the base's, not this lane's (owed to the wave: named for 4e's SFINAE trial or the class door); subst.sh typed 1019/0 both levels,
+self 102 of 102. Static on c2: exclusions 0/0 after the ten re-pointed (c1 alone left them stale), comments 0 over, memory-gate
+lower, **ast-residue not raised at c2** (c1 alone raised node-refs 298 -> 299 by `const syntax::Node &`, undone in c2),
+**replay-residue 150/19/26/6 +0** at c1 and c2, ide up to date. Windows (cl, `work\m8r4gx` fc034c2d, `work\m8r4gz` e403be17):
+**cl /W4 /WX clean** on both (1 min 15 s on fc034c2d, no other job of the lane's on the box; 3 min 16 s on e403be17 beside the tests); **names.sh plain 1029 passed,
+0 failed** (Itanium and Microsoft; 20 .nonames open as recorded).
+**Not done in the hour**: identical x86_64-windows plain at -O0/-O1/-O2 in one run passed the 25-minute cap (rc 124, a defect, as
+m8r4e3's); -O0 alone then gave **2058 compared, 0 differ** (JOBS=4, 8 min), so x86_64-windows plain -O1 and -O2 are owed;
+identical under the flag on x86_64-windows; the -check=templates censuses over the whole suite and the self-host (only the 22
+default cases were run). Done on Windows at the end: **names.sh under the flag 1028/1**, the one template-angle-split (refused by
+the flag, as at REF), and **overload.sh plain 46 agreed, 0 differed**; overload.sh under the flag owed.
+
+**Owed and next.** The two remaining sites - `decltype` (ParserExpr.cpp:2396) and the template argument's other kinds - need the
+signature read with dependent operands, as a body is (`patternBody_`'s zeros of a dependent type, M8.1): then `sizeof(T)`, `T(x)`,
+`t.m`, `f(t)` and `T::n` come out of the parser's own path as syntax nodes, and depFromSyntax takes `Sizeof`, `Cast`, `Member`,
+`Call` and the qualified `Name` (a type operand recorded beside its node, as `literalTokens_` records a literal's token). Only
+then does the reader (ParserDependent.cpp's `dependentExpression` .. `depPrimary`, about 330 lines) go, and with it
+`valueOperandsAhead`. Re-measure: `boxkit/m8r4g-cen.sh <tag> <m|c>`, `m8r4g-gate.sh` (TREE=n|m), `m8r4g-wident2.sh`, `m8r4g-wnames.sh`.
+
+## R2: template-angle-split under the flag, and the chain's owed checks (lane m8r4fix, 2026-11-26)
+
+**The measure**: run.sh under -templates=subst at fa26aa95 1,372 passed, 1 failed (template-angle-split, "an array length must be
+positive, not -4" in `Y<char>`; m8r4g's, re-measured here: 1 failed) -> **1,374 passed, 0 failed** at c085a7fc (the probe the one
+more); subst.sh 2 failed (m8r4g's: run -O0 and -O2, the same case) -> **0 failed**; identical under the flag on x86_64-linux at
+-O0/-O1/-O2 against REF 24d17607 (m8r4g's 3,087/3, the same case) -> **3,090 compared, 0 differ**; replay-residue 150/19/26/6 +0.
+
+**The commit**: bisected on Linux, one build a commit, the case compiled under the flag: 08ce61ae (4e2's last) prints `2 1`;
+17b8ce64 (counts only) `2 1`; **049be1db** (4e3's c2, `madeAtUse`) refuses it, as does every commit after it to fa26aa95. **The root**: 049be1db
+asks a class template-id under a declarator again At the use (Made) from `sfinaeSubstituted`, which ran *before*
+`instantiateViableTemplates`' `Parser::Trial`. `X<Y<T>> *` with T = char made `Y<char>`, whose `U m[sizeof(U) - 5]` fails; outside a
+trial `Source::fail` is an error, where the replay, reading the same id inside its trial, gets a `SubstitutionFailure` and drops the
+candidate ([temp.deduct]/8) - so the ordinary `f(char, int)` was never reached. The internal catch ("a class the kernel made failed
+to substitute", then the re-read) could only be reached under an outer trial, and then it re-read with what the failed class read
+left (`at_`, the class stack, `>>`'s mark - readClassBody restores them only on its way out).
+
+**The mend** (c085a7fc, `src/sema/Templates.cpp` +20 -12): the loop's one `Parser::Trial` now covers the kernel's substitution as well
+as the replay - moved, not added (replay-residue trials 6 -> 6). A class made at the use that fails is counted ("substituted: a class
+made at the use failed") and rethrown to the loop's catch: the candidate fails, a refusal is re-raised there, and the trial puts the
+parser's state back. A formed signature is declared after the trial, under `Diagnosed`, as 4e2 has it. On the plain path the order is
+the replay's as before. Probe **template-subst-sfinaemade** (clang 19.1.5, Windows: `2 20 200` / `1 10 100`): an id under a pointer,
+a reference and an id inside an id, failing for the deduced argument, then forming; fa26aa95 refuses it under the flag with the same
+error; with the mend both ways right (census: 1 substituted as a class that failed, 4 formed).
+
+**Gates** (REF 24d17607, wave m6d-w53's tip, built on Linux; the lane on c085a7fc). Linux (g++, `~/m8r4fixn`): **g++ -Werror
+clean**; **the FULL stage-0 self-compile 102 of 102** (182 s); run.sh under the flag 1,374/0 and plain 1,374/0; subst.sh 0 failed (run -O0/-O2 1,374/0, typed 1,021/0 both levels, bodies
+1,018 of 1,018, self 102 of 102); identical x86_64-linux under the flag 3,090/0 and plain 3,090/0 at -O0/-O1/-O2 (no emitted file changed); the -check=templates suite census
+(1,382 units): x86_64-windows no class, default, value or sfinae differ, body differ lines 21 (REF's 21), 1,589 formed all held, 2
+"a class made at the use failed" (template-angle-split, the probe); x86_64-linux no class, default, value or sfinae differ, body
+22 (REF's 22). Static: exclusions 0/0 (three citations +1), comments 0 over, memory-gate lower, ast-residue not raised, replay-residue
+150/19/26/6 +0, ide up to date. MOREGATES
+
+**Owed.** OWED

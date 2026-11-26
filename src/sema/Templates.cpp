@@ -1510,26 +1510,133 @@ private:
 };
 }
 
-void Templates::valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
-                           const Packs &packs, std::size_t pos, std::vector<std::string> *keys) {
+const char *Templates::trialSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
+                                        const std::vector<long long> &values, const Packs &packs, Substituted *s) {
     const char *why = decl.isMember ? "a member template's, its class's parameters numbered apart" : nullptr;
-    Substituted s;     // as defaultMade's: a value by its index, a template by its name, a type mapped
-    s.packs = packs;
+    s->packs = packs;     // as defaultMade's: a value by its index, a template by its name, a type mapped
     for (std::size_t k = 0; why == nullptr && k < decl.params.size(); k++) {
         const TemplateParam &q = decl.params[k];
-        s.values.push_back(k < values.size() ? values[k] : 0);
+        s->values.push_back(k < values.size() ? values[k] : 0);
         if (q.isPack || q.type != nullptr) continue;
         if (k >= binding.size() || binding[k] == nullptr) why = "a parameter unbound";
         else if (q.isTemplate) {
             std::map<std::string, TemplateDecl>::const_iterator t = templates_.end();
             if (binding[k]->isTemplateName()) t = p_.findTemplate(binding[k]->templateName());
             if (t == templates_.end()) why = "a template parameter bound to no template";
-            else s.templates[static_cast<int>(k)] = t->first;
+            else s->templates[static_cast<int>(k)] = t->first;
         } else {
-            s.from.push_back(p_.types_.templateParam(static_cast<int>(k)));
-            s.to.push_back(binding[k]);
+            s->from.push_back(p_.types_.templateParam(static_cast<int>(k)));
+            s->to.push_back(binding[k]);
         }
     }
+    return why;
+}
+
+// A pointer to member or a pack's expansion, whose parts dependentType does not walk (`int (template parameter S::*)`, check-held).
+static bool partsUnwalked(const Type *t, int depth = 0) {
+    for (; t != nullptr && depth < 64; depth++) {
+        if (t->unqualified() != t) { t = t->unqualified(); continue; }
+        if (t->isMemberPointer() || t->kind() == Kind::PackExpansion) return true;
+        if (t->kind() == Kind::Function) {
+            for (const Type *q : t->params())
+                if (partsUnwalked(q, depth + 1)) return true;
+            t = t->returns();
+            continue;
+        }
+        if (!t->isPointer() && !t->isReference() && !t->isArray()) return false;
+        t = t->pointee();
+    }
+    return false;
+}
+
+// The kind of the leaf a trial's signature names that the kernel does not carry, for the census (counts only, no key).
+std::string Templates::trialKind(const Type *e) const {
+    int tt;
+    if (e == nullptr) return "no leaf";
+    if (e->kind() == Kind::DependentExpr) return "a 'decltype' (4f's)";
+    if (e->kind() == Kind::PackExpansion) return "a pack expansion";
+    if (e->isMemberPointer()) return "a pointer to member";
+    if (e->isEnumeration()) return "an enumeration of the read";
+    if (!e->isStructOrUnion()) return "another kind";
+    if (e->dependentLayout()) return "a nested class laid over its parameters";
+    if (readIds_.count(e) != 0) return "a class template-id the read cleared";
+    if (!e->isSpecialization()) return "a class of the current instantiation";
+    if (ttRefName(e->templateName(), &tt)) return "a template template parameter's id";
+    return "a class template-id under a declarator";
+}
+
+// A leaf Made carries where Declared does not: an id under a declarator, one the read cleared (readId), or `$TT<i>`'s (idUnder
+// renames it), laid by the id step.
+bool Templates::madeAtUse(const Type *e) const {
+    if (e == nullptr) return false;
+    const std::string kind = trialKind(e);
+    return kind == "a class template-id under a declarator" || kind == "a class template-id the read cleared" ||
+           kind == "a template template parameter's id";
+}
+
+const char *Templates::formedWhy(const TemplateDecl &decl, const Type *fn) const {
+    if (fn == nullptr || fn->kind() != Kind::Function) return "formed: no function type";
+    if (!decl.defined) return "formed: a template declared and never defined";
+    if (p_.dependentType(fn)) return "formed: a signature still over the parameters";
+    if (partsUnwalked(fn)) return "formed: a pointer to member or a pack expansion, its parts the kernel's";
+    return mentionsDeduced(fn->returns()) ? "formed: a deduced return type" : nullptr;
+}
+
+// The replay's declaration beside the substituted one: its signature, the defaults its list wrote and its bare `noexcept`.
+std::string Templates::formedHeld(const TemplateDecl &decl, const Type *formed, const Signature &read) const {
+    const Type *const replayed = p_.types_.functionType(read.returns, read.params, read.variadic);
+    if (replayed->describe() != formed->describe())
+        return "held: differ: formed '" + formed->describe() + "', the replay read '" + replayed->describe() + "'";
+    if (!decl.patternDefaults.empty() && p_.pendingDefaults_ != decl.patternDefaults) return "held: differ: the defaults the replay read";
+    return p_.patternNoexcept_ != decl.patternNoexcept ? "held: differ: the replay's noexcept" : "held: formed as the replay read it";
+}
+
+std::string Templates::sfinaeSubstituted(const TemplateDecl &decl, const std::vector<const Type *> &binding,
+                                         const std::vector<long long> &values, const Packs &packs, std::size_t pos,
+                                         const Type **formed) {
+    Substituted s;
+    const char *why = trialSubstituted(decl, binding, values, packs, &s);
+    std::string failed;
+    const Type *at = nullptr;
+    *formed = nullptr;
+    if (why == nullptr) {
+        try {
+            // A qualifier's class not yet made, or an id under a declarator (Declared lays the outermost only): made at the use, as
+            // the replay makes it reading the id, in the caller's trial.
+            Substitution r = substitute(s, decl.pattern, Declared);
+            if (!r.carried() && (std::string(r.why) == "a member type whose class the binding does not carry" ||
+                                 (std::string(r.why) == "a type over the parameters the binding does not carry" && madeAtUse(r.at))))
+                r = substitute(s, decl.pattern, At{ pos });
+            why = r.carried() ? formedWhy(decl, r.type) : r.why;
+            at = r.at;
+            if (why == nullptr) *formed = r.type;
+            const Type *cls = nullptr;
+            if (!r.carried() && r.at != nullptr && r.at->kind() == Kind::DependentMember) {
+                const Substitution q = substitute(s, r.at->pointee(), Declared);
+                if (q.carried() && q.type != nullptr && !p_.dependentType(q.type)) cls = q.type->unqualified();
+            }
+            // [temp.deduct]/8: a complete class the binding carries that lacks the member type named (said as the replay says
+            // it), or a qualifier that is no class at all.
+            if (cls != nullptr && cls->isStructOrUnion() && cls->isComplete() && cls->findMember(r.at->tag()) == nullptr &&
+                !(cls->isSpecialization() && cls->findStaticMember(r.at->tag()) != nullptr))
+                failed = "'" + cls->tag() + "' has no member type called '" + r.at->tag() + "'";
+            else if (cls != nullptr && !cls->isStructOrUnion() && !cls->isTemplateName())
+                failed = "a qualifier that is no class has no member type called '" + r.at->tag() + "'";
+        } catch (const SubstitutionFailure &) {     // [temp.deduct]/8: a class made at the use that cannot be made; the trial puts back
+            sfinaeReport_["substituted: a class made at the use failed"]++;     // what its read left, and a refusal is re-raised there
+            throw;
+        }
+    }
+    const std::string kind = why != nullptr && std::string(why) == "a type over the parameters the binding does not carry" ? ": " + trialKind(at) : "";
+    sfinaeReport_[!failed.empty() ? std::string("substituted: a failed substitution") : *formed != nullptr ?
+                  std::string("substituted: formed, declared from the substituted signature") : std::string("re-read: ") + why + kind]++;
+    return failed;
+}
+
+void Templates::valueTrial(const TemplateDecl &decl, const std::vector<const Type *> &binding, const std::vector<long long> &values,
+                           const Packs &packs, std::size_t pos, std::vector<std::string> *keys) {
+    Substituted s;
+    const char *why = trialSubstituted(decl, binding, values, packs, &s);
     std::vector<const Type *> ids;
     if (why == nullptr) patternHolds(decl.pattern, 0, &ids);
     const TrialLeaf leaf(this, &s, pos, &p_.target_);
@@ -2398,6 +2505,8 @@ std::string Templates::builtReport() const {
         out += "-check=templates default (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, long>::const_iterator i = valueReport_.begin(); i != valueReport_.end(); ++i)
         out += "-check=templates value trial (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, long>::const_iterator i = sfinaeReport_.begin(); i != sfinaeReport_.end(); ++i)
+        out += "-check=templates sfinae trial (" + std::to_string(i->second) + "): " + i->first + "\n";
     const std::map<std::string, int>::const_iterator fm = replayCensus_.find("substituted with no replay"),
                                                      mm = replayCensus_.find("member: substituted with no replay");
     const long parts[] = { total - made, census_[FunctionBody] - (fm != replayCensus_.end() ? fm->second : 0),
@@ -5799,6 +5908,15 @@ bool Templates::functionHidesTemplates(const std::string &name) const {
     return false;
 }
 
+namespace {
+// A failure inside it is an answer and prints nothing (Source's trial alone: no token is read again, so nothing to put back).
+struct Diagnosed {
+    explicit Diagnosed(const Source *s) : s_(s) { s_->beginTrial(); }
+    ~Diagnosed() { s_->endTrial(); }
+    const Source *s_;
+};
+}
+
 void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
                                         const std::vector<const Type *> &argTypes, std::size_t pos) {
     for (std::size_t k = 0; k < overloads.size(); k++) {
@@ -5817,12 +5935,32 @@ void Templates::instantiateViableTemplates(const std::vector<TemplateDecl> &over
         countWhy(SfinaeTrial, "a function template, " + shape);
         std::vector<std::string> folded;     // 4d: the trial still decides
         if (substitute_ && shape == "a value over the parameters") valueTrial(decl, binding, values, packs, pos, &folded);
+        // 4e: a signature of types the kernel shows cannot be formed drops the candidate with no re-read; the check replays it beside.
+        const Type *formed = nullptr;     // and one that forms is declared from its substituted signature, with no re-read
+        std::string failed;
         try {
-            Parser::Trial trial(&p_);
-            p_.instantiate(decl, binding, values, args, pos, packs);
-            if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
+            bool declare = false;
+            {
+                // The kernel's ids made at the use inside the replay's trial: a class that cannot be made is a failure, its read put back.
+                Parser::Trial trial(&p_);
+                if (substitute_ && (shape == "types alone" || shape == "a default")) failed = sfinaeSubstituted(decl, binding, values, packs, pos, &formed);
+                if (!failed.empty() && !checkBodies_) { count(SfinaeFailed); continue; }
+                declare = formed != nullptr && !checkBodies_;
+                if (!declare) {
+                    const Parser::Signature &read = p_.instantiate(decl, binding, values, args, pos, packs);
+                    if (checkBodies_ && !folded.empty()) valueHeld(folded, true);
+                    if (!failed.empty()) sfinaeReport_["held: differ: substituted a failure, the replay formed it"]++;
+                    if (formed != nullptr) sfinaeReport_[formedHeld(decl, formed, read)]++;
+                }
+            }
+            if (declare) {
+                const Diagnosed quiet(&p_.src_);     // [temp.deduct]/8 still: a name the linker cannot hold drops the candidate
+                p_.instantiate(decl, binding, values, args, pos, packs, formed);
+            }
         } catch (const SubstitutionFailure &f) {
             if (checkBodies_ && !folded.empty()) valueHeld(folded, false);
+            if (!failed.empty()) sfinaeReport_[f.why == failed ? "held: the replay's failure" : "held: both failed, in other words: " + f.why]++;
+            if (formed != nullptr) sfinaeReport_["held: differ: substituted a formed signature, the replay failed: " + f.why]++;
             count(SfinaeFailed);
             // This template does not apply; the others still might - unless
             // what stopped it was a feature this compiler has not built, which

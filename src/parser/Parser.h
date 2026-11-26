@@ -279,7 +279,8 @@ private:
                                  const std::vector<TemplateArg> &args,
                                  std::size_t pos,
                                  const Packs &packs =
-                                     Packs());
+                                     Packs(),
+                                 const Type *formed = nullptr);     // 4e: the signature substituted, not read again
     // The template's declaration re-read with `binding` in force. Answers its
     // function type and, through `name`, the name it declares.
     const Type *readTemplateDeclaration(const TemplateDecl &decl,
@@ -1717,6 +1718,9 @@ private:
     const DepExpr *depPrimary(bool angle);
     const DepExpr *depCast(const Type *to);
     const DepExpr *depNode(DepExpr e);
+    // Slice 4g: the tree of an expression the parser's own path read, from its syntax node; null for a shape not carried.
+    const DepExpr *depFromSyntax(syntax::NodeId id);
+    bool valueOperandsAhead() const;
     void depRefuse(std::size_t pos, const std::string &what);
     std::string depText(std::size_t from, std::size_t to) const;
     std::string spelledTokens(std::size_t from, std::size_t to) const;

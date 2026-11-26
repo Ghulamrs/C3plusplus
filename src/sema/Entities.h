@@ -276,6 +276,9 @@ struct TemplateDecl {
     syntax::NodeId signature;
     // That read's function type, the parameters standing for themselves: the pattern Itanium spells, read once (M8.2).
     const Type *pattern = nullptr;
+    // That read's default arguments (token indices, none if it wrote none) and bare `noexcept`: 4e's substituted declaration.
+    std::vector<std::size_t> patternDefaults;
+    bool patternNoexcept = false;
     // **A member of this class template defined outside it** - `template <class T>
     // T Box<T>::get(int)`. Kept on the class rather than as a template of its own,
     // because that is what it is. Replayed when the class is instantiated.
