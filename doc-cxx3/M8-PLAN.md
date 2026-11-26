@@ -6792,3 +6792,83 @@ stage-0 self-compile 102 of 102** (175 s - cxx3 compiles the new lines). **Owed*
 at -O0/-O1/-O2 plain and under the flag against a REF of 7aae2b6b; run.sh plain and under the flag; subst.sh; the
 -check=templates censuses (suite and self-host, both ABIs) and the re-entry measure; names.sh and overload.sh; cl /W4 /WX on
 a64267e6. No changed emitted output is known, because none was compared.
+
+## R1, third lane: the order helpers, and Made at first need measured (lane m8r1c, 2026-11-26)
+
+Base 7aae2b6b (m8-r1a, on wave m6d-w50 4a127f66). **No src/ commit**: src/ 98,477 lines, 0 added, 0 deleted. This entry is
+the lane's one commit.
+
+**The measure** (call sites, `git grep -o '\bNAME('` over src/sema less each helper's definition and declaration): **helpers
+left with callers, of the eleven: 9 -> 9** - carriedId 7, idUnder 2, listUnder 1, **earlyArgs 12 -> 12, argsWanted 5 -> 5,
+idsBefore 1 -> 1, typedefCarried 2 -> 2**, packUnder 3, paramsUnder 8. Re-entries under a binding and replay-residue are
+7aae2b6b's (no src change): suite x86_64-linux 21,565 at instantiation, 54,093 in the read; 150 / 19 / 26 / 6 - neither risen.
+
+**Made at first need, measured (m8r1a's owed question; the switch is not committed)**. The switch,
+`boxkit/m8r1c-firstneed.diff` (Templates.cpp/h, +25/-13): under `CXX1_FIRST_NEED` the eleven `substitute(s, t)` sites in
+the non-const doors - dependentCall, callArgTypes, valueCast, substShape's three, classFromRead's typedef, staticsFromRead's
+static, idsInside, membersFromRead's two - ask `substitute(s, t, At{p_.at_})` (`Made`); below a declarator the recursion
+keeps `Made`, the binding's own map asked first; a census key counts each class a door makes. idsBefore and idsInside
+still make their ids ahead, so a door makes only what they left. Measured on Linux with ~/m8r1c-fn.exe against a REF built
+from 7aae2b6b:
+
+| | REF 7aae2b6b | Made at first need |
+| --- | --- | --- |
+| identical.sh x86_64-linux -O0/-O1/-O2, NEW under -templates=subst | (m8r1a: 3,072/0) | **3,072 compared, 51 differ** (17 cases at each level) |
+| of them order only / content | - | **0 / 51** (every one a compile the REF completes and the switch refuses, exit 1) |
+| -check=templates census, suite (1,376 units): class differ / classes made / body differ lines | 0 / 2,638 of 2,661 / 20 | **0** / 2,638 of 2,661 / **36** (+16 "frame: a local: typed apart") |
+| the same, self-host (102 units) | 0 / 76,412 of 76,412 / 11 | **0** / 76,412 of 76,412 / **112** (+101 the same) |
+| classes made at a door (the switch's census key) | - | **0**, suite and self-host (idsBefore made 95 ahead in the suite) |
+| re-entries, suite under the check (read / instantiation) | 54,252 / 26,917 | 54,262 / 26,937 |
+
+**How order-only was decided**: `boxkit/m8r1c-order.py` splits each `.s` into chunks (one at each `.section`, `.text`,
+`.data`, `.bss` directive and each global label) and calls a pair order-only when the two sides' chunk multisets are equal,
+or equal once every `.L<name><digits>` reads `.L<name>N`; a pair whose `.err` differs is content. No pair reached the chunk
+test: all 51 differ first in their diagnostics, so there is no order-only example to give, and three content ones stand
+instead: `range-for-vector` - "'pair<const int,int>' declares no member 'pair<const int,int>' with these parameters" at
+`pair(const pair<T1, T2> &p)` (10 cases: the map, set, deque and string-keyed ones); `std-function` - `std::function`'s
+primary static_assert fired, `std::function<R(Args...)>` answered by the primary (4: std-function, std-function-ledger,
+ssa-lambda-locals, closure-temporary-lifetime); `array-header` - `T elems_[N]` laid with N 140,372,470,648,032. The other
+two are template-subst-ownid (`Two<int,char>`'s constructor of its own id) and template-subst-staticvalue (a read shallow
+`Sized<$P0>$read1` left in a static's pointer typedef). Under the check the same 17 compile (the replay beside is the
+program's), which is why the census sees only the frame's 16.
+
+A second switch (`boxkit/m8r1c-firstneed2.diff`, the same with the id step asked after the cv strip and the map, since
+`readId` before the cv branch lost the `const` of `const X<T>`) gives **48 differ, 0 order only, 48 content** (16 cases x 3):
+template-subst-staticvalue agrees; the pair, std::function, array and ownid shapes remain - so they are not the cv. (Its first
+run read 696 differ because this lane had removed the REF's tree, whose include/ the REF exe reads; re-run with the tree
+restored. A REF exe is only good while its tree stands.)
+
+**What it says**: no door made a class (0), so the 51 are not a reordering at all - they are the id step answering by key
+(`Declared`'s path inside `Made`) where the binding's map answered before: a class's own id, a partial chosen before its pack
+is laid, a value argument not carried. **Made at first need is not order-only today, and the restart's question 7 does not
+arise yet**: before the order helpers can be replaced by making at first need, the kernel's id step must answer what the map
+answers for these shapes (the read class's own id through readStands, the partial's packs, the values), and only then is
+the order question measurable. A measure that also stops idsBefore making ahead is the next one (it needs dataUnder and
+basesUnder, both const, to make too).
+
+**Why none of the four went** - each one's callers, and what it waits for:
+
+- `earlyArgs` (12: idsBefore 2, argsWanted 1, classShape 8, idsInside 1) decides *whether* an id over the parameters may be
+  made before (or inside) the class the replay has begun - not its own template, every argument carried or pending, no body
+  naming the read's own template (a token scan) - and lays its arguments by the parameter kinds of the template named, not
+  by the id's (argsUnder's). The kernel's `Made` step has no such filter: it makes whatever id it is asked for, where it is
+  asked. Folding earlyArgs into `specializationIn` makes classes the replay makes later or never; it cannot go until the
+  kernel's id step answers as the map does and the order question is then decided (the restart's question 7).
+- `argsWanted` (5: its own recursion 1, classShape 4) orders the wanted ids innermost first, moving an id ahead of the one
+  that names it, as the replay makes them reading the id. It is the order itself; it goes with earlyArgs.
+- `idsBefore` (1: makeClass) makes the wanted ids, in that order, before the class door decides - so that the const shape
+  questions (classShape, classBefore, typedefsCarried) find them declared. It goes when those questions ask the kernel
+  at `Made` and read `why` (the measure above says what that costs), or when Q7 accepts the order.
+- `typedefCarried` (2: typedefsCarried 1, typedefByPath 1) is not an order helper: its question is the read's own typedef
+  (the read class itself counts as carried, a class classShape wants counts as carried, an array's bound is not asked) and its
+  second caller sits in typedefByPath's token scan. Re-written over the kernel's `why` and `at` it is not the same answer
+  (an array bound over a non-type parameter with no value, and a function type whose first failure is the read class, answer
+  differently), so it is not identical by construction; it retires with R3's complete records, as m8r1a's design says.
+
+So of the four: **earlyArgs, argsWanted and idsBefore cannot go until the kernel's id step answers as the map does (above)
+and then the order question is decided; typedefCarried waits for R3.** None was moved in part either: a commit that is not
+identical by construction would have been held only by gates this lane could not finish inside the hour.
+
+**Gates**: no src/ change, so 7aae2b6b's stand (m8r1a's entry) and its owed list is unchanged (lane m8r1b's); slices 4m-4s
+untouched; replay-residue 150/19/26/6. Re-measure: `boxkit/m8r1c-fnchain.sh` (the diff applied in a copy, built, then
+identical and the census), `boxkit/m8r1c-cen.sh`, `boxkit/m8r1c-order.py`; the outputs were removed with the trees.
