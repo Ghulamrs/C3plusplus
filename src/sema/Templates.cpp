@@ -1824,7 +1824,7 @@ static const char *frameStepName(char kind) {
     switch (kind) {
     case 'z': return "the frame's start"; case 'p': return "a nested function's frame"; case 'q': return "the outer frame put back";
     case 'o': return "a synthesised frame"; case 'c': return "the frame it closed into"; case 'd': return "a local";
-    case 'a': return "a slot no local names"; case 'f': return "a slot given back"; case 'S': return "the sret slot";
+    case 'a': return "a slot no local names"; case 'f': return "a slot given back"; case 'S': case 'R': return "the sret slot";
     case 'V': return "the variadic save area"; case 'e': return "the frame's size"; case 'b': return "a block";
     }
     return "a step the check does not know";
@@ -1841,8 +1841,16 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
     std::vector<Frame> saved;
     std::vector<int> laid(read.size(), 0);
     const bool held = !replay.empty() || read.empty();      // no replay: the frame laid, checked against nothing
-    for (std::size_t k = 0; k < read.size() && (!held || k < replay.size()); k++) {
-        const FrameEvent &r = read[k], &y = held ? replay[k] : read[k];
+    std::size_t k = 0, j = 0;
+    for (; k < read.size() && (!held || j < replay.size()); k++) {
+        FrameEvent r = read[k];
+        if (r.kind == 'R') {     // a dependent class returned by value: the sret slot where the instance returns it indirectly, or no step
+            const Type *u = substitute(s, r.type, At{ p_.at_ }).type;
+            if (p_.dependentType(u)) return "the return type: a type the binding does not carry";
+            if (!u->isStructOrUnion() || !p_.abi_.returnsIndirectly(*u, p_.target_, r.align != 0)) continue;
+            r.kind = 'S', r.type = nullptr;
+        }
+        const FrameEvent &y = held ? replay[j++] : r;
         const std::string step = frameStepName(r.kind);
         if (held && r.kind != y.kind) return "the read's " + step + " where the replay has " + frameStepName(y.kind);
         const Type *t = substitute(s, r.type, At{ p_.at_ }).type;
@@ -1899,7 +1907,7 @@ std::string Templates::layFrame(const std::vector<FrameEvent> &read, const std::
         laid[k] = at;
         if (held && at != y.offset) return step + ": its offset";
     }
-    if (held && read.size() != replay.size()) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
+    if (held && (k != read.size() || j != replay.size())) return "the read's " + std::to_string(read.size()) + " steps against the replay's " + std::to_string(replay.size());
     *laidOut = laid;
     return std::string();
 }
@@ -1966,7 +1974,7 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
         else if (r.kind == 'q' || r.kind == 'c') depth--;
         if (depth != 0) continue;
         if (r.kind == 'b') { blocks.push_back(r.block); opens.resize(blocks.size(), 0); opens.back() = static_cast<std::size_t>(laid[k]); }
-        if (r.kind == 'S') sret = laid[k];
+        if (r.kind == 'S' || (r.kind == 'R' && laid[k] != 0)) sret = laid[k];
         else if (r.kind == 'V') save = laid[k];
         else if (r.kind == 'e') size = laid[k];
         if (r.kind != 'd') continue;
@@ -1984,7 +1992,8 @@ std::string Templates::madeFromRead(const Specialization &sp, const Substituted 
     const std::map<std::size_t, syntax::NodeId>::const_iterator body = readBody_.find(sp.start);
     const std::unordered_map<std::uint32_t, const Type *>::const_iterator written =
         body != readBody_.end() ? p_.declaredReturns_.find(body->second.v) : p_.declaredReturns_.end();
-    const Type *as = written != p_.declaredReturns_.end() && written->second != nullptr ? substitute(s, written->second).type : f != nullptr ? substitute(s, f->returns()).type : nullptr;
+    const Type *as = written != p_.declaredReturns_.end() && written->second != nullptr ? substitute(s, written->second, At{ p_.at_ }).type
+                   : f != nullptr ? substitute(s, f->returns(), At{ p_.at_ }).type : nullptr;
     const Type *returns = as != nullptr && as->isReference() ? p_.types_.pointerTo(as->referent()) : as;
     // A covered class's constructor or destructor is named by its class: the program's, which the read class stands for.
     std::string name = f != nullptr ? f->name() : std::string();
