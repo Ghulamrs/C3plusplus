@@ -1890,6 +1890,8 @@ void Templates::constantsHeld(const std::string &symbol, syntax::NodeId replay, 
 bool Templates::madeWithoutReplay(const Specialization &sp, const Substituted &s, int startAlign, int alignHad, std::string *why, const PendingBody *member,
                                   const std::vector<std::string> *guards) {
     if (std::string(p_.target_.name()) == "tms6747") return *why = "a target whose generator may walk the Ast body", false;
+    for (const Signature &f : p_.lookup_.functions_)     // slice 3w: its read kept the deleting form pushed beside it
+        if (f.symbol == sp.symbol && f.isVirtual && f.name[0] == '~') return *why = "a virtual destructor, whose deleting form the replay emits", false;
     int raised = 0;
     std::vector<int> laid;
     const bool guarded = guards != nullptr && !guards->empty();
@@ -3926,11 +3928,14 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const std::map<std::string, std::vector<VSlot> > &tables = p_.classes_.vtables_;
         const std::map<std::string, std::vector<VSlot> >::const_iterator mine = tables.find(readTag),
             theirs = read->bases().empty() || !read->bases()[0].type->polymorphic() ? tables.end() : tables.find(read->bases()[0].type->tag());
-        if (read->hasVirtualBase() || self == readMembers_.end() || mine == tables.end() || theirs == tables.end() || mine->second.size() != theirs->second.size())
+        const bool table = read->bases().empty();     // slice 3w: a table of its own, which membersFromRead seeds from the read's
+        if (read->hasVirtualBase() || self == readMembers_.end() || mine == tables.end() ||
+            (!table && (theirs == tables.end() || mine->second.size() != theirs->second.size())))
             return "replayed: a virtual function";
-        for (std::size_t i = 0; i < mine->second.size(); i++)
+        for (std::size_t i = 0; !table && i < mine->second.size(); i++)
             if (mine->second[i].pure && !theirs->second[i].pure) return "replayed: a virtual function";
         for (const Signature &f : self->second.second) {     // one the binding may make an override, which the read did not
+            if (table) break;
             if (!f.implicit && f.name[0] == '~') return "replayed: a written destructor beside a polymorphic base";
             for (const VSlot &v : theirs->second)
                 if (!f.isVirtual && !f.implicit && v.name == f.name) return "replayed: a member function a base's virtual of its name may take";
@@ -4142,7 +4147,7 @@ std::vector<Type::BaseSpec> Templates::basesUnder(const Type *read, const Substi
     return out;
 }
 
-// The read class's data members under `s`, laid as the parser lays a class of no vptr or bit-field: its bases by layBases,
+// The read class's data members under `s`, laid as the parser lays a class of no bit-field: its bases by layBases,
 // the parser's own path, then its own members from that cursor, past an empty subobject of their type on Itanium.
 void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOut *laid) const {
     Parser::BasesLaid bases;
@@ -4178,6 +4183,12 @@ void Templates::laidFromRead(const Type *read, const Substituted &s, ClassLaidOu
         laid->members.push_back(m);
         laid->members.back().type = t;
         laid->members.back().offset = static_cast<int>(at);
+    }
+    if (read->polymorphic() && read->bases().empty()) {     // slice 3w: its own vptr in front, shifted as the class tail shifts
+        const bool ms = p_.target_.microsoftNames();
+        const int vptr = ms ? 8 : p_.pointerBytes(), shift = ms ? 8 : alignTo(vptr, widest);
+        for (Member &m : laid->members) m.offset += shift;
+        cursor += shift, widest = std::max(widest, vptr);
     }
     laid->totalBits = cursor * 8;
     laid->size = alignTo(static_cast<int>(std::max(cursor, bases.sizeFloor)), widest);
@@ -4575,6 +4586,9 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
     readStands(start, made, &s);
     const std::pair<std::string, std::vector<Signature> > &r = readMembers_.at(start);
     std::map<std::string, std::size_t> at;     // the read's symbol, its function here
+    const bool own = made->polymorphic() && made->bases().empty();     // slice 3w: a table of its own, seeded from the read's
+    if (own) p_.classes_.vtables_[tag] = p_.classes_.vtables_[r.first];
+    std::vector<VSlot> none;
     for (const Signature &a : r.second) {
         if (a.implicit) continue;
         idsInside(start, a, pos, &ids, &s);
@@ -4597,6 +4611,11 @@ void Templates::membersFromRead(std::size_t start, const std::string &tag, Subst
         std::vector<VSlot> &slots = p_.classes_.vtables_[tag];                     // in the table layBases seeded from the base
         for (std::size_t i = 0; i < readSlots.size() && i < slots.size(); i++)
             if (readSlots[i].symbol == a.symbol) slots[i].symbol = f.symbol, slots[i].pure = false, slots[i].returns = f.returns;
+    }
+    for (VSlot &v : own ? p_.classes_.vtables_[tag] : none) {     // each slot's signature under `s`, a deleting destructor this tag's
+        v.params = paramsUnder(s, v.params);
+        if (v.returns != nullptr) v.returns = substituted(s, v.returns);
+        if (v.name == "~$deleting" || (v.name == "~" && p_.target_.microsoftNames())) v.symbol = p_.linkage_.deletingDestructorSymbol(tag);
     }
     for (const std::pair<Parser::PendingBody, std::string> &h : readBodies_.at(start)) {
         if (nestedAt(nestedByPath(start), h.first.start, true)) continue;     // staticsFromRead's, by the nested class's path
@@ -4692,7 +4711,7 @@ std::string Templates::templatesHeld(const std::string &readTag, const Substitut
 // The read's members laid under `s` (laidFromRead), held against `made`, the replay's.
 std::string Templates::classLaid(const Type *read, const Substituted &s, const Type *made) const {
     if (!made->isComplete()) return "differ: the replay's class is incomplete";
-    if (made->hasVptr() && (made->bases().empty() || !made->bases()[0].type->polymorphic())) return "differ: the replay's class has a vptr of its own";
+    if (made->hasVptr() && !made->bases().empty() && !made->bases()[0].type->polymorphic()) return "differ: the replay's class has a vptr of its own";
     Parser::BasesLaid laidBases;
     const std::vector<Type::BaseSpec> mineBases = basesUnder(read, s, &laidBases);
     if (made->bases().size() != mineBases.size()) return "differ: the number of bases";
