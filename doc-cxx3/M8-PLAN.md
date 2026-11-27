@@ -9227,3 +9227,71 @@ src/sema.
 **Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** (Linux only); the object half above, then the 2nd of the 2, then the
 deleting commit (the re-read, its jump, staticShape, staticInit; replay-residue lowered; `Late<double>` made). No accepted lines, no
 wave-expected rows. Re-measure: the Linux scripts `m8r3rd8-{lbuild,q,lcen,one,job,ident,mt,staticc}.sh` (m8r3rd7's renamed).
+
+## R3, slice 3R-d, ninth lane: a functional cast's operands, and the re-read deleted (lane m8r3rd9, 2026-11-27)
+
+Lane m8r3rd9, branch m8-3rd9 from 14fb1ffd (m8r3rd8's plan; its src/ is 8ecfda27's, so m8r3rd8's censuses of 8ecfda27 are the
+before line). **src/ +122 / -25** in one commit (26c7d612): work (1) and (2), `W<P>::v` defined from its node. The deleting commit
+(work 3) not reached in the hour.
+
+**THE MEASURE: the static door's re-entries ("jump: a static data member") 1 -> 0 on the suite, both ABIs, with the check;
+self-host 0 -> 0.** With the check, suite x86_64-linux door **1 -> 0** (made-class 2,346 -> 2,345, re-entries 26,303 -> 26,302,
+class differ 0, body 23 = REF, nonzero rc 355 = REF, record 769 / 0 / 0 / 0), x86_64-windows **1 -> 0** (2,344 -> 2,343, 26,159 ->
+26,158, class 0, body 22 = REF, nonzero rc 379 = REF, 769 / 0 / 0 / 0). **The typed fold's census**, both ABIs: **typed 2, ast 0,
+compared 2, disagree 0** (constexpr-object-static-member's unit: `h` and now `v` by the typed fold, each held against the replay's
+Ast value - `v`'s ConstObject leaf for leaf - and equal), 0 in every other unit. Without the check, suite x86_64-linux door **1 -> 0**
+(made-class 2,363 -> 2,362, re-entries 18,067 -> 18,066, nonzero rc 354 = REF, record 773 / 0 / 0 / 0), x86_64-windows **1 -> 0**
+(2,363 -> 2,362, 17,923 -> 17,922, nonzero rc 378 = REF). Self-host with the check, door 0 on both ABIs: 102 rc 0, class 0, body 11
+(= REF), record 473 / 0 / 0 / 0; **made-class 74,341 -> 74,347 and 74,319 -> 74,325 (+6 each)**, re-entries 471,421 -> 471,693 and
+471,307 -> 471,579. The self-host compiles this commit's own changed sources (Constexpr.cpp now builds a vector of Rank vectors and
+of ConstexprSlot, Templates.cpp a map's const_iterator); whether the +6 is those sources or a behaviour change is asked by the REF
+exe's census over the same new sources: **the REF 14fb1ffd over 26c7d612's src/, -check x86_64-linux: made-class 74,347,
+re-entries 471,693, body 11, class 0, door 0 - the NEW exe's numbers exactly.** So the +6 is the sources the self-host compiles, not
+this commit's behaviour: on one set of sources the made-class total has not risen.
+
+**Work (1): the read's `T(a, b)` keeps every operand.** functionalCast under patternBody_ over a dependent `T` noted only the first
+operand and decayed the rest; it now keeps each later operand's node and noteCast (Parser.h) takes them after the first, so the Cast
+node has every operand. The plain path's Ast is unchanged (the loop runs only in a pattern). Templates::valueCast, the one reader that
+asked `count != 1`, keeps its whys for one operand and asks the count after the type (a class cast keeps its why).
+
+**Work (2): one evaluator, two readers.** constructConst is split: its reading (the constructor by symbol, the object the first
+argument points at, each Ast argument by foldArgument) and Constexpr::runConstructor, its running (the frame, `this` and each
+parameter at its slot, the ConstexprCtor's steps), which both readers call. The typed reader is `Constexpr::foldObject(const
+TypedTree &, TypedId, ConstObject *, const char **why)`: a functional cast to a class, its constructor ranked over the operands'
+types with the kernel boundMemberCall ranks with (Overload::rankArgument over a RankedArgument, bestViable) among the class's
+constructors of that arity - refused, by why, beside a candidate over a class, a default or variadic arguments, an operand converted
+to its parameter, a constructor not public or not constexpr - each operand folded by fold / foldFloating over the typed tree at its
+parameter's own type, then run on a fresh object under foldDeclaredObject's scratch frame. staticFolded and staticBefore take
+`oout`; staticsFromRead's new branch defines a class-typed `constexpr` static whose node folds through declareStaticMember(...,
+ofolded) -> defineConstexprStaticMember(..., ofolded): `constObjects_` and constObjectPieces, the Ast path's own tail. The census
+compares the typed object with the replay's (sameObject, leaf for leaf) where the replay's class holds the symbol's Ast value.
+
+**Gates (Linux, against the REF 14fb1ffd; Windows):** g++ -Werror clean (the build); **the FULL self-compile 102 of 102 (177 s)**;
+**run.sh plain 1,375 passed, 0 failed; run.sh -templates=subst 1,375 / 0; subst.sh rc 0** (run -O0 / -O2 1,375 / 0); **syntax.sh 7
+passed, 0 failed; typed.sh 1,022 passed, 0 failed** (the syntax node changed); identicals against the REF (14fb1ffd): **17 of 24 run in the hour, 0 differ each** - x86_64-linux, x86_64-windows (2,062 each, on
+Linux by level), arm64-darwin and tms6747 (1,031 each) at -O0, -O1 and -O2 plain, and x86_64-linux, x86_64-windows, arm64-darwin,
+tms6747 at -O0 and x86_64-linux at -O1 under -templates=subst; **no changed emitted output in those**; the other 7 (-O1 / -O2 under
+the flag) owed, stopped by PID at the hour; static
+gates on the committed tree (26c7d612): exclusions 0 uncited, 0 stale (17 citations re-pointed by the line shifts: ParserExpr.cpp
+739/780/865/1368/1444/1688/2115/2390/3779 +1, ParserClass.cpp 2060/2248/3020 +3, Constexpr.cpp 875 -> 943, Templates.cpp
+2940/2992/3697 +1, 5453 -> 5472), outside 554 / arm64 4 (= baseline), make comments 0 over the cap, memory gate lower than its
+baseline, ast-residue not raised, replay-residue 104 / 17 / 24 / 6 (unchanged), ide/generate.py up to date. **Windows: cl /W4 /WX clean (msvc\build.cmd, 135 s, under /affinity 3FF;
+GATE-WINDOWS-BUSY.txt of m6dw54g was still there after the 20-minute wait, so the lane went on, as the common brief says)**;
+**names.sh with the lane's cxx3-msvc.exe 1,031 passed, 0 failed** (20 .nonames rows open, the register's); overload.sh and both
+under -templates=subst not finished in the hour - owed, stopped by PID.
+
+**Not done, and why: the deleting commit.** With no static re-read on the suite or the self-host, the re-read branch of
+staticsFromRead is unreachable on both, but not in principle: a `constexpr` static written with braces (`static constexpr T v{3, 9};`
+- its record keeps no node, the read keeps only `= e`), a class-typed one whose constructor the typed reader refuses (a default, a
+conversion), and any `static const` initialiser whose fold fails all still take it. Deleting it wants each of those sent to the
+replay before the class is made (classShape asking what staticsFromRead would fold), or folded too - the step staticShape's order
+guard and classShape's staticInit go with. `p_.tokens_[` in Templates.cpp 100 (unchanged), replay-residue 104 / 17 / 24 / 6
+(unchanged), template-subst-staticid's `Late<double>` still staticShape's replay.
+
+**What must not change, and did not:** every emitted file (identicals above); the -check body differ lines (= REF); class differ 0;
+the nonzero-rc unit counts (= REF). Frozen and untouched: 4m-4s and R3's other slices; no new `p_.tokens_[` or `p_.at_ =` in src/sema.
+
+**Owed:** the deleting commit above; 7 identicals (-O1 / -O2 under -templates=subst), overload.sh on Windows, names.sh and
+overload.sh under -templates=subst, the self-host censuses without the check (not run). No accepted lines, no wave-expected rows.
+Re-measure: the Linux scripts `m8r3rd9-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd8's renamed, job.sh with syntax and typed);
+Windows boxkit/m8r3rd9-{winwait,winbuild,wtests}.sh.
