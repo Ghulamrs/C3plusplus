@@ -9162,15 +9162,19 @@ Lane m8r3rd8, branch m8-3rd8 from 19f84c3e (m8r3rd7's plan; its src/ is 43d64603
 Windows check owed). **src/ +189 / -74** in one commit: the typed fold's floating half, m8r3rd7's probe landed under it, and the first
 of the 2 defined from its node. The object half, and so the deleting commit, not reached.
 
-**THE MEASURE: the static door's re-entries ("jump: a static data member") 2 -> 1 on the suite, both ABIs, with the check;
-self-host 0 -> 0.** The REF is 19f84c3e, whose src/ is 43d64603's, so m8r3rd7's REF censuses are the before line.
+**THE MEASURE: the static door's re-entries ("jump: a static data member") 2 -> 1 on the suite, both ABIs, with the check and
+without; self-host 0 -> 0.** The REF is 19f84c3e, whose src/ is 43d64603's, so m8r3rd7's REF censuses are the before line.
 With the check, suite x86_64-linux door **2 -> 1** (made-class 2,347 -> 2,346, re-entries 26,304 -> 26,303, class differ 0, body
 23 = REF, nonzero rc 355 = REF, record 769 / 0 / 0 / 0), x86_64-windows **2 -> 1** (2,345 -> 2,344, 26,160 -> 26,159, 0, body 22 =
 REF, nonzero rc 379 = REF, 769 / 0 / 0 / 0); the one left is `W<P>::v`, constexpr-object-static-member.cpp's unit alone. Self-host
 with the check, door 0 on both ABIs: 102 rc 0, class 0, body 11 (= REF), made-class 74,341 / 74,319 (= REF), re-entries 471,316 ->
 471,421 and 471,202 -> 471,307 (+105 each); without, x86_64-linux 102 rc 0, class 0, made-class 74,339 (= REF), door 0, re-entries
 278,981 -> 279,067 (+86). The self-host's re-entries move because it compiles this commit's own changed sources (inferred, as
-m8r3rd7's probe's +7 was traced to ParserClass.cpp's unit; not traced per unit here). The suite without the check (and the self-host x86_64-windows without it): the next commit.
+m8r3rd7's probe's +7 was traced to ParserClass.cpp's unit; not traced per unit here). Without the check, suite x86_64-linux door **2 -> 1** (made-class 2,364 -> 2,363, re-entries 18,068 ->
+18,067, nonzero rc 354 = REF, record 773 / 0 / 0 / 0), x86_64-windows **2 -> 1** (2,364 -> 2,363, 17,924 -> 17,923, nonzero rc 378 =
+REF, 773 / 0 / 0 / 0); the census there typed 1, ast 1, compared 0 (no replay beside without the check). The self-host
+x86_64-windows census without the check did not finish inside the hour (the Linux slots were shared with gate m6dw54g and lane
+m8r4a): owed.
 **The typed fold's census**, `-check=templates static constexpr typed= ast= compared= disagree=`: suite, the check, both ABIs,
 **typed 1, ast 1, compared 1, disagree 0** (constexpr-object-static-member's unit: `h` by the typed fold, held against the replay's
 Ast value, equal; `v` by the re-read), 0 in every other unit; self-host typed 0, ast 0 (no made class there has a constexpr static).
@@ -9214,7 +9218,8 @@ the same six, 2,062 each, on Linux by level - **no changed emitted output at -O0
 (162 s); static gates on the committed tree (2210d566): exclusions 0 uncited, 0 stale (12 citations re-pointed by the line shifts:
 ParserClass.cpp 2048/2236/3008 +12, ParserInit.cpp 1000/1286/1332/1846 +2, Constexpr.cpp 870 +5, Templates.cpp 2938/2990/3695 +2,
 5439 +14), outside 554 / broken 95 (= baseline), make comments 0 over the cap, memory gate lower than its baseline (not
-recorded), ast-residue not raised, replay-residue 104 / 17 / 24 / 6 (unchanged), ide/generate.py up to date. run.sh plain and under -templates=subst, then subst.sh: the next commit.
+recorded), ast-residue not raised, replay-residue 104 / 17 / 24 / 6 (unchanged), ide/generate.py up to date; **run.sh plain 1,375 passed, 0 failed; run.sh -templates=subst 1,375 / 0; subst.sh rc 0, 0 failed**
+(run -O0 / -O2 1,375 / 0, typed -O0 / -O2 1,022 / 0; its "counts below the record" notes, 2 and 1, as m8r3rd7's run printed them).
 
 **What must not change, and did not:** every emitted file (identical above); the -check body differ lines (not above the REF's);
 class differ 0; the nonzero-rc unit counts. Frozen and untouched: 4m-4s and R3's other slices; no new `p_.tokens_[` or `p_.at_ =` in
