@@ -9271,14 +9271,15 @@ compares the typed object with the replay's (sameObject, leaf for leaf) where th
 passed, 0 failed; typed.sh 1,022 passed, 0 failed** (the syntax node changed); identicals against the REF (14fb1ffd): **17 of 24 run in the hour, 0 differ each** - x86_64-linux, x86_64-windows (2,062 each, on
 Linux by level), arm64-darwin and tms6747 (1,031 each) at -O0, -O1 and -O2 plain, and x86_64-linux, x86_64-windows, arm64-darwin,
 tms6747 at -O0 and x86_64-linux at -O1 under -templates=subst; **no changed emitted output in those**; the other 7 (-O1 / -O2 under
-the flag) owed, stopped by PID at the hour; static
+the flag) owed, stopped by PID at the hour; the self-host without the check, x86_64-linux: 102 rc 0, class 0, door 0, made-class
+74,339 -> 74,345 (+6, the sources, as above), re-entries 279,067 -> 279,306 (x86_64-windows stopped at the hour); static
 gates on the committed tree (26c7d612): exclusions 0 uncited, 0 stale (17 citations re-pointed by the line shifts: ParserExpr.cpp
 739/780/865/1368/1444/1688/2115/2390/3779 +1, ParserClass.cpp 2060/2248/3020 +3, Constexpr.cpp 875 -> 943, Templates.cpp
 2940/2992/3697 +1, 5453 -> 5472), outside 554 / arm64 4 (= baseline), make comments 0 over the cap, memory gate lower than its
 baseline, ast-residue not raised, replay-residue 104 / 17 / 24 / 6 (unchanged), ide/generate.py up to date. **Windows: cl /W4 /WX clean (msvc\build.cmd, 135 s, under /affinity 3FF;
 GATE-WINDOWS-BUSY.txt of m6dw54g was still there after the 20-minute wait, so the lane went on, as the common brief says)**;
-**names.sh with the lane's cxx3-msvc.exe 1,031 passed, 0 failed** (20 .nonames rows open, the register's); overload.sh and both
-under -templates=subst not finished in the hour - owed, stopped by PID.
+**names.sh with the lane's cxx3-msvc.exe 1,031 passed, 0 failed** (20 .nonames rows open, the register's); **overload.sh 46
+agreed with clang, 0 differed**; both under -templates=subst not finished in the hour - owed, stopped by PID.
 
 **Not done, and why: the deleting commit.** With no static re-read on the suite or the self-host, the re-read branch of
 staticsFromRead is unreachable on both, but not in principle: a `constexpr` static written with braces (`static constexpr T v{3, 9};`
@@ -9291,7 +9292,7 @@ guard and classShape's staticInit go with. `p_.tokens_[` in Templates.cpp 100 (u
 **What must not change, and did not:** every emitted file (identicals above); the -check body differ lines (= REF); class differ 0;
 the nonzero-rc unit counts (= REF). Frozen and untouched: 4m-4s and R3's other slices; no new `p_.tokens_[` or `p_.at_ =` in src/sema.
 
-**Owed:** the deleting commit above; 7 identicals (-O1 / -O2 under -templates=subst), overload.sh on Windows, names.sh and
-overload.sh under -templates=subst, the self-host censuses without the check (not run). No accepted lines, no wave-expected rows.
+**Owed:** the deleting commit above; 7 identicals (-O1 / -O2 under -templates=subst), names.sh and overload.sh under
+-templates=subst on Windows, the self-host census without the check on x86_64-windows. No accepted lines, no wave-expected rows.
 Re-measure: the Linux scripts `m8r3rd9-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd8's renamed, job.sh with syntax and typed);
 Windows boxkit/m8r3rd9-{winwait,winbuild,wtests}.sh.
