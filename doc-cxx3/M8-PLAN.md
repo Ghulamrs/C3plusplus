@@ -9172,9 +9172,8 @@ with the check, door 0 on both ABIs: 102 rc 0, class 0, body 11 (= REF), made-cl
 278,981 -> 279,067 (+86). The self-host's re-entries move because it compiles this commit's own changed sources (inferred, as
 m8r3rd7's probe's +7 was traced to ParserClass.cpp's unit; not traced per unit here). Without the check, suite x86_64-linux door **2 -> 1** (made-class 2,364 -> 2,363, re-entries 18,068 ->
 18,067, nonzero rc 354 = REF, record 773 / 0 / 0 / 0), x86_64-windows **2 -> 1** (2,364 -> 2,363, 17,924 -> 17,923, nonzero rc 378 =
-REF, 773 / 0 / 0 / 0); the census there typed 1, ast 1, compared 0 (no replay beside without the check). The self-host
-x86_64-windows census without the check did not finish inside the hour (the Linux slots were shared with gate m6dw54g and lane
-m8r4a): owed.
+REF, 773 / 0 / 0 / 0); the census there typed 1, ast 1, compared 0 (no replay beside without the check). Self-host
+x86_64-windows without the check: 102 rc 0, class 0, made-class 74,317 (= REF), door 0, re-entries 278,845 -> 278,931 (+86).
 **The typed fold's census**, `-check=templates static constexpr typed= ast= compared= disagree=`: suite, the check, both ABIs,
 **typed 1, ast 1, compared 1, disagree 0** (constexpr-object-static-member's unit: `h` by the typed fold, held against the replay's
 Ast value, equal; `v` by the re-read), 0 in every other unit; self-host typed 0, ast 0 (no made class there has a constexpr static).
