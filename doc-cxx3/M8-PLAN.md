@@ -9297,7 +9297,8 @@ special-cased; [temp.res]/10 never applied as a filter on token position - the d
 the suite (the 364 that write `template`; the other 1,019 read only the library's templates, which the self-host's units read too)
 and the self-host. The Windows box's busy file (gate m6dw54g) held all 40 turns of the wait; the lane went on at 09:16 as the
 rule says, with clang -fsyntax-only jobs under `/affinity 3FF` (about four minutes in all). Owed: cxx3's side of (a) and (c) on
-x86_64-windows (measured on x86_64-linux only: the read is target-free, but the library's `_WIN64` branches it reads there are not); the
+x86_64-windows (measured on x86_64-linux only: the read is target-free, but the library's `_WIN32` branches - `<chrono>`, `<mutex>`,
+`<exception>`, `<cstdio>`, ... - and the self-host's own are read only there); the
 `-check=templates` fallback counts of `dependentCall`'s two deleted reasons at R4-c's base; R4-d's case written and judged; the C6000
 row of the gate (no slice ran). Re-measure: `boxkit/m8r4a-lin.sh build|conf|confd|suite|self` (Linux, through ~/slot, over ~/m8r4a
 and ~/m8r4a-conf), `boxkit/m8r4a-winrun.sh` (ships `m8r4a-wtree.tar`: include, lib, tests/cases and the cases under conf/) running
