@@ -4942,14 +4942,14 @@ void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::
 
 // 3R-d: staticsFromRead's fold of a static's record before any re-read, its whys kept apart from the census's (`before:`).
 bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                             const std::vector<long long> &values, const std::string &enums, long long *out) {
+                             const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at) {
     std::map<std::string, long long> named;
     for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
         if (params[q].type != nullptr) named[params[q].name] = values[q];
     std::map<std::string, std::size_t> whys;
     whys.swap(staticWhy_);
     beforeAsked_++;
-    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out);
+    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out, at);
     beforeUnfolded_ += !ok;
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i) whys["before: " + i->first] += i->second;
     whys.swap(staticWhy_);
@@ -4959,17 +4959,17 @@ bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substi
 // 3R-d: a static's initialiser by the constant evaluator over its read node typed under `s`, each value-dependent name of a
 // non-type parameter at `named`'s value; false at any other dependent leaf (a `sizeof` of a parameter, another class's static).
 bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                             const std::map<std::string, long long> &named, const std::string &enums, long long *out) {
+                             const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt) {
     const syntax::Tree &st = p_.syntaxTree_;
     Bound under;
     under.s = s, under.folds = true;
-    for (std::vector<syntax::NodeId> work(1, init); !work.empty(); ) {
+    for (std::vector<syntax::NodeId> work(1, init); !work.empty(); ) {     // left to right: a made class in the re-read's order
         const syntax::NodeId id = work.back();
         const syntax::Node n = st.node(id);
         work.pop_back();
         const bool through = n.kind == syntax::Kind::Paren || n.kind == syntax::Kind::Unary || n.kind == syntax::Kind::Binary ||
                              n.kind == syntax::Kind::Conditional || n.kind == syntax::Kind::Cast || n.kind == syntax::Kind::Comma;
-        for (std::uint32_t k = 0; through && k < n.count; k++) work.push_back(st.child(id, k));
+        for (std::uint32_t k = n.count; through && k > 0; k--) work.push_back(st.child(id, k - 1));
         const std::string &text = st.text(id);
         if (n.kind == syntax::Kind::Sizeof && text.compare(0, 9, "sizeof...") == 0) {     // a pack's size, the binding's
             std::string pack;
@@ -4992,8 +4992,8 @@ bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Subst
         }
         if (!sizeOf && !marked) continue;     // another class's static, named unqualified: its record's value
         const std::unordered_map<std::uint32_t, std::pair<const Type *, std::string> >::const_iterator c = p_.scopedStatics_.find(id.v);
-        if (c != p_.scopedStatics_.end()) {     // `C<N>::v`: C the program's under `s` by its key - none made here (the census's)
-            const Substitution r = substitute(s, c->second.first, Declared);
+        if (c != p_.scopedStatics_.end()) {     // `C<N>::v`: C the program's by its key (the census's), or made at the static (6th lane)
+            const Substitution r = makeAt != 0 ? substitute(s, c->second.first, At{makeAt}) : substitute(s, c->second.first, Declared);
             const Type *u = r.carried() && r.type != nullptr ? r.type->unqualified() : nullptr;
             const Type::StaticMember *sm = u != nullptr && u->isStructOrUnion() ? u->findStaticMember(c->second.second) : nullptr;
             if (sm == nullptr || !sm->folded)
@@ -5202,7 +5202,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         const Type *type = need(s, m.type).type;
         const std::string enumsAt = tag + (enumScope != scope ? "::$held::" : "::");
         long long v = 0;     // 3R-d: a `static const` integer its record folds is declared with that value, no re-read
-        if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v)) {
+        if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v, after)) {
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, &v);
         } else if (init == 0 && !cx) {     // no `=` in the read: nothing to re-read
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, true);

@@ -391,9 +391,9 @@ public:
     void staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const Substituted &s, const std::vector<TemplateParam> &params,
                        const std::vector<long long> &values, const std::string &enums);     // 3R-d's census: the read's node folded
     bool staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                      const std::map<std::string, long long> &named, const std::string &enums, long long *out);
+                      const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt = 0);
     bool staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                      const std::vector<long long> &values, const std::string &enums, long long *out);     // staticsFromRead's fold, no re-read
+                      const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at);     // staticsFromRead's fold
     mutable std::size_t staticAsked_ = 0, staticDisagree_ = 0, staticAbsent_ = 0, staticUnfolded_ = 0;
     std::size_t beforeAsked_ = 0, beforeUnfolded_ = 0;     // staticBefore's: asked, and left to the re-read
     std::map<std::string, std::size_t> staticWhy_;     // the census's unfolded, by why
