@@ -246,7 +246,8 @@ public:
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
                          std::map<int, std::string> templates;     // a template template parameter's index: the template bound
-                         std::vector<std::pair<const Type *, const Type *> > needed; };     // ids its door made at first need: the map's
+                         std::vector<std::pair<const Type *, const Type *> > needed;     // ids its door made at first need: the map's
+                         std::vector<const Type *> valueTypes; };     // 3R-h: a class value parameter's declared type, by index
     struct FoldLeaf { virtual ~FoldLeaf() {} virtual bool leaf(const DepExpr *e, long long *out) const = 0; };     // 4d: a size, a static
     // R2, slice 4d: a value trial's ids, their value arguments folded under the deduced binding (`keys`: each id's, all folded; else
     // none and why counted); under the check held against the replay's ids after it (`replayed`: it succeeded). Counted in `valueReport_`.
@@ -283,6 +284,7 @@ public:
     Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos, bool pattern = false) const;     // the id step
     const Type *shallowId(const TemplateDecl &decl, const std::string &tag, const std::vector<TemplateArg> &args) const;     // a pattern's id
     bool patternArgs(const Substituted &s, std::vector<TemplateArg> *args, std::size_t pos) const;     // a member template's own, renumbered
+    const DepExpr *exprPattern(const Substituted &s, const DepExpr *e, std::size_t pos) const;     // a value over both layers, or null
     Templates *patternMaker_ = nullptr;     // templatesFromRead's, while a pattern's parameter-free ids are made (at patternAt_)
     std::size_t patternAt_ = 0;
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,

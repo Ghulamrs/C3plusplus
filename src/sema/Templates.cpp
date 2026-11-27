@@ -462,9 +462,41 @@ bool Templates::patternArgs(const Substituted &s, std::vector<TemplateArg> *args
             const Substitution r = substituteIn(s, a.type, Pattern, nullptr, pos);
             if (!r.carried()) return false;
             a.type = r.type;
-        } else if (!argUnder(s, &a, false, nullptr, pos)) return false;
+        } else if (!argUnder(s, &a, false, nullptr, pos)) {
+            const DepExpr *e = a.isType || a.isPack || !a.dependentValue ? nullptr : exprPattern(s, a.expr, pos);
+            if (e == nullptr) return false;
+            a.expr = e;
+        }
     }
     return true;
+}
+
+// A value argument over both layers (`V<N + K>`, `V<N + sizeof(T)>`) as the replay's read keeps it: the class's value parameter
+// the literal of its declared type it is bound to, one of the template's own renumbered, a type by Pattern; null where one is not.
+const DepExpr *Templates::exprPattern(const Substituted &s, const DepExpr *e, std::size_t pos) const {
+    if (e == nullptr) return nullptr;
+    DepExpr n = *e;
+    if (e->op == DepExpr::TemplateParam) {
+        const Type *mine = nullptr;
+        for (std::size_t k = 0; e->index >= 0 && k < s.from.size(); k++)
+            if (s.from[k] == p_.types_.templateParam(e->index) && s.to[k] != nullptr && s.to[k]->kind() == Kind::TemplateParam) mine = s.to[k];
+        const std::size_t i = static_cast<std::size_t>(e->index);
+        if (mine != nullptr) n.index = static_cast<int>(mine->length());
+        else if (e->index >= 0 && i < s.values.size() && i < s.valueTypes.size() && s.valueTypes[i] != nullptr && s.valueTypes[i]->isInteger())
+            n.op = DepExpr::Literal, n.type = s.valueTypes[i], n.value = s.values[i], n.index = -1;
+        else return nullptr;
+        return p_.types_.intern(n);
+    }
+    if (e->op != DepExpr::Literal && e->op != DepExpr::Operator && e->op != DepExpr::SizeofType) return nullptr;
+    if (e->op == DepExpr::SizeofType) {     // one over no parameter left is the size it has, as the replay's read spells it
+        const Substitution r = substituteIn(s, e->type, Pattern, nullptr, pos);
+        if (!r.carried() || (!p_.dependentType(r.type) && !r.type->isComplete())) return nullptr;
+        n.type = r.type;
+        if (!p_.dependentType(r.type)) n.op = DepExpr::Literal, n.type = p_.types_.get(p_.target_.sizeType()), n.value = r.type->size(p_.target_);
+    }
+    for (const DepExpr *&k : n.kids)
+        if ((k = exprPattern(s, k, pos)) == nullptr) return nullptr;
+    return p_.types_.intern(n);
 }
 
 // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler and deduction read only its name and
@@ -5235,6 +5267,8 @@ const char *Templates::templateUnder(const TemplateDecl &mt, const std::string &
         if (p.defBegin != 0 && (p.defPattern != nullptr || p.defExpr != nullptr || p.defValued)) return "a default the class read read";
     }
     Substituted both = s;
+    for (std::size_t k = 0; k < params.size(); k++)     // a value's literal type, as bindTemplateParameters gives it (paramType)
+        both.valueTypes.push_back(params[k].type != nullptr && !params[k].isPack ? Parser::paramTypeIn(params[k], binding) : nullptr);
     for (std::size_t i = 0; i < mt.params.size(); i++) {
         both.from.push_back(p_.types_.templateParam(static_cast<int>(params.size() + i)));
         both.to.push_back(p_.types_.templateParam(static_cast<int>(i)));
