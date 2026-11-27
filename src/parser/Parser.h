@@ -1589,7 +1589,7 @@ private:
     }
     void declareStaticMember(const std::string &cls, Type *owner,
                              const Declared &d, Access access, bool volatileWritten,
-                             bool threadLocal, bool isConstexpr = false);
+                             bool threadLocal, bool isConstexpr = false, const long long *folded = nullptr);
     void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d);
     std::set<std::string> inClassConstexprStatics_;
     void defineStaticMember(Declared &d, Program &program, bool threadLocal);

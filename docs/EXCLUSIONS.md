@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2390` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3005`, `src/parser/ParserTopLevel.cpp:838` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3008`, `src/parser/ParserTopLevel.cpp:838` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:766` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:484` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -157,12 +157,12 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3694`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3695`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a member template of a class made from a template whose declaration its read
   record cannot carry under the class's binding** - the class body is not read
   again; no case of the suite or the self-host reaches it (R3 3R-h).
-  `src/sema/Templates.cpp:5422`
+  `src/sema/Templates.cpp:5437`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1179`
 - **a non-type template parameter whose type is built from an earlier one**,
@@ -249,7 +249,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2584`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2233`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2236`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2115`
 - **a covariant return that moves the result** - an override may return a
@@ -305,7 +305,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2045`
+  destroyed element by element. `src/parser/ParserClass.cpp:2048`
 - **a static-duration reference bound to a temporary of an incomplete class, an
   array or void** - [class.temporary]/5's object of static storage is made for a
   scalar or a complete class only. `src/parser/ParserInit.cpp:1846`
@@ -321,7 +321,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1688`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:2989`
+  deduced one does not - `src/sema/Templates.cpp:2990`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -531,7 +531,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:2937` - a template instantiating itself past
+- `src/sema/Templates.cpp:2938` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 

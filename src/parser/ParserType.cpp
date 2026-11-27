@@ -159,7 +159,7 @@ void Parser::logStatic(const std::string &name, bool cx) {
             depth += tokens_[at].is("]") ? 1 : tokens_[at].is("[") ? -1 : 0;
             if (depth == 0) break;
         }
-    logging_->placed.push_back(StaticPlace{ name, at_, at > 0 ? tokens_[at - 1].pos : 0, cx, 0 });
+    logging_->placed.push_back(StaticPlace{ name, at_, at > 0 ? tokens_[at - 1].pos : 0, cx, 0, 0 });
 }
 
 // R3 3R-b: the `typedef` of the declaration being read, from its record's start, with the two shapes staticsFromRead reads by path.

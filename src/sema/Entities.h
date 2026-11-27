@@ -160,7 +160,7 @@ struct FrameEvent { char kind; const Type *type; int align, offset, serial; std:
 
 // R3 3R-b: a static data member's declarator as the read took it (the token after its name and bounds), and a typedef's
 // `typedef` with its two shapes: one declarator ending in `last`, and `typedef head<angled...> angledName;`.
-struct StaticPlace { std::string name; std::size_t after, namePos; bool cx; std::uint32_t init; };     // 3R-d: `= init`'s node, 0 if none
+struct StaticPlace { std::string name; std::size_t after, namePos; bool cx; std::uint32_t init; std::size_t end; };     // 3R-d: `= init`'s node and end, 0 if none
 struct TypedefPlace { std::size_t at; bool one; std::string last, head, angledName; std::vector<std::string> angled; };
 
 // R3 3R-a: one member declaration of a read class body (Parser::memberLog_); kind by branch, the first class key and `enum` its

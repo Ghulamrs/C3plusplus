@@ -1862,7 +1862,7 @@ void Parser::recordHeld(Program &program) {
 // a name the linker can hold and a definition outside the class to go with it.
 void Parser::declareStaticMember(const std::string &cls, Type *owner,
                                  const Declared &d, Access access,
-                                 bool volatileWritten, bool threadLocal, bool isConstexpr) {
+                                 bool volatileWritten, bool threadLocal, bool isConstexpr, const long long *folded) {
     if (cls.empty())
         src_.fail(d.pos, "a static member needs a class with a name - this one "
                          "is anonymous");
@@ -1880,20 +1880,23 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     s.isThreadLocal = threadLocal;
     s.isVolatile = volatileWritten;
 
+    if (folded != nullptr) {     // R3 3R-d: a made class's `static const` integer, its value its record's fold
+        s.folded = true, s.value = *folded;
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
-    if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
+    } else if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
         refuseVolatileWithLinkage(volatileWritten, false, d.pos);
         s.symbol = linkage_.staticMemberSymbol(cls, d.name, s.type, access, d.pos);
         owner->addStaticMember(s);
         Declared typed = d;
         typed.type = s.type;
+        const bool equals = peek().is("=");
         defineConstexprStaticMember(cls + "::" + d.name, s.symbol, typed);
+        if (equals && logging_ != nullptr && !logging_->placed.empty() && logging_->placed.back().name == d.name) logging_->placed.back().end = at_;
         return;
-    }
     // **`static const int k = 5;` written in the class needs no definition**, measured
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
-    if (consume("=")) {
+    } else if (consume("=")) {
         syntax::NodeId init;
         if (patternBody_ && d.type->isConst() && dependentType(d.type)) {    // a read's `static const T value = v;`: folded to nothing
             init = syn(conditional());
@@ -1908,7 +1911,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
             s.value = constantExpression("a static member's value", nullptr, &init);
         }
         if (logging_ != nullptr && !logging_->placed.empty() && logging_->placed.back().name == d.name)
-            logging_->placed.back().init = init.v;     // R3 3R-d: the read's node, folded under the binding in the walk
+            logging_->placed.back().init = init.v, logging_->placed.back().end = at_;     // R3 3R-d: the read's node, and its end
     } else if (d.type->isArray() && d.type->length() < 0) {
         src_.fail(d.pos, "'" + cls + "::" + d.name + "' has no length, and a "
                          "static member cannot take one from its definition - "

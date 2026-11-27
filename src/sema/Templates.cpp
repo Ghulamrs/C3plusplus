@@ -2709,6 +2709,7 @@ std::string Templates::builtReport() const {
            std::to_string(insts) + " binds=" + std::to_string(binds) + " jumps=" + std::to_string(reads + insts - binds) + "\n";
     out += "-check=templates static record asked=" + std::to_string(staticAsked_) + " disagree=" + std::to_string(staticDisagree_) +
            " absent=" + std::to_string(staticAbsent_) + " unfolded=" + std::to_string(staticUnfolded_) + "\n";     // R3 3R-d's census
+    out += "-check=templates static before asked=" + std::to_string(beforeAsked_) + " unfolded=" + std::to_string(beforeUnfolded_) + "\n";
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i)
         out += "-check=templates static " + std::string(i->first[0] == '~' ? "disagree (" : "unfolded (") + std::to_string(i->second) + "): " +
                i->first.substr(i->first[0] == '~' ? 11 : 0) + "\n";
@@ -4448,21 +4449,11 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         return true;
     };
     // Slice 3i: or in a static data member's initialiser in the class's own braces (`static const T value = v;`), which
-    // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's.
+    // staticsFromRead evaluates under the bound values and staticsHeld holds against the replay's; 3R-d: as the record placed it.
     const auto staticInit = [&](std::size_t t, std::size_t depth) {
-        bool equals = false;
-        for (int b = static_cast<int>(t), parens = 0, level = 0, colons = 0; depth == 1 && b > static_cast<int>(start); b--) {
-            const Token &x = p_.tokens_[static_cast<std::size_t>(b - 1)];
-            if (x.is(";") || x.is("{") || x.is("}") || x.is("typedef") || x.is("using") || x.is("enum")) return false;
-            if (x.is(":") && (b < 2 || p_.tokens_[static_cast<std::size_t>(b - 2)].is("public") || p_.tokens_[static_cast<std::size_t>(b - 2)].is("private") ||
-                               p_.tokens_[static_cast<std::size_t>(b - 2)].is("protected")))
-                return false;
-            colons += x.is(":") ? 1 : x.is("?") && colons > 0 ? -1 : 0;     // a `:` no `?` before it matches is no conditional's
-            parens += x.is(")") ? 1 : x.is("(") ? -1 : 0;
-            if (equals && parens < level) return false;     // a parameter's default argument: `f(int a = N)`
-            if (!equals && x.is("=")) equals = true, level = parens;
-            if (x.is("static")) return equals && parens == level && colons == 0;
-        }
+        for (const MemberRecord &r : orderOf(start))
+            for (const StaticPlace &p : r.placed)
+                if (depth == 1 && p.end != 0 && t > p.after && t < p.end) return true;
         return false;
     };
     // Slice 3k: or in a `static_assert` in the class's own braces whose condition folds true under the values, as the replay finds.
@@ -4949,6 +4940,22 @@ void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::
     else if (v != m->value) staticDisagree_++, staticWhy_["~disagree: " + n + " " + std::to_string(v) + ", the replay's " + std::to_string(m->value)]++;
 }
 
+// 3R-d: staticsFromRead's fold of a static's record before any re-read, its whys kept apart from the census's (`before:`).
+bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
+                             const std::vector<long long> &values, const std::string &enums, long long *out) {
+    std::map<std::string, long long> named;
+    for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
+        if (params[q].type != nullptr) named[params[q].name] = values[q];
+    std::map<std::string, std::size_t> whys;
+    whys.swap(staticWhy_);
+    beforeAsked_++;
+    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out);
+    beforeUnfolded_ += !ok;
+    for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i) whys["before: " + i->first] += i->second;
+    whys.swap(staticWhy_);
+    return ok;
+}
+
 // 3R-d: a static's initialiser by the constant evaluator over its read node typed under `s`, each value-dependent name of a
 // non-type parameter at `named`'s value; false at any other dependent leaf (a `sizeof` of a parameter, another class's static).
 bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
@@ -5191,10 +5198,18 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         bool cx = false;
         std::size_t name = 0;
         std::uint32_t init = 0;
-        p_.at_ = staticAt(start, m.name, &cx, &name, &init);
-        reentered("jump: a static data member");
-        p_.declareStaticMember(tag, owner, Parser::Declared(m.name, need(s, m.type).type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
-        staticAgainst(init, owner, m.name, s, params, values, tag + (enumScope != scope ? "::$held::" : "::"));
+        const std::size_t after = staticAt(start, m.name, &cx, &name, &init);
+        const Type *type = need(s, m.type).type;
+        const std::string enumsAt = tag + (enumScope != scope ? "::$held::" : "::");
+        long long v = 0;     // 3R-d: a `static const` integer its record folds is declared with that value, no re-read
+        if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v)) {
+            p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, &v);
+        } else {
+            p_.at_ = after;
+            reentered("jump: a static data member");
+            p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
+        }
+        staticAgainst(init, owner, m.name, s, params, values, enumsAt);
     }
     p_.namespaceStack_ = outerStack;
     p_.currentClass_ = outerCurrent;
