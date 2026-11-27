@@ -9033,3 +9033,67 @@ census -check x86_64-linux "a static data member" 64 -> 2, made-class 2,409 -> 2
 body 23, static record 769 / 0 / 0 / 0; run.sh plain 1,375 / 0.** Owed before it lands: its full gate (identicals both ways on four
 targets at three levels, run.sh under the flag, subst.sh, the full self-compile, both ABIs' censuses, the static gates with its
 citations re-pointed - ParserClass.cpp's do not move, Templates.cpp's after line 5190 +2); then the last 2 and staticShape.
+
+## R3, slice 3R-d, sixth lane: statics with no initialiser, and the re-read deleted (lane m8r3rd6, 2026-11-27)
+
+Base f83580d6 (m8-3rd5). REF built from f83580d6 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **efa9ca7a** (commit 1: m8r3rd5's probe as written - a static with no initialiser in the read and not `constexpr` declared
+unread; src/ +6 / -4 - Parser.h +1 / -1, ParserClass.cpp +3 / -3, Templates.cpp +2; EXCLUSIONS.md's Templates.cpp:5437 -> 5439),
+**a31687e7** (commit 2: a `C<N>::v` whose class is not made yet made at first need by the static's fold; src/ +10 / -10 -
+Templates.cpp +8 / -8, Templates.h +2 / -2; no citation moves), this entry. Over the lane: src/ +16 / -14.
+
+**THE MEASURE: "a static data member" re-entries (the static door's jumps).** With the check: **suite 64 -> 2** on x86_64-linux
+(commit 1; commit 2 holds it), x86_64-windows 64 -> 2 (commit 2); **self-host 0 -> 0** on both ABIs (commit 2). Without the
+check: **suite 171 -> 109 (commit 1) -> 2 (commit 2)** on x86_64-linux, x86_64-windows 171 -> 2 (commit 2; commit 1 not measured
+there - commit 2's message says 109 for both ABIs, which is x86_64-linux's alone); **self-host 23 -> 23 (commit 1) -> 0 (commit 2)**
+on x86_64-linux, x86_64-windows 0 at commit 2 (made-class 74,317; f83580d6's number there was never taken, m8r3rd5 owed it). Made-class re-entries: with the check suite x86_64-linux 2,409 -> 2,347 (commit 1 and 2),
+x86_64-windows 2,407 -> 2,345, self-host 74,341 / 74,319 (= the REF's line, m8r3rd5's c); without, suite x86_64-linux 2,533 ->
+2,471 -> 2,364, x86_64-windows 2,533 -> 2,364, self-host x86_64-linux 74,362 -> 74,362 -> 74,339. Class differ 0, body differ lines 23 (suite -check
+x86_64-linux, = REF); the static record unfolded 0, disagree 0, absent 0 everywhere measured (suite -check asked 769, without 773;
+self-host without 481). **m8r3rd5's owed 4, named:** the self-host -check census's 473 against 481 is two torn lines, print
+artefacts and not counts - Assembler.cpp's (`static record as/dev/null`, its 4) and AsmLexer.cpp's (`static record asked=4
+disagree=0 absent=0 unfolded/dev/null`: the census's pattern unmatched, its 4); summed by `asked=` alone the run holds 477, + 4 =
+481. **Not done: the re-read, its jumps and staticShape stay** - the 2 are
+tests/cases/constexpr-object-static-member.cpp's `W<P>::v` (`static constexpr T v = T(3, 9);`) and `W<P>::h` (`static constexpr
+double h = 0.5;`): `constexpr` objects of a type that is no integer, [class.static.data]/3, which defineConstexprStaticMember
+defines by parsing `= ...` (a Parser::Init, the floating fold, a ConstObject, an address) - the record holds no node it could be
+defined from. So `p_.tokens_[` in Templates.cpp stays 100 and replay-residue 104 / 17 / 24 / 6 (not raised, not lowered).
+
+**Commit 1.** declareStaticMember's new `unread` skips the `=` and `constexpr` branches, so a static the read wrote with no
+initialiser is declared from its record with only the array-bound refusal asked; `folded` and `value` stay unset, as the replay
+leaves them. The 62 it takes on the suite are statics with no initialiser; the 107 left without the check were statics whose
+initialiser names `C<N>::v` of a class not made yet (staticBefore's `before:` why "another class's static, its class not made":
+`__gcd<N,D>::value` / `G<N,D>::value` under <ratio> - thread-sleep-yield 27, chrono-clocks 24, thread-pool 20, template-subst-ratio
+9 - `Sum<Rest...>`, `Count<Rest...>`, `Max<...>` in nontype-pack-recursive 10 and nontype-pack-expansion 5, template-subst-staticid
+7, template-subst-packcount 5): under the check the replay had made each class before, so the fold found it. The self-host's 23 the
+same.
+
+**Commit 2.** staticFolded, asked by staticBefore, makes such a class at first need (`substitute(s, C, At{after})`, `after` the
+static's token where the re-read would make it) instead of failing; its walk goes left to right (children pushed last first), the
+order the re-read makes ids in, and it stops at the first leaf that does not fold, so no class is made ahead of an id the re-read
+makes before it. The census's staticAgainst still never makes (`makeAt` 0). A nested staticBefore's whys, made inside the outer
+fold, print as `before: before: ...` (census text only).
+
+**Gates** (Linux, against the REF f83580d6). **Commit 1 (tree d91c9d3e):** g++ -Werror clean; **run.sh plain 1,375 / 0;
+run.sh -templates=subst 1,375 / 0**; subst.sh rc 0 (run -O0 / -O2 1,375 / 0); static: exclusions rc 0 (554 / 4), comments 0 over,
+memory gate lower, ast-residue not raised, replay-residue 104 / 17 / 24 / 6 at baseline, ide up to date; censuses suite -check and
+without x86_64-linux, self-host without x86_64-linux (above); identical plain x86_64-linux -O0 1,031 / 0 (the rest, its other
+censuses and the full self-compile on commit 2's tree, which holds commit 1). **Commit 2 (tree d23ee490):** g++ -Werror clean;
+**run.sh plain 1,375 / 0; run.sh -templates=subst 1,375 / 0**; subst.sh rc 0 (run -O0 / -O2 1,375 / 0, typed -O0 / -O2 1,022 / 0, 1,166 through the
+function door); **the FULL self-compile 102 of 102 (183 s)**; static as
+commit 1's (replay-residue at baseline); censuses -check suite and self-host both ABIs, without suite and self-host both ABIs:
+class differ 0 everywhere, body differ lines 23 / 22 (suite) and 11 / 11 (self-host) = REF's; **identicals: plain on four targets
+at -O0 / -O1 / -O2 0 differ (x86_64-linux, tms6747, arm64-darwin 1,031 / 0 each, x86_64-windows 2,062 / 0 each, on Linux by
+level), and the same 12 under -templates=subst 0 differ**. **No changed emitted output at -O0, -O1 or -O2 on any target, either way.** A queueing slip: the first plain run.sh
+of commit 2 shared tests/out-run with its subst.sh (two queues on one tree) and both stopped at the directory's `rm`; each was run
+again alone.
+
+**What must not change, and did not:** class differ 0 and body differ lines the REF's; [class.static.data]/3, `folded` and `value`
+as the replay sets them, `constexpr` objects still re-read; the ids' order (no emitted output changed - the identicals above); no
+new `p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** (both commits); on Linux, commit 1's own full self-compile, identicals and x86_64-windows censuses (commit 2's tree holds it and
+passed them); the 2 (a `constexpr` object's initialiser
+defined from the read's node - a ConstObject or floating fold under the binding - then staticsFromRead's re-read and jump,
+staticShape and classShape's staticInit deleted, replay-residue lowered). No accepted lines, no wave-expected rows. Re-measure:
+`boxkit/m8r3rd6-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd6-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd5's renamed).
