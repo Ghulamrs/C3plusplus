@@ -9218,7 +9218,9 @@ the lines in `m8r4a-{suite,self}-marks.txt`; `confd` the same over p144 and p150
 | self-host | 102 (rc 0) | **0** | 26 lines in 25 units = **2 definitions** | **0** | OptCore.h:150 (a range-`for` over `vector<Region>` in a member template, in the 25 units that include it) and OptPipeline.cpp:194 (`->` over a `decltype`) |
 | p144 + p150 | 32 | 1 (tln1's `m`) | 19 in 17 units | **9** (tln2, tln3, dt02, dt03, dt04, dt07, dt10, dt12, dt14) | dt01 "expected an expression", dt05 a conversion, dt06 an arity, dt08 and dv01 "write `typename`", dt09 a void return, dt11 `break`, dt13 `.` over `int`, dv01's bound and its `U u(a, b)` |
 
-(Syntax.cpp's own unit matches one `unfound` and one `(unread` - the dump's string literals - and is counted 0.) So **the read finds
+(Syntax.cpp's own unit matches one `unfound` and one `(unread` - the dump's string literals - and is counted 0.) **The same with
+`-arch x86_64-windows`** (`boxkit/m8r4a-linw.sh` on Linux, the read of the library's `_WIN32` branches; `m8r4a-w-*.txt`): suite
+17 unread, 0 `Unfound`, 0 not declared (310 rc 0); self-host 102 rc 0, the same 2 definitions; p144+p150 the same 19 and 9. So **the read finds
 nothing undeclared anywhere in the suite or the self-host**: every unread reason there is the read's own gap, and every "not
 declared" the read meets is in a program clang refuses. That is what R4-a and R4-b can stand on: re-raising them turns no case red
 today. tln4 and tl1's dependent calls read cleanly (`after(t)`, `g(t)`: marked `DependentName`, `found` empty or the definition's
@@ -9296,9 +9298,9 @@ special-cased; [temp.res]/10 never applied as a filter on token position - the d
 **Where it stopped, and what is owed.** No src/ change; the measure is whole for (a) on both clang modes, (b) on both, and (c) on
 the suite (the 364 that write `template`; the other 1,019 read only the library's templates, which the self-host's units read too)
 and the self-host. The Windows box's busy file (gate m6dw54g) held all 40 turns of the wait; the lane went on at 09:16 as the
-rule says, with clang -fsyntax-only jobs under `/affinity 3FF` (about four minutes in all). Owed: cxx3's side of (a) and (c) on
-x86_64-windows (measured on x86_64-linux only: the read is target-free, but the library's `_WIN32` branches - `<chrono>`, `<mutex>`,
-`<exception>`, `<cstdio>`, ... - and the self-host's own are read only there); the
+rule says, with clang -fsyntax-only jobs under `/affinity 3FF` (about four minutes in all). (c) was measured for both ABIs
+(x86_64-windows by cross-compiling on Linux); owed: cxx3's side of (a) built and run on the Windows box (its accept/refuse is the
+front end's, measured on Linux; the outputs of the 12 it accepts only there); the
 `-check=templates` fallback counts of `dependentCall`'s two deleted reasons at R4-c's base; R4-d's case written and judged; the C6000
 row of the gate (no slice ran). Re-measure: `boxkit/m8r4a-lin.sh build|conf|confd|suite|self` (Linux, through ~/slot, over ~/m8r4a
 and ~/m8r4a-conf), `boxkit/m8r4a-winrun.sh` (ships `m8r4a-wtree.tar`: include, lib, tests/cases and the cases under conf/) running
