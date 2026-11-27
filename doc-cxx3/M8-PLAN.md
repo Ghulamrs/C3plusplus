@@ -9155,3 +9155,30 @@ untouched); the trees were shipped by `git write-tree`.
 floating and object fold, defineConstexprStaticMember defining from it with the probe's node, then the re-read, jump, staticShape and staticInit deleted,
 replay-residue lowered); carriedId's early branch. No accepted lines, no wave-expected rows. Re-measure: the Linux scripts
 `m8r3rd7-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd6's renamed); `sh ~/m8r3rd7-q.sh r cen:s:c:l ...`.
+
+## The Linux-only lanes' Windows checks, and clang's probes (lane m8wo, 2026-11-27)
+
+Tree 19f84c3e (m8-3rd7: R3's merged line - 3R-a, b, c, h whole, d's lanes 1-7 - on R2's 4b-4g and R1's lanes), built and checked
+on Linux alone since the Windows box went quiet; the checks the m8r3* lanes, m8r4f, m8r1n and m8r1m owed, on the Windows box
+(clang 19.1.5, VS Build Tools' LLVM). **No src/ change, no .expected change: src/ +0 / -0.** This entry is the lane's one commit.
+
+**THE MEASURE: every Windows check of 19f84c3e clean, and 7 of 7 probes clang's answer.**
+- **cl /W4 /WX** (msvc\build.cmd, default /MP, alone, /affinity 3FF): 0 warnings, 0 errors, built in about 75 s (08:53:50-08:55:06).
+- **names.sh**: plain 1,031 passed, 0 failed; under -templates=subst (a wrapper script as CXX1) 1,031 passed, 0 failed - 20 .nonames
+  rows open in each, the register's. The two runs were in separate trees; their logs are byte-identical. m8r4g's one failure under
+  the flag (template-angle-split) stays mended (c085a7fc).
+- **overload.sh**: 46 agreed with clang, 0 differed, plain and under the flag.
+- **win-structure.sh**, plain and under the flag alike (logs byte-identical): 33 skipped for the target, 0 refusals; unwind 3,990
+  objects, 52,812 functions, 0 faults; layout 996 cases beside clang's object, 0 differ, 14 under a recorded names difference;
+  names 719 agree, 0 differ, 279 under a .nonames.
+- **The probes added since c9619846** (`git log --diff-filter=A c9619846..19f84c3e -- tests/cases`: seven, all template-subst-*;
+  the m8r3* lanes added none): tools/expected-from-clang (`-std=c++11 -pedantic-errors`, no headers) - **7 of 7 match their
+  .expected, 0 differ.** Six were made by clang on Windows already (typedefault, valuedefault, valuetrial, sfinaefail, sfinaeform,
+  sfinaemade); **template-subst-sfinaedecltype.expected (m8r4f, 17e3a27c) was g++'s, and is clang's answer too.** cxx3-msvc under
+  each .flags (-masm=gnu, clang assembling) prints the .expected at -O0 and -O2: 14 of 14.
+
+**Gates:** nothing committed but this entry, so no run.sh is owed on Linux; no accepted lines, no wave-expected rows.
+**What must not change, and did not:** everything - no src/ or tests/ line moved.
+**Owed:** nothing of the Windows checks above for 19f84c3e. Not in this lane: the m8r3* lanes' own owed design items (m8r3rd7's
+typed floating and object fold; carriedId's early branch), and the C6000 and winpass runs, which are the wave gate's. Re-measure:
+boxkit/m8wo-winbuild.sh <commit>, then `sh boxkit/m8wo-wrun.sh probes names overload wins` (boxkit/m8wo-wchecks.sh on the box).
