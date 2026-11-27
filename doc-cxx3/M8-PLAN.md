@@ -8879,8 +8879,9 @@ tools/replay-residue.baseline (set to each column's minimum, then re-recorded by
 merged tree wrote the minimum baseline unchanged. Exclusions **130 sites, 0 uncited, 0 stale** (554 outside() and arm64's 4 at
 their baselines). **The member-template door** (census without the check, suite x86_64-linux): **no `made class:
 templatesFromRead` part (0 / 0 / 0)**, declared from the read 798 (under the check 798), no `a member template from the read`
-differ - 3R-h's b57c60f9 numbers. **Made-class totals**: without the check suite 3,139 on both ABIs (354 / 378 nonzero; 3R-h's
-3,139), self-host x86_64-linux 74,814 (102 rc 0); under the check suite 3,118 / 3,116, self-host 74,820 / 74,701 (x86_64-linux /
+differ - 3R-h's b57c60f9 numbers; the same on x86_64-windows (798, no part, no differ) and in the x86_64-linux self-host (no
+part, declared 44,876 both ways, no differ). **Made-class totals**: without the check suite 3,139 on both ABIs (354 / 378
+nonzero; 3R-h's 3,139), self-host 74,814 / 74,796 (x86_64-linux / x86_64-windows, 102 rc 0 each); under the check suite 3,118 / 3,116, self-host 74,820 / 74,701 (x86_64-linux /
 x86_64-windows; m8r3rd3's REF line 3,118 / 3,114 and 74,826 / 74,804).
 
 **Static record census** (`-check=templates`): suite x86_64-linux asked 769, disagree 0, absent 0, unfolded 10; x86_64-windows
