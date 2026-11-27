@@ -392,10 +392,10 @@ public:
                        const std::vector<long long> &values, const std::string &enums);     // 3R-d's census: the read's node folded
     bool staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
                       const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt = 0,
-                      long double *dout = nullptr);
+                      long double *dout = nullptr, ConstObject *oout = nullptr);
     bool staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
                       const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at,
-                      long double *dout = nullptr);     // staticsFromRead's fold; `dout` a floating one's
+                      long double *dout = nullptr, ConstObject *oout = nullptr);     // staticsFromRead's fold; `dout` a floating one's, `oout` an object's
     mutable std::size_t staticAsked_ = 0, staticDisagree_ = 0, staticAbsent_ = 0, staticUnfolded_ = 0;
     std::size_t beforeAsked_ = 0, beforeUnfolded_ = 0;     // staticBefore's: asked, and left to the re-read
     std::size_t typedDefined_ = 0, astDefined_ = 0, typedCompared_ = 0, typedDisagree_ = 0;     // constexpr statics: typed fold or re-read

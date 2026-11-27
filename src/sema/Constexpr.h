@@ -45,6 +45,8 @@ public:
     bool runConstexpr(const Effect &e, std::size_t pos) const;
     bool runConstexprEffect(const Expr &e, std::size_t pos) const;
     bool constructConst(const Call &c, std::size_t pos) const;
+    bool runConstructor(const ConstexprCtor &ctor, const ConstexprSlot &self, const std::vector<ConstexprSlot> &args,
+                        std::size_t pos) const;
     std::string constObjectKey(const Var &v) const;
     bool instantiateForConstant(const std::string &symbol, bool constructor) const;
     static ConstObject subObject(const ConstObject &from, int at, int size);
@@ -68,6 +70,7 @@ public:
     bool fold(const TypedTree &t, TypedId id, long long *out, const char **why) const;
     // foldDouble's over a typed expression (3R-d, eighth lane): its own reader, foldDouble's arithmetic.
     bool foldFloating(const TypedTree &t, TypedId id, long double *out, bool *past53, bool *x87Rounded, const char **why) const;
+    bool foldObject(const TypedTree &t, TypedId id, ConstObject *out, const char **why) const;     // a typed `T(a, b)` (ninth lane)
     std::string foldReport(int *differ) const;
     long long narrowTo(long long v, const Type *t) const;
 

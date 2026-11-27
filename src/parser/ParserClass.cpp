@@ -1863,7 +1863,7 @@ void Parser::recordHeld(Program &program) {
 void Parser::declareStaticMember(const std::string &cls, Type *owner,
                                  const Declared &d, Access access,
                                  bool volatileWritten, bool threadLocal, bool isConstexpr, const long long *folded, bool unread,
-                                 const long double *dfolded) {
+                                 const long double *dfolded, const ConstObject *ofolded) {
     if (cls.empty())
         src_.fail(d.pos, "a static member needs a class with a name - this one "
                          "is anonymous");
@@ -1884,14 +1884,14 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     if (folded != nullptr) {     // R3 3R-d: a made class's `static const` integer, its value its record's fold
         s.folded = true, s.value = *folded;
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
-    } else if (dfolded != nullptr || (!unread && isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{")))) {
+    } else if (dfolded != nullptr || ofolded != nullptr || (!unread && isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{")))) {
         refuseVolatileWithLinkage(volatileWritten, false, d.pos);
         s.symbol = linkage_.staticMemberSymbol(cls, d.name, s.type, access, d.pos);
         owner->addStaticMember(s);
         Declared typed = d;
         typed.type = s.type;
-        const bool equals = dfolded == nullptr && peek().is("=");
-        defineConstexprStaticMember(cls + "::" + d.name, s.symbol, typed, dfolded);
+        const bool equals = dfolded == nullptr && ofolded == nullptr && peek().is("=");
+        defineConstexprStaticMember(cls + "::" + d.name, s.symbol, typed, dfolded, ofolded);
         if (equals && logging_ != nullptr && !logging_->placed.empty() && logging_->placed.back().name == d.name) logging_->placed.back().end = at_;
         return;
     // **`static const int k = 5;` written in the class needs no definition**, measured
@@ -1961,7 +1961,7 @@ void Parser::declareUsingMembers(const std::string &tag, const Type *type) {
 // The value folded where the class declares it, and laid down there as a weak definition: a constant
 // expression reads the value, and a read at run time the object, defined or not outside the class.
 void Parser::defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d,
-                                         const long double *dfolded) {
+                                         const long double *dfolded, const ConstObject *ofolded) {
     inClassConstexprStatics_.insert(symbol);
     std::vector<GlobalPiece> pieces;
     // A template's own pattern has nothing to fold; its `= e` is kept as the record's node, each specialization's to define.
@@ -1983,6 +1983,9 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
         rec.dknown = true, rec.dvalue = *dfolded;
         staticConsts_[symbol] = rec;
         floatingPieces(d.type, *dfolded, 0, pieces);
+    } else if (ofolded != nullptr) {     // and its constexpr object, the typed fold's `T(a, b)` (ninth lane)
+        constant_.constObjects_[symbol] = *ofolded;
+        constant_.constObjectPieces(*ofolded, pieces);
     } else if (cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag())) {
         Declared m = d;
         m.name = full;

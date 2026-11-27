@@ -1236,10 +1236,11 @@ std::string Templates::valueCast(syntax::NodeId id, const Substituted &s) {
     const std::string &t = st.text(id);
     const Type *read = p_.castTypes_.at(id.v), *to = need(s, read).type;
     const bool named = t.compare(0, 12, "static_cast<") == 0 && t.find('&') == std::string::npos;
-    if (st.node(id).count != 1 || !(named || t == read->describe()))
+    if (st.node(id).count == 0 || !(named || t == read->describe()))
         return "a cast other than a static_cast to a reference, which the read records no type for";
     if (to == nullptr || p_.dependentType(to) || !(to->isVoid() || to->isArithmetic()))
         return "a cast to a type other than an arithmetic type or void under the binding, which the replay converts";
+    if (st.node(id).count != 1) return "a cast other than a static_cast to a reference, which the read records no type for";
     Bound under;
     under.s = s;
     bound_[" operand"] = under;
@@ -4942,17 +4943,25 @@ void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::
     else if (v != m->value) staticDisagree_++, staticWhy_["~disagree: " + n + " " + std::to_string(v) + ", the replay's " + std::to_string(m->value)]++;
 }
 
+// Two constant objects leaf for leaf: the typed fold's and the replay's (ninth lane's census).
+static bool sameObject(const ConstObject &a, const ConstObject &b) {
+    if (a.size() != b.size()) return false;
+    for (ConstObject::const_iterator i = a.begin(), j = b.begin(); i != a.end(); ++i, ++j)
+        if (i->first != j->first || i->second.type != j->second.type || i->second.i != j->second.i || i->second.d != j->second.d) return false;
+    return true;
+}
+
 // 3R-d: staticsFromRead's fold of a static's record before any re-read, its whys kept apart from the census's (`before:`).
 bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
                              const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at,
-                             long double *dout) {
+                             long double *dout, ConstObject *oout) {
     std::map<std::string, long long> named;
     for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
         if (params[q].type != nullptr) named[params[q].name] = values[q];
     std::map<std::string, std::size_t> whys;
     whys.swap(staticWhy_);
     beforeAsked_++;
-    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out, at, dout);
+    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out, at, dout, oout);
     beforeUnfolded_ += !ok;
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i) whys["before: " + i->first] += i->second;
     whys.swap(staticWhy_);
@@ -4963,7 +4972,7 @@ bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substi
 // non-type parameter at `named`'s value; false at any other dependent leaf (a `sizeof` of a parameter, another class's static).
 bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
                              const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt,
-                             long double *dout) {
+                             long double *dout, ConstObject *oout) {
     const syntax::Tree &st = p_.syntaxTree_;
     Bound under;
     under.s = s, under.folds = true;
@@ -5027,8 +5036,9 @@ bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Subst
     const sema::TypedId t = typer.typedUnder(init, " static");
     const char *why = nullptr;
     bool past53 = false, x87 = false;     // `dout`: a floating static's, refused where the Ast's layout would refuse it
-    const bool ok = dout != nullptr ? p_.constant_.foldFloating(typer.tree(), t, dout, &past53, &x87, &why) && !past53 && !x87
-                                    : p_.constant_.fold(typer.tree(), t, out, &why);
+    const bool ok = oout != nullptr ? p_.constant_.foldObject(typer.tree(), t, oout, &why)
+                    : dout != nullptr ? p_.constant_.foldFloating(typer.tree(), t, dout, &past53, &x87, &why) && !past53 && !x87
+                                      : p_.constant_.fold(typer.tree(), t, out, &why);
     bound_.erase(" static");
     if (!ok) staticWhy_[why != nullptr ? why : "the evaluator's no"]++;
     return ok;
@@ -5209,6 +5219,7 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         const std::string enumsAt = tag + (enumScope != scope ? "::$held::" : "::");
         long long v = 0;     // 3R-d: a `static const` integer its record folds is declared with that value, no re-read
         long double dv = 0;     // and a floating constexpr one by the typed fold (eighth lane), held against the replay's under the check
+        ConstObject ov;
         if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v, after)) {
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, &v);
         } else if (init == 0 && !cx) {     // no `=` in the read: nothing to re-read
@@ -5218,6 +5229,14 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
             const Parser::StaticConst *sc = had != nullptr && typedStatics_.count(had->symbol) == 0 ? p_.findStaticConst(had->symbol) : nullptr;
             typedDefined_++, typedCompared_ += sc != nullptr && sc->dknown, typedDisagree_ += sc != nullptr && sc->dknown && sc->dvalue != dv;
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, false, &dv);
+            typedStatics_.insert(owner->findStaticMember(m.name)->symbol);
+        } else if (init != 0 && cx && type->unqualified()->isStructOrUnion() && staticBefore(init, owner, s, params, values, enumsAt, &v, after, nullptr, &ov)) {
+            const Type::StaticMember *had = scope != owner ? scope->findStaticMember(m.name) : nullptr;     // ninth lane: `T(a, b)`'s object
+            const std::map<std::string, ConstObject>::const_iterator ast = had != nullptr && typedStatics_.count(had->symbol) == 0
+                ? p_.constant_.constObjects_.find(had->symbol) : p_.constant_.constObjects_.end();
+            const bool compared = ast != p_.constant_.constObjects_.end();
+            typedDefined_++, typedCompared_ += compared, typedDisagree_ += compared && !sameObject(ast->second, ov);
+            p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, false, nullptr, &ov);
             typedStatics_.insert(owner->findStaticMember(m.name)->symbol);
         } else {
             astDefined_ += cx;

@@ -708,19 +708,87 @@ bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
         at = 0;
     }
     self.i = at;
-    std::vector<ConstexprSlot> frame(1, self);
+    std::vector<ConstexprSlot> args;
     for (std::size_t i = 1; i < c.args().size(); i++) {
-        ConstexprSlot slot;
-        slot.offset = ctor.slots[i - 1];
-        if (!foldArgument(*c.args()[i], &slot, pos)) return false;
-        frame.push_back(slot);
+        args.push_back(ConstexprSlot());
+        args.back().offset = ctor.slots[i - 1];
+        if (!foldArgument(*c.args()[i], &args.back(), pos)) return false;
     }
+    return runConstructor(ctor, self, args, pos);
+}
+
+// constructConst's running, either reader's: the steps over `self` and the arguments, each slot at its parameter's offset.
+bool Constexpr::runConstructor(const ConstexprCtor &ctor, const ConstexprSlot &self, const std::vector<ConstexprSlot> &args,
+                               std::size_t pos) const {
+    std::vector<ConstexprSlot> frame(1, self);
+    for (std::size_t i = 0; i < args.size(); i++) frame.push_back(args[i]), frame.back().offset = ctor.slots[i];
     constexprFrames_.push_back(frame);
     bool ok = true;
     for (std::size_t i = 0; ok && i < ctor.steps.size(); i++)
         ok = ctor.steps[i] != nullptr && runConstexprEffect(*ctor.steps[i], pos);
     constexprFrames_.pop_back();
     return ok;
+}
+
+// The object a typed `T(a, b)` builds (3R-d, ninth lane): T's constructor ranked over the operands' types as a bound member
+// call's are (Templates::boundMemberCall), each operand folded at its parameter's own type, then run as constructConst runs it.
+bool Constexpr::foldObject(const TypedTree &t, TypedId id, ConstObject *out, const char **why) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    while (st.node(t.node(id).syntax).kind == syntax::Kind::Paren && t.node(id).count == 1) id = t.child(id, 0);
+    const TypedNode &n = t.node(id);
+    const Type *cls = n.type != nullptr ? n.type->unqualified() : nullptr;
+    if (st.node(n.syntax).kind != syntax::Kind::Cast || cls == nullptr || !cls->isStructOrUnion() || n.count == 0)
+        return *why = "an object's initialiser other than a functional cast to its class", false;
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(Parser::constructorKey(cls->tag()));
+    if (set == nullptr || !constexprFrames_.empty()) return *why = "a class with no constructor to rank, or inside a constexpr call", false;
+    std::vector<const Type *> given;
+    for (std::uint32_t k = 0; k < n.count; k++) {
+        const Type *a = t.node(t.child(id, k)).type;
+        if (a == nullptr || !(a->isReference() ? a->referent() : a)->isArithmetic()) return *why = "a constructor's operand not typed arithmetic", false;
+        given.push_back((a->isReference() ? a->referent() : a)->unqualified());
+    }
+    std::vector<std::size_t> viable;
+    std::vector<std::vector<Rank> > ranks;
+    for (std::size_t k = 0; k < set->size(); k++) {
+        const Signature &f = p_.lookup_.functions_[(*set)[k]];
+        if (!f.variadic && (p_.overload_.leastArguments(f) > given.size() || f.params.size() < given.size())) continue;
+        bool scalars = !f.variadic && !f.deleted && f.params.size() == given.size();
+        for (std::size_t q = 0; scalars && q < f.params.size(); q++) scalars = f.params[q]->isArithmetic();
+        if (!scalars) return *why = "a constructor beside a candidate over a class, a default or variadic arguments", false;
+        std::vector<Rank> rank;
+        for (std::size_t q = 0; q < given.size() && (rank.empty() || rank.back() != Rank::None); q++) {
+            RankedArgument a;
+            a.type = given[q]->id();
+            rank.push_back(p_.overload_.rankArgument(a, f.params[q]));
+        }
+        if (rank.back() != Rank::None) viable.push_back((*set)[k]), ranks.push_back(rank);
+    }
+    const int best = viable.empty() ? -1 : p_.overload_.bestViable(viable, ranks, given, false);
+    if (best < 0) return *why = "a constructor with no best candidate", false;
+    const Signature &f = p_.lookup_.functions_[viable[static_cast<std::size_t>(best)]];
+    std::map<std::string, ConstexprCtor>::const_iterator c = constexprCtors_.find(f.symbol);
+    if (c == constexprCtors_.end() && instantiateForConstant(f.symbol, true)) c = constexprCtors_.find(f.symbol);
+    if (f.access != Access::Public || c == constexprCtors_.end() || c->second.slots.size() != given.size())
+        return *why = "a constructor not public, or not constexpr", false;
+    std::vector<ConstexprSlot> args(given.size());
+    for (std::size_t q = 0; q < given.size(); q++) {
+        const Type *p = f.params[q]->unqualified();
+        bool past53 = false, x87 = false;
+        if (p != given[q]) return *why = "a constructor's operand converted to its parameter", false;
+        args[q].floating = p->isFloating();
+        if (args[q].floating ? !foldFloating(t, t.child(id, static_cast<std::uint32_t>(q)), &args[q].d, &past53, &x87, why) || past53 || x87
+                             : !fold(t, t.child(id, static_cast<std::uint32_t>(q)), &args[q].i, why))
+            return false;
+    }
+    ConstexprSlot self;
+    self.offset = c->second.thisSlot, self.pointer = true, self.obj = std::make_shared<ConstObject>();
+    constexprFrames_.push_back(std::vector<ConstexprSlot>(1, ConstexprSlot()));     // foldDeclaredObject's scratch slot
+    constexprFrames_.back()[0].offset = kScratchFrame;
+    const bool ok = runConstructor(c->second, self, args, 0);
+    constexprFrames_.pop_back();
+    if (!ok) return *why = "a constructor's steps the evaluator does not run", false;
+    *out = *self.obj;
+    return true;
 }
 
 // A step under a guard, a loop or a `$vb` test is not one a constant expression takes.

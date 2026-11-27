@@ -630,8 +630,11 @@ private:
         if (e != nullptr && e->syntax().valid() && e->type() != nullptr)
             resolutions_[e->syntax().v] = resolvedAs(Resolved::Value, e->type());
     }
-    ExprPtr noteCast(ExprPtr e, const Type *to, const std::string &written, std::size_t pos, syntax::NodeId operand) {
-        e = note(std::move(e), syntax::Kind::Cast, written, pos, std::vector<syntax::NodeId>(1, operand));
+    ExprPtr noteCast(ExprPtr e, const Type *to, const std::string &written, std::size_t pos, syntax::NodeId operand,
+                     const std::vector<syntax::NodeId> &more = std::vector<syntax::NodeId>()) {
+        std::vector<syntax::NodeId> operands(1, operand);
+        operands.insert(operands.end(), more.begin(), more.end());     // a read's `T(a, b)`: every operand (3R-d)
+        e = note(std::move(e), syntax::Kind::Cast, written, pos, operands);
         if (e) castTypes_[e->syntax().v] = to;
         return e;
     }
@@ -1590,9 +1593,9 @@ private:
     void declareStaticMember(const std::string &cls, Type *owner,
                              const Declared &d, Access access, bool volatileWritten,
                              bool threadLocal, bool isConstexpr = false, const long long *folded = nullptr, bool unread = false,
-                             const long double *dfolded = nullptr);
+                             const long double *dfolded = nullptr, const sema::ConstObject *ofolded = nullptr);
     void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d,
-                                     const long double *dfolded = nullptr);
+                                     const long double *dfolded = nullptr, const sema::ConstObject *ofolded = nullptr);
     std::set<std::string> inClassConstexprStatics_;
     void defineStaticMember(Declared &d, Program &program, bool threadLocal);
     // **What a static member *defined* out of line is worth when read** - the

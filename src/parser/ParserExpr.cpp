@@ -673,6 +673,7 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
     // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back; C writes `(T)x`.
     if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, pos, "a functional cast");
     syntax::NodeId operand;
+    std::vector<syntax::NodeId> more;
     bool empty = false;
     ExprPtr r = [&]() -> ExprPtr {
         expect("(");
@@ -684,8 +685,8 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         }
         ExprPtr v = decay(assign());
         operand = syn(v);
-        // A read's `T(a, b)` over its parameter is a constructor's call if `T` is a class: substitution's to say.
-        while (patternBody_ && dependentType(to) && consume(",")) decay(assign());
+        // A read's `T(a, b)` over its parameter is a constructor's call if `T` is a class: substitution's to say, from every operand.
+        while (patternBody_ && dependentType(to) && consume(",")) more.push_back(syn(decay(assign())));
         if (peek().is(","))
             src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
                                   "constructor, and '" + to->describe() +
@@ -699,7 +700,7 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         return convert(std::move(v), types_.withoutConst(to), true);
     }();
     r->setDeclCategory(Expr::Category::Prvalue);
-    ExprPtr made = noteCast(std::move(r), to->isVoid() ? to : types_.withoutConst(to), to->describe(), pos, operand);
+    ExprPtr made = noteCast(std::move(r), to->isVoid() ? to : types_.withoutConst(to), to->describe(), pos, operand, more);
     // `T()` of a scalar is a zero ([dcl.init]/8), recorded as folded so the typed tree tells it from an operand unnoted.
     if (empty && made && made->syntax().valid() && to->isScalar()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to));
     return made;
