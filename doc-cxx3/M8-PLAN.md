@@ -9129,13 +9129,14 @@ from a value), not this hour's; the lane made no src/ change rather than a secon
 **The first half of work (1), probed and not landed** (boxkit/m8r3rd7-probe.diff, src/ +6 / -1 over 43d64603, tree 71583ec7):
 under patternOnly_ defineConstexprStaticMember reads `= expr` by `conditional()` and keeps its node as the record's `init` instead
 of skipping the tokens; staticAgainst counts a static of a type that is no integer as absent (it has no integer to hold). On Linux:
-g++ -Werror clean; run.sh plain 1,375 / 0; identical x86_64-linux -O0 plain, -O2 -templates=subst and tms6747 -O0 plain 1,031 / 0
-each; the four suite censuses the REF's line for line (and the same units nonzero); self-host -check both ABIs 102 rc 0, class 0,
+g++ -Werror clean; run.sh plain and -templates=subst 1,375 / 0; subst.sh rc 0 (run -O0 / -O2 1,375 / 0, typed 1,022 / 0); **all
+24 identicals 0 differ** (plain and -templates=subst, x86_64-linux, tms6747, arm64-darwin -O0 / -O1 / -O2 1,031 / 0 each,
+x86_64-windows 2,062 / 0 each, on Linux by level - no changed emitted output at -O0, -O1 or -O2); the four suite censuses the REF's line for line (and the same units nonzero); self-host -check both ABIs 102 rc 0, class 0,
 body 11, made-class 74,341 / 74,319, door 0 - re-entries +7 on each, all in ParserClass.cpp's unit, the source the probe changes;
 the FULL self-compile 102 of 102 (161 s). That it keeps the nodes is shown by tree c5116e8c (the parser hunk alone, no guard): the
 suite record's disagree goes 0 -> 2, in constexpr-object-static-member's unit alone ("the replay's not folded"). Not landed because
 nothing defines from the node yet - it lands with the typed object and floating fold that reads it (its EXCLUSIONS.md citations at
-ParserClass.cpp:2048, 2236 and 3008 then move +5).
+ParserClass.cpp:2048, 2236 and 3008 then move +5; the static gates were not run on the probe, which does not re-point them).
 
 **Found beside it.** template-subst-staticid's `Late<double>` is sent to the replay by staticShape itself ("a static data member's
 initialiser naming a template, before another template named in its class") - not a door jump, so not among the 2: deleting
