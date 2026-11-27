@@ -5474,9 +5474,12 @@ A family whose decision cannot be separated is written down with why (the requir
 | S8h | **lambdas**: `lambdaExpression`, `buildClosure`, `buildClosureObject` (ParserExprLambda.cpp 40) | the closure type and its captures from typed names | R5-k |
 | S8 | the close: the expression classes, `Visitor`, `ExprPtr` 2,012 -> 0 and `fold(const Expr &)` deleted in one commit, as written | - | - |
 
-**What R5 waits on, in order:** S8a before R5-c (the call family is R5's largest by count, below); S8b before R5-b; S8c before
-R5-d; S8d before R5-e and R5-f; S8e-S8h before their R5 slices. R5-a (the walk in source order, the census by kind) and the
-slices of kinds with no dependent action (R5-l) wait on nothing of M6d's. Each S8 slice is identical by construction (the
+**What R5 waits on, in order of the bodies each frees** (M8-PLAN's (a): the first refusing kind of each template body, suite /
+self-host x86_64-windows, both doors): S8a before R5-c (calls, 1,806 / 18,561 - R5's largest); S8d before R5-m, R5-e and R5-f
+(mem-initialisers, class locals and returns: 399 / 9,326); S8b before R5-b (members, 205 / 8,573); S8g before R5-i and R5-j
+(`new`/`delete`, 79 / 4,367); S8e before R5-g (`?:`, 665 / 4,208); S8c before R5-d (operators over a class's object, 323 /
+3,945); S8f before R5-h (casts, 57 / 451); S8h before R5-k. R5-a (the census by kind) and R5-l (the kinds with no dependent
+action) wait on nothing of M6d's. So **M6d's S8 order is S8a, S8d, S8b, S8g, S8e, S8c, S8f, S8h**, then the close. Each S8 slice is identical by construction (the
 parser calls decision then build where it called the action) and its proof is M6d's: identical.sh on four targets and the
 `-g` texts 0 differ; its R5 slice then proves the instantiator's call under `-templates=subst`. M6d's own ordering stays (S7's
 third family before S8a-S8h; tms6747 and M6a.2 as the row says). ExprPtr falls by family only where a decision's signature
