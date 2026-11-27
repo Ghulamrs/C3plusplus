@@ -4292,6 +4292,25 @@ bool Templates::earlyArgs(const Substituted &s, const Type *e, const Type *read,
     return true;
 }
 
+// An id's argument ids the program declared under `s` (`__unordered_set_key<$T0>` in `__hash_table<...>`), mapped in `s`
+// innermost first, so carriedId and a later classBefore find the id itself (argsWanted's carried half, kept past f781321d).
+void Templates::argsCarried(Substituted *s, const Type *e, const Type *read, const Substituted *early) const {
+    std::vector<TemplateArg> args;
+    if (!readId(e, nullptr, &args)) return;
+    for (const TemplateArg &a : args) {
+        if (!a.isType || a.type == nullptr || a.isPack || a.isTemplate || a.expr != nullptr || a.isParam) continue;
+        const Type *u = a.type;
+        while (u->unqualified() != u || u->isPointer() || u->isReference() || u->isArray())
+            u = u->unqualified() != u ? u->unqualified() : u->isReference() ? u->referent() : u->pointee();
+        if (u->kind() == Kind::DependentMember) u = u->pointee()->unqualified();     // slice 3o: `remove_cv<T>::type`, its class first
+        if (u == read || !u->isStructOrUnion() || substitute(*s, u).type != u || !readId(u, nullptr, nullptr)
+            || (readIds_.count(u) == 0 && !overParameters(u->tag()))) continue;
+        argsCarried(s, u, read, early);
+        const Type *real = carriedId(*s, u, early);
+        if (real != nullptr) s->from.push_back(u), s->to.push_back(real);
+    }
+}
+
 // An id among the read's typedefs and signatures with the read class itself as an argument: made at Made once the tag is.
 bool Templates::namesItself(std::size_t start) const {
     const std::map<std::size_t, std::vector<std::pair<std::string, const Type *> > >::const_iterator tds = readTypedefs_.find(start);
@@ -4603,6 +4622,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
     for (const Type::BaseSpec &b : read->bases())
         if (overParameters(b.type->tag()) || readIds_.count(b.type) != 0) overBases.push_back(b.type);
     for (const Type *u : overBases) {
+        argsCarried(s, u, read, early);
         const Type *real = carriedId(*s, u, early);
         std::string name;
         std::vector<TemplateArg> args;
@@ -4661,6 +4681,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
         const Type *u = e->unqualified();
         const bool over = u->isStructOrUnion() && (readIds_.count(u) != 0 || overParameters(u->tag()));
         if (over && wanted != nullptr && std::find(wanted->begin(), wanted->end(), u) != wanted->end()) continue;
+        if (over && u != read) argsCarried(s, u, read, early);
         const Type *real = over && u != read && readId(u, nullptr, nullptr) ? carriedId(*s, u, early) : nullptr;
         std::string name;     // `X<$T0> m`: the class the program declared under the binding, or one wanted, made first at Made
         std::vector<TemplateArg> args;
@@ -4700,6 +4721,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             continue;
         }
         const bool id = e != read && (overParameters(e->tag()) || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
+        if (id) argsCarried(s, e, read, early);
         const Type *real = id ? carriedId(*s, e, early) : nullptr;
         if (real != nullptr) s->from.push_back(e), s->to.push_back(real);
         else if (wanted != nullptr && id && earlyArgs(*s, e, read, &name, &args, false, wanted, false, true))
@@ -4733,6 +4755,7 @@ std::string Templates::classShape(std::size_t start, const std::vector<TemplateP
             // A class the read named over its parameters (`initializer_list<$T0>`) stands for the one the program declared under
             // the binding before the replay; one it had not is no specialization once the read ends.
             const bool id = e != read && (overParameters(e->tag()) || readIds_.count(e) != 0) && readId(e, nullptr, nullptr);
+            if (id) argsCarried(s, e, read, early);
             if (id && wanted != nullptr && std::find(wanted->begin(), wanted->end(), e) != wanted->end()) continue;     // 3z: a base made first
             const Type *real = id ? carriedId(*s, e, early) : nullptr;
             const bool own = real == nullptr && id && earlyArgs(*s, e, read, &name, &args, true);
