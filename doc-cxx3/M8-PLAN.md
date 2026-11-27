@@ -9025,3 +9025,11 @@ the enumeration constants; then staticShape and the jump deleted). No accepted l
 (no emitted output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd5-ship.sh <x> <commit-or-tree>`, the Linux scripts
 `m8r3rd5-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3m's renamed); the before counts by `grep -a -o 'static before asked=[0-9]*
 unfolded=[0-9]*'` over the census directory.
+
+**The next step, tried at the hour's end (a probe, not landed; boxkit/m8r3rd5-probe.diff, src/ +6 / -4 over 040493df):** a static
+with no initialiser in the read and not `constexpr` (`init == 0 && !cx`) declared unread - declareStaticMember's new `unread`
+skips the `=` and `constexpr` branches, so only the array-bound refusal is asked. On its tree ca480311 (g++ -Werror clean): **suite
+census -check x86_64-linux "a static data member" 64 -> 2, made-class 2,409 -> 2,347, re-entries 26,366 -> 26,304, class differ 0,
+body 23, static record 769 / 0 / 0 / 0; run.sh plain 1,375 / 0.** Owed before it lands: its full gate (identicals both ways on four
+targets at three levels, run.sh under the flag, subst.sh, the full self-compile, both ABIs' censuses, the static gates with its
+citations re-pointed - ParserClass.cpp's do not move, Templates.cpp's after line 5190 +2); then the last 2 and staticShape.
