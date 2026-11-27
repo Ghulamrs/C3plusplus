@@ -5502,3 +5502,12 @@ parser calls decision then build where it called the action) and its proof is M6
 `-g` texts 0 differ; its R5 slice then proves the instantiator's call under `-templates=subst`. M6d's own ordering stays (S7's
 third family before S8a-S8h; tms6747 and M6a.2 as the row says). ExprPtr falls by family only where a decision's signature
 drops it; the Ast builds keep the rest until S8's close.
+
+**m6d-w55's wave landed, 2026-11-28 (gate m6dw55g at 01ec90eb against main 0bb0f491: 40 passed, 0 failed, no rows, the
+fixed point checked not owed; 58 minutes).** R3's line: 3R-a (the member-order record), 3R-b, 3R-c (positions and nested
+classes from it), 3R-h (every member template declared from the read, its re-read deleted), 3R-d's first nine lanes (the
+static door 0 - static initialisers through the constant evaluator, the typed fold taught floats and constexpr objects);
+R2's 4f; R1's m8-r1m and m8-r1n; m8bis's argsCarried, which mends a class-replay regression f781321d brought (self-host
+2,846 classes replayed -> 0); and the R4 and R5 plans. **Classes made: suite 2,653 of 2,676 (23 replayed), self-host every
+class; re-entries under a binding at instantiation: suite 20,181 -> 17,947, self-host 377,853 -> 271,010; Templates.cpp
+`p_.tokens_[` 143 -> 100, replay-residue 150/19/26/6 -> 104/17/24/6.** Nothing changes without the flag.
