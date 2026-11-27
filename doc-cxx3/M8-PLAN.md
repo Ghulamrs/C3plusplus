@@ -8556,3 +8556,55 @@ gone, staticShape and staticInit deleted: tokens 103 -> about 85, "a static data
 carriedId's early branch. No accepted lines, no wave-expected rows. A probe: none (no output changes; Linux has no clang).
 Re-measure: `boxkit/m8r3rd2-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd2-{lbuild,q,lcen,one,job,ident}.sh` (m8r3rd's
 renamed); `grep -a '^-check=templates static \(unfolded\|disagree\)'` over the census directory names each one.
+
+## R3, slice 3R-d, third lane: comparisons in foldArg, and statics from their records (lane m8r3rd3, 2026-11-27)
+
+Base 17bcd865 (m8-3rd2). REF built from 068ff1c6 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commit **3e8ebfbc**, this entry. src/ +10 / -7 (Templates.cpp: foldArg, and ConstArith.h included); three docs/EXCLUSIONS.md
+citations in Templates.cpp +3. **foldArg is shared with lane m8r3rh5: only its comparison and `?:` cases changed.** **The deleting half
+did not land** (unfolded is not 0 on the suite): `p_.tokens_[` in Templates.cpp 103 -> 103, replay-residue 107 / 19 / 26 / 6 -> the
+same, the re-entries "a static data member" 767 (suite, under the check) and the made-class totals the REF's.
+
+**THE MEASURE: the static record's unfolded, suite 10 -> 10 (both ABIs) - not lowered; disagree 0 -> 0.** Suite -check x86_64-linux
+and x86_64-windows: asked 777 disagree 0 absent 0 unfolded 10. **What changed:** foldArg (the kernel's, argValued's) takes `==` `!=`
+`<` `>` `<=` `>=` by the constant evaluator's own `integerArith` (sema/ConstArith.h - no second arithmetic): without `wide` only where
+both operands are at or above 0, where signedness cannot change the answer (the values carry no type); with `wide` as 4d had them.
+`?:` (DepExpr `qu`, three kids) folds its condition and only the chosen arm, as Constexpr::fold does. **Why the 10 stay:** the census
+still says `another class's static, its class not made: 'Max<(N>M?N:M),Rest...>::value'` (nontype-pack-recursive,
+template-subst-packcount, 5 each), so m8r3rd2's root (foldArg) was not the whole of it. **The second root, inferred from the
+census's printed keys (not built or confirmed):** Max's primary is `template <int... Ns>`, so the program declares `Max<{9,4}>` - one pack holding both values - while
+specializationIn keys the read id's arguments as written, a value and then `Rest...` expanded (`Max<9,{4}>`), and findTypedef finds
+nothing. The mend: lay the substituted arguments by the primary's parameters before specializationKey - a pack parameter takes the
+value written before an expansion and the expansion's members, as the replay's templateArguments lays `Max<9, 4>`. Owed.
+
+**Gates** (Linux, against the REF, on 3e8ebfbc's tree cab87e10): **g++ -Werror clean**; **static: exclusions rc 0 (554 / 4), comments
+0 over, memory gate lower, ast-residue not raised, replay-residue rc 0 at 107 / 19 / 26 / 6, ide up to date**; **run.sh plain 1,375 /
+0; run.sh -templates=subst 1,375 / 0** (1,019 printed, 352 refused as recorded); **subst.sh rc 0** (run -O0 / -O2 1,375 / 0, typed
+-O0 / -O2 1,022 / 0); **the FULL self-compile 102 of 102 (165 s)**; **censuses -check, suite: x86_64-linux 1,383 units, 355 nonzero,
+class differ 0, body 23, re-entries 27,079, made-class 3,118; x86_64-windows 379 / class 0 / 22 / 26,935 / 3,114 (= REF)**;
+**self-host x86_64-linux 102 rc 0, class 0, body 11, made-class 74,826, static door 481, static record asked 477 disagree 0 absent 0
+unfolded 0**; **x86_64-windows 102 rc 0, class 0, body 11, made-class 74,804, static door 481, static record asked 473 disagree 0
+absent 0 unfolded 0** (m8r3rd2's line for line).
+**Identical under the flag on all four targets at -O0 / -O1 / -O2: x86_64-linux 1,031 / 0, x86_64-windows 2,062 / 0 (on Linux),
+tms6747 and arm64-darwin together 6,186 / 0; plain on all four at -O0 / -O1 / -O2: x86_64-linux 3,093 / 0, x86_64-windows,
+tms6747 and arm64-darwin together 12,372 / 0** (m8r3rd2's owed plain identicals with them). **No changed emitted output at -O0, -O1 or
+-O2 on any target, either way.** The no-check census lines (made-class totals) were not run: owed.
+
+**What must not change, and did not:** every door answer and census line the REF's; [class.static.data]/3, `folded` and `value` as the
+replay sets them; the ids' order; no new `p_.tokens_[` or `p_.at_ =` in src/sema. Frozen: 4m-4s and R3's other slices.
+
+**A probe for the deleting half, written, not run** (boxkit/m8r3rd3-probe.diff, +29 / -1 over 3e8ebfbc, census only): staticBefore
+folds each static's initialiser BEFORE the re-read declares it - what staticsFromRead would have with no re-read - and the census
+prints `static before asked unfolded disagree objects` (objects: a `constexpr` static of non-integer type, [class.static.data]/3,
+which the re-read defines by defineConstexprStaticMember and no fold replaces). The re-read evaluating `C<N>::v` is what makes C
+today; staticFolded's Declared finds C only because the re-read made it first. So unfolded 0 after the re-read does not show the
+deletion safe: "before" unfolded 0 and objects 0 on the suite and the self-host, both ABIs, does - or staticFolded makes C itself
+(At) in the replay's order. Run it as the NEW exe after the idents (one NEW exe), without -check (the held pass counts twice).
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh**; the 10 unfolded (the pack laid by the primary's parameters, above; print specializationIn's `r.why` beside "its class not made" to
+confirm it first); the probe above; then the
+deleting half (staticsFromRead declares each static by `declareStaticMember` with the folded value, the re-read and its jump gone,
+staticShape and staticInit deleted: tokens 103 -> about 85, "a static data member" 777 / 481 -> 0, replay-residue lowered); the
+no-check census lines (made-class totals) for a and for the REF's self-host. No accepted lines, no wave-expected rows. A probe case:
+none (no output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd3-ship.sh <x> <commit-or-tree>`, the Linux scripts
+`m8r3rd3-{lbuild,q,lcen,one,job,ident}.sh` (m8r3rd2's renamed), `boxkit/m8r3rd3-idall.sh` (the identicals in one slot job each).
