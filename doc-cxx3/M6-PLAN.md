@@ -5451,3 +5451,13 @@ outputs on x86_64-linux, none order-only) and R2's slice 4b (m8-4b2: a type para
 substituted on the kernel). **Suite falling back= 6,768 -> 6,747; re-entries under a binding at instantiation 21,565 ->
 21,549; suite type defaults made 0 -> 28 of 184;** substitution helpers with callers 6; replay-residue 150 / 19 / 26 / 6.
 Nothing changes without the flag.
+
+**m6d-w53's wave landed, 2026-11-28 (gate m6dw53g at 24d17607 against main c2c7de56: 40 passed, 0 failed, no rows,
+the fixed point checked not owed).** The first run of the four-part winpass passed every level (985 same, 0 differ). The
+gate took four passes: the network moved the Mac onto a phone hotspot mid-run (2026-11-27), the Windows box was
+unreachable for a day and the user kept the work on Linux; wselfc and cycles reran on 2026-11-28 when the box was back.
+cycles' joined file held the Linux half twice after the -k rerun (477 identical lines; 966 cases, no case in conflict, so
+every verdict stands; the printed totals are inflated) - a wave-gate defect owed. R2's slices 4c and 4d (value and template
+defaults; a dependent value folded by substitution), R1's sixth and seventh lanes, and the gate's winpass parts and
+GATE-WINDOWS-BUSY marker. **Suite falling back= 6,747 -> 6,743;** re-entries under a binding at instantiation 21,575 (the
+suite grew by its probes). Nothing changes without the flag.
