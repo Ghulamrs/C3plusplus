@@ -8886,7 +8886,8 @@ x86_64-windows; m8r3rd3's REF line 3,118 / 3,114 and 74,826 / 74,804).
 **Static record census** (`-check=templates`): suite x86_64-linux asked 769, disagree 0, absent 0, unfolded 10; x86_64-windows
 777 / 0 / 0 / 10 (m8r3rd3's 10, its `Max<{9,4}>` root still owed); the static door 775 on both (m8r3rd3's 767); self-host
 x86_64-linux 481 / 0 / 0 / 0, door 481; x86_64-windows 481 / 0 / 0 / 0, door 481 (m8r3rd3's 477 / 473 asked). Without the check:
-suite 777 / 0 / 0 / 10 on both ABIs, door 773; self-host x86_64-linux 477 / 0 / 0 / 0, door 477. **Disagree 0 everywhere;
+suite 777 / 0 / 0 / 10 on both ABIs, door 773; self-host x86_64-linux 477 / 0 / 0 / 0, door 477; x86_64-windows 481 / 0 / 0 / 0,
+door 481. **Disagree 0 everywhere;
 unfolded 10, m8r3rd3's 10.**
 
 **Gates** (Linux, one NEW exe and one REF exe): **g++ -Werror clean (0 warnings); run.sh plain 1,375 passed 0 failed;
@@ -8900,7 +8901,6 @@ four targets at -O0 / -O1 / -O2, under -templates=subst and plain (x86_64-window
 others 1,031 each) - 24 runs.** No changed emitted output.
 
 **Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh**; each side's own owed list (m8r3rd3's: the 10's `Max<{9,4}>` pack laying, the
-probe, the deleting half; m8r3rh5's: whether its self-host made-class +2 repeats); the no-check self-host census on
-x86_64-windows (not run). No probe (no output changes; Linux has no clang). No
+probe, the deleting half; m8r3rh5's: whether its self-host made-class +2 repeats). No probe (no output changes; Linux has no clang). No
 accepted lines, no wave-expected rows. Re-measure: `boxkit/m8r3m-ship.sh <r|a> <tree-ish>`, the Linux scripts
 `m8r3m-{lbuild,q,one,lcen,ident,job,mt}.sh` (m8r3rd3's and m8r3rh5's renamed).
