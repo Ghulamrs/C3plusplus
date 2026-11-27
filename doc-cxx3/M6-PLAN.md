@@ -5451,3 +5451,21 @@ outputs on x86_64-linux, none order-only) and R2's slice 4b (m8-4b2: a type para
 substituted on the kernel). **Suite falling back= 6,768 -> 6,747; re-entries under a binding at instantiation 21,565 ->
 21,549; suite type defaults made 0 -> 28 of 184;** substitution helpers with callers 6; replay-residue 150 / 19 / 26 / 6.
 Nothing changes without the flag.
+
+**m6d-w53's wave landed, 2026-11-28 (gate m6dw53g at 24d17607 against main c2c7de56: 40 passed, 0 failed, no rows,
+the fixed point checked not owed).** The first run of the four-part winpass passed every level (985 same, 0 differ). The
+gate took four passes: the network moved the Mac onto a phone hotspot mid-run (2026-11-27), the Windows box was
+unreachable for a day and the user kept the work on Linux; wselfc and cycles reran on 2026-11-28 when the box was back.
+cycles' joined file held the Linux half twice after the -k rerun (477 identical lines; 966 cases, no case in conflict, so
+every verdict stands; the printed totals are inflated) - a wave-gate defect owed. R2's slices 4c and 4d (value and template
+defaults; a dependent value folded by substitution), R1's sixth and seventh lanes, and the gate's winpass parts and
+GATE-WINDOWS-BUSY marker. **Suite falling back= 6,747 -> 6,743;** re-entries under a binding at instantiation 21,575 (the
+suite grew by its probes). Nothing changes without the flag.
+
+**m6d-w54's wave landed, 2026-11-28 (gate m6dw54g at f377858e against main 0e117f92: 40 passed, 0 failed, no rows, the
+fixed point checked not owed; 98 minutes).** R2's slice 4e (its three steps: a signature that cannot be formed drops the
+candidate; a formed candidate declared from its substituted signature; the class template-ids the kernel did not carry),
+4g's first two steps and c085a7fc (template-angle-split under the flag); R1's lanes through m8-r1l (classes made at first
+need, `idsBefore` retired - substitution helpers with callers 5); and the gate fixes (cycles stops on an ended leg; -k
+frees a stale claim). **Self-host SFINAE trials formed 30,457 of 30,457; SFINAE-door re-entries self-host 109,086 ->
+78,771; suite re-entries at instantiation 21,575 -> 20,181.** Nothing changes without the flag.
