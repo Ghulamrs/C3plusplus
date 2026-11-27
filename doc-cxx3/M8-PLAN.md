@@ -9381,7 +9381,10 @@ value, a trivial special member no function, call-site rows innermost-first, the
 **Where it stopped, and what is owed.** The plan and its measure; no src/ slice (R5 is built after R3 and R4; R5-a and R5-l may
 go first, as above). **Owed**: the "holds" and "alone" counts per kind (R5-a's own census: a body's later refusing kinds are
 not printed today, so no slice's true measure - the bodies it alone holds back - is known yet; (a) is the upper bound of what
-each kind frees); the M6d slices S8a-S8h (M6-PLAN, "M6d's side of M8's R5"), none started; Windows not used (the measure is
+each kind frees) - a measurement patch for it, never committed, is `boxkit/m8r5a-holds.diff` (Templates.cpp alone: every kind a
+refused body holds, and which of the 17 kinds refused by kind, with the member door's `?:`, it holds - exact for those, since
+they refuse wherever they stand); it was shipped and stopped by PID unbuilt when the slot queue held six jobs ahead of it; the
+M6d slices S8a-S8h (M6-PLAN, "M6d's side of M8's R5"), none started; Windows not used (the measure is
 the Linux box's, both ABIs). No gate was run, as nothing in src/ changed; no accepted lines, no wave-expected rows.
 Re-measure: `boxkit/m8r5a-ship.sh <commit>` (to `~/m8r5an`), `m8r5a-build.sh`, `m8r5a-chain.sh <arch> <s|h> <m|c>` (waits for
 the build, then `timeout 1500 m8r5a-cen.sh`), `m8r5a-sum.sh <arch>-<s|h>-<m|c>`, `m8r5a-kind.sh <same>` (the reason-to-kind
