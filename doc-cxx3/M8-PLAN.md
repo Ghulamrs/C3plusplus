@@ -8953,3 +8953,75 @@ stand-in ids `Max<{0,...}>`, inferred, unread); **run.sh plain 1,374 / 1 failed:
 branch takes a signature's pattern over `Ns` before expandPackValues refuses it). Owed: the branch after `expandPackValues(a)` (or
 only outside a signature), then the full gate - identical 0 differ both ways on four targets at three levels, the censuses on both
 ABIs (made-class moves to be named), run.sh both ways, subst.sh, the full self-compile, the static gates.
+
+## R3, slice 3R-d, fifth lane: the pack's member, and statics from their records (lane m8r3rd5, 2026-11-27)
+
+Base 5b16122a (m8-r3m: R3's two lines merged). REF built from 5b16122a on Linux. **Linux only** (the user, 2026-11-27): every
+Windows check is owed. Commits **1e961bee** (commit 1: m8r3rd4's mend, its branch after `expandPackValues`; src/ +16 / -1 - Type.h
++1, ParserTemplate.cpp +11, Templates.cpp +4 / -1; EXCLUSIONS.md's ParserTemplate.cpp citations +11, Templates.cpp +3), **040493df**
+(commit 2: statics declared from their records; src/ +47 / -26 - Templates.cpp +33 / -18, ParserClass.cpp +8 / -5, Templates.h +3,
+Parser.h, ParserType.cpp, Entities.h +1 / -1 each; EXCLUSIONS.md re-pointed; replay-residue's baseline lowered), this entry.
+Over the lane: src/ +63 / -27.
+
+**THE MEASURE.** Commit 1: **the static record's unfolded, suite 10 -> 0 on both ABIs, self-host 0 -> 0, disagree 0 throughout**
+(suite -check x86_64-linux asked 769, x86_64-windows 777; self-host x86_64-linux asked 481, x86_64-windows 481). Commit 2: **"a
+static data member" re-entries (the static door's jumps) under the check: suite 775 -> 64 on both ABIs, self-host 481 -> 0 on both
+ABIs; made-class re-entries suite x86_64-linux 3,120 -> 2,409, x86_64-windows 3,118 -> 2,407, self-host x86_64-linux 74,822 ->
+74,341, x86_64-windows 74,800 -> 74,319** (each fall the door's jumps exactly on the self-host); instantiation re-entries suite
+27,079 -> 26,366 / 26,935 -> 26,222, self-host 471,344 -> 471,313 / 471,232 -> 471,199; class differ 0 and body differ lines 23 /
+22 / 11 / 11 (= REF); static record disagree 0, unfolded 0 everywhere. `p_.tokens_[` in Templates.cpp 103 -> 100 lines;
+**replay-residue tokens 107 -> 104, at-jumps 17, binds 24, trials 6** (baseline lowered). The self-host's record asked 481 -> 473
+on both ABIs: a print artefact, not a count - Assembler.cpp's census line is torn in the new run's output (`-check=templates static
+record as/dev/null`, two streams interleaved in one .t; its `static before asked=4` beside it), which takes its 4 out of the sum;
+the other 4, owed to name.
+
+**Commit 1.** m8r3rd4's mend (TemplateArg::packExprs; templateArguments' value-pack member over the parameters kept as its DepExpr;
+argUnder folding it by foldArg) with its new branch after `expandPackValues(a)`, so a signature's pattern over a pack
+(nontype-pack-pattern-signature-refused) is refused by expandPackValues as before. **What moved: nothing but the 10.** The REF's own
+census (suite -check x86_64-linux: made-class 3,120, re-entries 27,079, door 775, record 769 / 0 / 0 / 10) is commit 1's line for
+line apart from unfolded; m8r3rd4's -2 / -4 / -1 were against 46daa4ab, and m8r3m's 3,118 for the merge was another run's number.
+
+**Commit 2, what it does.** (1) staticsFromRead folds each `static const` integer's record (`init`, the read's node) first -
+Templates::staticBefore, staticFolded with its whys kept apart (`before:`) - and, where it folds, declares the member by
+`declareStaticMember` with that value (a new `folded` parameter: `folded` and `value` set as the replay sets them, nothing read);
+the jump and the re-read go. Every other static (no initialiser, an enumeration's or a `constexpr` object's - [class.static.data]/3,
+defined by defineConstexprStaticMember - or one that does not fold) is re-read as before. The census prints `static before
+asked= unfolded=`: suite x86_64-linux asked 673, unfolded 0. (2) classShape's staticInit asks the order record, not the tokens:
+StaticPlace::end (the initialiser's end, set where the read records `init`, and after a `constexpr` object's `= ...`) - a token
+over the parameters between a static's `=` and its end is in its initialiser. The ids' order is kept (no fold makes a class: a
+`C<N>::v` whose class is not made yet does not fold and is re-read where the replay reads it), and staticsHeld holds every member
+against the replay's under the check.
+
+**Not done: staticShape is not deleted, and 64 jumps stay** (suite -check x86_64-linux). staticShape guards the order in which an
+initialiser that names a template makes its class; while any static is re-read that guard is the replay's order, so it goes with
+the last re-read. The 64 are inferred (not printed by kind) to be statics with no initialiser - which need no tokens at all
+(`init == 0 && !cx`: the re-read only peeks for `=`; declaring them unread is the next step) - enumeration-typed constants and
+`constexpr` objects.
+
+**Gates** (Linux, against the REF 5b16122a). **Commit 1 (tree ae65f504):** g++ -Werror clean; **run.sh plain 1,375 / 0**; subst.sh
+rc 0 (run -O0 / -O2 1,375 / 0, typed 1,022 / 0); **the FULL self-compile 102 of 102 (164 s)**; static: exclusions rc 0 (554 / 4),
+comments 0 over, memory gate lower, ast-residue not raised, replay-residue 107 / 17 / 24 / 6 at baseline, ide up to date; censuses
+-check: suite x86_64-linux 355 nonzero, class 0, body 23, made-class 3,120, door 775 (= REF), x86_64-windows 379 / 0 / 22 / 3,118 /
+775; self-host x86_64-linux and x86_64-windows 102 rc 0, class 0, body 11, made-class 74,822 / 74,800, door 481; identical plain
+x86_64-linux -O0 / -O1 / -O2 1,031 / 0 and x86_64-windows -O0 2,062 / 0 (the rest on commit 2's tree, which holds commit 1).
+**Commit 2 (tree f47b00d0, + the baseline):** g++ -Werror clean; **run.sh plain 1,375 / 0; run.sh -templates=subst 1,375 / 0**;
+subst.sh rc 0 (run -O0 / -O2 1,375 / 0, typed -O0 / -O2 1,022 / 0, 1,166 through the function door); **the FULL self-compile 102 of 102 (157 s)**; static: exclusions rc 0 (554 / 4), comments 0 over, memory gate lower,
+ast-residue not raised, replay-residue lower (recorded), ide up to date; the -check censuses above on both ABIs; **all 24 identicals
+0 differ: plain and -templates=subst, x86_64-linux, tms6747 and arm64-darwin -O0 / -O1 / -O2 1,031 / 0 each, x86_64-windows -O0 /
+-O1 / -O2 2,062 / 0 each (on Linux, by level) - no changed emitted output at -O0, -O1 or -O2 on any target, either way.** **Without the check** (the census the brief asks for, against m8r3m's merge numbers for the same src):
+self-host x86_64-linux 102 rc 0, made-class 74,814 -> 74,362, "a static data member" 477 -> 23, record asked 481 disagree 0
+unfolded 0; suite x86_64-linux and x86_64-windows made-class 3,139 -> 2,533 each, door 773 -> 171, record 773 / 0 / 0 / 0. Without the check more statics are
+re-read (171 / 23 against 64 / 0): a `C<N>::v` whose class the replay made earlier under the check is not made yet, so it does not
+fold first - the order guard working, not a miss.
+
+**What must not change, and did not:** class differ 0 and body differ lines the REF's on the suite and the self-host, both ABIs;
+[class.static.data]/3, `folded` and `value` as the replay sets them; the ids' order; no new `p_.tokens_[` or `p_.at_ =` in
+src/sema. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** (both commits); on Linux, commit 1's own run.sh -templates=subst and the
+rest of its identicals (commit 2's tree holds it and passed both), the no-check self-host census on x86_64-windows, the REF's
+self-host censuses (taken here from m8r3m's merge numbers); the self-host record's other 4 torn lines, named; the 64 (declare a static with no initialiser unread, then
+the enumeration constants; then staticShape and the jump deleted). No accepted lines, no wave-expected rows. A probe case: none
+(no emitted output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd5-ship.sh <x> <commit-or-tree>`, the Linux scripts
+`m8r3rd5-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3m's renamed); the before counts by `grep -a -o 'static before asked=[0-9]*
+unfolded=[0-9]*'` over the census directory.
