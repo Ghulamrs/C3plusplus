@@ -8608,3 +8608,40 @@ staticShape and staticInit deleted: tokens 103 -> about 85, "a static data membe
 no-check census lines (made-class totals) for a and for the REF's self-host. No accepted lines, no wave-expected rows. A probe case:
 none (no output changes; Linux has no clang). Re-measure: `boxkit/m8r3rd3-ship.sh <x> <commit-or-tree>`, the Linux scripts
 `m8r3rd3-{lbuild,q,lcen,one,job,ident}.sh` (m8r3rd2's renamed), `boxkit/m8r3rd3-idall.sh` (the identicals in one slot job each).
+
+## R3, slice 3R-d, fourth lane: a pack's key, and statics from their records (lane m8r3rd4, 2026-11-27)
+
+Base 46daa4ab (m8-3rd3). REF built from 068ff1c6 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commit: this entry alone. **src/ +0 / -0: nothing landed.** `p_.tokens_[` in Templates.cpp 103 -> 103, replay-residue 107 / 19 / 26
+/ 6 -> the same, the re-entries "a static data member" 767 (suite, under the check) / 481 and the made-class totals the REF's.
+
+**THE MEASURE: the static record's unfolded, suite 10 -> 10 (x86_64-linux, -check) - not lowered; disagree 0 -> 0.** Census on
+the tried tree ef619a2e: 1,383 units, 355 nonzero, class differ 0, body 23, re-entries 27,079, made-class 3,118 (= REF), static
+door 767, static record asked 777 disagree 0 absent 0 unfolded 10. **What was tried:** m8r3rd3's inferred root - lay the substituted
+arguments by the primary's parameters before specializationKey (`laidByPrimary`, in specializationIn, the kernel's id step shared
+with m8r3rh5) - moved none of the 10.
+
+**The root, confirmed** by printing the read's key and the looked-up key beside "its class not made" (both cases, -check
+x86_64-linux): the read already lays `Max<(N > M ? N : M), Rest...>` as ONE pack, `Max<{$T2...,$T2...}>`, and its first member's
+value is the read's stand-in fold of the dependent `(N > M ? N : M)`, 0. So the id step looks up `Max<{0,4}>`, `Max<{0,1}>`,
+`Max<{0,7,1}>`, `Max<{0,5}>`, `Max<{0,1,5}>` and `Max<{0}>` (twice in each case), while the program declares `Max<{9,4}>`,
+`Max<{7,1}>`, `Max<{2,7,1}>`, ... (the census's made lines). There is nothing to lay: the key holds a wrong value. **The mend is in
+the read**: templateArguments' pack branch (ParserTemplate.cpp, the value-pack member read by `constantExpression`) keeps no
+expression for a member over the parameters, where a non-pack argument keeps one (`a.expr`, `dependentValue`, under
+`patternOnly_ && dependentAhead`). A value pack's member needs its DepExpr kept beside `packValues` (TemplateArg, one per member) and
+argUnder folding it by foldArg as argValued folds a non-pack one. Not attempted: the lane's two builds waited 25 minutes for slots.
+
+**Gates on ef619a2e (not landed; for the record):** g++ -Werror clean; run.sh plain 1,375 / 0; the FULL self-compile 102 of 102
+(160 s); exclusions rc 0 (554 / 4, three Templates.cpp citations +32), comments 0 over, memory gate lower. The rest stopped by PID
+when the measure came back unmoved.
+
+**What must not change, and did not:** everything - no src/ line changed. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh**; the 10 (the read's value-pack member kept as its expression, above);
+m8r3rd3's probe (boxkit/m8r3rd3-probe.diff: "before" unfolded and objects); then the deleting half (staticsFromRead declares each
+static by `declareStaticMember` with the folded value, the re-read and its jump gone, staticShape and staticInit deleted: tokens 103
+-> about 85, "a static data member" 777 / 481 -> 0, replay-residue lowered); the no-check census lines (made-class totals) for the
+lane's exe and the REF's self-host. The tried diff (laidByPrimary, the keys in the census's why, the three citations) is
+boxkit/m8r3rd4-probe.diff, +43 / -4 over 46daa4ab - the keys' print is the way to confirm the read's mend. Re-measure:
+`boxkit/m8r3rd4-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd4-{lbuild,q,lcen,one,job,ident,two}.sh`, boxkit/m8r3rd4-idall.sh.
+No accepted lines, no wave-expected rows.
