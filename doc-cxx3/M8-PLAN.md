@@ -9707,3 +9707,20 @@ the Linux box's, both ABIs). No gate was run, as nothing in src/ changed; no acc
 Re-measure: `boxkit/m8r5a-ship.sh <commit>` (to `~/m8r5an`), `m8r5a-build.sh`, `m8r5a-chain.sh <arch> <s|h> <m|c>` (waits for
 the build, then `timeout 1500 m8r5a-cen.sh`), `m8r5a-sum.sh <arch>-<s|h>-<m|c>`, `m8r5a-kind.sh <same>` (the reason-to-kind
 rules); the helpers' table by `git grep -n` over src/sema/Templates.cpp.
+
+### A measure that went backwards: classes replayed between 0bb0f491 and 8a08674e (lane m8bis), 2026-11-27
+
+The census without the check (CXX1_TEMPLATE_CENSUS=1, -templates=subst, x86_64-linux) at 8a08674e: self-host 78,087
+classes, 75,241 made, 2,846 replayed; suite 2,676 / 2,614 / 62. Every self-host replay and 38 of the suite's are one
+reason: "replayed: a data member of a class the read named over its parameters" (classShape's data-member branch;
+unordered_set and unordered_map over `__hash_table<..., __unordered_set_key<$T0>, ...>`, about 107 a unit). Bisected on
+four self-host units (ParserVtable, Driver, Lookup, Templates.cpp): 0bb0f491 and 17e3a27c 9,882 made / 0 replayed,
+f781321d and 7c8421d9 9,455 / 427. **First bad: f781321d** (R1's thirteenth lane, m8r1m: argsWanted retired). Not a
+trade: argsWanted had a carried half - each argument id the program declared under the binding mapped in `s` before
+carriedId asked the id itself - and the verdict is the second classBefore (wanted null), which carries the data
+member's id only through that mapping; m8r1m's "census unchanged" was the check's class differ, not made / replayed.
+Mend: argsCarried, the carried half alone, called at argsWanted's four sites (bases, data members, typedef and
+signature ids); src/ +24. After it: self-host 78,087 / 78,087 / 0, suite 2,676 / 2,653 / 23 (main's tail), the
+EXCLUSIONS citation 5472 -> 5495, comments 0 over, memory and residue gates rc 0, g++ -Werror clean. Owed (the hour
+ended): identical.sh against an 8a08674e REF on four targets plain and under the flag, run.sh both ways, subst.sh, the
+-check=templates censuses, the full self-compile, Windows cl/names/overload.
