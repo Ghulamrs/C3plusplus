@@ -8554,3 +8554,48 @@ under the flag, and plain everywhere but x86_64-linux -O0; the x86_64-windows ce
 self-host) at ce5ef113; **Windows: cl /W4 /WX, names.sh, overload.sh**. No probe (Linux has no clang for a .expected). No accepted lines, no
 wave-expected rows. Re-measure: `boxkit/m8r3rh4-ship.sh <r|a> <tree-ish>` (m8r3ra's scripts renamed on Linux),
 `m8r3rh4-up.sh <n> <wait-file|none> <job>...`, `m8r3rh4-mt.sh <census dir>`.
+
+## R3, slice 3R-h, fifth lane: the re-read deleted (lane m8r3rh5, 2026-11-27)
+
+Base 5148f4f2 (m8-3rh4). REF built from 7b60b484 on Linux. **Linux only** (the user, 2026-11-27): every Windows check is owed.
+Commits **b57c60f9** (a value argument over both layers: `exprPattern`), **ab806f9d** (templatesFromRead's re-read deleted:
+boxkit/m8r3rh4-delete.diff's Templates.cpp part, its EXCLUSIONS entry at Templates.cpp:5338, replay-residue's baseline
+lowered), this entry. src/ +47 / -48 over 5148f4f2 (b57c60f9 Templates.cpp +35 / -1, Templates.h +3 / -1; ab806f9d Templates.cpp
++9 / -46). EXCLUSIONS.md: three Templates.cpp citations moved +32 with their lines (b57c60f9), one entry added (ab806f9d).
+
+**THE MEASURE (census without the check; R0's counter, the `made class: templatesFromRead` parts).** At the base 5148f4f2:
+x86_64-linux suite jump 29, bind 39, bind in the read 29 (m8r3rh4's); **x86_64-windows (step 0, measured first) suite 29 / 39 /
+29 (378 nonzero, made-class 3,236, declared 769, the one shape 29), self-host 0 / 0 / 0 (102 rc 0, made-class 74,264, declared
+44,378)**. **At b57c60f9: suite 29 / 39 / 29 -> 0 / 0 / 0 on both ABIs** (no templatesFromRead part; made-class 3,236 -> 3,139 on
+both; declared from the read 769 -> 798, under the check 798 - templatesHeld agrees; no `a member template from the read`
+differ; 354 / 378 nonzero, the base's); **self-host 0 / 0 / 0 on both ABIs** (102 rc 0; declared 44,392 x86_64-linux, 44,378
+x86_64-windows, the same under the check; no differ). Made-class self-host: x86_64-linux 74,284 (m8r3rh4's 74,282 was at
+be03211d), x86_64-windows 74,264 -> 74,266 - staticsFromRead's typedefByPath jump +1 and bind +1, not attributed (the new
+branch runs only where patternArgs failed, which the self-host did not reach at the base; whether it repeats is owed). **So the
+re-read is deleted** (ab806f9d): `p_.at_ =` in Templates.cpp 19 -> 17, `bindTemplateParameters(` (with `unbind...`) 26 -> 24;
+**replay-residue's baseline tokens 136, at-jumps 17, binds 24, trials 6**.
+
+**The step (b57c60f9).** `V<N + K>`, `V<N * K>`, `W<A - B>`, `V<N + sizeof(T)>` in a member template's pattern: the read keeps
+a DepExpr over the class's stand-in (index i) and the template's own (index classParams.size() + i). `exprPattern` gives the
+tree the replay's read gives under the class's binding: the class's value parameter is the literal of its declared type it is
+bound to (`Parser::paramTypeIn`, bindTemplateParameters' `paramType` - `Substituted::valueTypes`, set by templateUnder), one
+of its own renumbered as the substitution maps it, a `sizeof` by Pattern (the size it has where no parameter is left), any
+other node not carried. Never folded from a stand-in: the key is the replay's (`$X` + the tree's key), so `shallowId` answers
+the replay's very Type and templateSame's pattern pointer holds it; the Itanium name spells the unfolded tree (`XplLm3ET_E`).
+
+**Gates** (Linux, one NEW exe rebuilt in place, against the REF): **b57c60f9 and ab806f9d g++ -Werror clean (no warning);
+on ab806f9d the FULL self-compile 102 of 102 (stage 0 185 s); static (each under ~/slot now): exclusions 0 / 0 (554 and arm64's 4
+at baselines), comment cap 0 over, memory gate lower, ast-residue not raised, replay-residue 136 / 17 / 24 / 6 (the lowered
+baseline), ide/generate up to date; census `-check=templates` x86_64-linux suite 1,383 units, 355 nonzero, class differ 0, body
+differ lines 23 (the REF's 355 / 23), self-host 102 rc 0, class differ 0, body differ 11 (the REF line's 11); x86_64-windows suite
+1,383 units, 379 nonzero, class differ 0, body differ lines 22 (m8r3rh3's 379 / 22); run.sh -templates=subst 1,375 passed 0
+failed; x86_64-windows self-host under the check 102 rc 0, class differ 0, body differ 11; run.sh plain 1,375 passed 0
+failed; tests/subst.sh rc 0 (run -O0 / -O2 1,375 / 0, typed -O0 / -O2 1,022 / 0, 2 not for this host, 1,166 through the function
+door); identical under the flag x86_64-linux -O0 / -O1 / -O2 1,031 / 0 each, x86_64-windows -O0 / -O1 2,062 / 0 each, tms6747
+-O0 1,031 / 0, arm64-darwin -O0 1,031 / 0; plain x86_64-linux -O0 1,031 / 0.** No changed emitted output in what ran.
+
+**Owed:** identical under the flag at -O2 on x86_64-windows, tms6747 and arm64-darwin and -O1 on tms6747 and arm64-darwin;
+plain everywhere but x86_64-linux -O0; whether the self-host's made-class +2 (staticsFromRead on x86_64-windows; x86_64-linux had no census at the base) repeats; **Windows: cl /W4 /WX,
+names.sh, overload.sh**. No probe (Linux has no clang for a .expected). No accepted lines, no wave-expected rows. Re-measure:
+`boxkit/m8r3rh5-ship.sh <r|a> <tree-ish>` (m8r3ra's scripts renamed on Linux, `m8r3rh5-job.sh` its static step under ~/slot),
+`m8r3rh5-up.sh <n> <wait-file|none> <job>...`, `m8r3rh5-mt.sh <census dir>`.
