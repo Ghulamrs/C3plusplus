@@ -5461,3 +5461,11 @@ every verdict stands; the printed totals are inflated) - a wave-gate defect owed
 defaults; a dependent value folded by substitution), R1's sixth and seventh lanes, and the gate's winpass parts and
 GATE-WINDOWS-BUSY marker. **Suite falling back= 6,747 -> 6,743;** re-entries under a binding at instantiation 21,575 (the
 suite grew by its probes). Nothing changes without the flag.
+
+**m6d-w54's wave landed, 2026-11-28 (gate m6dw54g at f377858e against main 0e117f92: 40 passed, 0 failed, no rows, the
+fixed point checked not owed; 98 minutes).** R2's slice 4e (its three steps: a signature that cannot be formed drops the
+candidate; a formed candidate declared from its substituted signature; the class template-ids the kernel did not carry),
+4g's first two steps and c085a7fc (template-angle-split under the flag); R1's lanes through m8-r1l (classes made at first
+need, `idsBefore` retired - substitution helpers with callers 5); and the gate fixes (cycles stops on an ended leg; -k
+frees a stale claim). **Self-host SFINAE trials formed 30,457 of 30,457; SFINAE-door re-entries self-host 109,086 ->
+78,771; suite re-entries at instantiation 21,575 -> 20,181.** Nothing changes without the flag.
