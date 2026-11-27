@@ -130,8 +130,10 @@ void Parser::memberTemplate(const std::string &tag, const std::string &local, Ac
         if (tokens_[i].is("static")) mt.staticMember = true;
     if (!mt.defined) mt.declaredAt = mt.afterParams;
     // The pattern Itanium spells, read once here under the class's binding: its own parameters stand for themselves (M8.2).
+    // R3 3R-h: in a class read's own body its parameters come after the class's, so the class door substitutes the class's alone.
+    mt.layered = logging_ != nullptr;
     std::vector<const Type *> self(mt.params.size());
-    for (std::size_t i = 0; i < self.size(); i++) self[i] = types_.templateParam(static_cast<int>(i));
+    for (std::size_t i = 0; i < self.size(); i++) self[i] = types_.templateParam(static_cast<int>((mt.layered ? mt.classParams.size() : 0) + i));
     std::string patternName;
     mt.pattern = readTemplateDeclaration(mt, self, std::vector<long long>(self.size(), 0), &patternName);
     tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);

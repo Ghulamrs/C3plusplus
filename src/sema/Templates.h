@@ -231,7 +231,7 @@ public:
                               const std::vector<const Type *> &useBinding, const std::vector<long long> &useValues,
                               const Packs &packs, std::vector<PendingBody> *bodies, std::vector<Shadow> *kept);
     std::map<std::string, const Type *> readPattern_;
-    std::vector<Type *> readShallow_;
+    mutable std::vector<Type *> readShallow_;     // shallowId's, const where the kernel asks
     struct ReadId { std::string name; std::vector<TemplateArg> args; };
     std::map<const Type *, ReadId> readIds_;     // a shallow class the read's end cleared: its template-id, for the class door
     std::string readingTag_, readingRead_;      // the class door's class while its body is read: `C<$T0>` and its read's tag
@@ -246,7 +246,8 @@ public:
     // `bounds`: a data member's first bound over the values (`T a[N + 1]`), folded by classShape, by the member's name; packs: by parameter, or none.
     struct Substituted { std::vector<const Type *> from, to; std::vector<long long> values; std::map<std::string, long long> bounds; Packs packs;
                          std::map<int, std::string> templates;     // a template template parameter's index: the template bound
-                         std::vector<std::pair<const Type *, const Type *> > needed; };     // ids its door made at first need: the map's
+                         std::vector<std::pair<const Type *, const Type *> > needed;     // ids its door made at first need: the map's
+                         std::vector<const Type *> valueTypes; };     // 3R-h: a class value parameter's declared type, by index
     struct FoldLeaf { virtual ~FoldLeaf() {} virtual bool leaf(const DepExpr *e, long long *out) const = 0; };     // 4d: a size, a static
     // R2, slice 4d: a value trial's ids, their value arguments folded under the deduced binding (`keys`: each id's, all folded; else
     // none and why counted); under the check held against the replay's ids after it (`replayed`: it succeeded). Counted in `valueReport_`.
@@ -274,13 +275,18 @@ public:
     // then the carried parts substituted and `at` the part that failed. A class template-id: `s`'s own map (Mapped), the
     // program's by its key (Declared; Keyed the map first, under every declarator), or made through makeClass (Made, non-const).
     struct Substitution { const Type *type; const char *why; const Type *at; bool carried() const { return why == nullptr; } };
-    enum Ids { Mapped, Declared, Made, Keyed };
+    enum Ids { Mapped, Declared, Made, Keyed, Pattern };     // Pattern: an id over a member template's own parameters a shallow one
     Substitution substitute(const Substituted &s, const Type *t, Ids ids = Mapped) const;
     struct At { std::size_t pos; };
     Substitution substitute(const Substituted &s, const Type *t, At at);     // Made, at `at.pos`
     Substitution need(const Substituted &s, const Type *t);     // a door's: Made at first need, at `p_.at_`
     Substitution substituteIn(const Substituted &s, const Type *t, Ids ids, Templates *maker, std::size_t pos) const;
-    Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos) const;     // the id step
+    Substitution specializationIn(const Substituted &s, const Type *o, Templates *maker, std::size_t pos, bool pattern = false) const;     // the id step
+    const Type *shallowId(const TemplateDecl &decl, const std::string &tag, const std::vector<TemplateArg> &args) const;     // a pattern's id
+    bool patternArgs(const Substituted &s, std::vector<TemplateArg> *args, std::size_t pos) const;     // a member template's own, renumbered
+    const DepExpr *exprPattern(const Substituted &s, const DepExpr *e, std::size_t pos) const;     // a value over both layers, or null
+    Templates *patternMaker_ = nullptr;     // templatesFromRead's, while a pattern's parameter-free ids are made (at patternAt_)
+    std::size_t patternAt_ = 0;
     bool argsUnder(const Substituted &s, const Type *o, const std::string &name, std::vector<TemplateArg> *args, Templates *maker = nullptr,
                    std::size_t pos = static_cast<std::size_t>(-1)) const;
     const Type *makeId(const std::string &name, const std::vector<TemplateArg> &args, std::size_t pos, bool *made);     // looked up, or made
@@ -288,7 +294,8 @@ public:
     struct Substitutions { std::vector<const Type *> types; const char *why; const Type *at; };
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params) const;     // `Args...` one per member
     Substitutions substitute(const Substituted &s, const std::vector<const Type *> &params, At at);     // Made, at `at.pos`
-    Substitutions substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker, std::size_t pos) const;
+    Substitutions substituteList(const Substituted &s, const std::vector<const Type *> &params, Templates *maker, std::size_t pos,
+                                 Ids below = Mapped) const;
     Substitutions need(const Substituted &s, const std::vector<const Type *> &params);     // the list form's, the same
     bool argUnder(const Substituted &s, TemplateArg *a, bool bound, Templates *maker = nullptr,     // one of argsUnder's: a pack
                   std::size_t pos = static_cast<std::size_t>(-1)) const;                             // (`X<Ts...>`) expanded
@@ -399,7 +406,13 @@ public:
     std::vector<const TemplateDecl *> templatesOf(const std::string &tag) const;     // a class body's member templates, in order
     void templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
                            const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
-                           const Packs &packs);
+                           const Substituted &s);
+    // R3 3R-h: a read member template under `tag` from its record, the class layer substituted and recorded; or why the read is not complete.
+    const char *templateUnder(const TemplateDecl &mt, const std::string &tag, const Substituted &s, const std::vector<TemplateParam> &params,
+                              const std::vector<const Type *> &binding, const std::vector<long long> &values, TemplateDecl *out,
+                              std::string *shape = nullptr) const;
+    static const char *templateSame(const TemplateDecl &a, const TemplateDecl &b);     // under the check: the replay's against it
+    mutable std::map<std::string, int> templatesCensus_;     // member templates of made classes: from the read, or why they are read again
     std::string templatesHeld(const std::string &readTag, const Substituted &s, const std::string &tag) const;
     void membersFromRead(std::size_t start, const std::string &tag, Substituted s, const Type *made, std::vector<PendingBody> *bodies, std::size_t pos);
     void idsInside(std::size_t start, const Signature &a, std::size_t pos, Substituted *ids, Substituted *s);     // its own template under other arguments, made reading `a`

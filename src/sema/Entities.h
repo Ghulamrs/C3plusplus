@@ -358,6 +358,7 @@ struct TemplateDecl {
     bool outOfLineBody = false;
     bool staticMember = false;  // the declaration's `static`, which the definition may not repeat
     std::size_t declaredAt = 0; // the declaration's afterParams, kept when the definition replaces it
+    bool layered = false;       // R3 3R-h: read in a class read, its `pattern`'s own parameters after the class's (classParams.size() + i)
 };
 
 // **A pack while a specialization is being read**: the types it was given and, once its function
