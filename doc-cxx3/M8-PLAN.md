@@ -9097,3 +9097,60 @@ passed them); the 2 (a `constexpr` object's initialiser
 defined from the read's node - a ConstObject or floating fold under the binding - then staticsFromRead's re-read and jump,
 staticShape and classShape's staticInit deleted, replay-residue lowered). No accepted lines, no wave-expected rows. Re-measure:
 `boxkit/m8r3rd6-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd6-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd5's renamed).
+
+## R3, slice 3R-d, seventh lane: constexpr objects, and the re-read deleted (lane m8r3rd7, 2026-11-27)
+
+Base 43d64603 (m8-3rd6). REF built from 43d64603 on Linux (g++ -Werror clean). **Linux only** (the user, 2026-11-27): every
+Windows check is owed. **No src/ change committed: src/ +0 / -0** (a probe, below, kept as a diff). This entry is the lane's one commit.
+
+**THE MEASURE: "a static data member" re-entries, unchanged - not reached.** At 43d64603, measured here: with the check, suite
+x86_64-linux **2** (made-class 2,347, re-entries 26,304, class differ 0, body 23, record 769 / 0 / 0 / 0), x86_64-windows **2**
+(2,345, 26,160, 0, 22, 769); without, suite x86_64-linux and x86_64-windows **2** each (made-class 2,364, record 773 / 0 / 0 / 0);
+self-host **0** on both ABIs, with the check and without (102 rc 0, class differ 0; with the check x86_64-linux made-class 74,341,
+re-entries 471,316, body 11, record 473 (m8r3rd6's two torn lines) / 0 / 0 / 0, x86_64-windows 74,319 / 471,202 / 11; without,
+x86_64-linux 74,339 / 278,981, x86_64-windows 74,317 / 278,845, record 481 / 0 / 0 / 0 each). The 2 are tests/cases/constexpr-object-static-member.cpp's alone (its unit: `reentry (2): ... staticsFromRead:
+jump: a static data member`, `static record asked=2`, `static before asked=0`) - `W<P>::v` and `W<P>::h`. So staticsFromRead's
+re-read and jump, staticShape and classShape's staticInit stay; `p_.tokens_[` in Templates.cpp stays 100; replay-residue 104 / 17 /
+24 / 6 (not raised, not lowered); made-class totals as above (suite 2,347 with the check, self-host 74,341).
+
+**Why work (1) has no path that is not a second one.** defineConstexprStaticMember defines a `constexpr` object three ways, and each
+takes the parser's Ast made by parsing at `at_`: a class with constructors (`T(3, 9)`, P's `constexpr P(int, int)`) by
+dynamicInitialise, which parses the initialiser into effects and folds the declared object from them; a double (`0.5`) by
+parseInitialiser, Constexpr::foldFloating (foldDouble over an Expr) and flattenScalar (which folds the Expr again for the pieces and
+holds the x87 refusal); an aggregate by constObjectFromInit over a Parser::Init. The typed tree's evaluator, Constexpr::fold(TypedTree,
+...) (M6d S6, C2), folds integers only: FloatLit and a Cast of a type that is no integer answer false, and it has no call, no
+constructor and no ConstObject. And the read keeps nothing to type: under patternOnly_ defineConstexprStaticMember skips the
+`= ...` tokens, so the record's `init` is 0 for both (StaticPlace::end alone is set). Defining from a node therefore needs the
+evaluator's floating and object cases over the typed tree - fold(TypedTree)'s siblings, as C2 made the integer one - and, to stay one
+path, defineConstexprStaticMember itself defining every `constexpr` static from them, the parser's own included; Ast nodes made in
+src/sema to feed the Ast path would raise ast-residue. That is a design step (the constructor run over typed arguments, the pieces
+from a value), not this hour's; the lane made no src/ change rather than a second path.
+
+**The first half of work (1), probed and not landed** (boxkit/m8r3rd7-probe.diff, src/ +6 / -1 over 43d64603, tree 71583ec7):
+under patternOnly_ defineConstexprStaticMember reads `= expr` by `conditional()` and keeps its node as the record's `init` instead
+of skipping the tokens; staticAgainst counts a static of a type that is no integer as absent (it has no integer to hold). On Linux:
+g++ -Werror clean; run.sh plain 1,375 / 0; identical x86_64-linux -O0 plain, -O2 -templates=subst and tms6747 -O0 plain 1,031 / 0
+each; the four suite censuses the REF's line for line (and the same units nonzero); self-host -check both ABIs 102 rc 0, class 0,
+body 11, made-class 74,341 / 74,319, door 0 - re-entries +7 on each, all in ParserClass.cpp's unit, the source the probe changes;
+the FULL self-compile 102 of 102 (161 s). That it keeps the nodes is shown by tree c5116e8c (the parser hunk alone, no guard): the
+suite record's disagree goes 0 -> 2, in constexpr-object-static-member's unit alone ("the replay's not folded"). Not landed because
+nothing defines from the node yet - it lands with the typed object and floating fold that reads it (its EXCLUSIONS.md citations at
+ParserClass.cpp:2048, 2236 and 3008 then move +5).
+
+**Found beside it.** template-subst-staticid's `Late<double>` is sent to the replay by staticShape itself ("a static data member's
+initialiser naming a template, before another template named in its class") - not a door jump, so not among the 2: deleting
+staticShape moves that class from the replay to the read as well, and its census line with it.
+
+**carriedId's early branch: weighed, not tried.** The early map is classBefore's answers before the make; the post-make classShape
+may ask ids classBefore never reached, so a mark on the classes the make made would not by itself reproduce the map (inferred, not
+traced; m8r1n's 56 class-differ units are consistent with it). It wants that question settled before a try.
+
+**Gates:** no src/ change is committed, so none is owed on the branch; the REF's censuses above are the measure's before line, and
+the probe's runs are above. A rule slip: one `git stash create` ran on the Mac (a dangling commit object; stash list and tree
+untouched); the trees were shipped by `git write-tree`.
+**What must not change, and did not:** everything - no src/ line moved. Frozen: 4m-4s and R3's other slices.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** (m8r3rd5's and m8r3rd6's commits, unchanged); the 2 (the typed tree's
+floating and object fold, defineConstexprStaticMember defining from it with the probe's node, then the re-read, jump, staticShape and staticInit deleted,
+replay-residue lowered); carriedId's early branch. No accepted lines, no wave-expected rows. Re-measure: the Linux scripts
+`m8r3rd7-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd6's renamed); `sh ~/m8r3rd7-q.sh r cen:s:c:l ...`.
