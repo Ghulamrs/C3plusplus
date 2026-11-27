@@ -8645,3 +8645,14 @@ lane's exe and the REF's self-host. The tried diff (laidByPrimary, the keys in t
 boxkit/m8r3rd4-probe.diff, +43 / -4 over 46daa4ab - the keys' print is the way to confirm the read's mend. Re-measure:
 `boxkit/m8r3rd4-ship.sh <x> <commit-or-tree>`, the Linux scripts `m8r3rd4-{lbuild,q,lcen,one,job,ident,two}.sh`, boxkit/m8r3rd4-idall.sh.
 No accepted lines, no wave-expected rows.
+
+**The read's mend, tried at the hour's end (a probe, not landed; boxkit/m8r3rd4-mend.diff, src/ +16 / -1 over 46daa4ab):**
+TemplateArg::packExprs (one per member, null where written); templateArguments' value-pack branch keeps a member over the
+parameters as its DepExpr under `patternOnly_ && dependentAhead(true)`, as the non-pack branch does; argUnder (the kernel's argument
+step, shared with m8r3rh5) folds each by foldArg. On its tree 47f30524 (g++ -Werror clean): **the two cases' unfolded 5 + 5 -> 0;
+suite census -check x86_64-linux: static record asked 776 disagree 0 absent 0 unfolded 0 (from 10)**, class differ 0, body 23 - but
+re-entries 27,079 -> 27,075, made-class 3,118 -> 3,116, static door 767 -> 766, asked 777 -> 776 (the read no longer makes the
+stand-in ids `Max<{0,...}>`, inferred, unread); **run.sh plain 1,374 / 1 failed: nontype-pack-pattern-signature-refused** (the new
+branch takes a signature's pattern over `Ns` before expandPackValues refuses it). Owed: the branch after `expandPackValues(a)` (or
+only outside a signature), then the full gate - identical 0 differ both ways on four targets at three levels, the censuses on both
+ABIs (made-class moves to be named), run.sh both ways, subst.sh, the full self-compile, the static gates.
