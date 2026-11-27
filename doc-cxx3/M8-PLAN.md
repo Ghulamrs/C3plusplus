@@ -9323,3 +9323,153 @@ on Linux alone since the Windows box went quiet; the checks the m8r3* lanes, m8r
 **Owed:** nothing of the Windows checks above for 19f84c3e. Not in this lane: the m8r3* lanes' own owed design items (m8r3rd7's
 typed floating and object fold; carriedId's early branch), and the C6000 and winpass runs, which are the wave gate's. Re-measure:
 boxkit/m8wo-winbuild.sh <commit>, then `sh boxkit/m8wo-wrun.sh probes names overload wins` (boxkit/m8wo-wchecks.sh on the box).
+
+## R4 split into slices: two-phase lookup - non-dependent names bound and refused at the read, cpp11's p144-p150 as cases (lane m8r4a, 2026-11-27)
+
+Base 19f84c3e (m8-r3rd7's tip, R3's newest). **No src/ change** (src/ +0 / -0): this entry is the plan, measured. R4 is M8.5
+(the review's D9, the restart's decision 3: R4 before R5): non-dependent names bound when the body is read, dependent names at the
+instantiation, a body never instantiated checked at its definition for its non-dependent part. The review's rule stands: **take
+cpp11's cases, not its mechanism** - no filter on token position ([temp.res]/10 as cpp11 1.43 wrote it); every answer comes from
+what the read recorded (its marks, its unread reasons, its `found` candidates, its resolutions).
+
+**What the read does today, which R4 builds on.** Every template's definition is read once at its declaration (the function
+door since M8.1 commit 5, the class doors with no flag), under `Parser::Trial`. A read that fails is swallowed: the reason goes to
+`-check=templates unread (n): <reason>` and to `-dump=syntax`'s `(unread "<door>: <reason>")`, and the replay at the instantiation
+reads the tokens again with every name looked up there - so a body never instantiated is never checked, and a name declared after
+the template is found. Three records answer two-phase questions already: an unqualified name found nowhere in a class with a
+left-out (dependent) base is a `syntax::Unfound` mark (ParserDependent.cpp:507, ParserExpr.cpp:1184; [temp.dep]/3); an
+unqualified callee with a type-dependent argument is marked `DependentName` and carries the definition's candidates as `found`
+(`noteDefinitionLookup`, ParserExpr.cpp:1196, M8rev M7); and under `-templates=subst` `dependentCall` (Templates.cpp:933) resolves
+such a call over `found` plus ADL - but sends to the replay, by name, every call whose name was declared again since the
+definition (Templates.cpp:956-965), so that subst stays identical to the replay's wider lookup.
+
+**THE MEASURE at 19f84c3e, each beside its command.**
+
+**(a) cpp11 1.83's p144-p150 against clang** (c482b4ed's `tests/conformance/{pos,neg}/p144`-`p150`, 96 cases: 46 `neg`, 50 `pos`;
+copied, never built in that tree). cxx3 at 19f84c3e on Linux, `boxkit/m8r4a-lin.sh conf` (each case compiled and linked plain,
+run if it built; `boxkit/m8r4a-conf-cxx3.txt`); clang 19.1.5 on the Windows box, `boxkit/m8r4a-win.sh conf gnu` - `--target=
+x86_64-pc-linux-gnu -x c++ -std=c++11 -pedantic-errors -nostdinc -nostdinc++ -isystem include -isystem lib`, C3++'s headers alone
+and no Microsoft mode (`m8r4a-conf-gnu.txt`) - and `m8r4a-win.sh conf ms`, the box's own target with
+`-fno-delayed-template-parsing`, built and run for the outputs (`m8r4a-conf-ms.txt`). **The ms run is not the oracle**: it accepts
+dt02, dt06, dt07 and dt12 (an undeclared callee in a template is a Microsoft extension there); the gnu run refuses all 46 `neg`.
+
+| | clang refuses | clang accepts |
+| --- | --- | --- |
+| cxx3 refuses | **27** agree: 23 `neg` (p145-p149's), 4 `pos` C3++'s headers cannot hold (p149 wc05 `is_nothrow_copy_constructible`, p150 lb20 and lb36 `shared_ptr`/`exception_ptr`, lb50 `emplace`) | **34** `pos` refused (by name or by a gap): p145 4, p146 2, p147 8 (member class templates 5), p148 9, p149 8, p150 3 (lb32, lb38, lb39) - M8.4's, R5's and D13's, none R4's |
+| cxx3 accepts | **23 over-acceptances**: p144 tln1-tln4 (all 4), p149 wcn01, wcn02, wcn04, wcn06, **p150 dt01-dt15 (all 15)** | **12** accepted: **9 agree** in output (lz03, px02, wc01, wc03, dv01, dv02, lb29, lb31, lb37); **3 wrong answers** - tl1 (`201 301 3 4 / 1002 9 5`, clang `101 301 2 4 / 4 9 5`: every call bound at the instantiation), tl2 (`3 2 3`, clang `3 40 3`: a dependent base's name), wc06 (p149's deduction across namespaces, not R4's) |
+
+**In all: 36 agree** (27 refused by both, 9 accepted with equal output), **23 accepted where clang refuses, 34 refused where
+clang accepts, 3 wrong answers.** So **R4's own cases are p144's 6 and p150's 17** (dt01-dt15, dv01, dv02): today 0 of the 6 and 2 of the 17 agree (dv01 and dv02,
+never-instantiated dependent bodies, accepted), 4 + 15 are accepted where clang refuses, and tl1 and tl2 are wrong answers. p145-
+p149 (and p150's 9 `lb*`) are the other doors' cases: counted here once, judged in their own steps.
+
+**(b) The suite's programs clang refuses for a two-phase reason that cxx3 accepts: 0.** `boxkit/m8r4a-win.sh suite gnu` (and `suite
+ms`), clang -fsyntax-only over all 1,383 tests/cases/*.cpp against C3++'s headers (`m8r4a-suite-gnu.txt`, the first three errors of
+each in `m8r4a-suite-gnu-errors.txt`): clang accepts 1,061 and refuses 322 - 306 of them `.error` cases cxx3 refuses too, and **16
+cxx3 accepts, none for a two-phase reason**: 10 over C3++'s `<cstdarg>` under the gnu target (`va_start`'s arity, `va_arg`'s type:
+c6x-last-walked, c6x-variadic-pad, c6x-variadic-selected, c6x-wide-values, call-nullptr-static-ssa, cstdarg, ssa-select,
+va-arg-in-callee, va-arg-shapes), 3 `offsetof` in a `static_assert` (offsetof-constant-expression, posix-dirent, posix-headers),
+operator-new (an exception specification), ssa-destructor-through-base, and 2 `<windows.h>` (windows-h-layout,
+windows-unwind-api: the header refuses the gnu target). The two-phase diagnostics in the 322 ("use of undeclared identifier",
+"missing 'typename'", ...) are all in `.error` cases. So **no case in tests/cases turns red for R4-a through R4-c**, and run.sh
+can only turn red where a refusal is wider than clang's - the gate below. (46 `.error` cases clang accepts are refusals stricter
+than clang's, by name; outside R4.)
+
+**(c) The read's unfound non-dependent names today** - what R4 would refuse at the definition. `boxkit/m8r4a-lin.sh suite` and
+`self`: `cxx3 -dump=syntax` per unit (the 364 cases that write `template`, and the 102 self-host sources with tools/self-host's
+flags), counting `syntax::Unfound` marks and the read's `(unread "<door>: <reason>")` lines (`m8r4a-suite.txt`, `m8r4a-self.txt`,
+the lines in `m8r4a-{suite,self}-marks.txt`; `confd` the same over p144 and p150, `m8r4a-confd-marks.txt`):
+
+| | units | `Unfound` marks | reads unread | of them "'x' was not declared" | the unread reasons |
+| --- | --- | --- | --- | --- | --- |
+| tests/cases (writing `template`) | 364 (311 rc 0) | **0** | 17 in 8 units | **0** | read gaps alone: a bound over a parameter 3, a range-`for` over `T` 2, "write `typename T::s`" over a valid `T::s` 2, `sizeof` of a dependent type 2, a call that would instantiate its callee, an unrelated cast, a dependent `throw`, an undeducible member template call, `T::*` over `T`, `dynamic_cast` to `T *`, an incomplete `a`, `Sel<1>::type` |
+| self-host | 102 (rc 0) | **0** | 26 lines in 25 units = **2 definitions** | **0** | OptCore.h:150 (a range-`for` over `vector<Region>` in a member template, in the 25 units that include it) and OptPipeline.cpp:194 (`->` over a `decltype`) |
+| p144 + p150 | 32 | 1 (tln1's `m`) | 19 in 17 units | **9** (tln2, tln3, dt02, dt03, dt04, dt07, dt10, dt12, dt14) | dt01 "expected an expression", dt05 a conversion, dt06 an arity, dt08 and dv01 "write `typename`", dt09 a void return, dt11 `break`, dt13 `.` over `int`, dv01's bound and its `U u(a, b)` |
+
+(Syntax.cpp's own unit matches one `unfound` and one `(unread` - the dump's string literals - and is counted 0.) **The same with
+`-arch x86_64-windows`** (`boxkit/m8r4a-linw.sh` on Linux, the read of the library's `_WIN32` branches; `m8r4a-w-*.txt`): suite
+17 unread, 0 `Unfound`, 0 not declared (310 rc 0); self-host 102 rc 0, the same 2 definitions; p144+p150 the same 19 and 9. So **the read finds
+nothing undeclared anywhere in the suite or the self-host**: every unread reason there is the read's own gap, and every "not
+declared" the read meets is in a program clang refuses. That is what R4-a and R4-b can stand on: re-raising them turns no case red
+today. tln4 and tl1's dependent calls read cleanly (`after(t)`, `g(t)`: marked `DependentName`, `found` empty or the definition's
+set) - the replay's lookup at the instantiation is what accepts them, R4-c's.
+
+**The slices.** Each is one commit that moves one count above; each turns run.sh red only where clang refuses, and each such case
+is read against clang (`-fno-delayed-template-parsing`, C3++'s headers) and rewritten (the program made valid, its point kept) or
+re-recorded as a `.error` with its reason, named in the slice's entry. The refusal's text says what clang's says and cites the
+paragraph, and its site gets its EXCLUSIONS.md-style citation only if it is a refusal by name (these are errors, not refusals).
+
+| slice | the change (plain and under `-templates=subst` alike: the read runs on both paths) | its measure at 19f84c3e | what must not change |
+| --- | --- | --- | --- |
+| **R4-a** | **a name the read finds nowhere is the program's error** ([temp.res]/10): the seven "was not declared" sites (ParserExpr.cpp:1651, 1666, 1742, 2350; Lookup.cpp:488, 494; Overload.cpp:658), raised inside a read (`patternBody_`), throw a SubstitutionFailure marked as a lookup's; readDeclaration (Templates.cpp:1903) - after its restore, on the path that tallies (2123, not the makeWanted re-read's return at 2119) - raises it at its own position as the program's error instead of noting it unread; the held-body catch (2059) carries it to the same place. Every other unread reason falls back as today | R4's over-acceptances **19 -> 10** (tln2, tln3, dt02, dt03, dt04, dt07, dt10, dt12, dt14 refused); suite and self-host "not declared" 0 -> 0, so **run.sh red 0** and self-host 102 of 102 (measure (c)); unread notes over p144+p150 19 -> 10 | every program clang accepts compiles and emits as before: identical plain and under the flag 0 differ (the 9 are refused, no accepted body moves); `-keep-going` resumes past the template (`p_.at_ = resume`); a lookup's failure inside a SFINAE trial of a signature stays a substitution failure (only the definition's read raises) |
+| R4-b | **a dependent base is left out at the definition, both ways** ([temp.dep]/3): a name the read marks `Unfound` is refused at the definition ("not found by unqualified lookup; a member of the dependent base 'B<T>' is reached by `this->m` or `B<T>::m`" - clang's sense); and a name the read found outside the base (tl2's global `count`) keeps the read's entity at the replay, never the base's member | over-acceptances 10 -> **9** (tln1); wrong answers 3 -> **2** (tl2: `3 2 3` -> clang's `3 40 3`); suite and self-host `Unfound` 0, so run.sh red 0 | `leftOutBase`'s dependent results for a qualified member of a dependent class (ParserExpr.cpp:2319, 3246, 3332); `this->m`, `B<T>::m` found at the instantiation; a non-dependent base's members found at the read (tl2's `NotTemplate`) |
+| R4-c | **a dependent unqualified call sees the definition's candidates and ADL's alone** ([temp.dep.candidate]): at the replay, a callee the read marked `DependentName` is looked up in the read's `found` set (noteDefinitionLookup's record, by the callee's location) plus ADL at the instantiation, never "every function in scope now"; an empty set with no ADL answer is clang's error ("neither visible in the template definition nor found by argument-dependent lookup"); `dependentCall`'s two "declared since"/"another scope" fallbacks (Templates.cpp:956-965) deleted, the replay now giving their answer | over-acceptances 9 -> **8** (tln4); wrong answers 2 -> **1** (tl1 whole: `both(2.5)` 201 -> 101, `h.get(1.5)` 3 -> 2, `lib::use(1.5)` 1002 -> 4); **tests/open/two-phase-lookup-late-name agrees** (open.sh names it); feature-sweep's `two-phase-lookup` row refused; `-check=templates`' fallbacks for the two deleted reasons -> 0 (their count at the slice's base is the slice's first measurement) | ADL from the instantiation context for a class argument (tl1's `adl(other::X())` = 5, `lib::use(lib::Tag())` = 9); a member callee and a qualified one untouched; `found`'s order; names.sh (the chosen function is the same entity wherever both agree) |
+| R4-d | **a non-dependent call keeps the read's choice**: the replay of a call the read resolved with no dependent part (no `DependentName`, no type-dependent argument) takes the read's resolution (`resolutions_`'s symbol) instead of resolving again over what was declared since; the instantiation takes a non-dependent name's entity from the read (D9) | no p144-p150 case moves (tl1's `g(1)`, `g('a')` pick the same function both ways); its measure is a new case, `two-phase-nondependent-bound` (`g(double)` before the template, `g(int)` after, `g(1)` inside: clang's answer the double's), clang's output its `.expected` | the read's resolution is the replay's wherever nothing was declared since (identical 0 differ); a call through a pointer, a member call, an operator (R5's node kinds) |
+| R4-e | **a body never instantiated is checked for its non-dependent part** ([temp.res]/8): a named list of unread reasons that are the program's - a syntax error ("expected ..."), `break`/`continue` outside a loop, a value returned from a void function, a conversion and an arity no argument can change, `.` or `->` over a non-class - raised as R4-a raises, each reason added only with a census showing it in no clang-accepted program; every other reason is printed as `-check=templates unread-gap (n): <reason>` and gated only-down beside replay-residue | over-acceptances 8 -> **2** (dt01, dt05, dt06, dt09, dt11, dt13); the gap census at the slice: suite 17 reads / 8 units, self-host 2 definitions / 25 units | a refusal by name inside a read stays a refusal (1.5's rule, `unsupported`); dv01 and dv02 (dependent bodies never used) stay accepted |
+| R4-e2 | **"write `typename`" made the program's**: the read takes `T::bar()` (a call) and `T::s` in a value as dependent values instead of failing with "write `typename T::bar`" (dv01's unread line, template-read-shapes.cpp:19-20's two in the suite), so the reason is left meaning only [temp.res]/3's missing `typename` - then raised | over-acceptances 2 -> **1** (dt08); suite gaps 17 -> 15; dv01's unread 3 -> 2 | A27's `typename` rule; `T::type` as a type after `typename` |
+| R4-f | **the close**: `tests/open/two-phase-lookup-late-name` moves to `tests/cases` with its `.error` (open.sh 11 -> 10); `tools/feature-sweep`'s `two-phase-lookup` row refused as clang refuses it, the other counts unchanged; docs/CONFORMANCE.md's entry ("A name declared after a template is found inside it") retired and EXCLUSIONS.md's "two-phase name lookup is not done" line removed (`tools/exclusions --check` 0/0); CLAUDE.md's "Decisions already taken" line is **the user's** to amend (M8.5's row) | open 10; feature-sweep row as clang; exclusions 0/0 | the other sweep rows; the open register's other entries |
+
+The one left after R4-e2 is **p150 dt15**: `a != b` over `N::S` finding `N::R`'s `operator!=` template, which [over.match.oper]/3's
+lookup does not reach - a non-template call in `main`, so a lookup defect of its own and not two-phase; it is recorded for the
+operator lookup's step with its clang answer, outside R4's exit. p149's wcn01, wcn02, wcn04, wcn06 and wc06 are 1.48's (M8.4 and
+the lookup), never R4's.
+
+**R4's exit**: over-acceptances among p144's and p150's 19 `neg` cases 19 -> 1 (dt15, named), wrong answers tl1 and tl2 -> 0, the
+suite's two-phase census (b) still 0, `tests/open.sh` 10 open, feature-sweep's row refused as clang refuses it and its other counts
+unchanged, the read's "not declared" and `Unfound` re-raised and the gap census printed.
+
+**The gate of every slice** (one commit each; the lane gate as the restart's lanes run it): run.sh 0 failed plain and under
+`-templates=subst` on Linux, Windows and the C6000 (each case that turns red read against clang 19.1.5 on the Windows box,
+`--target=x86_64-pc-linux-gnu` with C3++'s headers and `-fno-delayed-template-parsing` on the box's own target, and rewritten or
+re-recorded as `.error` with its reason, named in the entry - measure (b) says 0 for R4-a to R4-c); identical.sh against a REF from
+the slice's base 0 differ on four targets at -O0/-O1/-O2 both ways (a refusal adds no emitted file); subst.sh; the `-check=templates`
+census over tests/cases and the self-host both ABIs, no class differ, the unread and fallback lines by reason recorded; the FULL
+self-compile 102 of 102; static gates (exclusions 0/0, comment cap, memory gate, ast-residue, replay-residue); g++ -Werror; cl
+/W4 /WX, names.sh and overload.sh on Windows; **this lane's measure (a)-(c) re-run** (`m8r4a-lin.sh conf|confd|suite|self`,
+`m8r4a-win.sh conf gnu`) with the moved cases named.
+
+**Order.** R4-a first (the smallest: seven raise sites and one re-raise, its safety shown by (c)); R4-b next (the same re-raise
+for the `Unfound` mark, and the entity kept for tl2); R4-c after R4-a (an empty `found` set with no ADL becomes the same error
+R4-a raises, at the instantiation instead of the definition); R4-d after R4-c (both change what the replay's call binds; R4-c's
+ADL path first, so R4-d's "no dependent part" is the complement of a set already gated); R4-e after R4-a (the same raise for more
+reasons, each with its census); R4-e2 after R4-e (it narrows a reason before raising it); R4-f last. R4-c and R4-d change answers
+the replay gave (a wrong answer made right is still a changed output): their entries name every changed `.expected`, each
+re-recorded from clang's run. Nothing in R4 adds a `p_.tokens_[` or a `p_.at_ =` in src/sema: the raise travels in the
+SubstitutionFailure, the candidates in the syntax tree's `found`, the choice in `resolutions_`.
+
+**Cases from cpp11 that come into tests/cases** (each named with the version it came from: "from cpp11 1.83 (C++Optimize
+c482b4ed) `tests/conformance/neg/p150/p150neg/dt02_...`", in a first comment line, and judged by clang 19.1.5 against C3++'s
+headers before it counts - its `.error` or `.expected` is clang's, never cl's): the slice that makes each agree brings it, renamed
+`two-phase-<what>` - **R4-a**: tln2, tln3, dt02, dt03, dt04, dt07, dt10, dt12, dt14 (`.error`); **R4-b**: tln1 (`.error`), tl2
+(`.expected`, clang's `3 40 3`); **R4-c**: tln4 (`.error`), tl1 (`.expected`, clang's two lines); **R4-e**: dt01, dt05, dt06, dt09,
+dt11, dt13; **R4-e2**: dt08; and dv01 and dv02 with R4-a as the accepted side's guard (clang accepts, cxx3 accepts; outputs equal
+today: they hold that a dependent body never used stays accepted while the raises widen). Not brought: dt15 (above), p145-p149's
+(their own steps), and the 4 `pos` cases C3++'s headers cannot hold.
+
+**R4-a for the lane that takes it** (one lane-hour). (1) `SubstitutionFailure` gains `bool lookup` (Source.h:14; Source.cpp:140
+sets it from a `Source::failLookup(pos, message)` that the seven sites call where `patternBody_`, else `fail` as now - one
+function, not a flag threaded through `fail`'s callers). (2) readDeclaration keeps the first lookup failure of its read (the outer
+catch at 2068 and the held-body catch at 2059 both see it: `f.lookup` -> `raise = f`), lets the restore run, and after the makeWanted
+branch, before `tallyRead`, calls `p_.src_.fail(raise.pos, raise.why)` - inside an outer trial that is the outer's failure, at top
+level the program's error. (3) Probe: the 9 refused with clang's line and column (cxx3's text "'later' was not declared"; clang's
+"use of undeclared identifier" or "call to function ... that is neither visible ..." - the column the name's); dv01, dv02 and
+tl1/tl2/lz03 still built. (4) Gates as above; measure (a) re-run: 23 -> 14 over-acceptances over all 96, 19 -> 10 among R4's.
+The census line `-check=templates read raised (n)` counts the raises so the self-host's 0 is shown, not inferred.
+
+**What must not change through R4** (the plan's list, and these): a refusal by name inside a read is re-raised as it is today, never
+a substitution failure (1.5's rule); the read stays at the declaration for every door, and a body the read cannot read still falls
+back to the replay by name - R4 makes a failure the program's only where the reason says the program is wrong; dependent bodies
+never used stay accepted (dv01, dv02); the two name spellings; `-check=templates` holding made things against the replay; identical's
+0 differ for every program clang accepts and R4-c/R4-d do not reach (those two name every output they change); no library name
+special-cased; [temp.res]/10 never applied as a filter on token position - the definition's context is what the read recorded.
+
+**Where it stopped, and what is owed.** No src/ change; the measure is whole for (a) on both clang modes, (b) on both, and (c) on
+the suite (the 364 that write `template`; the other 1,019 read only the library's templates, which the self-host's units read too)
+and the self-host. The Windows box's busy file (gate m6dw54g) held all 40 turns of the wait; the lane went on at 09:16 as the
+rule says, with clang -fsyntax-only jobs under `/affinity 3FF` (about four minutes in all). (c) was measured for both ABIs
+(x86_64-windows by cross-compiling on Linux); owed: cxx3's side of (a) built and run on the Windows box (its accept/refuse is the
+front end's, measured on Linux; the outputs of the 12 it accepts only there); the
+`-check=templates` fallback counts of `dependentCall`'s two deleted reasons at R4-c's base; R4-d's case written and judged; the C6000
+row of the gate (no slice ran). Re-measure: `boxkit/m8r4a-lin.sh build|conf|confd|suite|self` (Linux, through ~/slot, over ~/m8r4a
+and ~/m8r4a-conf), `boxkit/m8r4a-winrun.sh` (ships `m8r4a-wtree.tar`: include, lib, tests/cases and the cases under conf/) running
+`m8r4a-win.sh conf|suite ms|gnu` on the Windows box; results in `boxkit/m8r4a-*.txt`.
