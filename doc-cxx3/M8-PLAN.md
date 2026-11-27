@@ -9220,8 +9220,8 @@ difference: functions 5,101 (covered 3,973 - exactly the no-check census's made:
 465, over a class's object 419, WordLit 100, Cast 57, packs 55, Member 18, Switch 6, Return 4, door 4, and no "Var: a class by
 value" (x86_64-windows' 16 are Cast and Call here); members 60,708 (covered 6,470 = 6,372 made + 98 replayed for landing pads) -
 Call 18,075, MemInit 9,312, Member 8,563, its class replayed 4,447, Delete 4,287, Conditional 4,211, over a class's object
-3,525, WordLit 656, Cast 409, R3's names 673, New 80. The census files are `~/m8r5ac-<arch>-<s|h>-<m|c>/*.t` with
-`.subst`, `.member`, `.replay` and `.kind` beside each.
+3,525, WordLit 656, Cast 409, R3's names 673, New 80. The sums by reason and by kind are `boxkit/m8r5a-census/` (each run's
+`.subst`, `.member`, `.replay` and `.kind`; the per-unit `.t` files were removed with the Linux tree).
 
 **(b) The node kinds, and what each is today** (src/syntax/Syntax.h:20-31: 24 expression kinds, 18 statement kinds, `Typedef`,
 `Var`, `Function`, `MemInit` - **46**; "made" = `substShape` (Templates.cpp:1342-1480) lets it through under a binding, at both
@@ -9250,7 +9250,7 @@ since 2026-11-19 - so the last column is the M6d slice that would, M6-PLAN's "M6
 | Try, Catch | **refused by kind** | `statement`, the handler loop (ParserStmt.cpp:2024) | S8g (the handler's binding) |
 | Typedef | **refused by kind** | the declaration statement (ParserStmt.cpp:90) | none (its type is the kernel's) |
 | Var | **made** for a scalar, a pointer or a reference; refused a class by value ("its constructor builds"), a reference to a base at an offset, a type the binding does not carry, an array or static local over a non-type parameter | the declaration statement, `parseInitialiser`, `initConstruct` (ParserStmt.cpp, ParserInit.cpp) | S8d |
-| Function | **made** (a local class's member or a lambda's body, as a part) | `functionDefinition` (ParserTopLevel.cpp:2039) | none |
+| Function | **made** (a local class's member or a lambda's body, as a part) | `topLevel`'s function definition (ParserTopLevel.cpp:2039) | none |
 | MemInit | **refused by kind** (a constructor's mem-initialisers; M8.4's 4m) | the mem-initialiser list (ParserClass.cpp:2737-2792), a temporary's defaults (ParserExprNew.cpp:866, 922) | S8d |
 
 So **29 kinds are made today** (18 whole, 11 in some shapes), **17 are refused by kind**, and **0 are ported** in R5's sense
