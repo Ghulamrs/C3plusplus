@@ -681,6 +681,9 @@ bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound, Templ
     PackMembers out;
     for (std::size_t k = 0; k < a->pack.size(); k++) {
         const Type *m = a->pack[k];
+        long long v = 0;     // 3R-d: a member the read kept as its expression, folded as argValued folds a non-pack one
+        if (k < a->packExprs.size() && a->packExprs[k] != nullptr && !(foldArg(a->packExprs[k], s.values, &v) && v >= 0)) return false;
+        if (k < a->packExprs.size() && a->packExprs[k] != nullptr) { out.push_back(m), out.values.push_back(v); continue; }
         const bool expansion = a->expandsParam >= 0 && m->kind() == Kind::TemplateParam && m->length() == a->expandsParam;
         const std::size_t q = static_cast<std::size_t>(a->expandsParam);
         if (expansion && (q >= s.packs.size() || s.packs[q].values.size() != (a->packIsValue ? s.packs[q].size() : 0))) return false;
@@ -694,7 +697,7 @@ bool Templates::argUnder(const Substituted &s, TemplateArg *a, bool bound, Templ
         if (a->packIsValue) out.values.push_back(a->packValues[k]);
     }
     for (std::size_t k = 0; k < out.size(); k++) if (out[k] == nullptr || p_.dependentType(out[k])) return false;
-    a->pack = out, a->packValues = out.values, a->expandsParam = -1;
+    a->pack = out, a->packValues = out.values, a->expandsParam = -1, a->packExprs.clear();
     if (a->type != nullptr) a->type = substitute(s, a->type).type;
     return true;
 }

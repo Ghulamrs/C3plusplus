@@ -1112,6 +1112,17 @@ void Parser::templateArguments(const TemplateDecl &decl,
                         continue;
                     }
                     if (expandPackValues(a)) continue;
+                    if (patternOnly_ && dependentAhead(true)) {     // 3R-d: a member over the parameters kept as its expression
+                        const std::size_t from = at_, mark = syntaxTree_.size();
+                        const DepExpr *read = valueOperandsAhead() ? depFromSyntax(syn(conditional())) : nullptr;
+                        syntaxTree_.kill(mark);
+                        if (read == nullptr) at_ = from;
+                        DepExpr tree = read != nullptr ? *read : *dependentExpression(true, false);
+                        tree.text = depText(from, at_);
+                        a.packExprs.resize(a.pack.size(), nullptr);
+                        a.pack.push_back(a.type), a.packValues.push_back(0), a.packExprs.push_back(types_.intern(tree));
+                        continue;
+                    }
                     const std::size_t argPos = peek().pos;
                     const long long v = constantExpression("a template argument");
                     tmpl_.checkNonTypeArgument(a.type, v, argPos);

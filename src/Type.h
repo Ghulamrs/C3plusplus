@@ -108,6 +108,7 @@ struct TemplateArg {
     // Itanium `JLi1ELi2EE`, Microsoft `$00$01` and `$S` for none. `type` is that element type.
     bool packIsValue = false;
     std::vector<long long> packValues;
+    std::vector<const DepExpr *> packExprs;     // a read's member over the parameters, as `expr` is a non-pack one's; null where written
     // **`Ns...` or `Ts...` in a pattern**: the expansion of pack parameter `expandsParam`, its one member that parameter itself - `JXspT_EE`, `JDpT_E`; -1 for a list.
     int expandsParam = -1;
     // **A template template argument**, `Holder<Box, int>`'s Box: `type` is the stand-in TypeTable::templateNameType makes,
