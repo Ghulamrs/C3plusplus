@@ -9155,3 +9155,71 @@ untouched); the trees were shipped by `git write-tree`.
 floating and object fold, defineConstexprStaticMember defining from it with the probe's node, then the re-read, jump, staticShape and staticInit deleted,
 replay-residue lowered); carriedId's early branch. No accepted lines, no wave-expected rows. Re-measure: the Linux scripts
 `m8r3rd7-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd6's renamed); `sh ~/m8r3rd7-q.sh r cen:s:c:l ...`.
+
+## R3, slice 3R-d, eighth lane: the typed fold's floats and objects, and the re-read deleted (lane m8r3rd8, 2026-11-27)
+
+Lane m8r3rd8, branch m8-3rd8 from 19f84c3e (m8r3rd7's plan; its src/ is 43d64603's), Linux only (the user, 2026-11-27: every
+Windows check owed). **src/ +189 / -74** in one commit: the typed fold's floating half, m8r3rd7's probe landed under it, and the first
+of the 2 defined from its node. The object half, and so the deleting commit, not reached.
+
+**THE MEASURE: the static door's re-entries ("jump: a static data member") 2 -> 1 on the suite, both ABIs, with the check;
+self-host 0 -> 0.** The REF is 19f84c3e, whose src/ is 43d64603's, so m8r3rd7's REF censuses are the before line.
+With the check, suite x86_64-linux door **2 -> 1** (made-class 2,347 -> 2,346, re-entries 26,304 -> 26,303, class differ 0, body
+23 = REF, nonzero rc 355 = REF, record 769 / 0 / 0 / 0), x86_64-windows **2 -> 1** (2,345 -> 2,344, 26,160 -> 26,159, 0, body 22 =
+REF, nonzero rc 379 = REF, 769 / 0 / 0 / 0); the one left is `W<P>::v`, constexpr-object-static-member.cpp's unit alone. Self-host
+with the check, door 0 on both ABIs: 102 rc 0, class 0, body 11 (= REF), made-class 74,341 / 74,319 (= REF), re-entries 471,316 ->
+471,421 and 471,202 -> 471,307 (+105 each); without, x86_64-linux 102 rc 0, class 0, made-class 74,339 (= REF), door 0, re-entries
+278,981 -> 279,067 (+86). The self-host's re-entries move because it compiles this commit's own changed sources (inferred, as
+m8r3rd7's probe's +7 was traced to ParserClass.cpp's unit; not traced per unit here). The suite without the check (and the self-host x86_64-windows without it): the next commit.
+**The typed fold's census**, `-check=templates static constexpr typed= ast= compared= disagree=`: suite, the check, both ABIs,
+**typed 1, ast 1, compared 1, disagree 0** (constexpr-object-static-member's unit: `h` by the typed fold, held against the replay's
+Ast value, equal; `v` by the re-read), 0 in every other unit; self-host typed 0, ast 0 (no made class there has a constexpr static).
+The value is also held byte for byte by the 24 identicals below (the REF lays `h` down by the Ast path).
+
+**Work (1), the floating half: one evaluator, two readers.** foldDouble's arithmetic is split from its reading: numberDouble (a
+literal's value in its type, the past-53-bit flag), castDouble (a conversion) and binaryDouble (the float, double and x87 lanes,
+the x87 lane's exactness test), file-static in Constexpr.cpp, which foldDouble over the Ast now calls; the new
+`Constexpr::foldFloating(const TypedTree &, TypedId, ...)` is the typed tree's reader feeding the same three - a floating literal by
+its token's dvalue, an integer or character literal by fold(TypedTree), a name by its StaticConst's or GlobalSym's floating value,
+`?:`, a cast to a floating type, unary `-`, and `+ - * /` of a floating type. It refuses (falls back, by why) what the Ast lane
+reaches only through a conversion node the typed tree does not have - an integer name, an integer operation - so it never defines
+where the Ast would not. flattenScalar's layout is split as Parser::floatingPieces (the x87 significand and exponent, a float's or
+a double's bits), which flattenScalar calls after its refusal and the typed path calls with the typed value; the typed path takes no
+value the refusal would refuse (past 53 bits, an x87 rounding: those go to the re-read, which refuses as before).
+
+**Work (2), the probe landed and `W<P>::h` defined from its node.** defineConstexprStaticMember under patternOnly_ keeps `= e` as
+the record's `init` (m8r3rd7's hunk); staticAgainst counts a static of no integer type as absent. staticsFromRead's new branch: a
+`constexpr` static of floating type with a node is folded by staticBefore -> staticFolded under the binding with the floating
+reader (`dout`), and declared by declareStaticMember(..., dfolded), which adds the member and defineConstexprStaticMember(...,
+dfolded) lays it down - StaticConst `dknown`, floatingPieces, the inline weak global - the Ast path's own tail. The census line
+`-check=templates static constexpr typed= ast= compared= disagree=` counts the constexpr statics the typed fold defined, those
+the re-read defined, and, where the replay's class already held the symbol's value (the Ast's, not one this fold set), the
+comparisons and disagreements.
+
+**Why the object half (`W<P>::v = T(3, 9)`) was not reached: the read's node does not hold the call.** `T(3, 9)` in a pattern is
+functionalCast's (ParserExpr.cpp): under patternBody_ with a dependent `T` the later arguments are decayed and dropped
+(`while (patternBody_ && dependentType(to) && consume(",")) decay(assign());`), and the node is noteCast's Cast with the first
+operand alone. A non-pattern `P(4, 5)` is a Call whose callee carries a TypeName record. So the object half needs, in order: the
+read noting `T(a, b)` over a dependent `T` with all its operands (a Call shape, as a class temporary's), which moves the read's syntax
+for every such pattern and wants its own census; the constructor resolved under the binding (Bound::calls, as boundMemberCall
+does for a member call); and constructConst split as foldDouble was - its argument reading apart from the run of ConstexprCtor's
+steps - so a typed reader can feed typed arguments to the same run, and the ConstObject laid down by constObjectPieces. Until
+then `v` takes the re-read, so staticsFromRead's re-read and jump, staticShape and classShape's staticInit stay: `p_.tokens_[` in
+Templates.cpp 100 (unchanged), replay-residue 104 / 17 / 24 / 6 (unchanged), template-subst-staticid's `Late<double>` still
+staticShape's replay.
+
+**Gates (Linux; the next wave gates it fully):** g++ -Werror clean (the build); **all 24 identicals 0 differ** against the REF
+(19f84c3e): x86_64-linux, tms6747, arm64-darwin at -O0 / -O1 / -O2 plain and -templates=subst, 1,031 compared each, x86_64-windows
+the same six, 2,062 each, on Linux by level - **no changed emitted output at -O0, -O1 or -O2**; the FULL self-compile 102 of 102
+(162 s); static gates on the committed tree (2210d566): exclusions 0 uncited, 0 stale (12 citations re-pointed by the line shifts:
+ParserClass.cpp 2048/2236/3008 +12, ParserInit.cpp 1000/1286/1332/1846 +2, Constexpr.cpp 870 +5, Templates.cpp 2938/2990/3695 +2,
+5439 +14), outside 554 / broken 95 (= baseline), make comments 0 over the cap, memory gate lower than its baseline (not
+recorded), ast-residue not raised, replay-residue 104 / 17 / 24 / 6 (unchanged), ide/generate.py up to date. run.sh plain and under -templates=subst, then subst.sh: the next commit.
+
+**What must not change, and did not:** every emitted file (identical above); the -check body differ lines (not above the REF's);
+class differ 0; the nonzero-rc unit counts. Frozen and untouched: 4m-4s and R3's other slices; no new `p_.tokens_[` or `p_.at_ =` in
+src/sema.
+
+**Owed:** **Windows: cl /W4 /WX, names.sh, overload.sh** (Linux only); the object half above, then the 2nd of the 2, then the
+deleting commit (the re-read, its jump, staticShape, staticInit; replay-residue lowered; `Late<double>` made). No accepted lines, no
+wave-expected rows. Re-measure: the Linux scripts `m8r3rd8-{lbuild,q,lcen,one,job,ident,mt,staticc}.sh` (m8r3rd7's renamed).

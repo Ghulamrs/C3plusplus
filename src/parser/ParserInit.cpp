@@ -808,30 +808,7 @@ void Parser::flattenScalar(const Type *type, Init &in, int base,
                               "the build machine can promise. It is refused "
                               "rather than approximated; compute it at run "
                               "time, or write the value as a 'double'");
-        long long bits = 0;
-        if (type->isX87(target_)) {
-
-            unsigned long long sig = 0;
-            unsigned int hi = 0;
-            x87Parts(d, &sig, &hi);
-            out.push_back(GlobalPiece{ base, 8, static_cast<long long>(sig),
-                                       std::string() });
-            out.push_back(GlobalPiece{ base + 8, 2, static_cast<long long>(hi),
-                                       std::string() });
-            return;
-        }
-        if (type->kind() == Kind::Float) {
-            float f = static_cast<float>(d);
-            unsigned int u;
-            std::memcpy(&u, &f, sizeof u);
-            bits = static_cast<long long>(u);
-        } else {
-            double dd = static_cast<double>(d);
-            unsigned long long u;
-            std::memcpy(&u, &dd, sizeof u);
-            bits = static_cast<long long>(u);
-        }
-        out.push_back(GlobalPiece{ base, type->size(target_), bits, std::string() });
+        floatingPieces(type, d, base, out);
         return;
     }
 
@@ -865,6 +842,31 @@ void Parser::flattenScalar(const Type *type, Init &in, int base,
                           "integer constant expression");
     if (type->isInteger()) v = constant_.narrowTo(v, type);
     out.push_back(GlobalPiece{ base, type->size(target_), v, std::string() });
+}
+
+// A floating value's bytes: the x87 significand and exponent, or a float's or a double's bits.
+void Parser::floatingPieces(const Type *type, long double d, int base, std::vector<GlobalPiece> &out) {
+    long long bits = 0;
+    if (type->isX87(target_)) {
+        unsigned long long sig = 0;
+        unsigned int hi = 0;
+        x87Parts(d, &sig, &hi);
+        out.push_back(GlobalPiece{ base, 8, static_cast<long long>(sig), std::string() });
+        out.push_back(GlobalPiece{ base + 8, 2, static_cast<long long>(hi), std::string() });
+        return;
+    }
+    if (type->kind() == Kind::Float) {
+        float f = static_cast<float>(d);
+        unsigned int u;
+        std::memcpy(&u, &f, sizeof u);
+        bits = static_cast<long long>(u);
+    } else {
+        double dd = static_cast<double>(d);
+        unsigned long long u;
+        std::memcpy(&u, &dd, sizeof u);
+        bits = static_cast<long long>(u);
+    }
+    out.push_back(GlobalPiece{ base, type->size(target_), bits, std::string() });
 }
 
 void Parser::typedefFunctionSuffix(Declared &td) {

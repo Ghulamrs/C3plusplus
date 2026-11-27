@@ -104,11 +104,11 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2390` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:267` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3008`, `src/parser/ParserTopLevel.cpp:838` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3020`, `src/parser/ParserTopLevel.cpp:838` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:766` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:484` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1000`, `src/parser/ParserTopLevel.cpp:486`, `src/parser/ParserExprNew.cpp:429` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:213` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:764`, `src/parser/ParserInit.cpp:1002`, `src/parser/ParserTopLevel.cpp:486`, `src/parser/ParserExprNew.cpp:429` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:213` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:89` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:292` |
 
@@ -157,12 +157,12 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3695`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3697`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a member template of a class made from a template whose declaration its read
   record cannot carry under the class's binding** - the class body is not read
   again; no case of the suite or the self-host reaches it (R3 3R-h).
-  `src/sema/Templates.cpp:5439`
+  `src/sema/Templates.cpp:5453`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1179`
 - **a non-type template parameter whose type is built from an earlier one**,
@@ -234,7 +234,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:870`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:875`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:125`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:914`
@@ -249,7 +249,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2584`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2236`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2248`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2115`
 - **a covariant return that moves the result** - an override may return a
@@ -287,12 +287,12 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1383`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1286`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1288`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1459`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1332`,
+  constructor** - `src/parser/ParserInit.cpp:1334`,
   `src/parser/ParserStmt.cpp:250`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:726`
 ## Objects that would run code before `main`
@@ -305,10 +305,10 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2048`
+  destroyed element by element. `src/parser/ParserClass.cpp:2060`
 - **a static-duration reference bound to a temporary of an incomplete class, an
   array or void** - [class.temporary]/5's object of static storage is made for a
-  scalar or a complete class only. `src/parser/ParserInit.cpp:1846`
+  scalar or a complete class only. `src/parser/ParserInit.cpp:1848`
 
 ## Expressions
 
@@ -321,7 +321,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1688`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:2990`
+  deduced one does not - `src/sema/Templates.cpp:2992`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:865`
@@ -531,7 +531,7 @@ judgement in a program. They are named here instead:
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:2938` - a template instantiating itself past
+- `src/sema/Templates.cpp:2940` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 

@@ -66,6 +66,8 @@ public:
     };
     // fold's cases over a typed expression (M6d S6, C2); false with `*why` set where this lane does not reach the case.
     bool fold(const TypedTree &t, TypedId id, long long *out, const char **why) const;
+    // foldDouble's over a typed expression (3R-d, eighth lane): its own reader, foldDouble's arithmetic.
+    bool foldFloating(const TypedTree &t, TypedId id, long double *out, bool *past53, bool *x87Rounded, const char **why) const;
     std::string foldReport(int *differ) const;
     long long narrowTo(long long v, const Type *t) const;
 

@@ -51,6 +51,11 @@ static long double inType(const Type *t, const Target &target, long double v) {
     return v;
 }
 
+static void numberDouble(const Type *t, const Target &target, long double d, long long i, long double *out, bool *past53);
+static void castDouble(const Type *ct, const Target &target, long double *out);
+static bool binaryDouble(Arith op, const Type *type, const Target &target, long double l, long double r, long double *out,
+                         bool *past53, bool *x87Rounded);
+
 const ConstexprSlot *Constexpr::constexprSlot(const Var &v) const {
     if (constexprFrames_.empty()) return nullptr;
     const std::vector<ConstexprSlot> &frame = constexprFrames_.back();
@@ -910,35 +915,13 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
         return true;
     }
     if (const Num *n = dynamic_cast<const Num *>(&e)) {
-        if (n->type()->isFloating()) {
-            *out = inType(n->type(), target, n->dvalue());
-        } else {
-            unsigned long long a = n->value() < 0
-                ? 0ULL - static_cast<unsigned long long>(n->value())
-                : static_cast<unsigned long long>(n->value());
-            while (a != 0 && (a & 1) == 0) a >>= 1;
-            if (a >= (1ULL << 53)) *past53 = true;
-            *out = static_cast<double>(n->value());
-        }
+        numberDouble(n->type(), target, n->dvalue(), n->value(), out, past53);
         return true;
     }
     if (const Cast *c = dynamic_cast<const Cast *>(&e)) {
         if (!foldDouble(c->value(), target, out, past53, x87Rounded))
             return false;
-
-        const Type *ct = c->type();
-        if (ct->kind() == Kind::Float)       *out = static_cast<float>(*out);
-        else if (ct->kind() == Kind::Double) *out = static_cast<double>(*out);
-        else if (ct->kind() == Kind::LongDouble && !ct->isX87(target))
-                                             *out = static_cast<double>(*out);
-        else if (!ct->isFloating()) {
-            if (ct->isSigned(target))
-                *out = static_cast<long double>(
-                           static_cast<long long>(*out));
-            else
-                *out = static_cast<long double>(
-                           static_cast<unsigned long long>(*out));
-        }
+        castDouble(c->type(), target, out);
         return true;
     }
     // **A call to a constexpr function, as fold() runs one** (A11).
@@ -973,19 +956,52 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
         if (!foldDouble(b->lhs(), target, &l, past53, x87Rounded) ||
             !foldDouble(b->rhs(), target, &r, past53, x87Rounded))
             return false;
+        if (b->op() == BinOp::LAnd || b->op() == BinOp::LOr) return false;
+        return binaryDouble(arithOf(b->op()), b->type(), target, l, r, out, past53, x87Rounded);
+    }
+    return false;
+}
 
-        Kind bk = b->type()->kind();
+// foldDouble's arithmetic, shared by its two readers - the Ast's above and the typed tree's below (3R-d, eighth lane).
+static void numberDouble(const Type *t, const Target &target, long double d, long long i, long double *out, bool *past53) {
+    if (t->isFloating()) {
+        *out = inType(t, target, d);
+        return;
+    }
+    unsigned long long a = i < 0 ? 0ULL - static_cast<unsigned long long>(i) : static_cast<unsigned long long>(i);
+    while (a != 0 && (a & 1) == 0) a >>= 1;
+    if (a >= (1ULL << 53)) *past53 = true;
+    *out = static_cast<double>(i);
+}
+
+static void castDouble(const Type *ct, const Target &target, long double *out) {
+    if (ct->kind() == Kind::Float)       *out = static_cast<float>(*out);
+    else if (ct->kind() == Kind::Double) *out = static_cast<double>(*out);
+    else if (ct->kind() == Kind::LongDouble && !ct->isX87(target))
+                                         *out = static_cast<double>(*out);
+    else if (!ct->isFloating()) {
+        if (ct->isSigned(target))
+            *out = static_cast<long double>(static_cast<long long>(*out));
+        else
+            *out = static_cast<long double>(static_cast<unsigned long long>(*out));
+    }
+}
+
+static bool binaryDouble(Arith op, const Type *type, const Target &target, long double l, long double r, long double *out,
+                         bool *past53, bool *x87Rounded) {
+    {
+        Kind bk = type->kind();
         bool asDouble = bk == Kind::Double ||
-                        (bk == Kind::LongDouble && !b->type()->isX87(target));
+                        (bk == Kind::LongDouble && !type->isX87(target));
         if (bk == Kind::Float) {
             float v = 0;
-            if (!floatingArith(arithOf(b->op()), static_cast<float>(l), static_cast<float>(r), &v)) return false;
+            if (!floatingArith(op, static_cast<float>(l), static_cast<float>(r), &v)) return false;
             *out = v;
             return true;
         }
         if (asDouble) {
             double v = 0;
-            if (!floatingArith(arithOf(b->op()), static_cast<double>(l), static_cast<double>(r), &v)) return false;
+            if (!floatingArith(op, static_cast<double>(l), static_cast<double>(r), &v)) return false;
             *out = v;
             return true;
         }
@@ -997,24 +1013,24 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
         const double dr = static_cast<double>(r);
         double sum;
         bool fits;
-        switch (b->op()) {
-        case BinOp::Add: {
+        switch (op) {
+        case Arith::Add: {
             sum = dl + dr;
             const double bb = sum - dl;
             fits = (dl - (sum - bb)) + (dr - bb) == 0.0;
             break;
         }
-        case BinOp::Sub: {
+        case Arith::Sub: {
             sum = dl - dr;
             const double bb = sum - dl;
             fits = (dl - (sum - bb)) + (-dr - bb) == 0.0;
             break;
         }
-        case BinOp::Mul:
+        case Arith::Mul:
             sum = dl * dr;
             fits = std::fma(dl, dr, -sum) == 0.0;
             break;
-        case BinOp::Div:
+        case Arith::Div:
             if (dr == 0) return false;
             sum = dl / dr;
             fits = std::fma(sum, dr, -dl) == 0.0;
@@ -1028,7 +1044,69 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
         *out = sum;
         return true;
     }
-    return false;
+}
+
+// foldDouble's cases over a typed expression: an integer leaf only as a literal, an operation only of a floating type.
+bool Constexpr::foldFloating(const TypedTree &t, TypedId id, long double *out, bool *past53, bool *x87Rounded, const char **why) const {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const TypedNode &n = t.node(id);
+    const syntax::Kind kind = st.node(n.syntax).kind;
+    const std::string &op = st.text(n.syntax);
+    const Type *type = n.type;
+    if (type == nullptr) { *why = "untyped"; return false; }
+    if (!constexprFrames_.empty()) { *why = "inside a constexpr call"; return false; }
+    long double l = 0, r = 0;
+    long long i = 0;
+    switch (kind) {
+    case syntax::Kind::Paren:
+        return n.count == 1 && foldFloating(t, t.child(id, 0), out, past53, x87Rounded, why);
+    case syntax::Kind::FloatLit:
+        if (n.literal == 0 || !type->isFloating()) { *why = "a floating literal not recorded"; return false; }
+        numberDouble(type, p_.target_, t.literal(id).dvalue, 0, out, past53);
+        return true;
+    case syntax::Kind::IntLit: case syntax::Kind::CharLit:
+        if (!fold(t, id, &i, why)) return false;
+        numberDouble(type, p_.target_, 0, i, out, past53);
+        return true;
+    case syntax::Kind::Name: {
+        const Resolution &res = t.resolution(id);
+        const Parser::StaticConst *sc = res.what == Resolution::StaticMember ? p_.findStaticConst(res.symbol) : nullptr;
+        const GlobalSym *g = res.what == Resolution::Global ? p_.lookup_.findGlobal(res.name.empty() ? op : res.name) : nullptr;
+        if (type->isFloating() && sc != nullptr && sc->dknown) { *out = sc->dvalue; return true; }
+        if (type->isFloating() && g != nullptr && g->isConstantDouble) { *out = g->constantDouble; return true; }
+        *why = "a name with no floating constant";
+        return false;
+    }
+    case syntax::Kind::Conditional: {
+        if (!fold(t, t.child(id, 0), &i, why)) return false;
+        return foldFloating(t, t.child(id, i ? 1 : 2), out, past53, x87Rounded, why);
+    }
+    case syntax::Kind::Cast:
+        if (n.count == 0 || !type->isFloating()) { *why = "a cast to no floating type"; return false; }
+        if (!foldFloating(t, t.child(id, n.count - 1), out, past53, x87Rounded, why)) return false;
+        castDouble(type, p_.target_, out);
+        return true;
+    case syntax::Kind::Unary:
+        if (op != "-" || !type->isFloating()) { *why = "a floating unary operator outside the fold"; return false; }
+        if (!foldFloating(t, t.child(id, 0), out, past53, x87Rounded, why)) return false;
+        *out = -*out;
+        return true;
+    case syntax::Kind::Binary: {
+        static const char *const ops[] = { "+", "-", "*", "/" };
+        static const Arith ariths[] = { Arith::Add, Arith::Sub, Arith::Mul, Arith::Div };
+        std::size_t k = 0;
+        while (k < 4 && op != ops[k]) k++;
+        if (k == 4 || !type->isFloating()) { *why = "a floating operator outside the fold"; return false; }
+        if (!foldFloating(t, t.child(id, 0), &l, past53, x87Rounded, why) || !foldFloating(t, t.child(id, 1), &r, past53, x87Rounded, why))
+            return false;
+        if (binaryDouble(ariths[k], type, p_.target_, l, r, out, past53, x87Rounded)) return true;
+        *why = "a floating fault";
+        return false;
+    }
+    default:
+        *why = syntax::kindName(kind);
+        return false;
+    }
 }
 
 }   // namespace sema

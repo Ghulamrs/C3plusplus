@@ -391,11 +391,15 @@ public:
     void staticAgainst(std::uint32_t init, const Type *owner, const std::string &n, const Substituted &s, const std::vector<TemplateParam> &params,
                        const std::vector<long long> &values, const std::string &enums);     // 3R-d's census: the read's node folded
     bool staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                      const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt = 0);
+                      const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt = 0,
+                      long double *dout = nullptr);
     bool staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                      const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at);     // staticsFromRead's fold
+                      const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at,
+                      long double *dout = nullptr);     // staticsFromRead's fold; `dout` a floating one's
     mutable std::size_t staticAsked_ = 0, staticDisagree_ = 0, staticAbsent_ = 0, staticUnfolded_ = 0;
     std::size_t beforeAsked_ = 0, beforeUnfolded_ = 0;     // staticBefore's: asked, and left to the re-read
+    std::size_t typedDefined_ = 0, astDefined_ = 0, typedCompared_ = 0, typedDisagree_ = 0;     // constexpr statics: typed fold or re-read
+    std::set<std::string> typedStatics_;     // the symbols the typed fold defined: no replay's value to hold them against
     std::map<std::string, std::size_t> staticWhy_;     // the census's unfolded, by why
     std::size_t ownTypedefAt(std::size_t start, const std::string &n) const;     // `typedef X<num, den> n;`, X its own template
     bool typedefCarried(std::size_t start, const Substituted &s, const Type *read, const std::vector<const Type *> *wanted) const;

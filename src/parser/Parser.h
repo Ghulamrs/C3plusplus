@@ -1589,8 +1589,10 @@ private:
     }
     void declareStaticMember(const std::string &cls, Type *owner,
                              const Declared &d, Access access, bool volatileWritten,
-                             bool threadLocal, bool isConstexpr = false, const long long *folded = nullptr, bool unread = false);
-    void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d);
+                             bool threadLocal, bool isConstexpr = false, const long long *folded = nullptr, bool unread = false,
+                             const long double *dfolded = nullptr);
+    void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d,
+                                     const long double *dfolded = nullptr);
     std::set<std::string> inClassConstexprStatics_;
     void defineStaticMember(Declared &d, Program &program, bool threadLocal);
     // **What a static member *defined* out of line is worth when read** - the
@@ -2410,6 +2412,7 @@ private:
 
     void flattenScalar(const Type *type, Init &in, int base,
                        std::vector<GlobalPiece> &out);
+    void floatingPieces(const Type *type, long double d, int base, std::vector<GlobalPiece> &out);     // flattenScalar's layout
     void flattenFill(const Type *type, InitCursor &c, int base,
                      std::vector<GlobalPiece> &out);
     void flattenAggregate(const Type *type, InitCursor &c, int base,

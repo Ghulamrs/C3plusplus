@@ -2710,6 +2710,8 @@ std::string Templates::builtReport() const {
     out += "-check=templates static record asked=" + std::to_string(staticAsked_) + " disagree=" + std::to_string(staticDisagree_) +
            " absent=" + std::to_string(staticAbsent_) + " unfolded=" + std::to_string(staticUnfolded_) + "\n";     // R3 3R-d's census
     out += "-check=templates static before asked=" + std::to_string(beforeAsked_) + " unfolded=" + std::to_string(beforeUnfolded_) + "\n";
+    out += "-check=templates static constexpr typed=" + std::to_string(typedDefined_) + " ast=" + std::to_string(astDefined_) +
+           " compared=" + std::to_string(typedCompared_) + " disagree=" + std::to_string(typedDisagree_) + "\n";     // the typed fold's reach
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i)
         out += "-check=templates static " + std::string(i->first[0] == '~' ? "disagree (" : "unfolded (") + std::to_string(i->second) + "): " +
                i->first.substr(i->first[0] == '~' ? 11 : 0) + "\n";
@@ -4934,7 +4936,7 @@ void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::
         if (params[q].type != nullptr) named[params[q].name] = values[q];
     long long v = 0;
     staticAsked_++;
-    if (init == 0) staticAbsent_ += m->folded;
+    if (init == 0 || !m->type->isInteger()) staticAbsent_ += m->folded;     // a constexpr object's or floating node: no integer
     else if (!m->folded) staticDisagree_++, staticWhy_["~disagree: " + n + ", the replay's not folded"]++;
     else if (!staticFolded(syntax::NodeId(init), owner, s, params, named, enums, &v)) staticUnfolded_++;
     else if (v != m->value) staticDisagree_++, staticWhy_["~disagree: " + n + " " + std::to_string(v) + ", the replay's " + std::to_string(m->value)]++;
@@ -4942,14 +4944,15 @@ void Templates::staticAgainst(std::uint32_t init, const Type *owner, const std::
 
 // 3R-d: staticsFromRead's fold of a static's record before any re-read, its whys kept apart from the census's (`before:`).
 bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                             const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at) {
+                             const std::vector<long long> &values, const std::string &enums, long long *out, std::size_t at,
+                             long double *dout) {
     std::map<std::string, long long> named;
     for (std::size_t q = 0; q < params.size() && q < values.size(); q++)
         if (params[q].type != nullptr) named[params[q].name] = values[q];
     std::map<std::string, std::size_t> whys;
     whys.swap(staticWhy_);
     beforeAsked_++;
-    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out, at);
+    const bool ok = staticFolded(syntax::NodeId(init), owner, s, params, named, enums, out, at, dout);
     beforeUnfolded_ += !ok;
     for (std::map<std::string, std::size_t>::const_iterator i = staticWhy_.begin(); i != staticWhy_.end(); ++i) whys["before: " + i->first] += i->second;
     whys.swap(staticWhy_);
@@ -4959,7 +4962,8 @@ bool Templates::staticBefore(std::uint32_t init, const Type *owner, const Substi
 // 3R-d: a static's initialiser by the constant evaluator over its read node typed under `s`, each value-dependent name of a
 // non-type parameter at `named`'s value; false at any other dependent leaf (a `sizeof` of a parameter, another class's static).
 bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Substituted &s, const std::vector<TemplateParam> &params,
-                             const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt) {
+                             const std::map<std::string, long long> &named, const std::string &enums, long long *out, std::size_t makeAt,
+                             long double *dout) {
     const syntax::Tree &st = p_.syntaxTree_;
     Bound under;
     under.s = s, under.folds = true;
@@ -5022,7 +5026,9 @@ bool Templates::staticFolded(syntax::NodeId init, const Type *owner, const Subst
     sema::Typer typer(p_);
     const sema::TypedId t = typer.typedUnder(init, " static");
     const char *why = nullptr;
-    const bool ok = p_.constant_.fold(typer.tree(), t, out, &why);
+    bool past53 = false, x87 = false;     // `dout`: a floating static's, refused where the Ast's layout would refuse it
+    const bool ok = dout != nullptr ? p_.constant_.foldFloating(typer.tree(), t, dout, &past53, &x87, &why) && !past53 && !x87
+                                    : p_.constant_.fold(typer.tree(), t, out, &why);
     bound_.erase(" static");
     if (!ok) staticWhy_[why != nullptr ? why : "the evaluator's no"]++;
     return ok;
@@ -5202,11 +5208,19 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         const Type *type = need(s, m.type).type;
         const std::string enumsAt = tag + (enumScope != scope ? "::$held::" : "::");
         long long v = 0;     // 3R-d: a `static const` integer its record folds is declared with that value, no re-read
+        long double dv = 0;     // and a floating constexpr one by the typed fold (eighth lane), held against the replay's under the check
         if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v, after)) {
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, &v);
         } else if (init == 0 && !cx) {     // no `=` in the read: nothing to re-read
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, true);
+        } else if (init != 0 && cx && type->isFloating() && staticBefore(init, owner, s, params, values, enumsAt, &v, after, &dv)) {
+            const Type::StaticMember *had = scope != owner ? scope->findStaticMember(m.name) : nullptr;
+            const Parser::StaticConst *sc = had != nullptr && typedStatics_.count(had->symbol) == 0 ? p_.findStaticConst(had->symbol) : nullptr;
+            typedDefined_++, typedCompared_ += sc != nullptr && sc->dknown, typedDisagree_ += sc != nullptr && sc->dknown && sc->dvalue != dv;
+            p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, false, &dv);
+            typedStatics_.insert(owner->findStaticMember(m.name)->symbol);
         } else {
+            astDefined_ += cx;
             p_.at_ = after;
             reentered("jump: a static data member");
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx);
