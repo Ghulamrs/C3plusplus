@@ -5451,3 +5451,33 @@ outputs on x86_64-linux, none order-only) and R2's slice 4b (m8-4b2: a type para
 substituted on the kernel). **Suite falling back= 6,768 -> 6,747; re-entries under a binding at instantiation 21,565 ->
 21,549; suite type defaults made 0 -> 28 of 184;** substitution helpers with callers 6; replay-residue 150 / 19 / 26 / 6.
 Nothing changes without the flag.
+
+**M6d's side of M8's R5, 2026-11-27 (lane m8r5a; the plan entry "R5 split into slices" in M8-PLAN, decision 4 of the
+restart).** Measured at 19f84c3e: **no action family is freed of `ExprPtr` yet** - tools/ast-residue ExprPtr 2,012 (its
+baseline since 2026-11-19; S7's two families, m6d-s7a and m6d-s7b, moved shape tests onto records, not signatures), and
+S8 is written as one commit that deletes the expression classes whole. Decision 4 needs it as families instead: **S8 split
+into S8a-S8h, one action family each**, every one leaving the family's action in two halves - the decision over typed
+operands (`sema::RankedArgument` - type, value category, null constant - and the operand's syntax node; it returns the record
+the parser writes today: `Resolved`, a `Signature`, a temporary's `builtBy`, a frame step) and the Ast build beside it, which
+S8's last commit deletes. The parser calls decision then build; R5's instantiator calls the decision alone under a binding.
+A family whose decision cannot be separated is written down with why (the requirement's own clause). By R5's order:
+
+| M6d slice | the family (files, ExprPtr words at 19f84c3e) | its decision, typed | R5 slice that calls it |
+| --- | --- | --- | --- |
+| S8a | **calls**: `completeCall`, `memberCallWith`, `memberCall`, `finishCall` (ParserExprCall.cpp 83), `convert`, `convertNode`, `decay` (ParserOverload.cpp 88), `Overload::resolveOverload(name, std::vector<ExprPtr>)` and `rankArgument(const Expr &)` | `resolveOverload` over `std::vector<RankedArgument>` (rankArgument has that overload already, M8.2 2d); ADL's `candidateSet` is typed already | R5-c |
+| S8b | **names and member access**: `objectRef`, `localRef`, `thisObject`, `qualifiedMemberThroughThis`, the postfix member step, `explicitDestructorCall` (ParserExpr.cpp 243, part) | a member's `Resolved` from (class, name, object's cv and category) with its access asked of the right class | R5-b |
+| S8c | **operators and assignment**: `arithmetic`, `comparison`, `pointerAdd`, `pointerSub`, `overloadedBinary`, `overloadedUnary` (ParserExpr.cpp), `compound`, `incDec`, `assignValue`, `shiftOf` (ParserOperator.cpp 190), `Overload::resolveOperator(name, const Expr &, const Expr *)` | `resolveOperator` over two RankedArguments; the built-in result type (Typing.cpp's `expression` already has it); `copyAssignFor`'s choice | R5-d |
+| S8d | **temporaries and class objects**: `classTemporary`, `constructTemporary`, `buildInto`, `buildReturned`, `materialiseCopy`, `endFullExpression`, `temporaryDestruction` (ParserExprNew.cpp 388, part; ParserExprCall.cpp), `initConstruct` and the initialiser paths (ParserInit.cpp 98), the special members Classes builds (Classes.cpp 196) | the constructor chosen, the slot and its frame step, the destructor registration, elision's form - records the frame log (`layFrame`) and the ledger already name | R5-e, R5-f |
+| S8e | **`?:`**: `conditionalNode` (ParserOperator.cpp) | [expr.cond]'s type and category from two typed arms (Typing.cpp's Conditional case holds the scalar half) | R5-g |
+| S8f | **casts**: `castExpr` (ParserOperator.cpp), `staticCast`, `constCast`, `reinterpretCast`, `functionalCast` (ParserExpr.cpp), `dynamicCast*` (ParserExprNew.cpp) | the conversion sequence (`convert`'s, after S8a) from a typed operand to the written type | R5-h |
+| S8g | **`new`/`delete` and `throw`**: `newExpression`, `deleteExpression`, `callAllocator`, `deallocate*`, `throwExpression`, `rethrowCall` (ParserExprNew.cpp) and the handler's binding (ParserStmt.cpp 112, part) | the allocator and deallocator chosen, the thrown object's copy and its type_info | R5-i, R5-j |
+| S8h | **lambdas**: `lambdaExpression`, `buildClosure`, `buildClosureObject` (ParserExprLambda.cpp 40) | the closure type and its captures from typed names | R5-k |
+| S8 | the close: the expression classes, `Visitor`, `ExprPtr` 2,012 -> 0 and `fold(const Expr &)` deleted in one commit, as written | - | - |
+
+**What R5 waits on, in order:** S8a before R5-c (the call family is R5's largest by count, below); S8b before R5-b; S8c before
+R5-d; S8d before R5-e and R5-f; S8e-S8h before their R5 slices. R5-a (the walk in source order, the census by kind) and the
+slices of kinds with no dependent action (R5-l) wait on nothing of M6d's. Each S8 slice is identical by construction (the
+parser calls decision then build where it called the action) and its proof is M6d's: identical.sh on four targets and the
+`-g` texts 0 differ; its R5 slice then proves the instantiator's call under `-templates=subst`. M6d's own ordering stays (S7's
+third family before S8a-S8h; tms6747 and M6a.2 as the row says). ExprPtr falls by family only where a decision's signature
+drops it; the Ast builds keep the rest until S8's close.

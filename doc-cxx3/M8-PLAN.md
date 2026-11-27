@@ -9155,3 +9155,163 @@ untouched); the trees were shipped by `git write-tree`.
 floating and object fold, defineConstexprStaticMember defining from it with the probe's node, then the re-read, jump, staticShape and staticInit deleted,
 replay-residue lowered); carriedId's early branch. No accepted lines, no wave-expected rows. Re-measure: the Linux scripts
 `m8r3rd7-{lbuild,q,lcen,one,job,ident,mt}.sh` (m8r3rd6's renamed); `sh ~/m8r3rd7-q.sh r cen:s:c:l ...`.
+
+## R5 split into slices: the body instantiator by node kind, shared with M6d's action families (lane m8r5a, 2026-11-27)
+
+Base 19f84c3e (m8-r3rd7's tip: R3's slice 3R-d at its seventh lane; R5 is planned now and built after R3 and R4, as the
+restart's order says). **No src/ change** (src/ 99,532 lines at the base): this entry is the plan, measured, Linux only. R5 is
+the review's D4 (`boxkit/fable-m8-direction-review.md`): a function or member body is made from its read only when
+`substShape` finds every node in a whitelist of shapes; anything else replays the whole body. R5 replaces the whitelist by
+**one instantiator that walks the read body in source order and, at a dependent node, calls the action the parser calls,
+with typed operands** - ported by node kind, not by shape - and, by decision 4, each action is the one M6d frees of `ExprPtr`.
+Its exit is the restart row's: **node kinds ported, of 46; bodies falling back 0; `substShape` and its helpers deleted**.
+
+MEASURE_PLACEHOLDER
+
+**(b) The node kinds, and what each is today** (src/syntax/Syntax.h:20-31: 24 expression kinds, 18 statement kinds, `Typedef`,
+`Var`, `Function`, `MemInit` - **46**; "made" = `substShape` (Templates.cpp:1342-1480) lets it through under a binding, at both
+doors - the member door asks `memberShape` (5794-5820) first, which refuses more; the parser action is the one that builds
+the node and its Ast twin; **no action family is freed of `ExprPtr` yet** - tools/ast-residue's ExprPtr 2,012, its baseline
+since 2026-11-19 - so the last column is the M6d slice that would, M6-PLAN's "M6d's side of M8's R5"):
+
+| kind | under a binding today | the parser action that builds it | M6d slice |
+| --- | --- | --- | --- |
+| IntLit, FloatLit, CharLit, This, Paren, Comma | **made** (copied from the read's record) | `primary`, `primaryNode` (ParserExpr.cpp), `expr` (ParserOperator.cpp) | none needed (no dependent action) |
+| Name | **made**, but: refused unfound (`Unfound`, R4), resolved to a type the binding does not carry, value-dependent where 2f's fold does not reach (valueShape), a static member of its own class or a member of a class the read named over its parameter (memberShape) | `objectRef`, `localRef`, `enumeratorValue`, `globalRef` (ParserExpr.cpp) | S8b |
+| Unary, Postfix, Binary | **made** over scalars; refused over a class's object ("an operator, an assignment or a return over a class's object"), `+` over a dependent name | `unary`, `unaryNode`, `overloadedUnary`, `arithmetic`, `comparison`, `pointerAdd` (ParserExpr.cpp), `mul`..`logicalOr`, `shiftOf`, `incDec` (ParserOperator.cpp) | S8c |
+| Assign | **made** over scalars and `a.m = b.m` of one class (copyAssignFor); refused otherwise | `assignValue`, `compound` (ParserOperator.cpp) | S8c |
+| Conditional | **made** at the function door; **refused at the member door** whole (memberShape: "a 'conditional', whose type the read may hold apart") | `conditionalNode` (ParserOperator.cpp) | S8e |
+| Subscript | **made** as the built-in operator (an overloaded `[]` on a bound class has no record under the binding: R5-d) | the postfix step (ParserExpr.cpp `postfix`, `notePostfix`) | S8c |
+| Call | **made** in four shapes (nondependentCall: a named function of scalars; dependentCall: a dependent name over scalar locals; requestCall: a deduced template over scalars or class lvalues; boundMemberCall: a public non-virtual member of a bound class over scalars); refused in 39 reasons otherwise | `completeCall`, `memberCall`, `memberCallWith`, `finishCall` (ParserExprCall.cpp), `Overload::resolveOverload` | S8a |
+| Member | **made** for a public scalar (or array) data member of a bound class reached by name, `.`/`->`; refused otherwise (4 reasons) | the postfix member step, `qualifiedMemberThroughThis` (ParserExpr.cpp) | S8b |
+| Cast | **made** for a cast to an arithmetic type or void (valueCast) and a `static_cast` to a reference over its own type; refused otherwise (6 reasons) | `castExpr` (ParserOperator.cpp), `staticCast`, `constCast`, `reinterpretCast`, `functionalCast` (ParserExpr.cpp), `dynamicCast*` (ParserExprNew.cpp) | S8f |
+| StringLit, WordLit (`true`, `false`, `nullptr`), Sizeof (`sizeof`, `alignof`, `noexcept`, `typeid`) | **refused by kind** ("a '<kind>' in the body") | `primary` (ParserExpr.cpp), `noteKeywordForm`, `typeidExpression` (ParserExprNew.cpp) | none for the literals; Sizeof's type the kernel's (R1) |
+| New, Delete | **refused by kind** | `newExpression`, `deleteExpression` (ParserExprNew.cpp) | S8g |
+| Throw | **refused by kind** | `throwExpression`, `rethrowCall` (ParserExprNew.cpp) | S8g |
+| Lambda | **refused by kind** | `lambdaExpression`, `buildClosure` (ParserExprLambda.cpp) | S8h |
+| Other (`{}`: a braced list, a class temporary from one) | **refused by kind** | `initializerListExpr`, `listTemporary`, `bracedArgumentFor` (ParserExprNew.cpp, ParserExprCall.cpp) | S8d |
+| Block, ExprStmt, DeclStmt, Return, If, While, Do, For, Break, Continue, Null | **made** (Return refused over a class's object; a range `for` over a dependent class is unread at the member-template door's read, subst-self.ceiling's 25) | `statement`, `block` (ParserStmt.cpp) | none (statements left Ast.h at S4) |
+| Switch, Case, Default, Goto, Label | **refused by kind** | `statement` (ParserStmt.cpp) | none |
+| Try, Catch | **refused by kind** | `statement`, the handler loop (ParserStmt.cpp:2024) | S8g (the handler's binding) |
+| Typedef | **refused by kind** | the declaration statement (ParserStmt.cpp:90) | none (its type is the kernel's) |
+| Var | **made** for a scalar, a pointer or a reference; refused a class by value ("its constructor builds"), a reference to a base at an offset, a type the binding does not carry, an array or static local over a non-type parameter | the declaration statement, `parseInitialiser`, `initConstruct` (ParserStmt.cpp, ParserInit.cpp) | S8d |
+| Function | **made** (a local class's member or a lambda's body, as a part) | `functionDefinition` (ParserTopLevel.cpp:2039) | none |
+| MemInit | **refused by kind** (a constructor's mem-initialisers; M8.4's 4m) | the mem-initialiser list (ParserClass.cpp:2737-2792), a temporary's defaults (ParserExprNew.cpp:866, 922) | S8d |
+
+So **29 kinds are made today** (17 whole, 12 in some shapes), **17 are refused by kind**. A "made" kind is not yet a ported one:
+of the 29, the 17 whole ones are those with no dependent action (a literal, a statement, a parenthesis); the 12 in shapes are
+the whitelist D4 names.
+
+**(c) substShape's helpers, their call sites, and the reasons.** At 19f84c3e (file:line of the definition; call sites but the
+declaration; lines with their comments):
+
+| helper | lines | called from | what it decides |
+| --- | --- | --- | --- |
+| `substShape` (1342) | 139 | `instantiate` (778), `memberShape` (5816) | the whitelist walk: two passes, a stack (children pushed, the last popped first - reverse source order) |
+| `memberShape` (5794) | 27 | `replayInlineBodies`'s member loop (2804) | the member door's refusals before substShape |
+| `valueShape` (815) | 39 | `instantiate` (781) | a value-dependent name folded by `foldUnder` (shared with R3's 3R-d; stays) |
+| `nondependentCall` (906) | 24 | dependentCall (935, 939), callArgTypes (1032), substShape (1425) | [temp.nondep]: a call of scalars bound at the definition |
+| `dependentCall` (933) | 63 | substShape (1436) | [temp.dep.candidate] over scalar locals |
+| `callArgTypes` (1017) + `argumentCategory` (1000) | 45 + 14 | templateCandidates (1070), requestCall (1098), boundMemberCall (1303) | a call's arguments typed under the binding |
+| `templateCandidates` (1065) | 20 | dependentCall (940, 945) | a deduced template call, deferred to requestCall |
+| `requestCall` (1088) | 78 | `instantiate` (803) | the deduced specialization requested and ranked; **binds the template's parameters** (1102: one `bindTemplateParameters` of replay-residue's 24) |
+| `boundMemberCall` (1278) | 63 | substShape (1430) | a member call on a bound class |
+| `boundObjectClass` (1257) | 18 | boundMemberCall (1282), substShape (1383, 1402, 1428) | `o.m`'s class under the binding |
+| `boundObject` (1218) | 13 | itself (1221), substShape (1362) | an lvalue of a bound class |
+| `valueCast` (1234) | 20 | substShape (1448) | a cast to an arithmetic type |
+| `boundClass` (1196) | 13 | `instantiate` (755), the class door (4583) | why a class bound to a type parameter replays (the class door's caller stays) |
+| **all** | **576** (561 without boundClass) | | |
+
+`instantiate` (739-811, 73 lines) is the function door around them and stays as the door; `Bound`'s four tables (Templates.h:359:
+`calls`, `members`, `assigns`, `values`) and the Typer's reads of them (Typing.cpp:110-182, 507-532, 1001-1046) are what the
+helpers fill and what the instantiator writes instead. **The reasons, re-counted** (fixed strings returned at the two body doors;
+`git grep -n 'return "\|why = "'` over 739-1480 and 5794-5820): `instantiate` 7, `valueShape` 3, `nondependentCall` 5 +
+TemplateCallee 1, `dependentCall` 7, `callArgTypes` 5, `templateCandidates` 2, `requestCall` 6, `valueCast` 4, `boundMemberCall`
+12, `substShape` 14, `memberShape` 8 - **74 fixed reasons** (59 in substShape and its helpers), against the review's 62 at
+c9619846, beside two composed families: substShape's "a '<kind>' in the body" (17 kinds) and "a '<kind>' the read resolved to a
+type the binding does not carry" (any kind), and `instantiate`'s "a type parameter bound to <boundClass's 9>". By what they
+stand at: **Call 39**, Cast 6, Var 6, Name 5, Member 4, Assign 2, an operator or return over a class's object 1, Return 1,
+Unary 1, Conditional 1, and the door's own (the binding's shape, no read body, a friend, the signature) 8. D4's point in one
+line: 39 of the 74 are one node kind, and each is one shape of overload resolution the parser's call action already does.
+
+**The instantiator, as the slices build it.** The Typer already types a read body under a binding (slice 2b, `Typer::bound`,
+Typing.cpp:1030-1046): a non-dependent node by the parser's record substituted through the kernel (R1), and a dependent node by
+the record one of the four `Bound` tables holds for it. What is missing is who fills the tables: today substShape, by shape,
+before typing, and all-or-nothing. R5 makes it a walk, `Instantiator::node(id)` beside the Typer (src/sema), **in source order -
+a node after its parts, the order the read made them** (the node numbers; the order the replay's actions resolve in, which
+`instantiate` already relies on for its requests, 795-798), and at each node by kind: no mark (`TypeDependent`, `DependentName`,
+`ValueDependent`) and a record the kernel carries -> the record, substituted, as today; a mark -> **the kind's action, called
+with its operands typed** (`sema::RankedArgument`: the TypeId the walk gave each part, its value category, its null-constant
+fact - M8.2 2d's struct, which `Overload::rankArgument` already takes), writing the record the replay's action writes (a
+`Resolved` for a call, a member, an operator; a `Signature` chosen; a temporary's `builtBy` and its frame step; a constant)
+into the body's `Bound`; an action not yet callable so -> the body replays, by the kind's name. **The action is the parser's
+decision half**, split from its Ast build by the M6d slice that frees the family (decision 4, M6-PLAN "M6d's side of M8's R5"),
+so the parser and the instantiator call one function and no rule is written twice. What an action does besides its record - a
+frame slot, a temporary's destructor registration, a specialization requested, a function marked used - it does through the
+same calls it makes for the parser, logged where the parser logs them (`frameLog_`, `layFrame`'s events, `noteUsed`,
+`instantiateViableTemplates`), so `madeWithoutReplay` keeps holding the made body's frame, shell and function against the
+replay's under `-check=templates` unchanged. Nothing in the walk reads `p_.tokens_` or moves `p_.at_` (the restart's freeze),
+and nothing builds an Ast node (ast-residue: node-refs and ExprPtr only down).
+
+| slice | the change (under `-templates=subst` alone) | its measure at 19f84c3e ((a)'s rows) | M6d slice it shares | what must not change |
+| --- | --- | --- | --- | --- |
+| **R5-a** | **the walk and the census by kind**: substShape's two stack passes and memberShape's pre-walk become one walk in source order, dispatched by kind to a handler a kind (`Instantiator::node`), each present shape moved into its kind's handler verbatim; the walk does not stop at a refusal under the census, and prints per body `-check=templates body refused (n): <function|member>: <kind>` (the first in source order) and `... body holds (n): <door>: <kind>` (each kind it holds once) and `... body alone (n): <door>: <kind>` (bodies no other kind refuses) | (a) re-measured by the compiler itself, its sums equal to the census's `functions=` and `members=` parts; every body covered or replayed as before | none | **the set of covered bodies** (a refusal anywhere still replays the body); every reason's text (tests/subst.sh:130-140 match them); the requests' order (sorted by node, 795-798); every emitted byte both ways - identical by construction |
+| R5-b | **Member**: a data member of a bound class of any type and access, `.` and `->`, through the member action (lookup, access asked of the right class, the object's cv) | (a)'s Member row -> 0 | S8b | access from the right class (history: "Access control asked from the wrong class"); a member in a virtual base or an anonymous union at the replay's offset |
+| R5-c | **Call**, in three steps a lane each: (1) a member call on a bound class or `this` (any candidate set: class arguments, defaults, virtual, static, base at an offset) through `memberCallWith`'s decision; (2) a free call with a dependent part - dependent name, ADL, class arguments - through `resolveOverload` over RankedArguments, ADL by `candidateSet`; (3) a deduced or explicit-argument template call, requested at the instantiation as `requestCall` does, on R2's kernel | (a)'s Call row -> 0 (by step: (a)'s Call reasons by shape) | S8a | [temp.dep.candidate] (the definition's candidates plus ADL); `resolveOverload` by value (C-01); a candidate never chosen gets no body; the Itanium name from the pattern, the Microsoft one from the substituted signature |
+| R5-d | **operators and assignment over class objects**: Unary, Postfix, Binary, Assign, Subscript with a class operand through `resolveOperator` over RankedArguments and the built-in rule (Typing.cpp's `expression`) for the rest; `operator=` by `copyAssignFor` for any class | (a)'s "over a class object" and Assign rows -> 0 | S8c | the ledger's counts (lifetime.h); a bytewise `=` where the replay copies bytes |
+| R5-e | **locals, parameters and temporaries of class type**: a Var of a class by value and a class temporary (`Other` `{}`, a functional cast to a class) built by the constructor action, its frame step and its destructor's registration logged as the parser logs them | (a)'s Var (a class by value) and Other rows -> 0 | S8d | the frame (layFrame against the replay's); elision; the ledger; a temporary's lifetime to the full expression's end |
+| R5-f | **Return of a class by value** (`instantiate`'s "a bound class returned by value", the Return half of "over a class object") through `buildReturned`'s elision forms | those rows -> 0 | S8d | the elision form (`pendingReturnBuilt_`'s 1-3) the SSA lowering reads |
+| R5-g | **Conditional** at the member door: [expr.cond] from two typed arms | (a)'s Conditional row -> 0 | S8e | `?:` as an lvalue; a const-apart class arm (cppp2's) |
+| R5-h | **Cast**, every form (C-style, functional, the four named, `dynamic_cast`) through the conversion action | (a)'s Cast row -> 0 | S8f | `dynamic_cast<void *>` on both ABIs; a cast to a reference names its operand |
+| R5-i | **New and Delete** | (a)'s New, Delete rows -> 0 | S8g | the allocator and deallocator chosen; placement forms; the null guard |
+| R5-j | **Throw, Try, Catch** | (a)'s Throw, Try, Catch rows -> 0 | S8g | the selector numbering (`typeIndexFor` where it is called now); call-site rows innermost-first; every exit of a handler ends the catch |
+| R5-k | **Lambda**: the closure class made under the binding as the read's own local class (R3's nested class from its record) | (a)'s Lambda row -> 0 | S8h | the closure's name on both ABIs; captures by value of a class |
+| R5-l | **the kinds with no dependent action**: StringLit, WordLit, Sizeof (its type substituted by the kernel), Switch, Case, Default, Goto, Label, Typedef (its type the kernel's) admitted as their record says | (a)'s rows of these kinds -> 0 | none (Sizeof: R1's kernel) | `sizeof` of a dependent type the replay's; a `switch`'s jump table; the string's label |
+| R5-m | **MemInit**: a constructor's mem-initialisers under the class's binding, each member's or base's constructor chosen by R5-e's action (M8.4's 4m) | (a)'s MemInit row -> 0 | S8d | the order of initialisation and the guards m83ab laid; a member initialiser's node (R3's 3R-j) |
+| R5-n | **names the restart's other steps settle**: value-dependent names (valueShape into 4d's fold), a static member of its own class and a member of a class the read named over its parameter (R3's records make the class), unfound names (R4 refuses them at the definition), a Var or Name of a type the binding does not carry (R1's kernel) | (a)'s Name and "a type the binding does not carry" rows -> 0 | none | M8rev L2 (no constant from a read); [temp.res]/10 as R4 lands it |
+| R5-o | **the door's own reasons**: a pack or template template parameter (4j: a pack expansion expanded by the walk under the `PackBinding`), a non-type parameter not `int`, a type parameter bound to a class by value or a reference (after R5-e), a trailing `decltype` (4f's), a friend defined in its class, a member defined out of line | (a)'s door rows -> 0 but "an explicit specialization" and "no body read" (not template instantiations: they stay the parser's until M8.6) | none | `Packs` indexed like the binding; a partial's tail `R...` |
+| R5-p | **member templates on the instantiator** (M8.4's 4h, 4i, 4k): two binding layers - the class's, then the member's - over the member template's read body; constexpr-ahead folding the made body | the member-template door 200 / 1,365 (4a's) and constexpr-ahead 36 / 645 -> 0 | none beyond R5-c's | the class layer bound first; `memberTemplateMade_` per template; `owedBodies_` ([temp.point]); `Constexpr` folds trees, never the VM |
+| R5-q | **the close**: `substShape`, `memberShape`, `nondependentCall`, `dependentCall`, `callArgTypes`, `argumentCategory`, `templateCandidates`, `requestCall`, `boundMemberCall`, `boundObjectClass`, `boundObject`, `valueCast` deleted (561 lines; `boundClass` keeps the class door's caller, `valueShape` folds into 4d's) | **bodies falling back 0** on the suite and the self-host, both ABIs; 46 of 46 kinds through the walk; replay-residue's binds -1 (requestCall's) | S8's close follows | - |
+
+**Which of M8.4's slices R5 subsumes**: 4h, 4i, 4k (R5-p, wiring on the walk); 4j (R5-o's packs); **4m-4r, frozen by the restart,
+are R5-m, R5-c, R5-b and R5-c(1), R5-g, R5-d/R5-e/R5-f/R5-i, and R5-h/R5-l/R5-n** - the same counts, ported by kind instead of
+by reason; 4t's body half (functions and members at 0) is R5-q. **Not R5's**: 4b-4g (R2, on the kernel), 4l (`deduceAuto`, no
+template door), 4s (M8.3's class tail: R3's; R5 takes only the member bodies replayed because their class is, once R3 makes it).
+
+**The gate of every slice** (each one commit, the brief's lane gate): identical.sh against a REF from the slice's base, 0 differ
+on four targets at -O0/-O1/-O2 plain (by construction: the walk runs under the flag alone) and under `-templates=subst` (a body
+the slice now makes emits what its replay emitted - the restart's Q7: if a slice finds that it forces the replay's order inside
+the walk, it says so and stops); run.sh and subst.sh 0 failed both ways; `-check=templates` censuses over tests/cases and the
+self-host on both ABIs with **no body and no class differ** (the check replays each made body beside it: constantsHeld, the
+frame, the shell, the made function); the FULL self-compile 102 of 102; the static gates (exclusions 0/0 with citations
+re-pointed, comment cap, memory gate, **ast-residue not raised** - the walk takes typed operands, never an Ast node -
+replay-residue only down); g++ -Werror; and on Windows cl /W4 /WX, names.sh and overload.sh both ways.
+
+**Order.** R5-a first (every later slice reads its census and adds its kind's handler). Then by count and by M6d's order:
+R5-l (no M6d dependency) beside R5-a's follow-up; R5-b after S8b; R5-c after S8a - it is the largest row of (a), so S8a is
+M6d's first S8 slice; R5-d after S8c and R5-b (an operator over a member); R5-e and R5-f after S8d, R5-m after R5-e (a
+mem-initialiser builds by a constructor), R5-g, R5-h, R5-i, R5-j, R5-k each after its S8 slice; R5-n after R2's 4d, R3's
+close and R4; R5-o's packs after R5-c (the self-host's packs are calls: `make_owned`, `emplace_back`); R5-p after R5-c and
+R3-h's member templates as reads; R5-q last. **R5 is built after R3 and R4** (the restart's order); R5-a and R5-l may run
+before them, as they change nothing R3 or R4 touch (substShape and memberShape alone).
+
+**R5-a for the lane that takes it** (one lane-hour; Templates.cpp and Templates.h alone, no other file): (1) substShape's walk
+order: collect the body's nodes by number (`std::vector<NodeId>` from the stack walk, then `std::sort`), then walk ascending -
+pass 1 and pass 2 kept as two loops over that list, so a reason is the first in source order; memberShape's five checks move
+into the same loop's head (they are per-node tests). (2) The walk records every refusing node's kind in a
+`std::set<syntax::Kind>` instead of returning at the first (filled always under `-templates=subst`, as `fallbackCensus_` is;
+printed only with the census env or the check), then returns the first's reason as today - so the covered set is the same by
+construction; the walk's extra cost goes into the wall-time row (D10). (3) Three maps printed by `builtReport` beside `falling
+back=` (never after `by-substitution=0`, subst.sh:89): `body refused`, `body holds`, `body alone`, each "(n): function|member:
+<kindName>". Its proof: identical plain and under the flag 0 differ on four targets; the census's covered and replayed counts
+equal to the base's unit for unit (subst.sh's census line, and the m8r5a-sum lines) and the new maps' sums equal to the
+`functions=` and `members=` parts; a probe case (tests/cases/template-subst-kinds.cpp: one body refused by a Switch alone, one
+by a Call and a New, its .expected clang's) with the census lines recorded by subst.sh as its `check` probes are.
+
+**What must not change through R5** (D11 and the plan's list): the read at the declaration with its dependent marks; the
+kernel's substitution (R1) as the only map from the read's types; the two name spellings; `-check=templates` holding each made
+body against a replay beside it and failing the unit on `differ`; identical's order (the walk's is the read's, which is the
+replay's - no golden re-recorded unless Q7 is reached and decided); the replay as the plain path until M8.6; a refusal by name
+for every kind not yet ported, with its kind in the text; CLAUDE.md's shapes (absolute token indices, `resolveOverload` by
+value, a trivial special member no function, call-site rows innermost-first, the parser numbering selectors as
+`Regions::lsdaTable` places them).
