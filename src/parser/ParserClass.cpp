@@ -1862,7 +1862,7 @@ void Parser::recordHeld(Program &program) {
 // a name the linker can hold and a definition outside the class to go with it.
 void Parser::declareStaticMember(const std::string &cls, Type *owner,
                                  const Declared &d, Access access,
-                                 bool volatileWritten, bool threadLocal, bool isConstexpr, const long long *folded) {
+                                 bool volatileWritten, bool threadLocal, bool isConstexpr, const long long *folded, bool unread) {
     if (cls.empty())
         src_.fail(d.pos, "a static member needs a class with a name - this one "
                          "is anonymous");
@@ -1883,7 +1883,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     if (folded != nullptr) {     // R3 3R-d: a made class's `static const` integer, its value its record's fold
         s.folded = true, s.value = *folded;
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
-    } else if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
+    } else if (!unread && isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
         refuseVolatileWithLinkage(volatileWritten, false, d.pos);
         s.symbol = linkage_.staticMemberSymbol(cls, d.name, s.type, access, d.pos);
         owner->addStaticMember(s);
@@ -1896,7 +1896,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // **`static const int k = 5;` written in the class needs no definition**, measured
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
-    } else if (consume("=")) {
+    } else if (!unread && consume("=")) {
         syntax::NodeId init;
         if (patternBody_ && d.type->isConst() && dependentType(d.type)) {    // a read's `static const T value = v;`: folded to nothing
             init = syn(conditional());

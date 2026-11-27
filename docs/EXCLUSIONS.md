@@ -162,7 +162,7 @@ is left:
 - **a member template of a class made from a template whose declaration its read
   record cannot carry under the class's binding** - the class body is not read
   again; no case of the suite or the self-host reaches it (R3 3R-h).
-  `src/sema/Templates.cpp:5437`
+  `src/sema/Templates.cpp:5439`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1179`
 - **a non-type template parameter whose type is built from an earlier one**,

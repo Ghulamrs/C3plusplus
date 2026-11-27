@@ -5204,6 +5204,8 @@ void Templates::staticsFromRead(std::size_t start, const TemplateDecl &decl, con
         long long v = 0;     // 3R-d: a `static const` integer its record folds is declared with that value, no re-read
         if (init != 0 && type->isConst() && type->isInteger() && staticBefore(init, owner, s, params, values, enumsAt, &v)) {
             p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, &v);
+        } else if (init == 0 && !cx) {     // no `=` in the read: nothing to re-read
+            p_.declareStaticMember(tag, owner, Parser::Declared(m.name, type, name), m.access, m.isVolatile, m.isThreadLocal, cx, nullptr, true);
         } else {
             p_.at_ = after;
             reentered("jump: a static data member");
