@@ -1,6 +1,7 @@
 // sema::Templates - see Templates.h.
 
 #include "Templates.h"
+#include "ConstArith.h"
 #include "Typing.h"
 #include "../parser/Parser.h"
 #include "../parser/ParserInternal.h"
@@ -520,7 +521,8 @@ static bool foldBound(const std::vector<Token> &k, std::size_t *t, std::size_t e
 }
 
 // Slice 3h: the read's DepExpr of an argument (`X<N + 1>`) folded under `values` as foldBound folds a bound's tokens. 4d: with
-// `wide`, a `bool` literal, `!`, the comparisons and `&&` `||` as well, and a size or a static member through `wide`'s leaf.
+// `wide`, a `bool` literal, `!`, `&&` `||` and a size or a static member through `wide`'s leaf; 3R-d: a comparison by the
+// evaluator's arithmetic (operands at or above 0 unless `wide`, where signedness cannot differ) and `?:`'s chosen arm.
 static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long long *out, const Templates::FoldLeaf *wide = nullptr) {
     long long a = 0, b = 0;
     if (e->op == DepExpr::Literal)
@@ -529,16 +531,17 @@ static bool foldArg(const DepExpr *e, const std::vector<long long> &values, long
     if (wide != nullptr && (e->op == DepExpr::SizeofType || e->op == DepExpr::QualifiedParamName)) return wide->leaf(e, out);
     if (e->op == DepExpr::TemplateParam)
         return e->index >= 0 && static_cast<std::size_t>(e->index) < values.size() && ((*out = values[static_cast<std::size_t>(e->index)]), true);
+    if (e->op == DepExpr::Operator && e->code == "qu" && e->kids.size() == 3)
+        return foldArg(e->kids[0], values, &a, wide) && foldArg(e->kids[a != 0 ? 1 : 2], values, out, wide);
     if (e->op != DepExpr::Operator || e->kids.empty() || e->kids.size() > 2 || !foldArg(e->kids[0], values, &a, wide)) return false;
     if (e->kids.size() == 1)
         return (e->code == "ng" || e->code == "ps" || (wide != nullptr && e->code == "nt")) && ((*out = e->code == "ng" ? -a : e->code == "nt" ? !a : a), true);
     if (!foldArg(e->kids[1], values, &b, wide) || ((e->code == "dv" || e->code == "rm") && (b <= 0 || a < 0))) return false;
-    static const char *const tests[] = { "eq", "ne", "lt", "gt", "le", "ge", "aa", "oo" };
-    for (std::size_t i = 0; wide != nullptr && i < sizeof tests / sizeof tests[0]; i++)
-        if (e->code == tests[i]) {
-            *out = i == 0 ? a == b : i == 1 ? a != b : i == 2 ? a < b : i == 3 ? a > b : i == 4 ? a <= b : i == 5 ? a >= b : i == 6 ? a && b : a || b;
-            return true;
-        }
+    static const char *const tests[] = { "eq", "ne", "lt", "gt", "le", "ge" };
+    static const Arith compare[] = { Arith::Eq, Arith::Ne, Arith::Lt, Arith::Gt, Arith::Le, Arith::Ge };
+    for (std::size_t i = 0; i < sizeof tests / sizeof tests[0]; i++)
+        if (e->code == tests[i]) return (wide != nullptr || (a >= 0 && b >= 0)) && integerArith(compare[i], a, b, false, out) == ArithFault::None;
+    if (wide != nullptr && (e->code == "aa" || e->code == "oo")) return (*out = e->code == "aa" ? a && b : a || b), true;
     *out = e->code == "pl" ? a + b : e->code == "mi" ? a - b : e->code == "ml" ? a * b : e->code == "dv" ? a / b : a % b;
     return (e->code == "pl" || e->code == "mi" || e->code == "ml" || e->code == "dv" || e->code == "rm") && *out >= INT_MIN && *out <= INT_MAX;
 }
