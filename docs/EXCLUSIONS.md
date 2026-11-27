@@ -159,6 +159,10 @@ is left:
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
   list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:3683`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
+- **a member template of a class made from a template whose declaration its read
+  record cannot carry under the class's binding** - the class body is not read
+  again; no case of the suite or the self-host reaches it (R3 3R-h).
+  `src/sema/Templates.cpp:5338`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1168`
 - **a non-type template parameter whose type is built from an earlier one**,

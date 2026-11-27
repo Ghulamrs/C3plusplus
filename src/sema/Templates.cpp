@@ -5320,16 +5320,12 @@ const char *Templates::templateSame(const TemplateDecl &a, const TemplateDecl &b
     return nullptr;
 }
 
-// Work (1): the read's member templates declared under `tag` from their records (3R-h); where a read is not complete, by the class
-// body's own path (Parser::memberTemplate) at each `template` under the class's binding - and under the check, held against it.
-void Templates::templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &decl, const std::vector<TemplateParam> &params,
-                                  const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &args,
+// Work (1): the read's member templates declared under `tag` from their records, in the body's order (3R-h); one whose record
+// does not carry is refused by name - the class body's path is not read again.
+void Templates::templatesFromRead(std::size_t start, const std::string &tag, const TemplateDecl &, const std::vector<TemplateParam> &params,
+                                  const std::vector<const Type *> &binding, const std::vector<long long> &values, const std::vector<TemplateArg> &,
                                   const Substituted &s) {
-    const std::vector<const TemplateDecl *> read = templatesOf(readMembers_.at(start).first);
-    if (read.empty()) return;
-    std::vector<std::pair<std::size_t, std::pair<std::string, Access> > > at;
-    std::set<std::string> keys;
-    for (const TemplateDecl *mt : read) {
+    for (const TemplateDecl *mt : templatesOf(readMembers_.at(start).first)) {
         TemplateDecl mine;
         std::string shape;
         Templates *const outer = patternMaker_;
@@ -5338,44 +5334,11 @@ void Templates::templatesFromRead(std::size_t start, const std::string &tag, con
         const char *const why = templateUnder(*mt, tag, s, params, binding, values, &mine, &shape);
         patternMaker_ = outer, patternAt_ = outerAt;
         templatesCensus_[why == nullptr ? "declared from the read" : shape.empty() ? why : shape.c_str()]++;
-        if (why == nullptr) memberTemplates_[tag + "::" + mine.name].push_back(mine), keys.insert(tag + "::" + mine.name);
-        else at.push_back(std::make_pair(mt->start, std::make_pair(mt->ownerLocal, mt->memberAccess)));
+        if (why != nullptr)
+            p_.src_.fail(mt->start, std::string("a member template of a class made from a template, where its declaration holds ") + why +
+                                    ", is not supported yet");
+        memberTemplates_[tag + "::" + mine.name].push_back(mine);
     }
-    struct InOrder {     // a name's overloads in the body's order, those from the read beside those read again
-        std::map<std::string, std::vector<TemplateDecl> > &table; const std::set<std::string> &keys;
-        ~InOrder() { for (const std::string &k : keys) std::stable_sort(table[k].begin(), table[k].end(), [](const TemplateDecl &a, const TemplateDecl &b) { return a.start < b.start; }); }
-    } inOrder = { memberTemplates_, keys };
-    if (at.empty()) return;
-    std::vector<Shadow> undo;
-    const DoorAt templatesDoor(this, "made class: templatesFromRead");
-    bindTemplateParameters(params, binding, values, s.packs.empty() ? Packs(params.size()) : s.packs, &undo);
-    const Parser::LocalsHidden hidden(&p_);
-    const std::size_t resume = p_.at_, angle = p_.angleSplit_;
-    const std::string inlineOwner = p_.inlineOwner_, outerNamespace = p_.instantiatingNamespace_;
-    const std::vector<TemplateArg> outerArgs = p_.instantiatingArgs_;
-    const auto outerParams = p_.instantiatingParams_;
-    const auto outerBinding = p_.instantiatingBinding_;
-    const auto outerValues = p_.instantiatingValues_;
-    p_.inlineOwner_.clear();
-    p_.instantiatingArgs_ = args;
-    p_.instantiatingNamespace_ = decl.ns;
-    p_.instantiatingParams_ = params;
-    p_.instantiatingBinding_ = binding;
-    p_.instantiatingValues_ = values;
-    for (const std::pair<std::size_t, std::pair<std::string, Access> > &a : at) {
-        p_.at_ = a.first;
-        reentered("jump: a member template's declaration");
-        p_.memberTemplate(tag, a.second.first, a.second.second);
-    }
-    p_.instantiatingArgs_ = outerArgs;
-    p_.instantiatingNamespace_ = outerNamespace;
-    p_.instantiatingParams_ = outerParams;
-    p_.instantiatingBinding_ = outerBinding;
-    p_.instantiatingValues_ = outerValues;
-    p_.inlineOwner_ = inlineOwner;
-    p_.angleSplit_ = angle;
-    p_.at_ = resume;
-    unbindTemplateParameters(undo);
 }
 
 // The read's member templates held against those declared under `tag`, each as the replay records it; empty when they agree.
